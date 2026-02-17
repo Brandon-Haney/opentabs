@@ -519,22 +519,24 @@ const handleTabStateChanged = (
 };
 
 const handleConfigGetState = (state: ServerState, id: string | number): void => {
-  const plugins = Array.from(state.plugins.values()).map(p => {
-    const tabInfo = state.tabMapping.get(p.name);
-    return {
-      name: p.name,
-      displayName: p.displayName ?? p.name,
-      version: p.version,
-      trustTier: p.trustTier,
-      tabState: tabInfo?.state ?? 'closed',
-      urlPatterns: p.urlPatterns,
-      tools: p.tools.map(t => ({
-        name: t.name,
-        description: t.description,
-        enabled: isToolEnabled(state, prefixedToolName(p.name, t.name)),
-      })),
-    };
-  });
+  const plugins = Array.from(state.plugins.values())
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(p => {
+      const tabInfo = state.tabMapping.get(p.name);
+      return {
+        name: p.name,
+        displayName: p.displayName ?? p.name,
+        version: p.version,
+        trustTier: p.trustTier,
+        tabState: tabInfo?.state ?? 'closed',
+        urlPatterns: p.urlPatterns,
+        tools: p.tools.map(t => ({
+          name: t.name,
+          description: t.description,
+          enabled: isToolEnabled(state, prefixedToolName(p.name, t.name)),
+        })),
+      };
+    });
 
   sendToExtension(state, {
     jsonrpc: '2.0',

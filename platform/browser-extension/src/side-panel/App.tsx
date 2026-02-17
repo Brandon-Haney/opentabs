@@ -38,18 +38,11 @@ const App = () => {
       });
   }, []);
 
-  // Stable ref for the latest loadPlugins so the effect listener always calls
-  // the current version without needing loadPlugins in the dependency array.
-  const loadPluginsRef = useRef(loadPlugins);
-  useEffect(() => {
-    loadPluginsRef.current = loadPlugins;
-  }, [loadPlugins]);
-
   useEffect(() => {
     void getConnectionState().then(isConnected => {
       setConnected(isConnected);
       if (isConnected) {
-        loadPluginsRef.current();
+        loadPlugins();
       }
       setLoading(false);
     });
@@ -98,7 +91,7 @@ const App = () => {
         const isConnected = message.data.connected;
         setConnected(isConnected);
         if (isConnected) {
-          loadPluginsRef.current();
+          loadPlugins();
         } else {
           setPlugins([]);
           setActiveTools(new Set());
@@ -120,7 +113,7 @@ const App = () => {
 
         // plugins.changed notification — refetch the full plugin list
         if (data.method === 'plugins.changed') {
-          loadPluginsRef.current();
+          loadPlugins();
           sendResponse({ ok: true });
           return true;
         }
@@ -140,7 +133,7 @@ const App = () => {
         if (wsData?.method === 'sync.full') {
           // The MCP server already has plugin data when it sends sync.full,
           // so config.getState can be called immediately — no delay needed.
-          loadPluginsRef.current();
+          loadPlugins();
         }
         return false;
       }
@@ -151,7 +144,7 @@ const App = () => {
 
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
-  }, []);
+  }, [loadPlugins]);
 
   return (
     <div className="flex min-h-screen flex-col text-gray-200">

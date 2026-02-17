@@ -906,14 +906,20 @@ const test = base.extend<TestFixtures>({
 
   testServer: async ({ browserName: _ }, use) => {
     const srv = await startTestServer();
-    await use(srv);
-    await srv.kill();
+    try {
+      await use(srv);
+    } finally {
+      await srv.kill();
+    }
   },
 
   strictCspServer: async ({ browserName: _ }, use) => {
     const srv = await startStrictCspServer();
-    await use(srv);
-    await srv.kill();
+    try {
+      await use(srv);
+    } finally {
+      await srv.kill();
+    }
   },
 
   extensionContext: async ({ mcpServer }, use) => {

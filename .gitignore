@@ -11,5 +11,5 @@ playwright-report/
 /.ralph/*
 !/.ralph/RALPH.md
 !/.ralph/ralph.sh
-!/.ralph/PERFECT-LOOP.md
+!/.ralph/PERFECT.md
 !/.ralph/perfect.sh

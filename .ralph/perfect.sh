@@ -4,7 +4,7 @@
 # Usage: .ralph/perfect.sh [--tool claude] [--max-rounds N] [--dry-run]
 #
 # Runs an infinite convergence loop:
-#   1. Claude audits the entire codebase (PERFECT-LOOP.md)
+#   1. Claude audits the entire codebase (PERFECT.md)
 #   2. If PERFECT → exit successfully (codebase is at the highest standard)
 #   3. If NEEDS_RALPH → run ralph.sh to execute fixes, then loop back to 1
 #
@@ -59,7 +59,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
-PERFECT_PROMPT="$SCRIPT_DIR/PERFECT-LOOP.md"
+PERFECT_PROMPT="$SCRIPT_DIR/PERFECT.md"
 PRD_FILE="$SCRIPT_DIR/prd.json"
 
 # Colors
@@ -74,7 +74,7 @@ RESET='\033[0m'
 # --- Validation ---
 
 if [ ! -f "$PERFECT_PROMPT" ]; then
-  echo -e "${RED}Error: No PERFECT-LOOP.md found at $PERFECT_PROMPT${RESET}"
+  echo -e "${RED}Error: No PERFECT.md found at $PERFECT_PROMPT${RESET}"
   exit 1
 fi
 

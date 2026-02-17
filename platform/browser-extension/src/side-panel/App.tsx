@@ -19,7 +19,11 @@ const App = () => {
   const [activeTools, setActiveTools] = useState<Set<string>>(new Set());
   const [versionMismatch, setVersionMismatch] = useState(false);
 
+  const lastFetchRef = useRef(0);
   const loadPlugins = useCallback(() => {
+    const now = Date.now();
+    if (now - lastFetchRef.current < 200) return;
+    lastFetchRef.current = now;
     fetchConfigState()
       .then(result => {
         setPlugins(result.plugins);

@@ -1,4 +1,4 @@
-import { startFileWatching, stopFileWatching } from './file-watcher.js';
+import { startConfigWatching, startFileWatching, stopFileWatching } from './file-watcher.js';
 import { createState } from './state.js';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -218,5 +218,117 @@ describe('file watcher lifecycle with real plugins', () => {
     // The current-generation callback should have executed
     expect(currentCallbackRan).toBe(true);
     expect(state.fileWatcherTimers.has(key)).toBe(false);
+  });
+});
+
+describe('config file watcher', () => {
+  let tmpDir: string;
+  let state: ServerState;
+  let originalConfigDir: string | undefined;
+
+  afterEach(() => {
+    stopFileWatching(state);
+    Bun.env.OPENTABS_CONFIG_DIR = originalConfigDir;
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const setupConfigDir = (): string => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'config-watcher-'));
+    originalConfigDir = Bun.env.OPENTABS_CONFIG_DIR;
+    Bun.env.OPENTABS_CONFIG_DIR = tmpDir;
+    writeFileSync(join(tmpDir, 'config.json'), '{"plugins":[]}');
+    state = createState();
+    return tmpDir;
+  };
+
+  test('startConfigWatching sets configWatcher on state', () => {
+    setupConfigDir();
+
+    expect(state.configWatcher).toBeNull();
+
+    startConfigWatching(state, noopCallbacks);
+
+    expect(state.configWatcher).not.toBeNull();
+  });
+
+  test('stopFileWatching closes config watcher and sets it to null', () => {
+    setupConfigDir();
+
+    startConfigWatching(state, noopCallbacks);
+    expect(state.configWatcher).not.toBeNull();
+
+    stopFileWatching(state);
+
+    expect(state.configWatcher).toBeNull();
+  });
+
+  test('startConfigWatching closes previous config watcher before creating a new one', () => {
+    setupConfigDir();
+
+    startConfigWatching(state, noopCallbacks);
+    const firstWatcher = state.configWatcher;
+    expect(firstWatcher).not.toBeNull();
+
+    startConfigWatching(state, noopCallbacks);
+    const secondWatcher = state.configWatcher;
+    expect(secondWatcher).not.toBeNull();
+    expect(secondWatcher).not.toBe(firstWatcher);
+  });
+
+  test('config watcher debounces rapid changes — only one callback fires', async () => {
+    const dir = setupConfigDir();
+    let callCount = 0;
+
+    const callbacks = {
+      ...noopCallbacks,
+      onConfigChanged: () => {
+        callCount++;
+      },
+    };
+
+    // Generation must be > 0 for callbacks to fire (startConfigWatching captures gen)
+    state.fileWatcherGeneration = 1;
+    startConfigWatching(state, callbacks);
+
+    // Write config.json multiple times rapidly
+    writeFileSync(join(dir, 'config.json'), '{"plugins":["a"]}');
+    await new Promise(r => setTimeout(r, 50));
+    writeFileSync(join(dir, 'config.json'), '{"plugins":["a","b"]}');
+    await new Promise(r => setTimeout(r, 50));
+    writeFileSync(join(dir, 'config.json'), '{"plugins":["a","b","c"]}');
+
+    // Wait for debounce (200ms) plus buffer for FS event delivery
+    await new Promise(r => setTimeout(r, 500));
+
+    // Debounce means only the last change triggers a callback
+    expect(callCount).toBe(1);
+  });
+
+  test('stale config watcher callbacks are discarded when fileWatcherGeneration changes', async () => {
+    const dir = setupConfigDir();
+    let callCount = 0;
+
+    const callbacks = {
+      ...noopCallbacks,
+      onConfigChanged: () => {
+        callCount++;
+      },
+    };
+
+    // Start config watcher at generation 0
+    startConfigWatching(state, callbacks);
+
+    // Trigger a config change
+    writeFileSync(join(dir, 'config.json'), '{"plugins":["stale"]}');
+
+    // Before the debounce fires, bump the generation (simulating a hot reload restart)
+    await new Promise(r => setTimeout(r, 50));
+    state.fileWatcherGeneration++;
+
+    // Wait for the debounce timer to fire
+    await new Promise(r => setTimeout(r, 400));
+
+    // The callback should NOT have executed because the generation changed
+    expect(callCount).toBe(0);
   });
 });

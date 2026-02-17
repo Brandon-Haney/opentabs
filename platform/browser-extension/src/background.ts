@@ -168,7 +168,9 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, _sender, sendRes
 // --- Extension lifecycle ---
 
 chrome.alarms.onAlarm.addListener(() => {
-  // Alarm fires to keep the service worker alive
+  // Keepalive tick: re-ensure the offscreen document exists so the WebSocket
+  // connection recovers automatically if Chrome terminates it under memory pressure.
+  ensureOffscreenDocument().catch(console.error);
 });
 
 chrome.runtime.onInstalled.addListener(() => {

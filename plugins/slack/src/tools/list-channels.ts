@@ -1,6 +1,6 @@
 import { channelSchema, mapChannel } from './channel-schema.js';
 import { slackApi } from '../slack-api.js';
-import { defineTool } from '@opentabs/plugin-sdk';
+import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import type { SlackChannel } from './channel-schema.js';
 

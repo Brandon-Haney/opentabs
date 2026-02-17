@@ -15,12 +15,12 @@
 
 import { log } from './logger.js';
 import { parseManifest } from './manifest-schema.js';
-import { validatePluginName, validateUrlPattern } from '@opentabs/shared';
+import { validatePluginName, validateUrlPattern } from '@opentabs-dev/shared';
 import { readdir, stat } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { RegisteredPlugin } from './state.js';
-import type { TrustTier } from '@opentabs/shared';
+import type { TrustTier } from '@opentabs-dev/shared';
 
 /**
  * The mcp-server package root directory, resolved from this module's URL.
@@ -58,7 +58,7 @@ const pluginNameFromPackage = (pkgName: string): string => {
  */
 const determineTrustTier = (pkgName: string | null, isLocal: boolean): TrustTier => {
   if (isLocal) return 'local';
-  if (pkgName && pkgName.startsWith('@opentabs/')) return 'official';
+  if (pkgName && pkgName.startsWith('@opentabs-dev/')) return 'official';
   return 'community';
 };
 

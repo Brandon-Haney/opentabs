@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { scaffoldPlugin, ScaffoldError } from '@opentabs/cli/scaffold';
+import { scaffoldPlugin, ScaffoldError } from '@opentabs-dev/cli/scaffold';
 import { Command } from 'commander';
 import pc from 'picocolors';
 

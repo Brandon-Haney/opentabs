@@ -12,7 +12,7 @@ const getPluginLink = (plugin: PluginMeta): string => {
     return plugin.sourcePath;
   }
   if (plugin.trustTier === 'official') {
-    return `https://npmjs.com/package/@opentabs/plugin-${plugin.name}`;
+    return `https://npmjs.com/package/@opentabs-dev/plugin-${plugin.name}`;
   }
   return `https://npmjs.com/package/opentabs-plugin-${plugin.name}`;
 };

@@ -1,5 +1,5 @@
 import { testApi } from '../test-api.js';
-import { defineTool } from '@opentabs/plugin-sdk';
+import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 
 export const listItems = defineTool({

@@ -8,7 +8,7 @@
  */
 
 import type { BrowserToolDefinition } from './browser-tools/definition.js';
-import type { TabState, TrustTier, ManifestTool, WsHandle } from '@opentabs/shared';
+import type { TabState, TrustTier, ManifestTool, WsHandle } from '@opentabs-dev/shared';
 import type { FSWatcher } from 'node:fs';
 
 /** Timeout for tool dispatch and browser command requests (ms) */

@@ -273,7 +273,7 @@ interface McpServer {
  *
  * The real dist/ is imported directly (not copied) because:
  *   - Copied dist files in /tmp/ can't resolve workspace packages
- *     (@opentabs/shared etc.) or node_modules, causing Bun to crash.
+ *     (@opentabs-dev/shared etc.) or node_modules, causing Bun to crash.
  *   - `bun --hot` re-evaluates the entire import tree when the wrapper
  *     file changes, so hot reload works without needing a local copy.
  */

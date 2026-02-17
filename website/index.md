@@ -11,7 +11,7 @@ hero:
       link: /guide/getting-started
     - theme: alt
       text: View on GitHub
-      link: https://github.com/anomalyco/opentabs
+      link: https://github.com/opentabs-dev/opentabs
 
 features:
   - icon: 🔌

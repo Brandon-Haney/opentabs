@@ -6,7 +6,7 @@ import { PluginList } from './components/PluginList.js';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { PluginState } from './bridge.js';
 import type { InternalMessage } from '../types.js';
-import type { TabState } from '@opentabs/shared';
+import type { TabState } from '@opentabs-dev/shared';
 
 const validTabStates: ReadonlySet<string> = new Set<TabState>(['closed', 'unavailable', 'ready']);
 

@@ -1,4 +1,4 @@
-import type { TrustTier } from '@opentabs/shared';
+import type { TrustTier } from '@opentabs-dev/shared';
 
 const TrustBadge = ({ tier }: { tier: TrustTier }) => {
   const tierStyles: Record<TrustTier, string> = {

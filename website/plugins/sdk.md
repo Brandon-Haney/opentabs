@@ -1,13 +1,13 @@
 # Plugin SDK
 
-The `@opentabs/plugin-sdk` package provides the base class and utilities for building OpenTabs plugins.
+The `@opentabs-dev/plugin-sdk` package provides the base class and utilities for building OpenTabs plugins.
 
 ## `OpenTabsPlugin`
 
 Base class that all plugins extend.
 
 ```typescript
-import { OpenTabsPlugin } from '@opentabs/plugin-sdk';
+import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 
 export default class MyPlugin extends OpenTabsPlugin {
   name = 'my-plugin';
@@ -43,7 +43,7 @@ export default class MyPlugin extends OpenTabsPlugin {
 Factory function for creating type-safe tool definitions.
 
 ```typescript
-import { defineTool } from '@opentabs/plugin-sdk';
+import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 
 const myTool = defineTool({

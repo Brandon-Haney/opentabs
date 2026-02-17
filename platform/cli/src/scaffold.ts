@@ -1,12 +1,15 @@
 /**
  * Shared scaffolding logic for creating new OpenTabs plugin projects.
  * Used by both `opentabs plugin create` and `create-opentabs-plugin`.
+ *
+ * Plugins are always standalone projects that depend on published
+ * `@opentabs-dev/*` npm packages. There is no monorepo special-casing.
  */
 
 import { getConfigPath, readConfig } from './config.js';
-import { validatePluginName, validateUrlPattern } from '@opentabs/plugin-sdk';
+import { validatePluginName, validateUrlPattern } from '@opentabs-dev/plugin-sdk';
 import pc from 'picocolors';
-import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { resolve, join, dirname, relative } from 'node:path';
 
 // --- Errors ---
@@ -29,16 +32,8 @@ interface ScaffoldArgs {
 
 // --- Template generation ---
 
-/** Resolve the version string for a monorepo package: file: link in monorepo, npm version otherwise */
-const detectPackageVersion = async (
-  projectDir: string,
-  monorepoRelativePath: string,
-  packageSpecifier: string,
-): Promise<string> => {
-  const monorepoPath = resolve(projectDir, monorepoRelativePath);
-  if (existsSync(join(monorepoPath, 'package.json'))) {
-    return `file:${monorepoRelativePath}`;
-  }
+/** Resolve the current version of an @opentabs-dev package from the installed CLI. */
+const resolvePackageVersion = async (packageSpecifier: string): Promise<string> => {
   try {
     const entryUrl = import.meta.resolve(packageSpecifier);
     const entryDir = dirname(new URL(entryUrl).pathname);
@@ -46,16 +41,16 @@ const detectPackageVersion = async (
     if (pkg !== null && typeof pkg === 'object' && 'version' in pkg && typeof pkg.version === 'string') {
       return `^${pkg.version}`;
     }
-    return '^0.0.1';
+    return '^0.0.2';
   } catch {
-    return '^0.0.1';
+    return '^0.0.2';
   }
 };
 
-const generatePackageJson = async (args: ScaffoldArgs, projectDir: string): Promise<string> => {
+const generatePackageJson = async (args: ScaffoldArgs): Promise<string> => {
   const [sdkVersion, cliVersion] = await Promise.all([
-    detectPackageVersion(projectDir, '../../platform/plugin-sdk', '@opentabs/plugin-sdk'),
-    detectPackageVersion(projectDir, '../../platform/cli', '@opentabs/cli'),
+    resolvePackageVersion('@opentabs-dev/plugin-sdk'),
+    resolvePackageVersion('@opentabs-dev/cli'),
   ]);
 
   const pkg = {
@@ -74,95 +69,98 @@ const generatePackageJson = async (args: ScaffoldArgs, projectDir: string): Prom
     scripts: {
       build: 'tsc && opentabs build',
       dev: 'bun run build --watch',
+      'type-check': 'tsc --noEmit',
+      lint: 'eslint src/',
+      'lint:fix': 'eslint src/ --fix',
+      'format:check': 'prettier --check "src/**/*.ts"',
+      format: 'prettier --write "src/**/*.ts"',
     },
     peerDependencies: {
       zod: '^3.0.0',
     },
     dependencies: {
-      '@opentabs/plugin-sdk': sdkVersion,
+      '@opentabs-dev/plugin-sdk': sdkVersion,
     },
     devDependencies: {
-      '@opentabs/cli': cliVersion,
-      zod: '^3.0.0',
+      '@opentabs-dev/cli': cliVersion,
+      eslint: '^9.39.2',
+      'eslint-config-prettier': '^10.1.8',
+      'eslint-plugin-prettier': '^5.5.5',
+      jiti: '^2.4.2',
+      prettier: '^3.8.1',
       typescript: '^5.9.3',
+      'typescript-eslint': '^8.55.0',
+      zod: '^3.0.0',
     },
   };
   return JSON.stringify(pkg, null, 2) + '\n';
 };
 
-/**
- * Find the zod .d.ts path relative to a plugin directory.
- * Scans the bun module cache at the monorepo root for a zod@3.x entry.
- */
-const resolveZodDtsRelativePath = (monorepoRoot: string, pluginDir: string): string | undefined => {
-  const bunCacheDir = join(monorepoRoot, 'node_modules', '.bun');
-  if (!existsSync(bunCacheDir)) return undefined;
+const TSCONFIG_CONTENT =
+  JSON.stringify(
+    {
+      compilerOptions: {
+        target: 'ES2022',
+        module: 'ES2022',
+        moduleResolution: 'bundler',
+        declaration: true,
+        declarationMap: true,
+        sourceMap: true,
+        outDir: 'dist',
+        rootDir: 'src',
+        strict: true,
+        noUncheckedIndexedAccess: true,
+        noFallthroughCasesInSwitch: true,
+        noImplicitReturns: true,
+        noImplicitOverride: true,
+        forceConsistentCasingInFileNames: true,
+        esModuleInterop: true,
+        skipLibCheck: true,
+        composite: true,
+      },
+      include: ['src'],
+    },
+    null,
+    2,
+  ) + '\n';
 
-  const entries = readdirSync(bunCacheDir);
-  const zodEntry = entries.find(e => /^zod@3\./.test(e));
-  if (!zodEntry) return undefined;
+const ESLINT_CONFIG_CONTENT = `import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
+import tseslint from 'typescript-eslint';
 
-  const zodDtsAbsolute = join(bunCacheDir, zodEntry, 'node_modules', 'zod', 'index.d.ts');
-  if (!existsSync(zodDtsAbsolute)) return undefined;
+export default tseslint.config(
+  { ignores: ['dist/**', 'node_modules/**'] },
+  ...tseslint.configs.strict,
+  eslintPluginPrettierRecommended,
+  {
+    files: ['src/**/*.ts'],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+);
+`;
 
-  return relative(pluginDir, zodDtsAbsolute);
-};
+const PRETTIERRC_CONTENT =
+  JSON.stringify(
+    {
+      trailingComma: 'all',
+      semi: true,
+      singleQuote: true,
+      arrowParens: 'avoid',
+      printWidth: 120,
+    },
+    null,
+    2,
+  ) + '\n';
 
-interface TsconfigOptions {
-  /** Absolute path to the monorepo root (set when the SDK uses a file: reference). */
-  monorepoRoot?: string;
-  /** Absolute path to the plugin project directory. */
-  pluginDir?: string;
-}
-
-const generateTsconfig = (options?: TsconfigOptions): string => {
-  const compilerOptions: Record<string, unknown> = {
-    target: 'ES2022',
-    module: 'ES2022',
-    moduleResolution: 'bundler',
-    declaration: true,
-    declarationMap: true,
-    sourceMap: true,
-    outDir: 'dist',
-    rootDir: 'src',
-    strict: true,
-    noUncheckedIndexedAccess: true,
-    noFallthroughCasesInSwitch: true,
-    noImplicitReturns: true,
-    noImplicitOverride: true,
-    forceConsistentCasingInFileNames: true,
-    esModuleInterop: true,
-    skipLibCheck: true,
-    composite: true,
-  };
-
-  if (options?.monorepoRoot && options.pluginDir) {
-    const sdkDts = relative(
-      options.pluginDir,
-      join(options.monorepoRoot, 'platform', 'plugin-sdk', 'dist', 'index.d.ts'),
-    );
-    const sharedDts = relative(
-      options.pluginDir,
-      join(options.monorepoRoot, 'platform', 'shared', 'dist', 'index.d.ts'),
-    );
-    const paths: Record<string, string[]> = {
-      '@opentabs/plugin-sdk': [sdkDts],
-      '@opentabs/shared': [sharedDts],
-    };
-    const zodDts = resolveZodDtsRelativePath(options.monorepoRoot, options.pluginDir);
-    if (zodDts) {
-      paths['zod'] = [zodDts];
-    }
-    compilerOptions['baseUrl'] = '.';
-    compilerOptions['paths'] = paths;
-  }
-
-  const config = {
-    compilerOptions,
-    include: ['src'],
-  };
-  return JSON.stringify(config, null, 2) + '\n';
-};
+const GITIGNORE_CONTENT = `dist/
+node_modules/
+*.tsbuildinfo
+bun.lock
+`;
 
 /** Convert a hyphenated name to PascalCase: "my-plugin" → "MyPlugin" */
 const toPascalCase = (name: string): string =>
@@ -175,9 +173,9 @@ const generatePluginIndex = (args: ScaffoldArgs, urlPattern: string): string => 
   const displayName = args.display ?? args.name.charAt(0).toUpperCase() + args.name.slice(1);
   const desc = args.description ?? `OpenTabs plugin for ${displayName}`;
 
-  return `import { OpenTabsPlugin } from '@opentabs/plugin-sdk';
+  return `import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import { exampleTool } from './tools/example.js';
-import type { ToolDefinition } from '@opentabs/plugin-sdk';
+import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
 
 class ${toPascalCase(args.name)}Plugin extends OpenTabsPlugin {
   readonly name = ${JSON.stringify(args.name)};
@@ -207,7 +205,7 @@ const generateExampleTool = (args: ScaffoldArgs): string => {
   const escaped = JSON.stringify(displayName);
 
   return `import { z } from 'zod';
-import { defineTool } from '@opentabs/plugin-sdk';
+import { defineTool } from '@opentabs-dev/plugin-sdk';
 
 export const exampleTool = defineTool({
   name: 'example',
@@ -224,11 +222,6 @@ export const exampleTool = defineTool({
 });
 `;
 };
-
-const GITIGNORE_CONTENT = `dist/
-node_modules/
-*.tsbuildinfo
-`;
 
 // --- Auto-registration ---
 
@@ -291,17 +284,17 @@ const scaffoldPlugin = async (args: ScaffoldArgs): Promise<string> => {
   mkdirSync(projectDir, { recursive: true });
   mkdirSync(join(projectDir, 'src', 'tools'), { recursive: true });
 
-  await Bun.write(join(projectDir, 'package.json'), await generatePackageJson(args, projectDir));
+  await Bun.write(join(projectDir, 'package.json'), await generatePackageJson(args));
   console.log(`  ${pc.dim('Created:')} ${pc.bold('package.json')}`);
 
-  const monorepoRoot = resolve(projectDir, '../../platform/plugin-sdk');
-  const isMonorepo = existsSync(join(monorepoRoot, 'package.json'));
-  const tsconfigOptions: TsconfigOptions | undefined = isMonorepo
-    ? { monorepoRoot: resolve(projectDir, '../..'), pluginDir: projectDir }
-    : undefined;
-
-  await Bun.write(join(projectDir, 'tsconfig.json'), generateTsconfig(tsconfigOptions));
+  await Bun.write(join(projectDir, 'tsconfig.json'), TSCONFIG_CONTENT);
   console.log(`  ${pc.dim('Created:')} ${pc.bold('tsconfig.json')}`);
+
+  await Bun.write(join(projectDir, 'eslint.config.ts'), ESLINT_CONFIG_CONTENT);
+  console.log(`  ${pc.dim('Created:')} ${pc.bold('eslint.config.ts')}`);
+
+  await Bun.write(join(projectDir, '.prettierrc'), PRETTIERRC_CONTENT);
+  console.log(`  ${pc.dim('Created:')} ${pc.bold('.prettierrc')}`);
 
   await Bun.write(join(projectDir, '.gitignore'), GITIGNORE_CONTENT);
   console.log(`  ${pc.dim('Created:')} ${pc.bold('.gitignore')}`);

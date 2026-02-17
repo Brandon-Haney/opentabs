@@ -24,7 +24,7 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { McpCallbacks } from './extension-protocol.js';
 import type { McpServerInstance } from './mcp-setup.js';
 import type { ServerState } from './state.js';
-import type { WsHandle } from '@opentabs/shared';
+import type { WsHandle } from '@opentabs-dev/shared';
 
 /** Opaque HotState accessor — index.ts injects the getter */
 type GetHotState = () => { reloadCount: number; lastReloadTimestamp: number; lastReloadDurationMs: number } | undefined;

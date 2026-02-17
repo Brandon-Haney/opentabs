@@ -10,7 +10,7 @@ Get OpenTabs running in under 5 minutes.
 
 ## 1. Install the Chrome Extension
 
-1. Download the latest release from [GitHub Releases](https://github.com/anomalyco/opentabs/releases)
+1. Download the latest release from [GitHub Releases](https://github.com/opentabs-dev/opentabs/releases)
 2. Open `chrome://extensions/` in Chrome
 3. Enable **Developer mode** (top right toggle)
 4. Click **Load unpacked** and select the `dist` folder

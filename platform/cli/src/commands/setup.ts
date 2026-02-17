@@ -2,7 +2,7 @@
  * `opentabs setup` command — copies the browser extension to ~/.opentabs/extension/.
  */
 
-import { EXTENSION_COPY_EXCLUDE_PATTERN } from '@opentabs/shared';
+import { EXTENSION_COPY_EXCLUDE_PATTERN } from '@opentabs-dev/shared';
 import pc from 'picocolors';
 import { cpSync, existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -12,7 +12,7 @@ import type { Command } from 'commander';
 
 const resolveExtensionDir = (): string => {
   try {
-    return dirname(fileURLToPath(import.meta.resolve('@opentabs/browser-extension/package.json')));
+    return dirname(fileURLToPath(import.meta.resolve('@opentabs-dev/browser-extension/package.json')));
   } catch {
     const cliDir = dirname(fileURLToPath(import.meta.url));
     return resolve(cliDir, '..', '..', '..', 'browser-extension');

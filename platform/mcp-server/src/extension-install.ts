@@ -14,7 +14,7 @@
 import { getAdaptersDir, getExtensionDir, getExtensionVersionFile } from './config.js';
 import { log } from './logger.js';
 import { version } from './version.js';
-import { EXTENSION_COPY_EXCLUDE_PATTERN } from '@opentabs/shared';
+import { EXTENSION_COPY_EXCLUDE_PATTERN } from '@opentabs-dev/shared';
 import { cpSync, mkdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

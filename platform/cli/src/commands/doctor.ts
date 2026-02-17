@@ -128,7 +128,11 @@ const checkExtensionVersion = async (installedVersion: string | null): Promise<C
     const pkgJson = JSON.parse(await Bun.file(join(cliDir, '..', '..', 'package.json')).text()) as { version: string };
     cliVersion = pkgJson.version;
   } catch {
-    return warn('Extension version', 'could not read CLI version', 'Ensure @opentabs/cli package.json is accessible');
+    return warn(
+      'Extension version',
+      'could not read CLI version',
+      'Ensure @opentabs-dev/cli package.json is accessible',
+    );
   }
 
   if (!installedVersion) {

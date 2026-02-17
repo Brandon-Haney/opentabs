@@ -12,7 +12,7 @@ import { mkdir, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { PendingDispatch, RegisteredPlugin } from './state.js';
-import type { WsHandle } from '@opentabs/shared';
+import type { WsHandle } from '@opentabs-dev/shared';
 
 /** Create a mock WsHandle that records sent messages */
 const createMockWs = (): WsHandle & { sent: string[] } => ({

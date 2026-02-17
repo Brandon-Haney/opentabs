@@ -1,7 +1,7 @@
 import { getAllPluginMeta } from './plugin-storage.js';
 import { urlMatchesPatterns } from './tab-matching.js';
 
-/** Matches the NAME_REGEX from @opentabs/shared — duplicated here as defense-in-depth */
+/** Matches the NAME_REGEX from @opentabs-dev/shared — duplicated here as defense-in-depth */
 const SAFE_PLUGIN_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** Names reserved for platform use — rejected at the injection layer as defense-in-depth */

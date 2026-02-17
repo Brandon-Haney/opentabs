@@ -1,4 +1,4 @@
-import { ToolError } from '@opentabs/plugin-sdk';
+import { ToolError } from '@opentabs-dev/plugin-sdk';
 
 /**
  * Slack authentication extracted from the web client's runtime state.

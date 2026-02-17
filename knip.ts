@@ -32,14 +32,6 @@ const config: KnipConfig = {
       ],
     },
     'platform/create-plugin': {},
-    'plugins/slack': {
-      ignoreBinaries: ['opentabs'],
-      ignoreDependencies: ['@opentabs/cli'],
-    },
-    'plugins/e2e-test': {
-      ignoreBinaries: ['opentabs'],
-      ignoreDependencies: ['@opentabs/cli'],
-    },
     website: {
       ignoreDependencies: [
         // Peer dependency required by vitepress at runtime
@@ -48,7 +40,7 @@ const config: KnipConfig = {
     },
   },
   tags: ['+@public'],
-  ignore: ['**/dist/**'],
+  ignore: ['**/dist/**', 'plugins/**'],
   ignoreExportsUsedInFile: true,
 };
 

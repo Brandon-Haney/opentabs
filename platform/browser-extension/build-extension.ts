@@ -2,7 +2,7 @@
  * Bundle the background service worker and offscreen document.
  *
  * Chrome extension module service workers cannot resolve bare module specifiers
- * (e.g., '@opentabs/shared'). The tsc build emits these as-is, so a
+ * (e.g., '@opentabs-dev/shared'). The tsc build emits these as-is, so a
  * bundling step is needed to resolve them into self-contained files.
  *
  * Runs AFTER tsc (which produces dist/ with type-checked JS) and BEFORE the
@@ -30,7 +30,7 @@ for (const { entrypoint, outfile, label } of entries) {
     target: 'browser',
     format: 'esm',
     minify: false,
-    // Bundling resolves bare specifiers (e.g., @opentabs/shared) and
+    // Bundling resolves bare specifiers (e.g., @opentabs-dev/shared) and
     // relative imports into a single self-contained file.
     //
     // chrome.* APIs are globals — they don't need to be imported/resolved.

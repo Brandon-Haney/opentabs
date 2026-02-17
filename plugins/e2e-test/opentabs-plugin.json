@@ -3,7 +3,9 @@
   "version": "0.0.1",
   "displayName": "E2E Test",
   "description": "Dead-simple plugin for E2E testing — relays to a local test web server",
-  "url_patterns": ["http://localhost/*"],
+  "url_patterns": [
+    "http://localhost/*"
+  ],
   "tools": [
     {
       "name": "echo",
@@ -16,7 +18,9 @@
             "description": "The message to echo back"
           }
         },
-        "required": ["message"],
+        "required": [
+          "message"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -31,7 +35,10 @@
             "description": "The echoed message"
           }
         },
-        "required": ["ok", "message"],
+        "required": [
+          "ok",
+          "message"
+        ],
         "additionalProperties": false
       }
     },
@@ -46,7 +53,9 @@
             "description": "The name of the person to greet"
           }
         },
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -61,7 +70,10 @@
             "description": "The computed greeting message"
           }
         },
-        "required": ["ok", "greeting"],
+        "required": [
+          "ok",
+          "greeting"
+        ],
         "additionalProperties": false
       }
     },
@@ -103,7 +115,10 @@
                   "description": "Item name"
                 }
               },
-              "required": ["id", "name"],
+              "required": [
+                "id",
+                "name"
+              ],
               "additionalProperties": false
             },
             "description": "Array of items"
@@ -113,7 +128,11 @@
             "description": "Total number of items available"
           }
         },
-        "required": ["ok", "items", "total"],
+        "required": [
+          "ok",
+          "items",
+          "total"
+        ],
         "additionalProperties": false
       }
     },
@@ -145,7 +164,12 @@
             "description": "Server version string"
           }
         },
-        "required": ["ok", "authenticated", "uptime", "version"],
+        "required": [
+          "ok",
+          "authenticated",
+          "uptime",
+          "version"
+        ],
         "additionalProperties": false
       }
     },
@@ -164,7 +188,9 @@
             "description": "Optional description for the item"
           }
         },
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -194,12 +220,20 @@
                 "description": "ISO 8601 timestamp of when the item was created"
               }
             },
-            "required": ["id", "name", "description", "created_at"],
+            "required": [
+              "id",
+              "name",
+              "description",
+              "created_at"
+            ],
             "additionalProperties": false,
             "description": "The newly created item"
           }
         },
-        "required": ["ok", "item"],
+        "required": [
+          "ok",
+          "item"
+        ],
         "additionalProperties": false
       }
     },
@@ -228,10 +262,12 @@
             "description": "Always false — this tool is designed to fail"
           }
         },
-        "required": ["ok"],
+        "required": [
+          "ok"
+        ],
         "additionalProperties": false
       }
     }
   ],
-  "adapterHash": "aab9366e0f92395e15c950d9db3148ddc7f824edea03bdf9e77165dfc12941fc"
+  "adapterHash": "099e3270c0e39ba0da3c934388628d295ae374a06fac21f24db3032dd45aa50f"
 }

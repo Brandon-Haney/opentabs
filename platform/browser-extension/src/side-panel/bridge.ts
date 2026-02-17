@@ -10,7 +10,7 @@
  * also rejected on WebSocket disconnect (sp:connectionState connected=false).
  */
 
-import type { ConfigStatePlugin, ConfigStateResult } from '@opentabs/shared';
+import type { ConfigStatePlugin, ConfigStateResult } from '@opentabs-dev/shared';
 
 /** Plugin state as displayed in the side panel (matches config.getState response) */
 type PluginState = ConfigStatePlugin;

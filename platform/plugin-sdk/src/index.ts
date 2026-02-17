@@ -1,11 +1,11 @@
 import type { z } from 'zod';
 
 // ---------------------------------------------------------------------------
-// Re-exports from @opentabs/shared (single source of truth)
+// Re-exports from @opentabs-dev/shared (single source of truth)
 // ---------------------------------------------------------------------------
 
-export { NAME_REGEX, RESERVED_NAMES, validatePluginName, validateUrlPattern } from '@opentabs/shared';
-export type { ManifestTool, PluginManifest as Manifest } from '@opentabs/shared';
+export { NAME_REGEX, RESERVED_NAMES, validatePluginName, validateUrlPattern } from '@opentabs-dev/shared';
+export type { ManifestTool, PluginManifest as Manifest } from '@opentabs-dev/shared';
 
 // ---------------------------------------------------------------------------
 // Tool definitions

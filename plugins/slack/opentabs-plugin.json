@@ -3,7 +3,9 @@
   "version": "0.0.1",
   "displayName": "Slack",
   "description": "OpenTabs plugin for Slack",
-  "url_patterns": ["*://*.slack.com/*"],
+  "url_patterns": [
+    "*://*.slack.com/*"
+  ],
   "tools": [
     {
       "name": "send_message",
@@ -26,7 +28,10 @@
             "description": "Thread timestamp to reply in a thread — pass the ts of the parent message"
           }
         },
-        "required": ["channel", "text"],
+        "required": [
+          "channel",
+          "text"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -41,7 +46,10 @@
             "description": "Timestamp of the posted message — used as a unique message ID"
           }
         },
-        "required": ["channel", "ts"],
+        "required": [
+          "channel",
+          "ts"
+        ],
         "additionalProperties": false
       }
     },
@@ -67,7 +75,11 @@
             "description": "New message text — replaces the entire message content. Supports Slack mrkdwn formatting."
           }
         },
-        "required": ["channel", "ts", "text"],
+        "required": [
+          "channel",
+          "ts",
+          "text"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -86,7 +98,11 @@
             "description": "Updated message text as rendered by Slack"
           }
         },
-        "required": ["channel", "ts", "text"],
+        "required": [
+          "channel",
+          "ts",
+          "text"
+        ],
         "additionalProperties": false
       }
     },
@@ -107,7 +123,10 @@
             "description": "Timestamp of the message to delete — serves as the unique message ID (e.g., 1234567890.123456)"
           }
         },
-        "required": ["channel", "ts"],
+        "required": [
+          "channel",
+          "ts"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -122,7 +141,10 @@
             "description": "Timestamp of the deleted message"
           }
         },
-        "required": ["channel", "ts"],
+        "required": [
+          "channel",
+          "ts"
+        ],
         "additionalProperties": false
       }
     },
@@ -138,7 +160,8 @@
             "description": "Channel ID to read messages from (e.g., C01234567)"
           },
           "limit": {
-            "type": "number",
+            "type": "integer",
+            "minimum": 1,
             "maximum": 1000,
             "description": "Maximum number of messages to return (default 20, max 1000)"
           },
@@ -155,7 +178,9 @@
             "description": "Pagination cursor from a previous response for fetching the next page"
           }
         },
-        "required": ["channel"],
+        "required": [
+          "channel"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -183,7 +208,11 @@
                   "description": "Message timestamp — unique message identifier"
                 }
               },
-              "required": ["type", "text", "ts"],
+              "required": [
+                "type",
+                "text",
+                "ts"
+              ],
               "additionalProperties": false
             },
             "description": "Array of messages in reverse chronological order"
@@ -196,12 +225,16 @@
                 "description": "Cursor for the next page of results — empty string if no more pages"
               }
             },
-            "required": ["next_cursor"],
+            "required": [
+              "next_cursor"
+            ],
             "additionalProperties": false,
             "description": "Pagination metadata"
           }
         },
-        "required": ["messages"],
+        "required": [
+          "messages"
+        ],
         "additionalProperties": false
       }
     },
@@ -222,7 +255,8 @@
             "description": "Timestamp of the parent message (thread_ts)"
           },
           "limit": {
-            "type": "number",
+            "type": "integer",
+            "minimum": 1,
             "maximum": 1000,
             "description": "Maximum number of replies to return (default 20, max 1000)"
           },
@@ -231,7 +265,10 @@
             "description": "Pagination cursor from a previous response"
           }
         },
-        "required": ["channel", "ts"],
+        "required": [
+          "channel",
+          "ts"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -263,7 +300,11 @@
                   "description": "Parent message timestamp"
                 }
               },
-              "required": ["type", "text", "ts"],
+              "required": [
+                "type",
+                "text",
+                "ts"
+              ],
               "additionalProperties": false
             },
             "description": "Array of thread replies including the parent message"
@@ -280,12 +321,17 @@
                 "description": "Cursor for the next page of results"
               }
             },
-            "required": ["next_cursor"],
+            "required": [
+              "next_cursor"
+            ],
             "additionalProperties": false,
             "description": "Pagination metadata — present when has_more is true"
           }
         },
-        "required": ["messages", "has_more"],
+        "required": [
+          "messages",
+          "has_more"
+        ],
         "additionalProperties": false
       }
     },
@@ -301,25 +347,35 @@
             "description": "Search query string — supports Slack search modifiers (e.g., \"from:@user in:#channel\")"
           },
           "count": {
-            "type": "number",
+            "type": "integer",
+            "minimum": 1,
             "description": "Number of results to return per page (default 20)"
           },
           "page": {
-            "type": "number",
+            "type": "integer",
+            "minimum": 1,
             "description": "Page number of results to return (default 1)"
           },
           "sort": {
             "type": "string",
-            "enum": ["score", "timestamp"],
+            "enum": [
+              "score",
+              "timestamp"
+            ],
             "description": "Sort field — relevance or recency (default \"score\")"
           },
           "sort_dir": {
             "type": "string",
-            "enum": ["asc", "desc"],
+            "enum": [
+              "asc",
+              "desc"
+            ],
             "description": "Sort direction (default \"desc\")"
           }
         },
-        "required": ["query"],
+        "required": [
+          "query"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -349,7 +405,10 @@
                           "description": "Channel name"
                         }
                       },
-                      "required": ["id", "name"],
+                      "required": [
+                        "id",
+                        "name"
+                      ],
                       "additionalProperties": false,
                       "description": "Channel information"
                     },
@@ -370,7 +429,13 @@
                       "description": "Permanent link to the message"
                     }
                   },
-                  "required": ["channel", "username", "text", "ts", "permalink"],
+                  "required": [
+                    "channel",
+                    "username",
+                    "text",
+                    "ts",
+                    "permalink"
+                  ],
                   "additionalProperties": false
                 },
                 "description": "Array of matching messages"
@@ -395,17 +460,27 @@
                     "description": "Total number of pages"
                   }
                 },
-                "required": ["count", "total", "page", "pages"],
+                "required": [
+                  "count",
+                  "total",
+                  "page",
+                  "pages"
+                ],
                 "additionalProperties": false,
                 "description": "Pagination metadata"
               }
             },
-            "required": ["total", "matches"],
+            "required": [
+              "total",
+              "matches"
+            ],
             "additionalProperties": false,
             "description": "Search results"
           }
         },
-        "required": ["messages"],
+        "required": [
+          "messages"
+        ],
         "additionalProperties": false
       }
     },
@@ -416,7 +491,8 @@
         "type": "object",
         "properties": {
           "limit": {
-            "type": "number",
+            "type": "integer",
+            "minimum": 1,
             "maximum": 1000,
             "description": "Maximum number of channels to return (default 100, max 1000)"
           },
@@ -471,7 +547,9 @@
                       "description": "Channel topic text"
                     }
                   },
-                  "required": ["value"],
+                  "required": [
+                    "value"
+                  ],
                   "additionalProperties": false,
                   "description": "Channel topic"
                 },
@@ -483,12 +561,22 @@
                       "description": "Channel purpose text"
                     }
                   },
-                  "required": ["value"],
+                  "required": [
+                    "value"
+                  ],
                   "additionalProperties": false,
                   "description": "Channel purpose"
                 }
               },
-              "required": ["id", "name", "is_channel", "is_private", "num_members", "topic", "purpose"],
+              "required": [
+                "id",
+                "name",
+                "is_channel",
+                "is_private",
+                "num_members",
+                "topic",
+                "purpose"
+              ],
               "additionalProperties": false
             },
             "description": "Array of channels matching the filter criteria"
@@ -501,12 +589,16 @@
                 "description": "Cursor for the next page of results — empty string if no more pages"
               }
             },
-            "required": ["next_cursor"],
+            "required": [
+              "next_cursor"
+            ],
             "additionalProperties": false,
             "description": "Pagination metadata"
           }
         },
-        "required": ["channels"],
+        "required": [
+          "channels"
+        ],
         "additionalProperties": false
       }
     },
@@ -522,7 +614,9 @@
             "description": "Channel ID to get info for (e.g., C01234567)"
           }
         },
-        "required": ["channel"],
+        "required": [
+          "channel"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -559,7 +653,9 @@
                     "description": "Channel topic text"
                   }
                 },
-                "required": ["value"],
+                "required": [
+                  "value"
+                ],
                 "additionalProperties": false,
                 "description": "Channel topic"
               },
@@ -571,17 +667,29 @@
                     "description": "Channel purpose text"
                   }
                 },
-                "required": ["value"],
+                "required": [
+                  "value"
+                ],
                 "additionalProperties": false,
                 "description": "Channel purpose"
               }
             },
-            "required": ["id", "name", "is_channel", "is_private", "num_members", "topic", "purpose"],
+            "required": [
+              "id",
+              "name",
+              "is_channel",
+              "is_private",
+              "num_members",
+              "topic",
+              "purpose"
+            ],
             "additionalProperties": false,
             "description": "Detailed channel information"
           }
         },
-        "required": ["channel"],
+        "required": [
+          "channel"
+        ],
         "additionalProperties": false
       }
     },
@@ -609,7 +717,9 @@
             "description": "Initial topic for the channel (max 250 chars)"
           }
         },
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -631,7 +741,11 @@
                 "description": "Whether the channel is private"
               }
             },
-            "required": ["id", "name", "is_private"],
+            "required": [
+              "id",
+              "name",
+              "is_private"
+            ],
             "additionalProperties": false,
             "description": "The newly created channel"
           },
@@ -640,7 +754,9 @@
             "description": "Warning message if the channel was created but setting the topic failed"
           }
         },
-        "required": ["channel"],
+        "required": [
+          "channel"
+        ],
         "additionalProperties": false
       }
     },
@@ -662,7 +778,10 @@
             "description": "New topic text for the channel (max 250 chars)"
           }
         },
-        "required": ["channel", "topic"],
+        "required": [
+          "channel",
+          "topic"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -684,12 +803,18 @@
                 "description": "Unix timestamp of when the topic was last set"
               }
             },
-            "required": ["value", "creator", "last_set"],
+            "required": [
+              "value",
+              "creator",
+              "last_set"
+            ],
             "additionalProperties": false,
             "description": "Topic metadata"
           }
         },
-        "required": ["topic"],
+        "required": [
+          "topic"
+        ],
         "additionalProperties": false
       }
     },
@@ -711,7 +836,10 @@
             "description": "New purpose text for the channel (max 250 chars)"
           }
         },
-        "required": ["channel", "purpose"],
+        "required": [
+          "channel",
+          "purpose"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -733,12 +861,18 @@
                 "description": "Unix timestamp of when the purpose was last set"
               }
             },
-            "required": ["value", "creator", "last_set"],
+            "required": [
+              "value",
+              "creator",
+              "last_set"
+            ],
             "additionalProperties": false,
             "description": "Purpose metadata"
           }
         },
-        "required": ["purpose"],
+        "required": [
+          "purpose"
+        ],
         "additionalProperties": false
       }
     },
@@ -759,7 +893,10 @@
             "description": "User ID to invite (e.g., U01234567)"
           }
         },
-        "required": ["channel", "user"],
+        "required": [
+          "channel",
+          "user"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -777,12 +914,17 @@
                 "description": "Channel name"
               }
             },
-            "required": ["id", "name"],
+            "required": [
+              "id",
+              "name"
+            ],
             "additionalProperties": false,
             "description": "The channel the user was invited to"
           }
         },
-        "required": ["channel"],
+        "required": [
+          "channel"
+        ],
         "additionalProperties": false
       }
     },
@@ -798,7 +940,8 @@
             "description": "Channel ID to list members for (e.g., C01234567)"
           },
           "limit": {
-            "type": "number",
+            "type": "integer",
+            "minimum": 1,
             "maximum": 1000,
             "description": "Maximum number of members to return (default 100, max 1000)"
           },
@@ -807,7 +950,9 @@
             "description": "Pagination cursor from a previous response for fetching the next page"
           }
         },
-        "required": ["channel"],
+        "required": [
+          "channel"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -829,12 +974,16 @@
                 "description": "Cursor for the next page of results — empty string if no more pages"
               }
             },
-            "required": ["next_cursor"],
+            "required": [
+              "next_cursor"
+            ],
             "additionalProperties": false,
             "description": "Pagination metadata"
           }
         },
-        "required": ["members"],
+        "required": [
+          "members"
+        ],
         "additionalProperties": false
       }
     },
@@ -850,7 +999,9 @@
             "description": "User ID to retrieve the profile for (e.g., U01234567)"
           }
         },
-        "required": ["user"],
+        "required": [
+          "user"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -899,7 +1050,14 @@
                     "description": "URL to 72x72 profile image"
                   }
                 },
-                "required": ["title", "phone", "email", "status_text", "status_emoji", "image_72"],
+                "required": [
+                  "title",
+                  "phone",
+                  "email",
+                  "status_text",
+                  "status_emoji",
+                  "image_72"
+                ],
                 "additionalProperties": false,
                 "description": "Detailed profile information"
               },
@@ -916,12 +1074,22 @@
                 "description": "Timezone identifier (e.g., America/Los_Angeles)"
               }
             },
-            "required": ["id", "name", "real_name", "profile", "is_admin", "is_bot", "tz"],
+            "required": [
+              "id",
+              "name",
+              "real_name",
+              "profile",
+              "is_admin",
+              "is_bot",
+              "tz"
+            ],
             "additionalProperties": false,
             "description": "User profile data"
           }
         },
-        "required": ["user"],
+        "required": [
+          "user"
+        ],
         "additionalProperties": false
       }
     },
@@ -932,7 +1100,8 @@
         "type": "object",
         "properties": {
           "limit": {
-            "type": "number",
+            "type": "integer",
+            "minimum": 1,
             "maximum": 1000,
             "description": "Maximum number of users to return (default 100, max 1000)"
           },
@@ -972,7 +1141,13 @@
                   "description": "Whether the user is a bot"
                 }
               },
-              "required": ["id", "name", "real_name", "is_admin", "is_bot"],
+              "required": [
+                "id",
+                "name",
+                "real_name",
+                "is_admin",
+                "is_bot"
+              ],
               "additionalProperties": false
             },
             "description": "Array of user objects"
@@ -985,12 +1160,16 @@
                 "description": "Cursor for the next page of results — empty string if no more pages"
               }
             },
-            "required": ["next_cursor"],
+            "required": [
+              "next_cursor"
+            ],
             "additionalProperties": false,
             "description": "Pagination metadata"
           }
         },
-        "required": ["members"],
+        "required": [
+          "members"
+        ],
         "additionalProperties": false
       }
     },
@@ -1006,7 +1185,9 @@
             "description": "Comma-separated user IDs to open a DM with (e.g., U01234567 for 1:1, or U01234567,U07654321 for group DM)"
           }
         },
-        "required": ["users"],
+        "required": [
+          "users"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -1021,7 +1202,10 @@
             "description": "Whether the DM conversation already existed"
           }
         },
-        "required": ["channel_id", "already_open"],
+        "required": [
+          "channel_id",
+          "already_open"
+        ],
         "additionalProperties": false
       }
     },
@@ -1064,7 +1248,11 @@
             "description": "Slack file type identifier (e.g., txt, png, pdf) — auto-detected if omitted"
           }
         },
-        "required": ["channel", "content", "filename"],
+        "required": [
+          "channel",
+          "content",
+          "filename"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -1082,12 +1270,17 @@
                 "description": "File title"
               }
             },
-            "required": ["id", "title"],
+            "required": [
+              "id",
+              "title"
+            ],
             "additionalProperties": false,
             "description": "Uploaded file metadata"
           }
         },
-        "required": ["file"],
+        "required": [
+          "file"
+        ],
         "additionalProperties": false
       }
     },
@@ -1102,12 +1295,14 @@
             "description": "Channel ID to filter files by — omit to search the entire workspace"
           },
           "count": {
-            "type": "number",
+            "type": "integer",
+            "minimum": 1,
             "maximum": 100,
             "description": "Number of files to return (default 20, max 100)"
           },
           "page": {
-            "type": "number",
+            "type": "integer",
+            "minimum": 1,
             "description": "Page number for pagination (default 1)"
           },
           "types": {
@@ -1162,7 +1357,16 @@
                   "description": "Permanent link to the file in Slack"
                 }
               },
-              "required": ["id", "name", "title", "filetype", "size", "user", "created", "permalink"],
+              "required": [
+                "id",
+                "name",
+                "title",
+                "filetype",
+                "size",
+                "user",
+                "created",
+                "permalink"
+              ],
               "additionalProperties": false
             },
             "description": "Array of file objects"
@@ -1187,12 +1391,19 @@
                 "description": "Total number of pages"
               }
             },
-            "required": ["count", "total", "page", "pages"],
+            "required": [
+              "count",
+              "total",
+              "page",
+              "pages"
+            ],
             "additionalProperties": false,
             "description": "Pagination information"
           }
         },
-        "required": ["files"],
+        "required": [
+          "files"
+        ],
         "additionalProperties": false
       }
     },
@@ -1218,7 +1429,11 @@
             "description": "Emoji name without colons (e.g., thumbsup, heart, rocket)"
           }
         },
-        "required": ["channel", "timestamp", "name"],
+        "required": [
+          "channel",
+          "timestamp",
+          "name"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -1249,7 +1464,11 @@
             "description": "Emoji name without colons (e.g., thumbsup, heart, rocket)"
           }
         },
-        "required": ["channel", "timestamp", "name"],
+        "required": [
+          "channel",
+          "timestamp",
+          "name"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -1275,7 +1494,10 @@
             "description": "Timestamp of the message to pin (e.g., 1234567890.123456)"
           }
         },
-        "required": ["channel", "timestamp"],
+        "required": [
+          "channel",
+          "timestamp"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -1301,7 +1523,10 @@
             "description": "Timestamp of the message to unpin (e.g., 1234567890.123456)"
           }
         },
-        "required": ["channel", "timestamp"],
+        "required": [
+          "channel",
+          "timestamp"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
@@ -1311,5 +1536,5 @@
       }
     }
   ],
-  "adapterHash": "cf38570c0c985ee88ebbd27130f81ae54a3a59e2986ef0f3c4a02925f56b4d6d"
+  "adapterHash": "768f4d367676836fb96b59e2abf9e01b23db363b5f15390148109c1b0c5cf472"
 }

@@ -10,8 +10,8 @@ describe('pluginNameFromPackage', () => {
     expect(pluginNameFromPackage('@myorg/opentabs-plugin-jira')).toBe('myorg-jira');
   });
 
-  test('handles scoped @opentabs official package', () => {
-    expect(pluginNameFromPackage('@opentabs/opentabs-plugin-datadog')).toBe('opentabs-datadog');
+  test('handles scoped @opentabs-dev official package', () => {
+    expect(pluginNameFromPackage('@opentabs-dev/opentabs-plugin-datadog')).toBe('opentabs-dev-datadog');
   });
 
   test('returns package name unchanged if no prefix', () => {

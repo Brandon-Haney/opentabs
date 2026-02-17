@@ -1,6 +1,6 @@
 import { validatePlugin } from './build.js';
 import { describe, expect, test } from 'bun:test';
-import type { OpenTabsPlugin, ToolDefinition } from '@opentabs/plugin-sdk';
+import type { OpenTabsPlugin, ToolDefinition } from '@opentabs-dev/plugin-sdk';
 
 /**
  * Creates a minimal valid plugin for testing. Override fields as needed.

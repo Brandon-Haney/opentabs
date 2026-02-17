@@ -1,6 +1,6 @@
 {
-  "name": "@opentabs/cli",
-  "version": "0.0.1",
+  "name": "@opentabs-dev/cli",
+  "version": "0.0.2",
   "type": "module",
   "exports": {
     "./scaffold": {
@@ -14,12 +14,15 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "restricted"
+  },
   "scripts": {
     "build": "tsc --build"
   },
   "dependencies": {
-    "@opentabs/plugin-sdk": "workspace:*",
-    "@opentabs/shared": "workspace:*",
+    "@opentabs-dev/plugin-sdk": "^0.0.2",
+    "@opentabs-dev/shared": "^0.0.2",
     "commander": "^14.0.3",
     "picocolors": "^1.1.1",
     "zod-to-json-schema": "^3.25.1"

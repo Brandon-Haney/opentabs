@@ -1,5 +1,5 @@
 import { slackApi } from '../slack-api.js';
-import { ToolError, defineTool } from '@opentabs/plugin-sdk';
+import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 
 export const uploadFile = defineTool({

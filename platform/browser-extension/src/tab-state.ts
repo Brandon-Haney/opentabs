@@ -3,7 +3,7 @@ import { sendToServer } from './messaging.js';
 import { getAllPluginMeta } from './plugin-storage.js';
 import { findMatchingTab, urlMatchesPatterns } from './tab-matching.js';
 import type { PluginMeta } from './types.js';
-import type { TabState } from '@opentabs/shared';
+import type { TabState } from '@opentabs-dev/shared';
 
 /**
  * Last-known tab state cache per plugin. Used by checkTabStateChanges to

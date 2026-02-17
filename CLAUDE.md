@@ -71,7 +71,7 @@ opentabs/
 │   └── create-plugin/             # Plugin scaffolding CLI
 │       └── src/
 │           └── index.ts           # `create-opentabs-plugin` CLI
-├── plugins/                       # Example plugins (not in bun workspaces)
+├── plugins/                       # Example plugins (fully standalone, NOT in bun workspaces)
 │   ├── slack/                     # Slack plugin
 │   │   ├── src/
 │   │   │   ├── index.ts           # Plugin class extending OpenTabsPlugin
@@ -130,10 +130,48 @@ bun --hot platform/mcp-server/dist/index.js
 
 Each plugin follows the same pattern:
 
-1. **Create the plugin** (`plugins/<name>/`): Extend `OpenTabsPlugin` from `@opentabs/plugin-sdk`
+1. **Create the plugin** (`plugins/<name>/`): Extend `OpenTabsPlugin` from `@opentabs-dev/plugin-sdk`
 2. **Define tools** (`plugins/<name>/src/tools/`): One file per tool using `defineTool()` with Zod schemas
-3. **Build**: `cd plugins/<name> && bun run build` (runs `tsc` then `opentabs build`)
+3. **Build**: `cd plugins/<name> && bun install && bun run build` (runs `tsc` then `opentabs build`)
 4. **Register**: Add the plugin path to `~/.opentabs/config.json` plugins array
+
+### Plugin Isolation
+
+Plugins in `plugins/` are **fully standalone projects** — exactly as if created by an external developer using `create-opentabs-plugin`. They:
+
+- Have their own `package.json`, `tsconfig.json`, `.prettierrc`, and `.gitignore`
+- Depend on published `@opentabs-dev/*` npm packages (not `file:` or `workspace:` links)
+- Have their own `node_modules/` and `bun.lock`
+- Are **excluded** from root `eslint`, `prettier`, `knip`, and `tsc --build`
+- Must build and type-check independently: `cd plugins/<name> && bun run build`
+
+The root tooling (`bun run build`, `bun run lint`, etc.) does NOT cover plugins. When changing platform packages that plugins depend on (`shared`, `plugin-sdk`, `cli`), publish new versions to npm and update plugin dependencies.
+
+### Publishing Platform Packages
+
+The platform packages `@opentabs-dev/shared`, `@opentabs-dev/plugin-sdk`, and `@opentabs-dev/cli` are published as private packages to the npm registry under the `@opentabs-dev` org.
+
+**Authentication**: npm requires two tokens — a session token (from `npm login`) for reading private packages, and a granular access token (from npmjs.com) for publishing without OTP.
+
+**Publishing workflow** (packages must be published in dependency order):
+
+```bash
+# 1. Build all platform packages
+bun run build
+
+# 2. Bump versions in platform/shared, platform/plugin-sdk, platform/cli
+# 3. Publish (use granular token for publishing)
+#    Temporarily swap ~/.npmrc to use the granular token:
+cp ~/.npmrc ~/.npmrc.session
+echo '//registry.npmjs.org/:_authToken=<GRANULAR_TOKEN>' > ~/.npmrc
+npm publish --access restricted -w platform/shared
+npm publish --access restricted -w platform/plugin-sdk
+npm publish --access restricted -w platform/cli
+cp ~/.npmrc.session ~/.npmrc && rm ~/.npmrc.session
+
+# 4. Update plugin dependencies to new versions
+# 5. Rebuild plugins: cd plugins/<name> && bun install && bun run build
+```
 
 ---
 

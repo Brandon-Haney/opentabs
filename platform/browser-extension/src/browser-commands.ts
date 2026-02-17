@@ -1,6 +1,6 @@
 import { SCRIPT_TIMEOUT_MS } from './constants.js';
 import { sendToServer } from './messaging.js';
-import { isBlockedUrlScheme } from '@opentabs/shared';
+import { isBlockedUrlScheme } from '@opentabs-dev/shared';
 
 export const handleBrowserListTabs = async (id: string | number): Promise<void> => {
   try {

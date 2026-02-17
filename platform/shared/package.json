@@ -1,6 +1,6 @@
 {
-  "name": "@opentabs/shared",
-  "version": "0.0.1",
+  "name": "@opentabs-dev/shared",
+  "version": "0.0.2",
   "type": "module",
   "exports": {
     ".": {
@@ -12,6 +12,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "restricted"
+  },
   "scripts": {
     "build": "tsc --build"
   },

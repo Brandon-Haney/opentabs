@@ -1,5 +1,5 @@
 {
-  "name": "@opentabs/browser-extension",
+  "name": "@opentabs-dev/browser-extension",
   "version": "0.0.1",
   "type": "module",
   "exports": {
@@ -12,7 +12,7 @@
     "build:tailwind": "bunx @tailwindcss/cli -i src/side-panel/styles.css -o dist/side-panel/styles.css --minify"
   },
   "dependencies": {
-    "@opentabs/shared": "workspace:*"
+    "@opentabs-dev/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.36",

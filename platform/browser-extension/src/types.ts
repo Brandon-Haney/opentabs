@@ -1,4 +1,4 @@
-import type { TrustTier, WireToolDef } from '@opentabs/shared';
+import type { TrustTier, WireToolDef } from '@opentabs-dev/shared';
 
 // ---------------------------------------------------------------------------
 // Internal Chrome extension message types — discriminated union

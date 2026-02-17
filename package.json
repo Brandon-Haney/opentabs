@@ -4,7 +4,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nichochar/opentabs"
+    "url": "https://github.com/opentabs-dev/opentabs"
   },
   "private": true,
   "type": "module",
@@ -13,9 +13,7 @@
   ],
   "scripts": {
     "build": "tsc --build && bun run --cwd platform/browser-extension build:bundle && bun run --cwd platform/browser-extension build:side-panel",
-    "build:plugins": "bun run --cwd plugins/slack build && bun run --cwd plugins/e2e-test build",
     "type-check": "tsc --build",
-    "type-check:plugins": "tsc --noEmit -p plugins/slack/tsconfig.json && tsc --noEmit -p plugins/e2e-test/tsconfig.json",
     "type-check:e2e": "tsc --noEmit -p e2e/tsconfig.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

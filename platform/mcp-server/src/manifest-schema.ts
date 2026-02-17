@@ -7,7 +7,7 @@
  */
 
 import { z } from 'zod';
-import type { PluginManifest } from '@opentabs/shared';
+import type { PluginManifest } from '@opentabs-dev/shared';
 
 const manifestToolSchema = z.object({
   name: z.string().min(1, 'Tool name is required'),

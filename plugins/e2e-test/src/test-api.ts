@@ -1,4 +1,4 @@
-import { ToolError } from '@opentabs/plugin-sdk';
+import { ToolError } from '@opentabs-dev/plugin-sdk';
 
 /**
  * Type-safe wrapper for E2E test server API calls.

@@ -22,7 +22,7 @@
 
 import { log } from './logger.js';
 import { parseManifest } from './manifest-schema.js';
-import { validateUrlPattern } from '@opentabs/shared';
+import { validateUrlPattern } from '@opentabs-dev/shared';
 import { watch } from 'node:fs';
 import { join } from 'node:path';
 import type { ServerState, FileWatcherEntry } from './state.js';

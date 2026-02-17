@@ -1,4 +1,4 @@
-import { defineTool, ToolError } from '@opentabs/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 
 export const failingTool = defineTool({

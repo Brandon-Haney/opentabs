@@ -16,13 +16,7 @@
     "forceConsistentCasingInFileNames": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "composite": true,
-    "baseUrl": ".",
-    "paths": {
-      "@opentabs/plugin-sdk": ["../../platform/plugin-sdk/dist/index.d.ts"],
-      "@opentabs/shared": ["../../platform/shared/dist/index.d.ts"],
-      "zod": ["../../node_modules/.bun/zod@3.25.76/node_modules/zod/index.d.ts"]
-    }
+    "composite": true
   },
   "include": ["src"]
 }

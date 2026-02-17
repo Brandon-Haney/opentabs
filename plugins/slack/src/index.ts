@@ -21,8 +21,8 @@ import { setChannelPurpose } from './tools/set-channel-purpose.js';
 import { setChannelTopic } from './tools/set-channel-topic.js';
 import { unpinMessage } from './tools/unpin-message.js';
 import { uploadFile } from './tools/upload-file.js';
-import { OpenTabsPlugin } from '@opentabs/plugin-sdk';
-import type { ToolDefinition } from '@opentabs/plugin-sdk';
+import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
+import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
 
 class SlackPlugin extends OpenTabsPlugin {
   readonly name = 'slack';

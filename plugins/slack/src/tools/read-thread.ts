@@ -1,5 +1,5 @@
 import { slackApi } from '../slack-api.js';
-import { defineTool } from '@opentabs/plugin-sdk';
+import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 
 const replySchema = z.object({

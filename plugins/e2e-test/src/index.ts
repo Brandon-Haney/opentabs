@@ -5,8 +5,8 @@ import { failingTool } from './tools/failing-tool.js';
 import { getStatus } from './tools/get-status.js';
 import { greet } from './tools/greet.js';
 import { listItems } from './tools/list-items.js';
-import { OpenTabsPlugin } from '@opentabs/plugin-sdk';
-import type { ToolDefinition } from '@opentabs/plugin-sdk';
+import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
+import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
 
 class E2eTestPlugin extends OpenTabsPlugin {
   readonly name = 'e2e-test';

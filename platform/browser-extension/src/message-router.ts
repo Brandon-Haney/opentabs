@@ -12,7 +12,7 @@ import { getAllPluginMeta, removePlugin, removePluginsBatch, storePluginsBatch }
 import { clearPluginTabState, computePluginTabState, sendTabSyncAll } from './tab-state.js';
 import { handleToolDispatch } from './tool-dispatch.js';
 import type { PluginMeta } from './types.js';
-import type { TrustTier, WireToolDef } from '@opentabs/shared';
+import type { TrustTier, WireToolDef } from '@opentabs-dev/shared';
 
 type MessageHandler = (params: Record<string, unknown>, id?: string | number) => void;
 

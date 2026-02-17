@@ -3,12 +3,12 @@
  * With `--watch`, rebuilds automatically when tsc output in `dist/` changes.
  */
 
-import { validatePluginName, validateUrlPattern } from '@opentabs/plugin-sdk';
+import { validatePluginName, validateUrlPattern } from '@opentabs-dev/plugin-sdk';
 import pc from 'picocolors';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { mkdirSync, watch } from 'node:fs';
 import { resolve, join, relative } from 'node:path';
-import type { Manifest, ManifestTool, OpenTabsPlugin, ToolDefinition } from '@opentabs/plugin-sdk';
+import type { Manifest, ManifestTool, OpenTabsPlugin, ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import type { Command } from 'commander';
 import type { FSWatcher } from 'node:fs';
 

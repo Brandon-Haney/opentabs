@@ -1,6 +1,6 @@
 {
-  "name": "@opentabs/plugin-sdk",
-  "version": "0.0.1",
+  "name": "@opentabs-dev/plugin-sdk",
+  "version": "0.0.2",
   "type": "module",
   "exports": {
     ".": {
@@ -12,11 +12,14 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "restricted"
+  },
   "scripts": {
     "build": "tsc --build"
   },
   "dependencies": {
-    "@opentabs/shared": "workspace:*"
+    "@opentabs-dev/shared": "^0.0.2"
   },
   "peerDependencies": {
     "zod": "^3.0.0"

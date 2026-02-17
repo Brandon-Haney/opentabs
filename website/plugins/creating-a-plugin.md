@@ -31,7 +31,7 @@ my-plugin/
 Extend `OpenTabsPlugin` from the SDK:
 
 ```typescript
-import { OpenTabsPlugin } from '@opentabs/plugin-sdk';
+import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import { exampleTool } from './tools/example.js';
 
 export default class MyPlugin extends OpenTabsPlugin {
@@ -53,7 +53,7 @@ export default class MyPlugin extends OpenTabsPlugin {
 Use `defineTool` to create tools with Zod schemas:
 
 ```typescript
-import { defineTool } from '@opentabs/plugin-sdk';
+import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 
 export const exampleTool = defineTool({

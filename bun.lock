@@ -37,10 +37,10 @@
       },
     },
     "platform/browser-extension": {
-      "name": "@opentabs/browser-extension",
+      "name": "@opentabs-dev/browser-extension",
       "version": "0.0.1",
       "dependencies": {
-        "@opentabs/shared": "workspace:*",
+        "@opentabs-dev/shared": "workspace:*",
       },
       "devDependencies": {
         "@types/chrome": "^0.1.36",
@@ -50,14 +50,14 @@
       },
     },
     "platform/cli": {
-      "name": "@opentabs/cli",
+      "name": "@opentabs-dev/cli",
       "version": "0.0.1",
       "bin": {
         "opentabs": "./dist/cli.js",
       },
       "dependencies": {
-        "@opentabs/plugin-sdk": "workspace:*",
-        "@opentabs/shared": "workspace:*",
+        "@opentabs-dev/plugin-sdk": "file:../plugin-sdk",
+        "@opentabs-dev/shared": "file:../shared",
         "commander": "^14.0.3",
         "picocolors": "^1.1.1",
         "zod-to-json-schema": "^3.25.1",
@@ -73,7 +73,7 @@
         "create-opentabs-plugin": "./dist/index.js",
       },
       "dependencies": {
-        "@opentabs/cli": "workspace:*",
+        "@opentabs-dev/cli": "workspace:*",
         "commander": "^14.0.3",
         "picocolors": "^1.1.1",
       },
@@ -82,11 +82,11 @@
       },
     },
     "platform/mcp-server": {
-      "name": "@opentabs/mcp-server",
+      "name": "@opentabs-dev/mcp-server",
       "version": "0.0.1",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.26.0",
-        "@opentabs/shared": "workspace:*",
+        "@opentabs-dev/shared": "workspace:*",
         "zod": "^3.25.76",
         "zod-to-json-schema": "^3.25.1",
       },
@@ -95,10 +95,10 @@
       },
     },
     "platform/plugin-sdk": {
-      "name": "@opentabs/plugin-sdk",
+      "name": "@opentabs-dev/plugin-sdk",
       "version": "0.0.1",
       "dependencies": {
-        "@opentabs/shared": "workspace:*",
+        "@opentabs-dev/shared": "file:../shared",
       },
       "devDependencies": {
         "bun-types": "^1.3.9",
@@ -108,7 +108,7 @@
       },
     },
     "platform/shared": {
-      "name": "@opentabs/shared",
+      "name": "@opentabs-dev/shared",
       "version": "0.0.1",
       "devDependencies": {
         "bun-types": "^1.3.9",
@@ -206,15 +206,15 @@
 
     "@nodelib/fs.walk": ["@nodelib/fs.walk@1.2.8", "", { "dependencies": { "@nodelib/fs.scandir": "2.1.5", "fastq": "^1.6.0" } }, "sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg=="],
 
-    "@opentabs/browser-extension": ["@opentabs/browser-extension@workspace:platform/browser-extension"],
+    "@opentabs-dev/browser-extension": ["@opentabs-dev/browser-extension@workspace:platform/browser-extension"],
 
-    "@opentabs/cli": ["@opentabs/cli@workspace:platform/cli"],
+    "@opentabs-dev/cli": ["@opentabs-dev/cli@workspace:platform/cli"],
 
-    "@opentabs/mcp-server": ["@opentabs/mcp-server@workspace:platform/mcp-server"],
+    "@opentabs-dev/mcp-server": ["@opentabs-dev/mcp-server@workspace:platform/mcp-server"],
 
-    "@opentabs/plugin-sdk": ["@opentabs/plugin-sdk@workspace:platform/plugin-sdk"],
+    "@opentabs-dev/plugin-sdk": ["@opentabs-dev/plugin-sdk@workspace:platform/plugin-sdk"],
 
-    "@opentabs/shared": ["@opentabs/shared@workspace:platform/shared"],
+    "@opentabs-dev/shared": ["@opentabs-dev/shared@workspace:platform/shared"],
 
     "@oxc-resolver/binding-android-arm-eabi": ["@oxc-resolver/binding-android-arm-eabi@11.17.1", "", { "os": "android", "cpu": "arm" }, "sha512-+VuZyMYYaap5uDAU1xDU3Kul0FekLqpBS8kI5JozlWfYQKnc/HsZg2gHPkQrj0SC9lt74WMNCfOzZZJlYXSdEQ=="],
 

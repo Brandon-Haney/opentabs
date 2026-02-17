@@ -9,7 +9,7 @@ _(Coming soon)_
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/anomalyco/opentabs.git
+git clone https://github.com/opentabs-dev/opentabs.git
 cd opentabs
 ```
 

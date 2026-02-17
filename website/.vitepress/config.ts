@@ -18,7 +18,7 @@ export default defineConfig({
       {
         text: 'Links',
         items: [
-          { text: 'GitHub', link: 'https://github.com/anomalyco/opentabs' },
+          { text: 'GitHub', link: 'https://github.com/opentabs-dev/opentabs' },
           { text: 'Chrome Web Store', link: '#' },
         ],
       },
@@ -71,14 +71,14 @@ export default defineConfig({
       ],
     },
 
-    socialLinks: [{ icon: 'github', link: 'https://github.com/anomalyco/opentabs' }],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/opentabs-dev/opentabs' }],
 
     search: {
       provider: 'local',
     },
 
     editLink: {
-      pattern: 'https://github.com/anomalyco/opentabs/edit/main/website/:path',
+      pattern: 'https://github.com/opentabs-dev/opentabs/edit/main/website/:path',
       text: 'Edit this page on GitHub',
     },
 

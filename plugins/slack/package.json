@@ -18,17 +18,28 @@
   ],
   "scripts": {
     "build": "tsc && opentabs build",
-    "dev": "bun run build --watch"
+    "dev": "bun run build --watch",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\""
   },
   "peerDependencies": {
     "zod": "^3.0.0"
   },
   "dependencies": {
-    "@opentabs/plugin-sdk": "file:../../platform/plugin-sdk"
+    "@opentabs-dev/plugin-sdk": "^0.0.2"
   },
   "devDependencies": {
-    "@opentabs/cli": "file:../../platform/cli",
-    "zod": "^3.0.0",
-    "typescript": "^5.9.3"
+    "@opentabs-dev/cli": "^0.0.2",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "jiti": "^2.4.2",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.55.0",
+    "zod": "^3.0.0"
   }
 }

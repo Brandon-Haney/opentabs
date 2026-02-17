@@ -26,7 +26,7 @@ interface DevOptions {
 
 const resolveServerEntry = (): string => {
   try {
-    return fileURLToPath(import.meta.resolve('@opentabs/mcp-server'));
+    return fileURLToPath(import.meta.resolve('@opentabs-dev/mcp-server'));
   } catch {
     const cliDir = dirname(fileURLToPath(import.meta.url));
     return resolve(cliDir, '..', '..', '..', 'mcp-server', 'dist', 'index.js');

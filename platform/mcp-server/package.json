@@ -1,5 +1,5 @@
 {
-  "name": "@opentabs/mcp-server",
+  "name": "@opentabs-dev/mcp-server",
   "version": "0.0.1",
   "type": "module",
   "exports": {
@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "@opentabs/shared": "workspace:*",
+    "@opentabs-dev/shared": "workspace:*",
     "zod": "^3.25.76",
     "zod-to-json-schema": "^3.25.1"
   }

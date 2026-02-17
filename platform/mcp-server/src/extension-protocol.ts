@@ -18,7 +18,7 @@ import type {
   JsonRpcResult,
   TabSyncAllParams,
   WsHandle,
-} from '@opentabs/shared';
+} from '@opentabs-dev/shared';
 
 /**
  * Ensure the adapters directory exists, creating it if necessary.

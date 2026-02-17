@@ -125,8 +125,9 @@ const App = () => {
       if (message.type === 'ws:message') {
         const wsData = message.data as Record<string, unknown> | undefined;
         if (wsData?.method === 'sync.full') {
-          // Delay to let the background finish processing (storage writes, injection)
-          setTimeout(() => loadPluginsRef.current(), 1_500);
+          // The MCP server already has plugin data when it sends sync.full,
+          // so config.getState can be called immediately — no delay needed.
+          loadPluginsRef.current();
         } else if (wsData) {
           // Process tool invocation and tab state notifications from the
           // server. These are the same methods handled above for

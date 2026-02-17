@@ -137,11 +137,6 @@ const App = () => {
           // The MCP server already has plugin data when it sends sync.full,
           // so config.getState can be called immediately — no delay needed.
           loadPluginsRef.current();
-        } else if (wsData) {
-          // Process tool invocation and tab state notifications from the
-          // server. These are the same methods handled above for
-          // sp:serverMessage but via the offscreen broadcast path.
-          handleNotification(wsData);
         }
         return false;
       }

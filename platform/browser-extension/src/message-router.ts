@@ -318,6 +318,20 @@ const handlePluginUpdate = async (params: Record<string, unknown>): Promise<void
     },
   });
 
+  forwardToSidePanel({
+    type: 'sp:serverMessage',
+    data: {
+      jsonrpc: '2.0',
+      method: 'tab.stateChanged',
+      params: {
+        plugin: meta.name,
+        state: newState.state,
+        tabId: newState.tabId,
+        url: newState.url,
+      },
+    },
+  });
+
   // Notify the side panel so it refreshes its plugin list without user interaction
   forwardToSidePanel({
     type: 'sp:serverMessage',

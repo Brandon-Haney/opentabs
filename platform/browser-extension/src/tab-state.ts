@@ -1,5 +1,5 @@
 import { IS_READY_TIMEOUT_MS } from './constants.js';
-import { sendToServer } from './messaging.js';
+import { forwardToSidePanel, sendToServer } from './messaging.js';
 import { getAllPluginMeta } from './plugin-storage.js';
 import { findMatchingTab, urlMatchesPatterns } from './tab-matching.js';
 import type { PluginMeta } from './types.js';
@@ -112,6 +112,24 @@ export const sendTabSyncAll = async (): Promise<void> => {
     method: 'tab.syncAll',
     params: { tabs: tabSyncPayload },
   });
+
+  // Forward individual tab.stateChanged messages to the side panel so it
+  // gets initial tab states on connect without waiting for fetchConfigState.
+  for (const [pluginName, stateInfo] of entries) {
+    forwardToSidePanel({
+      type: 'sp:serverMessage',
+      data: {
+        jsonrpc: '2.0',
+        method: 'tab.stateChanged',
+        params: {
+          plugin: pluginName,
+          state: stateInfo.state,
+          tabId: stateInfo.tabId,
+          url: stateInfo.url,
+        },
+      },
+    });
+  }
 };
 
 /**
@@ -225,6 +243,20 @@ export const checkTabStateChanges = async (
             state: newState.state,
             tabId: newState.tabId,
             url: newState.url,
+          },
+        });
+
+        forwardToSidePanel({
+          type: 'sp:serverMessage',
+          data: {
+            jsonrpc: '2.0',
+            method: 'tab.stateChanged',
+            params: {
+              plugin: plugin.name,
+              state: newState.state,
+              tabId: newState.tabId,
+              url: newState.url,
+            },
           },
         });
       });

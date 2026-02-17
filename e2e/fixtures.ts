@@ -252,9 +252,9 @@ interface McpServer {
   port: number;
   /** The isolated config directory for this server instance (OPENTABS_CONFIG_DIR). */
   configDir: string;
-  /** The per-test copy of the server dist directory. */
-  distDir: string;
-  /** The entry point for this server instance (inside distDir). */
+  /** The per-test temp directory containing the hot-reload wrapper script. */
+  wrapperDir: string;
+  /** The entry point for this server instance (inside wrapperDir). */
   entryFile: string;
   waitForHealth: (predicate: (h: HealthResponse) => boolean, timeoutMs?: number) => Promise<HealthResponse>;
   triggerHotReload: () => void;
@@ -372,7 +372,7 @@ const startMcpServer = (configDir: string, hot: boolean = true, explicitPort?: n
       logs,
       port: 0, // will be set once the server logs its actual port
       configDir,
-      distDir: wrapperDir,
+      wrapperDir,
       entryFile,
       health: () => Promise.resolve(null),
       waitForHealth: () => Promise.reject(new Error('Server not started yet')),

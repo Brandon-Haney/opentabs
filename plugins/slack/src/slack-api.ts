@@ -78,11 +78,12 @@ interface SlackTSGlobal {
  * Build a SlackAuth from a token string and optional team metadata.
  * Centralizes the fallback logic for workspace URL and team ID.
  */
-const buildAuth = (token: string, teamId?: string, teamUrl?: string): SlackAuth => ({
-  token,
-  workspaceUrl: (teamUrl ?? '').replace(/\/$/, '') || window.location.origin,
-  teamId: teamId ?? '',
-});
+const buildAuth = (token: string, teamId?: string, teamUrl?: string): SlackAuth => {
+  let url = (teamUrl ?? '').replace(/\/$/, '') || window.location.origin;
+  // Upgrade HTTP to HTTPS to prevent sending tokens over unencrypted connections
+  url = url.replace(/^http:\/\//i, 'https://');
+  return { token, workspaceUrl: url, teamId: teamId ?? '' };
+};
 
 /**
  * Try to extract auth from a SlackBootData-shaped object.
@@ -382,6 +383,10 @@ const slackApi = async <T extends Record<string, unknown>>(
   form.append('_x_app_name', 'client');
   if (auth.teamId) {
     form.append('_x_team_id', auth.teamId);
+  }
+
+  if (!auth.workspaceUrl.startsWith('https://')) {
+    throw new ToolError('HTTPS required for Slack API calls', 'insecure_connection');
   }
 
   const response = await fetch(`${auth.workspaceUrl}/api/${method}`, {

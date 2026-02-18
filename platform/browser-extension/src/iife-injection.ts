@@ -218,7 +218,9 @@ export const injectPluginIntoMatchingTabs = async (
             },
             args: [pluginName],
           })
-          .catch(() => {});
+          .catch((err: unknown) => {
+            console.warn(`[opentabs] adapter teardown script failed for ${pluginName}:`, err);
+          });
       }
 
       await injectAdapterFile(tabId, pluginName, version, adapterHash);

@@ -18,6 +18,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@opentabs-dev/shared": "workspace:*",
+    "ajv": "^8.18.0",
     "zod": "^4.3.6"
   }
 }

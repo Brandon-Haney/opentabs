@@ -28,8 +28,11 @@ describe('rebuildToolLookups — plugin tool lookup', () => {
     rebuildToolLookups(state);
 
     expect(state.toolLookup.size).toBe(2);
-    expect(state.toolLookup.get('slack_send_message')).toEqual({ pluginName: 'slack', toolName: 'send_message' });
-    expect(state.toolLookup.get('slack_read_messages')).toEqual({ pluginName: 'slack', toolName: 'read_messages' });
+    expect(state.toolLookup.get('slack_send_message')).toMatchObject({ pluginName: 'slack', toolName: 'send_message' });
+    expect(state.toolLookup.get('slack_read_messages')).toMatchObject({
+      pluginName: 'slack',
+      toolName: 'read_messages',
+    });
   });
 
   test('empty plugins produces empty toolLookup', () => {
@@ -48,9 +51,12 @@ describe('rebuildToolLookups — plugin tool lookup', () => {
     rebuildToolLookups(state);
 
     expect(state.toolLookup.size).toBe(3);
-    expect(state.toolLookup.get('slack_send_message')).toEqual({ pluginName: 'slack', toolName: 'send_message' });
-    expect(state.toolLookup.get('github_create_issue')).toEqual({ pluginName: 'github', toolName: 'create_issue' });
-    expect(state.toolLookup.get('github_list_prs')).toEqual({ pluginName: 'github', toolName: 'list_prs' });
+    expect(state.toolLookup.get('slack_send_message')).toMatchObject({ pluginName: 'slack', toolName: 'send_message' });
+    expect(state.toolLookup.get('github_create_issue')).toMatchObject({
+      pluginName: 'github',
+      toolName: 'create_issue',
+    });
+    expect(state.toolLookup.get('github_list_prs')).toMatchObject({ pluginName: 'github', toolName: 'list_prs' });
   });
 
   test('replaces previous toolLookup entries on rebuild', () => {
@@ -66,7 +72,10 @@ describe('rebuildToolLookups — plugin tool lookup', () => {
 
     expect(state.toolLookup.size).toBe(1);
     expect(state.toolLookup.has('slack_send_message')).toBe(false);
-    expect(state.toolLookup.get('github_create_issue')).toEqual({ pluginName: 'github', toolName: 'create_issue' });
+    expect(state.toolLookup.get('github_create_issue')).toMatchObject({
+      pluginName: 'github',
+      toolName: 'create_issue',
+    });
   });
 });
 
@@ -132,6 +141,110 @@ describe('rebuildToolLookups — cached browser tools', () => {
     // Verify the input schema has the url property
     const openTabSchema = (secondCached as NonNullable<typeof secondCached>).inputSchema;
     expect(openTabSchema).toHaveProperty('properties');
+  });
+});
+
+describe('rebuildToolLookups — input validation', () => {
+  test('lookup entries include a working validate function', () => {
+    const state = createState();
+    const plugin: RegisteredPlugin = {
+      ...createPlugin('test', ['greet']),
+      tools: [
+        {
+          name: 'greet',
+          description: 'Greet a user',
+          input_schema: {
+            type: 'object',
+            properties: { name: { type: 'string' } },
+            required: ['name'],
+            additionalProperties: false,
+          },
+          output_schema: { type: 'object' },
+        },
+      ],
+    };
+    state.plugins.set('test', plugin);
+
+    rebuildToolLookups(state);
+
+    const entry = state.toolLookup.get('test_greet');
+    expect(entry).toBeDefined();
+    if (!entry?.validate) throw new Error('Expected validate function');
+    expect(entry.validate).toBeInstanceOf(Function);
+    // Valid input passes
+    expect(entry.validate({ name: 'Alice' })).toBe(true);
+    // Missing required field fails
+    expect(entry.validate({})).toBe(false);
+  });
+
+  test('validationErrors returns human-readable errors after failed validation', () => {
+    const state = createState();
+    const plugin: RegisteredPlugin = {
+      ...createPlugin('test', ['greet']),
+      tools: [
+        {
+          name: 'greet',
+          description: 'Greet a user',
+          input_schema: {
+            type: 'object',
+            properties: { name: { type: 'string' }, age: { type: 'number' } },
+            required: ['name'],
+            additionalProperties: false,
+          },
+          output_schema: { type: 'object' },
+        },
+      ],
+    };
+    state.plugins.set('test', plugin);
+    rebuildToolLookups(state);
+
+    const entry = state.toolLookup.get('test_greet');
+    if (!entry?.validate) throw new Error('Expected entry with validate');
+    // Pass wrong type for name
+    entry.validate({ name: 123 });
+    const errors = entry.validationErrors();
+    expect(errors).toContain('/name');
+    expect(errors).toContain('string');
+  });
+
+  test('validate compiles for trivial schemas and passes empty args', () => {
+    const state = createState();
+    state.plugins.set('test', createPlugin('test', ['ping']));
+    rebuildToolLookups(state);
+
+    const entry = state.toolLookup.get('test_ping');
+    expect(entry).toBeDefined();
+    if (!entry?.validate) throw new Error('Expected validate function');
+    // { type: 'object' } compiles successfully — validate should still be a function
+    expect(entry.validate).toBeInstanceOf(Function);
+    // Empty args should pass a { type: 'object' } schema
+    expect(entry.validate({})).toBe(true);
+  });
+
+  test('additional properties are rejected when additionalProperties is false', () => {
+    const state = createState();
+    const plugin: RegisteredPlugin = {
+      ...createPlugin('test', ['strict']),
+      tools: [
+        {
+          name: 'strict',
+          description: 'Strict tool',
+          input_schema: {
+            type: 'object',
+            properties: { a: { type: 'string' } },
+            additionalProperties: false,
+          },
+          output_schema: { type: 'object' },
+        },
+      ],
+    };
+    state.plugins.set('test', plugin);
+    rebuildToolLookups(state);
+
+    const entry = state.toolLookup.get('test_strict');
+    if (!entry?.validate) throw new Error('Expected entry with validate');
+    expect(entry.validate({ a: 'ok' })).toBe(true);
+    expect(entry.validate({ a: 'ok', b: 'extra' })).toBe(false);
   });
 });
 

@@ -60,6 +60,10 @@ export interface PendingDispatch {
 export interface ToolLookupEntry {
   pluginName: string;
   toolName: string;
+  /** Pre-compiled JSON Schema validator for input args. Null if schema compilation failed. */
+  validate: ((data: unknown) => boolean) | null;
+  /** Human-readable validation errors from the last validate() call */
+  validationErrors: () => string;
 }
 
 /** Cached browser tool entry with pre-computed JSON Schema */

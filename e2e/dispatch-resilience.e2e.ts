@@ -594,7 +594,7 @@ test.describe('Tool input validation', () => {
     expect(result.content.toLowerCase()).toContain('url');
   });
 
-  test('plugin tool with missing required field still dispatches (no server-side validation)', async ({
+  test('plugin tool with missing required field is rejected by server-side validation', async ({
     mcpServer,
     testServer,
     extensionContext,
@@ -603,12 +603,11 @@ test.describe('Tool input validation', () => {
     const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
 
     // e2e-test_echo expects { message: string } but we omit it
-    // Plugin tools have no server-side Zod validation — the adapter receives raw args
+    // Server-side JSON Schema validation rejects the args before dispatch
     const result = await mcpClient.callTool('e2e-test_echo', {});
-    expect(result.isError).toBe(false);
-    // The test server returns { message: "" } for missing/undefined message field
-    const output = parseToolResult(result.content);
-    expect(output.message).toBe('');
+    expect(result.isError).toBe(true);
+    expect(result.content.toLowerCase()).toContain('invalid arguments');
+    expect(result.content.toLowerCase()).toContain('message');
 
     await page.close();
   });

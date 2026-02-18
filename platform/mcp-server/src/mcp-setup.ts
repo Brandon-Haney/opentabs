@@ -26,6 +26,7 @@ import { log } from './logger.js';
 import { prefixedToolName, isToolEnabled } from './state.js';
 import { version } from './version.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import AjvValidator from 'ajv';
 import { z } from 'zod';
 import type { ServerState, CachedBrowserTool, ToolLookupEntry } from './state.js';
 import type { TrustTier } from '@opentabs-dev/shared';
@@ -95,16 +96,54 @@ const formatZodError = (err: ZodError): string => {
 };
 
 /**
+ * Compile a JSON Schema into an Ajv validate function.
+ * Returns a ToolLookupEntry with the validate fn and error formatter.
+ * If compilation fails, validate is null and errors are logged.
+ */
+const compileToolValidator = (
+  ajv: InstanceType<typeof AjvValidator>,
+  pluginName: string,
+  toolName: string,
+  inputSchema: Record<string, unknown>,
+): Pick<ToolLookupEntry, 'validate' | 'validationErrors'> => {
+  try {
+    const validate = ajv.compile(inputSchema);
+    return {
+      validate,
+      validationErrors: () => {
+        if (!validate.errors?.length) return 'Unknown validation error';
+        return validate.errors
+          .map(e => {
+            const path = e.instancePath || '(root)';
+            return `  - ${path}: ${e.message ?? 'invalid'}`;
+          })
+          .join('\n');
+      },
+    };
+  } catch (err) {
+    log.warn(`Failed to compile JSON Schema for ${pluginName}/${toolName}:`, err);
+    return {
+      validate: null,
+      validationErrors: () => 'Schema compilation failed — validation skipped',
+    };
+  }
+};
+
+/**
  * Rebuild the O(1) tool lookup map and cached browser tool schemas on state.
  * Called after state.plugins or state.browserTools changes (during reload).
  */
 const rebuildToolLookups = (state: ServerState): void => {
-  // Plugin tool lookup: prefixed name → { pluginName, toolName }
+  // Single Ajv instance for all plugin tool schemas
+  const ajv = new AjvValidator({ allErrors: true });
+
+  // Plugin tool lookup: prefixed name → { pluginName, toolName, validate }
   const toolLookup = new Map<string, ToolLookupEntry>();
   for (const plugin of state.plugins.values()) {
     for (const toolDef of plugin.tools) {
       const prefixed = prefixedToolName(plugin.name, toolDef.name);
-      toolLookup.set(prefixed, { pluginName: plugin.name, toolName: toolDef.name });
+      const { validate, validationErrors } = compileToolValidator(ajv, plugin.name, toolDef.name, toolDef.input_schema);
+      toolLookup.set(prefixed, { pluginName: plugin.name, toolName: toolDef.name, validate, validationErrors });
     }
   }
   state.toolLookup = toolLookup;
@@ -232,6 +271,23 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
         content: [{ type: 'text' as const, text: `Tool ${toolName} is disabled` }],
         isError: true,
       };
+    }
+
+    // Validate args against the tool's JSON Schema before dispatching.
+    // The validator is pre-compiled at discovery time for performance.
+    if (lookup.validate) {
+      const valid = lookup.validate(args);
+      if (!valid) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Invalid arguments for tool "${toolName}":\n${lookup.validationErrors()}`,
+            },
+          ],
+          isError: true,
+        };
+      }
     }
 
     // Concurrency limit: prevent a runaway MCP client from flooding a single

@@ -26,6 +26,7 @@ import { pressKey } from './press-key.js';
 import { queryElements } from './query-elements.js';
 import { reloadExtension } from './reload-extension.js';
 import { screenshotTab } from './screenshot-tab.js';
+import { scroll } from './scroll.js';
 import { selectOption } from './select-option.js';
 import { setCookie } from './set-cookie.js';
 import { typeText } from './type-text.js';
@@ -61,6 +62,7 @@ const browserTools: BrowserToolDefinition[] = [
   listResources,
   getResourceContent,
   pressKey,
+  scroll,
 ];
 
 export { browserTools };

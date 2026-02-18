@@ -91,6 +91,9 @@ const mockHandleBrowserGetResourceContent = mock(
 const mockHandleBrowserPressKey = mock(
   asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
 );
+const mockHandleBrowserScroll = mock(
+  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+);
 
 await mock.module('./messaging.js', () => ({
   sendToServer: mockSendToServer,
@@ -129,6 +132,7 @@ await mock.module('./browser-commands.js', () => ({
   handleBrowserListResources: mockHandleBrowserListResources,
   handleBrowserGetResourceContent: mockHandleBrowserGetResourceContent,
   handleBrowserPressKey: mockHandleBrowserPressKey,
+  handleBrowserScroll: mockHandleBrowserScroll,
 }));
 
 // Chrome API stubs for modules that are NOT mocked (plugin-storage, iife-injection,
@@ -494,6 +498,7 @@ const resetRoutingMocks = (): void => {
   mockHandleBrowserExecuteScript.mockReset();
   mockHandleBrowserListResources.mockReset();
   mockHandleBrowserGetResourceContent.mockReset();
+  mockHandleBrowserScroll.mockReset();
 };
 
 describe('handleServerMessage', () => {
@@ -521,6 +526,7 @@ describe('handleServerMessage', () => {
     mockHandleBrowserExecuteScript.mockResolvedValue(undefined);
     mockHandleBrowserListResources.mockResolvedValue(undefined);
     mockHandleBrowserGetResourceContent.mockResolvedValue(undefined);
+    mockHandleBrowserScroll.mockResolvedValue(undefined);
   });
 
   describe('sync.full routing', () => {
@@ -942,6 +948,17 @@ describe('handleServerMessage', () => {
 
       expect(mockHandleBrowserPressKey).toHaveBeenCalledTimes(1);
       expect(mockHandleBrowserPressKey).toHaveBeenCalledWith({ tabId: 10, key: 'Enter' }, 45);
+    });
+
+    test('dispatches browser.scroll to handleBrowserScroll', () => {
+      handleServerMessage({
+        method: 'browser.scroll',
+        id: 46,
+        params: { tabId: 10, direction: 'down' },
+      });
+
+      expect(mockHandleBrowserScroll).toHaveBeenCalledTimes(1);
+      expect(mockHandleBrowserScroll).toHaveBeenCalledWith({ tabId: 10, direction: 'down' }, 46);
     });
   });
 

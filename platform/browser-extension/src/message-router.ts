@@ -18,6 +18,7 @@ import {
   handleBrowserListResources,
   handleBrowserListTabs,
   handleBrowserPressKey,
+  handleBrowserScroll,
   handleBrowserNavigateTab,
   handleBrowserOpenTab,
   handleBrowserQueryElements,
@@ -458,6 +459,16 @@ const methodHandlers = new Map<string, MessageHandler>([
       if (id !== undefined) {
         handleBrowserPressKey(params, id).catch((err: unknown) =>
           console.warn('[opentabs] browser.pressKey handler failed:', err),
+        );
+      }
+    },
+  ],
+  [
+    'browser.scroll',
+    (params, id) => {
+      if (id !== undefined) {
+        handleBrowserScroll(params, id).catch((err: unknown) =>
+          console.warn('[opentabs] browser.scroll handler failed:', err),
         );
       }
     },

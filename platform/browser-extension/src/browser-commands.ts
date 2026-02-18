@@ -1299,6 +1299,143 @@ export const handleBrowserPressKey = async (params: Record<string, unknown>, id:
   }
 };
 
+export const handleBrowserScroll = async (params: Record<string, unknown>, id: string | number): Promise<void> => {
+  try {
+    const tabId = params.tabId;
+    if (typeof tabId !== 'number') {
+      sendToServer({ jsonrpc: '2.0', error: { code: -32602, message: 'Missing or invalid tabId parameter' }, id });
+      return;
+    }
+    const selector = typeof params.selector === 'string' && params.selector.length > 0 ? params.selector : null;
+    const direction = typeof params.direction === 'string' ? params.direction : null;
+    const distance = typeof params.distance === 'number' ? params.distance : null;
+    const position =
+      typeof params.position === 'object' && params.position !== null
+        ? (params.position as Record<string, unknown>)
+        : null;
+    const container = typeof params.container === 'string' && params.container.length > 0 ? params.container : null;
+
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: (
+        sel: string | null,
+        dir: string | null,
+        dist: number | null,
+        pos: { x?: number; y?: number } | null,
+        ctr: string | null,
+      ) => {
+        // Resolve scroll target (container or page)
+        let scrollEl: Element | null = null;
+        if (ctr) {
+          scrollEl = document.querySelector(ctr);
+          if (!scrollEl) return { error: `Container not found: ${ctr}` };
+        }
+
+        // Helper to get scroll metrics from the scroll target
+        const getMetrics = () => {
+          if (scrollEl) {
+            return {
+              scrollPosition: { x: scrollEl.scrollLeft, y: scrollEl.scrollTop },
+              scrollSize: { width: scrollEl.scrollWidth, height: scrollEl.scrollHeight },
+              viewportSize: { width: scrollEl.clientWidth, height: scrollEl.clientHeight },
+            };
+          }
+          return {
+            scrollPosition: { x: window.scrollX, y: window.scrollY },
+            scrollSize: {
+              width: document.documentElement.scrollWidth,
+              height: document.documentElement.scrollHeight,
+            },
+            viewportSize: { width: window.innerWidth, height: window.innerHeight },
+          };
+        };
+
+        // Mode 1: scroll element into view
+        if (sel) {
+          const el = document.querySelector(sel);
+          if (!el) return { error: `Element not found: ${sel}` };
+          el.scrollIntoView({ behavior: 'instant', block: 'center' });
+          const text = (el.textContent || '').trim().slice(0, 200);
+          return {
+            scrolledTo: { tagName: el.tagName.toLowerCase(), text },
+            ...getMetrics(),
+          };
+        }
+
+        // Mode 2: relative scroll by direction
+        if (dir) {
+          const metrics = getMetrics();
+          const defaultVertical = metrics.viewportSize.height;
+          const defaultHorizontal = metrics.viewportSize.width;
+          let dx = 0;
+          let dy = 0;
+
+          if (dir === 'down') dy = dist ?? defaultVertical;
+          else if (dir === 'up') dy = -(dist ?? defaultVertical);
+          else if (dir === 'right') dx = dist ?? defaultHorizontal;
+          else if (dir === 'left') dx = -(dist ?? defaultHorizontal);
+
+          if (scrollEl) {
+            scrollEl.scrollBy({ left: dx, top: dy, behavior: 'instant' });
+          } else {
+            window.scrollBy({ left: dx, top: dy, behavior: 'instant' });
+          }
+
+          return getMetrics();
+        }
+
+        // Mode 3: absolute scroll to position
+        if (pos) {
+          const opts: ScrollToOptions = { behavior: 'instant' };
+          if (pos.x !== undefined) opts.left = pos.x;
+          if (pos.y !== undefined) opts.top = pos.y;
+
+          if (scrollEl) {
+            scrollEl.scrollTo(opts);
+          } else {
+            window.scrollTo(opts);
+          }
+
+          return getMetrics();
+        }
+
+        // No scroll target specified — return current position
+        return getMetrics();
+      },
+      args: [
+        selector,
+        direction,
+        distance,
+        position
+          ? {
+              x: position.x as number | undefined,
+              y: position.y as number | undefined,
+            }
+          : null,
+        container,
+      ],
+    });
+
+    const result = results[0]?.result as Record<string, unknown> | undefined;
+    if (!result) {
+      sendToServer({ jsonrpc: '2.0', error: { code: -32603, message: 'No result from script execution' }, id });
+      return;
+    }
+    if (result.error) {
+      sendToServer({ jsonrpc: '2.0', error: { code: -32602, message: result.error as string }, id });
+      return;
+    }
+    sendToServer({ jsonrpc: '2.0', result, id });
+  } catch (err) {
+    sendToServer({
+      jsonrpc: '2.0',
+      error: { code: -32603, message: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)) },
+      id,
+    });
+  }
+};
+
 export const handleBrowserListResources = async (
   params: Record<string, unknown>,
   id: string | number,

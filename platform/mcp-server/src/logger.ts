@@ -43,28 +43,28 @@ const log = {
   /** Verbose diagnostic output — suppressed by default */
   debug: (...args: unknown[]): void => {
     if (currentLevel <= LEVELS.debug) {
-      console.debug(TAG, ...args);
+      console.debug(TAG, new Date().toISOString(), ...args);
     }
   },
 
   /** Normal operational messages */
   info: (...args: unknown[]): void => {
     if (currentLevel <= LEVELS.info) {
-      console.log(TAG, ...args);
+      console.log(TAG, new Date().toISOString(), ...args);
     }
   },
 
   /** Potential problems that don't prevent operation */
   warn: (...args: unknown[]): void => {
     if (currentLevel <= LEVELS.warn) {
-      console.warn(TAG, ...args);
+      console.warn(TAG, new Date().toISOString(), ...args);
     }
   },
 
   /** Failures that affect functionality */
   error: (...args: unknown[]): void => {
     if (currentLevel <= LEVELS.error) {
-      console.error(TAG, ...args);
+      console.error(TAG, new Date().toISOString(), ...args);
     }
   },
 };

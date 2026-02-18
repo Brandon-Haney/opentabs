@@ -210,6 +210,23 @@ export const BROWSER_TOOL_NAMES = [
   'browser_navigate_tab',
   'browser_execute_script',
   'extension_reload',
+  'browser_focus_tab',
+  'browser_get_tab_info',
+  'browser_screenshot_tab',
+  'browser_get_tab_content',
+  'browser_click_element',
+  'browser_type_text',
+  'browser_select_option',
+  'browser_wait_for_element',
+  'browser_query_elements',
+  'browser_get_cookies',
+  'browser_set_cookie',
+  'browser_delete_cookies',
+  'browser_enable_network_capture',
+  'browser_get_network_requests',
+  'browser_disable_network_capture',
+  'browser_get_console_logs',
+  'browser_clear_console_logs',
 ];
 
 // ---------------------------------------------------------------------------

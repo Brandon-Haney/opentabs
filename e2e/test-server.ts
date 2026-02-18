@@ -209,6 +209,49 @@ const PAGE_HTML = `<!DOCTYPE html>
 </html>`;
 
 // ---------------------------------------------------------------------------
+// Interactive test page HTML — for DOM interaction E2E tests
+// ---------------------------------------------------------------------------
+
+const INTERACTIVE_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Interactive Test Page</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+    label { display: block; margin: 8px 0 4px; }
+  </style>
+</head>
+<body>
+  <h1>Interactive Test Page</h1>
+
+  <button id="test-btn">Click me</button>
+  <input id="test-input" type="text" placeholder="Type here" />
+  <textarea id="test-textarea" placeholder="Textarea"></textarea>
+
+  <select id="test-select">
+    <option value="a">Alpha</option>
+    <option value="b">Beta</option>
+    <option value="c">Gamma</option>
+  </select>
+
+  <div id="delayed-content" style="display:none">Delayed content loaded</div>
+  <span id="status">ready</span>
+
+  <script>
+    document.getElementById('test-btn').addEventListener('click', function() {
+      window.__btnClicked = true;
+    });
+
+    setTimeout(function() {
+      document.getElementById('delayed-content').style.display = 'block';
+    }, 500);
+  </script>
+</body>
+</html>`;
+
+// ---------------------------------------------------------------------------
 // Server
 // ---------------------------------------------------------------------------
 
@@ -234,6 +277,13 @@ const server = Bun.serve({
     // --- Page ---
     if (path === '/' || path === '/index.html') {
       return new Response(PAGE_HTML, {
+        headers: { 'Content-Type': 'text/html' },
+      });
+    }
+
+    // --- Interactive test page (for DOM interaction E2E tests) ---
+    if (path === '/interactive') {
+      return new Response(INTERACTIVE_HTML, {
         headers: { 'Content-Type': 'text/html' },
       });
     }

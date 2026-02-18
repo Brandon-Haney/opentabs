@@ -227,6 +227,8 @@ export const BROWSER_TOOL_NAMES = [
   'browser_disable_network_capture',
   'browser_get_console_logs',
   'browser_clear_console_logs',
+  'browser_list_resources',
+  'browser_get_resource_content',
 ];
 
 // ---------------------------------------------------------------------------

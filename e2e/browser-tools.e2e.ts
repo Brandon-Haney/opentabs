@@ -1808,3 +1808,187 @@ test.describe('Browser tools — console log capture', () => {
     await mcpClient.callTool('browser_close_tab', { tabId });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Browser tools — resource inspection
+// ---------------------------------------------------------------------------
+
+test.describe('Browser tools — resource inspection', () => {
+  test('browser_list_resources returns resources for a loaded page', async ({
+    mcpServer,
+    testServer,
+    extensionContext: _extensionContext,
+    mcpClient,
+  }) => {
+    await initAndListTools(mcpServer, mcpClient);
+    const tabId = await openTestServerTab(mcpClient, testServer);
+
+    const result = await mcpClient.callTool('browser_list_resources', { tabId });
+    expect(result.isError).toBe(false);
+
+    const data = parseToolResult(result.content);
+    expect(Array.isArray(data.resources)).toBe(true);
+
+    const resources = data.resources as Array<Record<string, unknown>>;
+    expect(resources.length).toBeGreaterThan(0);
+
+    // The test server page loads an external script, so there should be at least one Script resource
+    const types = resources.map(r => r.type as string);
+    expect(types).toContain('Script');
+
+    // Each resource should have url, type, and mimeType fields
+    for (const resource of resources) {
+      expect(typeof resource.url).toBe('string');
+      expect(typeof resource.type).toBe('string');
+      expect(typeof resource.mimeType).toBe('string');
+    }
+
+    await mcpClient.callTool('browser_close_tab', { tabId });
+  });
+
+  test('browser_list_resources with type filter returns only matching resources', async ({
+    mcpServer,
+    testServer,
+    extensionContext: _extensionContext,
+    mcpClient,
+  }) => {
+    await initAndListTools(mcpServer, mcpClient);
+    const tabId = await openTestServerTab(mcpClient, testServer);
+
+    const result = await mcpClient.callTool('browser_list_resources', { tabId, type: 'Script' });
+    expect(result.isError).toBe(false);
+
+    const data = parseToolResult(result.content);
+    const resources = data.resources as Array<Record<string, unknown>>;
+    expect(resources.length).toBeGreaterThan(0);
+
+    // All resources should be of type Script
+    for (const resource of resources) {
+      expect(resource.type).toBe('Script');
+    }
+
+    await mcpClient.callTool('browser_close_tab', { tabId });
+  });
+
+  test('browser_list_resources returns error for non-existent tab', async ({
+    mcpServer,
+    extensionContext: _extensionContext,
+    mcpClient,
+  }) => {
+    await initAndListTools(mcpServer, mcpClient);
+
+    const result = await mcpClient.callTool('browser_list_resources', { tabId: 999999 });
+    expect(result.isError).toBe(true);
+  });
+
+  test('browser_get_resource_content retrieves content of a page resource', async ({
+    mcpServer,
+    testServer,
+    extensionContext: _extensionContext,
+    mcpClient,
+  }) => {
+    await initAndListTools(mcpServer, mcpClient);
+    const tabId = await openTestServerTab(mcpClient, testServer);
+
+    // First list resources to find a Script URL
+    const listResult = await mcpClient.callTool('browser_list_resources', { tabId });
+    expect(listResult.isError).toBe(false);
+
+    const listData = parseToolResult(listResult.content);
+    const resources = listData.resources as Array<Record<string, unknown>>;
+    const scriptResource = resources.find(r => r.type === 'Script');
+    expect(scriptResource).toBeDefined();
+    if (!scriptResource) throw new Error('No Script resource found');
+
+    // Fetch the content of the Script resource
+    const contentResult = await mcpClient.callTool('browser_get_resource_content', {
+      tabId,
+      url: scriptResource.url as string,
+    });
+    expect(contentResult.isError).toBe(false);
+
+    const contentData = parseToolResult(contentResult.content);
+    expect(typeof contentData.content).toBe('string');
+    expect((contentData.content as string).length).toBeGreaterThan(0);
+    // The external test script sets window.__testScriptLoaded
+    expect(contentData.content as string).toContain('__testScriptLoaded');
+    expect(typeof contentData.url).toBe('string');
+
+    await mcpClient.callTool('browser_close_tab', { tabId });
+  });
+
+  test('browser_get_resource_content returns error for non-existent URL', async ({
+    mcpServer,
+    testServer,
+    extensionContext: _extensionContext,
+    mcpClient,
+  }) => {
+    await initAndListTools(mcpServer, mcpClient);
+    const tabId = await openTestServerTab(mcpClient, testServer);
+
+    const result = await mcpClient.callTool('browser_get_resource_content', {
+      tabId,
+      url: 'https://nonexistent.example.com/fake-resource.js',
+    });
+    expect(result.isError).toBe(true);
+
+    await mcpClient.callTool('browser_close_tab', { tabId });
+  });
+
+  test('browser_get_resource_content returns error for non-existent tab', async ({
+    mcpServer,
+    extensionContext: _extensionContext,
+    mcpClient,
+  }) => {
+    await initAndListTools(mcpServer, mcpClient);
+
+    const result = await mcpClient.callTool('browser_get_resource_content', {
+      tabId: 999999,
+      url: 'https://example.com/some-resource.js',
+    });
+    expect(result.isError).toBe(true);
+  });
+
+  test('resource tools work while network capture is active (debugger sharing)', async ({
+    mcpServer,
+    testServer,
+    extensionContext: _extensionContext,
+    mcpClient,
+  }) => {
+    await initAndListTools(mcpServer, mcpClient);
+    const tabId = await openTestServerTab(mcpClient, testServer);
+
+    // 1. Enable network capture (attaches debugger)
+    const enableResult = await mcpClient.callTool('browser_enable_network_capture', { tabId });
+    expect(enableResult.isError).toBe(false);
+
+    // 2. List resources while capture is active (should reuse debugger session)
+    const listResult = await mcpClient.callTool('browser_list_resources', { tabId });
+    expect(listResult.isError).toBe(false);
+
+    const listData = parseToolResult(listResult.content);
+    const resources = listData.resources as Array<Record<string, unknown>>;
+    expect(resources.length).toBeGreaterThan(0);
+
+    // 3. Get resource content while capture is active
+    const scriptResource = resources.find(r => r.type === 'Script');
+    expect(scriptResource).toBeDefined();
+    if (!scriptResource) throw new Error('No Script resource found');
+
+    const contentResult = await mcpClient.callTool('browser_get_resource_content', {
+      tabId,
+      url: scriptResource.url as string,
+    });
+    expect(contentResult.isError).toBe(false);
+
+    const contentData = parseToolResult(contentResult.content);
+    expect(typeof contentData.content).toBe('string');
+    expect((contentData.content as string).length).toBeGreaterThan(0);
+
+    // 4. Disable network capture (detaches debugger)
+    const disableResult = await mcpClient.callTool('browser_disable_network_capture', { tabId });
+    expect(disableResult.isError).toBe(false);
+
+    await mcpClient.callTool('browser_close_tab', { tabId });
+  });
+});

@@ -162,6 +162,7 @@ const PAGE_HTML = `<!DOCTYPE html>
   <p>Plugin adapter: <span id="adapter" class="status">checking…</span></p>
   <h3>Console log</h3>
   <div id="log"></div>
+  <script src="/test-script.js"></script>
   <script>
     // Poll auth status
     async function checkAuth() {
@@ -278,6 +279,13 @@ const server = Bun.serve({
     if (path === '/' || path === '/index.html') {
       return new Response(PAGE_HTML, {
         headers: { 'Content-Type': 'text/html' },
+      });
+    }
+
+    // --- External JS file (loaded by the main page for CDP resource tests) ---
+    if (path === '/test-script.js') {
+      return new Response('window.__testScriptLoaded = true;\n', {
+        headers: { 'Content-Type': 'application/javascript' },
       });
     }
 

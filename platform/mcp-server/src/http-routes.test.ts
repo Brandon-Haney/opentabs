@@ -1,4 +1,4 @@
-import { sweepStaleSessions } from './http-routes.js';
+import { checkBearerAuth, sweepStaleSessions } from './http-routes.js';
 import { createState } from './state.js';
 import { describe, expect, test } from 'bun:test';
 import type { McpServerInstance } from './mcp-setup.js';
@@ -8,6 +8,59 @@ const createMockSession = (): McpServerInstance => ({
   setRequestHandler: () => {},
   connect: () => Promise.resolve(),
   sendToolListChanged: () => Promise.resolve(),
+});
+
+describe('checkBearerAuth', () => {
+  test('returns null when wsSecret is null (auth disabled)', () => {
+    const req = new Request('http://localhost/mcp', { method: 'POST' });
+    expect(checkBearerAuth(req, null)).toBeNull();
+  });
+
+  test('returns null when Bearer token matches wsSecret', () => {
+    const secret = 'test-secret-123';
+    const req = new Request('http://localhost/mcp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+    expect(checkBearerAuth(req, secret)).toBeNull();
+  });
+
+  test('returns 401 when no Authorization header is present', () => {
+    const req = new Request('http://localhost/mcp', { method: 'POST' });
+    const res = checkBearerAuth(req, 'my-secret');
+    expect(res).toBeInstanceOf(Response);
+    expect((res as Response).status).toBe(401);
+  });
+
+  test('returns 401 when Authorization header has wrong token', () => {
+    const req = new Request('http://localhost/mcp', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer wrong-token' },
+    });
+    const res = checkBearerAuth(req, 'correct-secret');
+    expect(res).toBeInstanceOf(Response);
+    expect((res as Response).status).toBe(401);
+  });
+
+  test('returns 401 when Authorization header uses non-Bearer scheme', () => {
+    const req = new Request('http://localhost/mcp', {
+      method: 'POST',
+      headers: { Authorization: 'Basic dXNlcjpwYXNz' },
+    });
+    const res = checkBearerAuth(req, 'my-secret');
+    expect(res).toBeInstanceOf(Response);
+    expect((res as Response).status).toBe(401);
+  });
+
+  test('returns 401 when Authorization header is "Bearer " with empty token', () => {
+    const req = new Request('http://localhost/mcp', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' },
+    });
+    const res = checkBearerAuth(req, 'my-secret');
+    expect(res).toBeInstanceOf(Response);
+    expect((res as Response).status).toBe(401);
+  });
 });
 
 describe('sweepStaleSessions', () => {

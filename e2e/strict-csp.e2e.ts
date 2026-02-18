@@ -493,7 +493,7 @@ test.describe('Strict CSP — file watcher IIFE re-injection', () => {
     fs.rmSync(serverAdaptersDir, { recursive: true, force: true });
     fs.symlinkSync(extensionAdaptersDir, serverAdaptersDir);
 
-    const client = createMcpClient(server.port);
+    const client = createMcpClient(server.port, server.secret);
 
     try {
       await client.initialize();

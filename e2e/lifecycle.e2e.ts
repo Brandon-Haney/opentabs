@@ -486,9 +486,17 @@ test.describe('Secret rotation during hot reload', () => {
     await waitForExtensionConnected(mcpServer, 45_000);
     await waitForLog(mcpServer, 'tab.syncAll received', 15_000);
 
-    // Tool dispatch works through the new authenticated connection
-    const postResult = await mcpClient.callTool('browser_list_tabs');
-    expect(postResult.isError).toBe(false);
+    // Tool dispatch works through the new authenticated connection.
+    // The original mcpClient was created with the old secret, so create a
+    // new client with the rotated secret to verify the new auth works.
+    const newClient = createMcpClient(mcpServer.port, config.secret);
+    await newClient.initialize();
+    try {
+      const postResult = await newClient.callTool('browser_list_tabs');
+      expect(postResult.isError).toBe(false);
+    } finally {
+      await newClient.close();
+    }
   });
 });
 
@@ -766,7 +774,7 @@ test.describe('URL change reconnection', () => {
       expect(h.extensionConnected).toBe(true);
 
       // 8. Verify tool dispatch works through server B
-      const clientB = createMcpClient(serverBPort);
+      const clientB = createMcpClient(serverBPort, serverB.secret);
       await clientB.initialize();
 
       const tabsResult = await clientB.callTool('browser_list_tabs');

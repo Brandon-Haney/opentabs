@@ -132,7 +132,7 @@ test.describe('Side panel — tool toggle', () => {
     writeTestConfig(configDir, { plugins: [absPluginPath], tools });
 
     const server = await startMcpServer(configDir, true);
-    const mcpClient = createMcpClient(server.port);
+    const mcpClient = createMcpClient(server.port, server.secret);
     const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port);
     setupAdapterSymlink(configDir, extensionDir);
 

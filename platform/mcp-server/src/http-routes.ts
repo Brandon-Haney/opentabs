@@ -56,6 +56,21 @@ const createMcpCallbacks = (state: ServerState, sessionServers: McpServerInstanc
   },
 });
 
+/**
+ * Check Bearer token in the Authorization header against the server's shared secret.
+ * Returns a 401 Response if authentication fails, or null if authentication succeeds.
+ * When no secret is configured (wsSecret is null), all requests are allowed through.
+ */
+const checkBearerAuth = (req: Request, wsSecret: string | null): Response | null => {
+  if (!wsSecret) return null;
+  const authHeader = req.headers.get('Authorization');
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (token !== wsSecret) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+  return null;
+};
+
 const createHandleFetch =
   ({ state, transports, sessionServers, getHotState }: RouteDeps) =>
   async (
@@ -136,6 +151,8 @@ const createHandleFetch =
 
     // --- Config/plugin rediscovery endpoint ---
     if (url.pathname === '/reload' && req.method === 'POST') {
+      const authError = checkBearerAuth(req, state.wsSecret);
+      if (authError) return authError;
       try {
         const result = await performConfigReload(state, sessionServers, transports);
         return Response.json({
@@ -151,6 +168,8 @@ const createHandleFetch =
 
     // --- Extension reload endpoint ---
     if (url.pathname === '/extension/reload' && req.method === 'POST') {
+      const authError = checkBearerAuth(req, state.wsSecret);
+      if (authError) return authError;
       if (!state.extensionWs) {
         return Response.json({ ok: false, error: 'Extension not connected' }, { status: 503 });
       }
@@ -161,6 +180,8 @@ const createHandleFetch =
 
     // --- MCP Streamable HTTP transport ---
     if (url.pathname === '/mcp') {
+      const authError = checkBearerAuth(req, state.wsSecret);
+      if (authError) return authError;
       // Disable Bun's per-connection idle timeout for MCP requests.
       // Tool dispatches can take up to DISPATCH_TIMEOUT_MS (30s) and the
       // Streamable HTTP transport holds the response open until the tool
@@ -384,4 +405,4 @@ const sweepStaleSessions = (
 };
 
 export type { HotHandlers };
-export { createHandlers, sweepStaleSessions };
+export { checkBearerAuth, createHandlers, sweepStaleSessions };

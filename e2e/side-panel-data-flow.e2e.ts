@@ -342,7 +342,7 @@ test.describe('Side panel data flow — tool invocation animation', () => {
     const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port);
     setupAdapterSymlink(configDir, extensionDir);
 
-    const mcpClient = createMcpClient(server.port);
+    const mcpClient = createMcpClient(server.port, server.secret);
 
     try {
       // 2. Wait for extension to connect

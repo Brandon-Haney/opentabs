@@ -410,7 +410,7 @@ export const setupIsolatedIifeTest = async (configDirPrefix: string): Promise<Is
     cleanupDir = ext.cleanupDir;
     setupAdapterSymlink(configDir, ext.extensionDir);
 
-    const client = createMcpClient(server.port);
+    const client = createMcpClient(server.port, server.secret);
 
     await client.initialize();
     await waitForExtensionConnected(server);

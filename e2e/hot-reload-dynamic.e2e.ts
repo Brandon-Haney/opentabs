@@ -259,7 +259,7 @@ test.describe.serial('File watcher — manifest changes', () => {
     writeTestConfig(configDir, { plugins: [pluginDir], tools });
 
     const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port);
+    const client = createMcpClient(server.port, server.secret);
 
     try {
       await client.initialize();
@@ -323,7 +323,7 @@ test.describe.serial('File watcher — manifest changes', () => {
     writeTestConfig(configDir, { plugins: [pluginDir], tools });
 
     const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port);
+    const client = createMcpClient(server.port, server.secret);
 
     try {
       await client.initialize();
@@ -411,7 +411,7 @@ test.describe('Hot reload — multiple MCP sessions', () => {
     expect(tools1Before.length).toBeGreaterThan(0);
 
     // Session 2 (manually created)
-    const client2 = createMcpClient(mcpServer.port);
+    const client2 = createMcpClient(mcpServer.port, mcpServer.secret);
     await client2.initialize();
     const tools2Before = await client2.listTools();
     expect(tools2Before.length).toBe(tools1Before.length);
@@ -438,7 +438,7 @@ test.describe('Hot reload — multiple MCP sessions', () => {
   });
 
   test('all sessions see config changes after hot reload', async ({ mcpServer, mcpClient }) => {
-    const client2 = createMcpClient(mcpServer.port);
+    const client2 = createMcpClient(mcpServer.port, mcpServer.secret);
     await client2.initialize();
 
     try {
@@ -614,7 +614,7 @@ test.describe('File watcher + hot reload combined', () => {
     writeTestConfig(configDir, { plugins: [pluginDir], tools });
 
     const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port);
+    const client = createMcpClient(server.port, server.secret);
 
     try {
       await client.initialize();
@@ -686,7 +686,7 @@ test.describe.serial('Hot reload — empty to populated', () => {
     writeTestConfig(configDir, { plugins: [], tools: {} });
 
     const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port);
+    const client = createMcpClient(server.port, server.secret);
 
     try {
       await client.initialize();
@@ -700,14 +700,15 @@ test.describe.serial('Hot reload — empty to populated', () => {
         expect(toolsBefore.map(t => t.name)).toContain(bt);
       }
 
-      // Add e2e-test plugin via config
+      // Add e2e-test plugin via config (preserve the secret for MCP auth)
+      const currentConfig = readTestConfig(configDir);
       const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
       const prefixedToolNames = readPluginToolNames();
       const tools: Record<string, boolean> = {};
       for (const t of prefixedToolNames) {
         tools[t] = true;
       }
-      writeTestConfig(configDir, { plugins: [absPluginPath], tools });
+      writeTestConfig(configDir, { plugins: [absPluginPath], tools, secret: currentConfig.secret });
 
       server.logs.length = 0;
       server.triggerHotReload();
@@ -799,7 +800,7 @@ test.describe.serial('File watcher — tool metadata changes', () => {
     writeTestConfig(configDir, { plugins: [pluginDir], tools });
 
     const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port);
+    const client = createMcpClient(server.port, server.secret);
 
     try {
       await client.initialize();
@@ -863,7 +864,7 @@ test.describe('File watcher — corrupted manifest', () => {
     writeTestConfig(configDir, { plugins: [pluginDir], tools });
 
     const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port);
+    const client = createMcpClient(server.port, server.secret);
 
     try {
       await client.initialize();
@@ -906,6 +907,9 @@ test.describe('Hot reload — corrupted config', () => {
     const toolsBefore = await mcpClient.listTools();
     expect(toolsBefore.length).toBeGreaterThan(0);
 
+    // Save the original config so we can restore it after the corrupt phase
+    const originalConfig = readTestConfig(mcpServer.configDir);
+
     // Write invalid JSON to config.json
     const configPath = path.join(mcpServer.configDir, 'config.json');
     fs.writeFileSync(configPath, '{ corrupt !!! not json', 'utf-8');
@@ -915,16 +919,30 @@ test.describe('Hot reload — corrupted config', () => {
     mcpServer.triggerHotReload();
     await waitForLog(mcpServer, 'Hot reload complete', 20_000);
 
-    // Server should still be alive
+    // Server should still be alive (health endpoint is unauthenticated)
     const health = await mcpServer.health();
     expect(health).not.toBeNull();
     if (!health) throw new Error('health returned null');
     expect(health.status).toBe('ok');
 
-    // The session should still work (browser tools at minimum)
-    const toolsAfter = await mcpClient.listTools();
-    for (const bt of BROWSER_TOOL_NAMES) {
-      expect(toolsAfter.map(t => t.name)).toContain(bt);
+    // The fallback config generated a new in-memory secret that isn't
+    // persisted to disk. Restore the original config and hot-reload again
+    // so the server picks up the known secret and we can verify MCP works.
+    writeTestConfig(mcpServer.configDir, originalConfig);
+    mcpServer.logs.length = 0;
+    mcpServer.triggerHotReload();
+    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+    // Create a new client with the restored secret
+    const newClient = createMcpClient(mcpServer.port, originalConfig.secret);
+    await newClient.initialize();
+    try {
+      const toolsAfter = await newClient.listTools();
+      for (const bt of BROWSER_TOOL_NAMES) {
+        expect(toolsAfter.map(t => t.name)).toContain(bt);
+      }
+    } finally {
+      await newClient.close();
     }
   });
 });
@@ -984,7 +1002,7 @@ test.describe.serial('File watcher — input_schema changes', () => {
     writeTestConfig(configDir, { plugins: [pluginDir], tools });
 
     const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port);
+    const client = createMcpClient(server.port, server.secret);
 
     try {
       await client.initialize();
@@ -1062,7 +1080,7 @@ test.describe.serial('File watcher — restart after hot reload', () => {
     writeTestConfig(configDir, { plugins: [pluginDir], tools });
 
     const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port);
+    const client = createMcpClient(server.port, server.secret);
 
     try {
       await client.initialize();
@@ -1168,7 +1186,7 @@ test.describe.serial('File watcher — version change propagation', () => {
     writeTestConfig(configDir, { plugins: [pluginDir], tools });
 
     const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port);
+    const client = createMcpClient(server.port, server.secret);
 
     try {
       await client.initialize();

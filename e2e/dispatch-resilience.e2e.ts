@@ -493,7 +493,7 @@ test.describe('Server-side dispatch timeout', () => {
     // Create a fresh MCP client with its own session for the long-timeout call.
     // The standard mcpClient has a 30s fetch timeout that would race with the
     // 30s dispatch timeout, so we use a 45s timeout via the options parameter.
-    const timeoutClient = createMcpClient(mcpServer.port);
+    const timeoutClient = createMcpClient(mcpServer.port, mcpServer.secret);
     await timeoutClient.initialize();
 
     // Get the authenticated WS URL
@@ -786,7 +786,7 @@ test.describe('MCP session invalidation after close', () => {
     await waitForExtensionConnected(mcpServer);
 
     // Client A: create, initialize, call browser_list_tabs — verify success
-    const clientA = createMcpClient(mcpServer.port);
+    const clientA = createMcpClient(mcpServer.port, mcpServer.secret);
     await clientA.initialize();
 
     const resultA = await clientA.callTool('browser_list_tabs');
@@ -796,7 +796,7 @@ test.describe('MCP session invalidation after close', () => {
     await clientA.close();
 
     // Client B: create on the same server port, initialize, verify tools work
-    const clientB = createMcpClient(mcpServer.port);
+    const clientB = createMcpClient(mcpServer.port, mcpServer.secret);
     await clientB.initialize();
 
     const resultB = await clientB.callTool('browser_list_tabs');

@@ -122,7 +122,7 @@ const bundleIIFE = async (sourceEntry: string, outDir: string, pluginName: strin
   // Create a temporary wrapper entry that imports the plugin and registers it
   // on window.__openTabs.adapters. This is bundled as an IIFE so the adapter
   // is available when executed in MAIN world.
-  const wrapperPath = join(outDir, `_adapter_entry_${Date.now()}.ts`);
+  const wrapperPath = join(outDir, `_adapter_entry_${crypto.randomUUID()}.ts`);
   const relativeImport = './' + relative(outDir, sourceEntry).replace(/\.ts$/, '.js');
 
   const wrapperCode = `import plugin from ${JSON.stringify(relativeImport)};

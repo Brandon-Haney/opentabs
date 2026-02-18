@@ -330,7 +330,11 @@ const connect = async (): Promise<void> => {
 
 // --- Message routing from background script ---
 
-chrome.runtime.onMessage.addListener((message: InternalMessage, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message: InternalMessage, sender, sendResponse) => {
+  // Defense-in-depth: only accept messages from our own extension.
+  // Prevents content scripts or other extensions from sending ws:send messages.
+  if (sender.id !== chrome.runtime.id) return false;
+
   switch (message.type) {
     case 'ws:send': {
       if (ws?.readyState === WebSocket.OPEN) {

@@ -111,6 +111,64 @@ export const handleBrowserNavigateTab = async (params: Record<string, unknown>, 
   }
 };
 
+export const handleBrowserFocusTab = async (params: Record<string, unknown>, id: string | number): Promise<void> => {
+  try {
+    const tabId = params.tabId;
+    if (typeof tabId !== 'number') {
+      sendToServer({ jsonrpc: '2.0', error: { code: -32602, message: 'Missing or invalid tabId parameter' }, id });
+      return;
+    }
+    const tab = await chrome.tabs.update(tabId, { active: true });
+    if (!tab) {
+      sendToServer({ jsonrpc: '2.0', error: { code: -32602, message: `Tab ${tabId} not found` }, id });
+      return;
+    }
+    await chrome.windows.update(tab.windowId, { focused: true });
+    sendToServer({
+      jsonrpc: '2.0',
+      result: { id: tab.id, title: tab.title ?? '', url: tab.url ?? '', active: true },
+      id,
+    });
+  } catch (err) {
+    sendToServer({
+      jsonrpc: '2.0',
+      error: { code: -32603, message: err instanceof Error ? err.message : String(err) },
+      id,
+    });
+  }
+};
+
+export const handleBrowserGetTabInfo = async (params: Record<string, unknown>, id: string | number): Promise<void> => {
+  try {
+    const tabId = params.tabId;
+    if (typeof tabId !== 'number') {
+      sendToServer({ jsonrpc: '2.0', error: { code: -32602, message: 'Missing or invalid tabId parameter' }, id });
+      return;
+    }
+    const tab = await chrome.tabs.get(tabId);
+    sendToServer({
+      jsonrpc: '2.0',
+      result: {
+        id: tab.id,
+        title: tab.title ?? '',
+        url: tab.url ?? '',
+        status: tab.status ?? '',
+        active: tab.active,
+        windowId: tab.windowId,
+        favIconUrl: tab.favIconUrl ?? '',
+        incognito: tab.incognito,
+      },
+      id,
+    });
+  } catch (err) {
+    sendToServer({
+      jsonrpc: '2.0',
+      error: { code: -32603, message: err instanceof Error ? err.message : String(err) },
+      id,
+    });
+  }
+};
+
 export const handleBrowserExecuteScript = async (
   params: Record<string, unknown>,
   id: string | number,

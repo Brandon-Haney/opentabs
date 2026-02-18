@@ -14,13 +14,30 @@ import type { ValidatedPluginPayload } from './message-router.js';
 const mockSendToServer = mock<(data: unknown) => void>();
 const mockForwardToSidePanel = mock<(message: unknown) => void>();
 
-const mockHandleToolDispatch = mock<(params: Record<string, unknown>, id: string | number) => Promise<void>>();
+const asyncNoop = () => Promise.resolve();
+const mockHandleToolDispatch = mock(
+  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+);
 
-const mockHandleBrowserListTabs = mock<(id: string | number) => Promise<void>>();
-const mockHandleBrowserOpenTab = mock<(params: Record<string, unknown>, id: string | number) => Promise<void>>();
-const mockHandleBrowserCloseTab = mock<(params: Record<string, unknown>, id: string | number) => Promise<void>>();
-const mockHandleBrowserNavigateTab = mock<(params: Record<string, unknown>, id: string | number) => Promise<void>>();
-const mockHandleBrowserExecuteScript = mock<(params: Record<string, unknown>, id: string | number) => Promise<void>>();
+const mockHandleBrowserListTabs = mock(asyncNoop as (id: string | number) => Promise<void>);
+const mockHandleBrowserOpenTab = mock(
+  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+);
+const mockHandleBrowserCloseTab = mock(
+  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+);
+const mockHandleBrowserNavigateTab = mock(
+  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+);
+const mockHandleBrowserFocusTab = mock(
+  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+);
+const mockHandleBrowserGetTabInfo = mock(
+  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+);
+const mockHandleBrowserExecuteScript = mock(
+  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+);
 
 await mock.module('./messaging.js', () => ({
   sendToServer: mockSendToServer,
@@ -36,6 +53,8 @@ await mock.module('./browser-commands.js', () => ({
   handleBrowserOpenTab: mockHandleBrowserOpenTab,
   handleBrowserCloseTab: mockHandleBrowserCloseTab,
   handleBrowserNavigateTab: mockHandleBrowserNavigateTab,
+  handleBrowserFocusTab: mockHandleBrowserFocusTab,
+  handleBrowserGetTabInfo: mockHandleBrowserGetTabInfo,
   handleBrowserExecuteScript: mockHandleBrowserExecuteScript,
 }));
 
@@ -545,6 +564,28 @@ describe('handleServerMessage', () => {
 
       expect(mockHandleBrowserNavigateTab).toHaveBeenCalledTimes(1);
       expect(mockHandleBrowserNavigateTab).toHaveBeenCalledWith({ tabId: 3, url: 'https://example.com/new' }, 23);
+    });
+
+    test('dispatches browser.focusTab to handleBrowserFocusTab', () => {
+      handleServerMessage({
+        method: 'browser.focusTab',
+        id: 25,
+        params: { tabId: 10 },
+      });
+
+      expect(mockHandleBrowserFocusTab).toHaveBeenCalledTimes(1);
+      expect(mockHandleBrowserFocusTab).toHaveBeenCalledWith({ tabId: 10 }, 25);
+    });
+
+    test('dispatches browser.getTabInfo to handleBrowserGetTabInfo', () => {
+      handleServerMessage({
+        method: 'browser.getTabInfo',
+        id: 26,
+        params: { tabId: 11 },
+      });
+
+      expect(mockHandleBrowserGetTabInfo).toHaveBeenCalledTimes(1);
+      expect(mockHandleBrowserGetTabInfo).toHaveBeenCalledWith({ tabId: 11 }, 26);
     });
 
     test('dispatches browser.executeScript to handleBrowserExecuteScript', () => {

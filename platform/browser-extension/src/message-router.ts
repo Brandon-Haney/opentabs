@@ -1,6 +1,8 @@
 import {
   handleBrowserCloseTab,
   handleBrowserExecuteScript,
+  handleBrowserFocusTab,
+  handleBrowserGetTabInfo,
   handleBrowserListTabs,
   handleBrowserNavigateTab,
   handleBrowserOpenTab,
@@ -202,6 +204,22 @@ const methodHandlers = new Map<string, MessageHandler>([
     (params, id) => {
       if (id !== undefined) {
         handleBrowserNavigateTab(params, id).catch(console.error);
+      }
+    },
+  ],
+  [
+    'browser.focusTab',
+    (params, id) => {
+      if (id !== undefined) {
+        handleBrowserFocusTab(params, id).catch(console.error);
+      }
+    },
+  ],
+  [
+    'browser.getTabInfo',
+    (params, id) => {
+      if (id !== undefined) {
+        handleBrowserGetTabInfo(params, id).catch(console.error);
       }
     },
   ],

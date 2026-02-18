@@ -4,6 +4,8 @@
 
 import { closeTab } from './close-tab.js';
 import { executeScript } from './execute-script.js';
+import { focusTab } from './focus-tab.js';
+import { getTabInfo } from './get-tab-info.js';
 import { listTabs } from './list-tabs.js';
 import { navigateTab } from './navigate-tab.js';
 import { openTab } from './open-tab.js';
@@ -16,6 +18,8 @@ const browserTools: BrowserToolDefinition[] = [
   openTab,
   closeTab,
   navigateTab,
+  focusTab,
+  getTabInfo,
   executeScript,
 ];
 

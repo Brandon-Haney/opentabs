@@ -275,19 +275,31 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
 
     // Validate args against the tool's JSON Schema before dispatching.
     // The validator is pre-compiled at discovery time for performance.
-    if (lookup.validate) {
-      const valid = lookup.validate(args);
-      if (!valid) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Invalid arguments for tool "${toolName}":\n${lookup.validationErrors()}`,
-            },
-          ],
-          isError: true,
-        };
-      }
+    // If schema compilation failed, reject the call entirely — unvalidated
+    // input must never reach plugin handlers.
+    if (!lookup.validate) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Tool "${toolName}" cannot be called: schema compilation failed. ${lookup.validationErrors()}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const valid = lookup.validate(args);
+    if (!valid) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Invalid arguments for tool "${toolName}":\n${lookup.validationErrors()}`,
+          },
+        ],
+        isError: true,
+      };
     }
 
     // Concurrency limit: prevent a runaway MCP client from flooding a single

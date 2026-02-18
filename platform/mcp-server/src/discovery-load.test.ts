@@ -63,48 +63,34 @@ describe('loadPluginFromDir', () => {
     expect(result.npmPackageName).toBeUndefined();
   });
 
-  test('throws when IIFE file is missing', async () => {
+  test('throws when IIFE file is missing', () => {
     const pluginDir = join(tmpDir, 'no-iife');
     mkdirSync(pluginDir, { recursive: true });
     writeFileSync(join(pluginDir, 'opentabs-plugin.json'), JSON.stringify(validManifest()));
-    // No dist/adapter.iife.js
 
-    let caught: Error | undefined;
-    try {
-      await loadPluginFromDir(pluginDir, 'local', null);
-    } catch (err) {
-      caught = err as Error;
-    }
-    expect(caught).toBeDefined();
-    expect(caught?.message).toContain('not found');
+    expect(async () => await loadPluginFromDir(pluginDir, 'local', null)).toThrow(/not found/);
   });
 
-  test('throws when IIFE file is empty', async () => {
+  test('throws when IIFE file is empty', () => {
     const pluginDir = join(tmpDir, 'empty-iife');
     writePlugin(pluginDir, validManifest(), '');
 
-    let caught: Error | undefined;
-    try {
-      await loadPluginFromDir(pluginDir, 'local', null);
-    } catch (err) {
-      caught = err as Error;
-    }
-    expect(caught).toBeDefined();
-    expect(caught?.message).toContain('empty');
+    expect(async () => await loadPluginFromDir(pluginDir, 'local', null)).toThrow(/empty/);
   });
 
-  test('throws when plugin name in manifest is invalid', async () => {
+  test('throws when plugin name in manifest is invalid', () => {
     const pluginDir = join(tmpDir, 'bad-name');
     writePlugin(pluginDir, validManifest({ name: 'INVALID NAME!' }));
 
-    let caught: Error | undefined;
-    try {
-      await loadPluginFromDir(pluginDir, 'local', null);
-    } catch (err) {
-      caught = err as Error;
-    }
-    expect(caught).toBeDefined();
-    expect(caught?.message).toContain('must be lowercase');
+    expect(async () => await loadPluginFromDir(pluginDir, 'local', null)).toThrow(/must be lowercase/);
+  });
+
+  test('throws when IIFE file exceeds 5MB size limit', () => {
+    const pluginDir = join(tmpDir, 'oversized-iife');
+    const oversizedContent = 'x'.repeat(5 * 1024 * 1024 + 1);
+    writePlugin(pluginDir, validManifest(), oversizedContent);
+
+    expect(async () => await loadPluginFromDir(pluginDir, 'local', null)).toThrow(/exceeding the 5MB limit/);
   });
 
   test('local plugin (npmPkgName=null) derives name from manifest.name', async () => {

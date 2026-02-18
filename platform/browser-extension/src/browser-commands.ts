@@ -164,8 +164,10 @@ export const handleBrowserExecuteScript = async (
             // Result available (sync or async resolved) — read and clean up
             if (result && ('value' in result || 'error' in result)) {
               const captured = { ...result };
+              // undefined is dropped by structured cloning — normalize to null
+              if (captured.value === undefined) captured.value = null;
               // Serialize non-primitive values
-              if (captured.value !== null && captured.value !== undefined && typeof captured.value === 'object') {
+              if (captured.value !== null && typeof captured.value === 'object') {
                 try {
                   const json = JSON.stringify(captured.value);
                   captured.value = json.length > 50_000 ? json.slice(0, 50_000) + '... (truncated)' : JSON.parse(json);

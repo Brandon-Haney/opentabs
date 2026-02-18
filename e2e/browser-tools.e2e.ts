@@ -472,7 +472,7 @@ test.describe('browser_execute_script', () => {
     await mcpClient.callTool('browser_close_tab', { tabId });
   });
 
-  test('code with no return produces undefined', async ({
+  test('code with no return produces null', async ({
     mcpServer,
     testServer,
     extensionContext: _extensionContext,
@@ -489,8 +489,8 @@ test.describe('browser_execute_script', () => {
 
     const data = parseToolResult(result.content);
     const value = data.value as Record<string, unknown>;
-    // undefined is not JSON-serializable, so it becomes absent or null
-    expect('value' in value || 'error' in value).toBe(true);
+    // undefined is normalized to null by the extension before structured cloning
+    expect(value.value).toBeNull();
 
     await mcpClient.callTool('browser_close_tab', { tabId });
   });

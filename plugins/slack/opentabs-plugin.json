@@ -284,16 +284,16 @@
                   "description": "Message type (e.g., \"message\")"
                 },
                 "user": {
-                  "description": "User ID who sent the reply",
+                  "description": "User ID who sent the message",
                   "type": "string"
                 },
                 "text": {
                   "type": "string",
-                  "description": "Reply text content"
+                  "description": "Message text content"
                 },
                 "ts": {
                   "type": "string",
-                  "description": "Reply timestamp — unique message identifier"
+                  "description": "Message timestamp — unique message identifier"
                 },
                 "thread_ts": {
                   "description": "Parent message timestamp",
@@ -314,12 +314,12 @@
             "description": "Whether there are more replies to fetch"
           },
           "response_metadata": {
-            "description": "Pagination metadata — present when has_more is true",
+            "description": "Pagination metadata",
             "type": "object",
             "properties": {
               "next_cursor": {
                 "type": "string",
-                "description": "Cursor for the next page of results"
+                "description": "Cursor for the next page of results — empty string if no more pages"
               }
             },
             "required": [
@@ -1539,5 +1539,5 @@
       }
     }
   ],
-  "adapterHash": "c3f9a790702789f0c2ad50ba96da1f51a53d8abebdc9cf6119b4c91dd10966cf"
+  "adapterHash": "47e3bbac144130a16deecdd1f7e6f1571f7dd480f5f1f8dfaa161c5a22211007"
 }

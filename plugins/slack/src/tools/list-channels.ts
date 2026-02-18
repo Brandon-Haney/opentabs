@@ -1,4 +1,4 @@
-import { channelSchema, mapChannel } from './channel-schema.js';
+import { channelSchema, mapChannel, paginationMetadataSchema } from './channel-schema.js';
 import { slackApi } from '../slack-api.js';
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
@@ -29,12 +29,7 @@ export const listChannels = defineTool({
   }),
   output: z.object({
     channels: z.array(channelSchema).describe('Array of channels matching the filter criteria'),
-    response_metadata: z
-      .object({
-        next_cursor: z.string().describe('Cursor for the next page of results — empty string if no more pages'),
-      })
-      .optional()
-      .describe('Pagination metadata'),
+    response_metadata: paginationMetadataSchema,
   }),
   handle: async params => {
     const body: Record<string, unknown> = {

@@ -1,12 +1,9 @@
+import { messageSchema, paginationMetadataSchema } from './channel-schema.js';
 import { slackApi } from '../slack-api.js';
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 
-const replySchema = z.object({
-  type: z.string().describe('Message type (e.g., "message")'),
-  user: z.string().optional().describe('User ID who sent the reply'),
-  text: z.string().describe('Reply text content'),
-  ts: z.string().describe('Reply timestamp — unique message identifier'),
+const replySchema = messageSchema.extend({
   thread_ts: z.string().optional().describe('Parent message timestamp'),
 });
 
@@ -29,12 +26,7 @@ export const readThread = defineTool({
   output: z.object({
     messages: z.array(replySchema).describe('Array of thread replies including the parent message'),
     has_more: z.boolean().describe('Whether there are more replies to fetch'),
-    response_metadata: z
-      .object({
-        next_cursor: z.string().describe('Cursor for the next page of results'),
-      })
-      .optional()
-      .describe('Pagination metadata — present when has_more is true'),
+    response_metadata: paginationMetadataSchema,
   }),
   handle: async params => {
     const data = await slackApi<{

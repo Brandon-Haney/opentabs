@@ -1,3 +1,4 @@
+import { paginationMetadataSchema } from './channel-schema.js';
 import { slackApi } from '../slack-api.js';
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
@@ -20,12 +21,7 @@ export const listMembers = defineTool({
   }),
   output: z.object({
     members: z.array(z.string().describe('User ID')).describe('Array of user IDs who are members of the channel'),
-    response_metadata: z
-      .object({
-        next_cursor: z.string().describe('Cursor for the next page of results — empty string if no more pages'),
-      })
-      .optional()
-      .describe('Pagination metadata'),
+    response_metadata: paginationMetadataSchema,
   }),
   handle: async params => {
     const body: Record<string, unknown> = {

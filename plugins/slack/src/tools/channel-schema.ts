@@ -22,6 +22,28 @@ export const channelSchema = z.object({
     .describe('Channel purpose'),
 });
 
+/**
+ * Shared Zod schema for a Slack message object — used by read-messages, read-thread,
+ * and any other tool that returns message data.
+ */
+export const messageSchema = z.object({
+  type: z.string().describe('Message type (e.g., "message")'),
+  user: z.string().optional().describe('User ID who sent the message'),
+  text: z.string().describe('Message text content'),
+  ts: z.string().describe('Message timestamp — unique message identifier'),
+});
+
+/**
+ * Shared Zod schema for Slack pagination metadata — used by list-channels, list-members,
+ * list-users, read-messages, read-thread, and any other tool with cursor-based pagination.
+ */
+export const paginationMetadataSchema = z
+  .object({
+    next_cursor: z.string().describe('Cursor for the next page of results — empty string if no more pages'),
+  })
+  .optional()
+  .describe('Pagination metadata');
+
 export interface SlackChannel {
   id: string;
   name: string;

@@ -26,6 +26,7 @@
     { "path": "platform/browser-extension/tsconfig.build-scripts.json" },
     { "path": "platform/create-plugin" },
     { "path": "tsconfig.configs.json" },
+    { "path": "tsconfig.scripts.json" },
     { "path": "e2e" },
     { "path": "website" }
   ],

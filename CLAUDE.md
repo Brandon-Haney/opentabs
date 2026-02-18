@@ -118,13 +118,13 @@ bun run test:e2e      # E2E tests (Playwright)
 1. `bun run build`
 2. Open `chrome://extensions/`
 3. Enable Developer mode
-4. Load unpacked → select `platform/browser-extension` folder
+4. Load unpacked → select `~/.opentabs/extension` folder
 
 ### Reloading the Extension After Code Changes
 
 The Chrome extension does NOT auto-reload. After building (`bun run build`), the extension must be manually reloaded for changes to take effect:
 
-1. `bun run build` (builds TypeScript + side panel)
+1. `bun run build` (builds TypeScript + side panel + copies to `~/.opentabs/extension/`)
 2. Open `chrome://extensions/`
 3. Find the "OpenTabs" extension card
 4. Click the circular refresh/reload icon on the card

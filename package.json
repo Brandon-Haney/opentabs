@@ -13,7 +13,8 @@
   ],
   "scripts": {
     "dev": "bun run build && bun --hot platform/mcp-server/dist/index.js",
-    "build": "tsc --build && bun run --cwd platform/browser-extension build:bundle && bun run --cwd platform/browser-extension build:side-panel",
+    "build": "tsc --build && bun run --cwd platform/browser-extension build:bundle && bun run --cwd platform/browser-extension build:side-panel && bun run build:install-extension",
+    "build:install-extension": "bun scripts/install-extension.ts",
     "type-check": "tsc --build",
     "type-check:e2e": "tsc --noEmit -p e2e/tsconfig.json",
     "lint": "eslint .",

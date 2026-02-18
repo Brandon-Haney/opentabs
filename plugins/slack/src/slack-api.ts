@@ -51,85 +51,169 @@ const getAuthFromLocalStorage = (): SlackAuth | null => {
     const team = config.teams[teamId];
     if (!team?.token) return null;
 
-    return {
-      token: team.token,
-      workspaceUrl: window.location.origin,
-      teamId,
-    };
+    return buildAuth(team.token, teamId, undefined);
   } catch {
     return null;
   }
 };
 
 /**
- * Try to read auth from boot_data global (new app.slack.com client).
- * The new Slack client injects `boot_data` on the window with the API token
- * after initial authentication. Also checks `window.TS.boot_data` which is
- * used in some Slack client versions.
+ * Shape of the window.TS global exposed by the Slack web client.
+ * Different client versions populate different subsets of this object.
+ */
+interface SlackTSGlobal {
+  boot_data?: SlackBootData;
+  model?: {
+    api_token?: string;
+    team?: { id?: string; url?: string; domain?: string };
+    [key: string]: unknown;
+  };
+  redux?: {
+    getState?: () => { boot?: SlackBootData; [key: string]: unknown };
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * Build a SlackAuth from a token string and optional team metadata.
+ * Centralizes the fallback logic for workspace URL and team ID.
+ */
+const buildAuth = (token: string, teamId?: string, teamUrl?: string): SlackAuth => ({
+  token,
+  workspaceUrl: (teamUrl ?? '').replace(/\/$/, '') || window.location.origin,
+  teamId: teamId ?? '',
+});
+
+/**
+ * Try to extract auth from a SlackBootData-shaped object.
+ * Returns null if the object does not contain a valid xoxc- token.
+ */
+const authFromBootData = (bd: SlackBootData | null | undefined): SlackAuth | null => {
+  if (!bd?.api_token || typeof bd.api_token !== 'string') return null;
+  if (!bd.api_token.startsWith('xoxc-')) return null;
+  return buildAuth(
+    bd.api_token,
+    typeof bd.team_id === 'string' ? bd.team_id : undefined,
+    typeof bd.team_url === 'string' ? bd.team_url : undefined,
+  );
+};
+
+/**
+ * Try to read auth from window globals set by the Slack web client.
+ * The Slack client exposes authentication state through several global
+ * objects depending on the client version:
+ *   - window.boot_data (SSR-injected on app.slack.com)
+ *   - window.TS.boot_data (classic client)
+ *   - window.TS.model.api_token (classic client model layer)
+ *   - window.TS.redux.getState().boot (Redux store, some client versions)
  */
 const getAuthFromBootData = (): SlackAuth | null => {
   try {
     const g = globalThis as Record<string, unknown>;
 
-    // Try window.boot_data directly
-    let bootData = g.boot_data as SlackBootData | undefined;
+    // 1. window.boot_data (SSR-injected by app.slack.com)
+    const directBoot = authFromBootData(g.boot_data as SlackBootData | undefined);
+    if (directBoot) return directBoot;
 
-    // Try window.TS.boot_data (alternate location in some client versions)
-    if (!bootData?.api_token) {
-      const ts = g.TS as { boot_data?: SlackBootData } | undefined;
-      if (ts?.boot_data) {
-        bootData = ts.boot_data;
+    const ts = g.TS as SlackTSGlobal | undefined;
+    if (!ts) return null;
+
+    // 2. window.TS.boot_data (classic client)
+    const tsBoot = authFromBootData(ts.boot_data);
+    if (tsBoot) return tsBoot;
+
+    // 3. window.TS.model.api_token (classic client model layer)
+    if (ts.model) {
+      const modelToken = ts.model.api_token;
+      if (typeof modelToken === 'string' && modelToken.startsWith('xoxc-')) {
+        return buildAuth(
+          modelToken,
+          ts.model.team?.id,
+          ts.model.team?.url ?? (ts.model.team?.domain ? `https://${ts.model.team.domain}.slack.com` : undefined),
+        );
       }
     }
 
-    if (!bootData?.api_token || typeof bootData.api_token !== 'string') return null;
+    // 4. window.TS.redux.getState().boot (Redux store)
+    if (typeof ts.redux?.getState === 'function') {
+      const state = ts.redux.getState();
+      const reduxBoot = authFromBootData(state?.boot as SlackBootData | undefined);
+      if (reduxBoot) return reduxBoot;
+    }
 
-    const teamId = typeof bootData.team_id === 'string' ? bootData.team_id : '';
-    const teamUrl = typeof bootData.team_url === 'string' ? bootData.team_url : window.location.origin;
-
-    return {
-      token: bootData.api_token,
-      workspaceUrl: teamUrl.replace(/\/$/, '') || window.location.origin,
-      teamId,
-    };
+    return null;
   } catch {
     return null;
   }
 };
 
 /**
+ * Try to extract auth from a script tag's text content using regex.
+ * Searches for xoxc- tokens in JSON-like contexts within the text.
+ */
+const extractAuthFromScriptText = (text: string): SlackAuth | null => {
+  // Match xoxc- tokens in any JSON-like context (handles both quoted keys and unquoted)
+  const tokenMatch = /["']?api_token["']?\s*:\s*["'](xoxc-[a-zA-Z0-9-]+)["']/.exec(text);
+  if (!tokenMatch?.[1]) return null;
+
+  const token = tokenMatch[1];
+
+  // Extract team_id from the same script block
+  const teamIdMatch = /["']?team_id["']?\s*:\s*["'](T[A-Z0-9]+)["']/.exec(text);
+  const teamId = teamIdMatch?.[1] ?? '';
+
+  // Extract team_url from the same script block
+  const teamUrlMatch = /["']?team_url["']?\s*:\s*["'](https?:\/\/[^"']+)["']/.exec(text);
+  const teamUrl = teamUrlMatch?.[1]?.replace(/\/$/, '') ?? '';
+
+  return buildAuth(token, teamId || undefined, teamUrl || undefined);
+};
+
+/**
  * Try to read auth from inline `<script>` tags in the page HTML.
- * The modern app.slack.com client embeds configuration JSON in script tags
- * during server-side rendering. This JSON contains `api_token`, `team_id`,
- * and `team_url` fields needed for API calls.
+ * The Slack web client embeds configuration JSON in script tags during
+ * server-side rendering. Checks both executable scripts and JSON data
+ * scripts (type="application/json"), as different client versions use
+ * different approaches.
  */
 const getAuthFromPageScripts = (): SlackAuth | null => {
   try {
-    const scripts = document.querySelectorAll('script:not([src])');
+    // Check all inline scripts: both executable and JSON data scripts
+    const scripts = document.querySelectorAll<HTMLScriptElement>('script:not([src])');
     for (const script of scripts) {
       const text = script.textContent;
-      if (!text) continue;
+      if (!text || !text.includes('xoxc-')) continue;
 
-      // Match xoxc- tokens (Slack session tokens) in any JSON-like context
-      const tokenMatch = /["']api_token["']\s*:\s*["'](xoxc-[a-zA-Z0-9-]+)["']/.exec(text);
-      if (!tokenMatch?.[1]) continue;
+      // For JSON scripts, try parsing the entire content as JSON first
+      if (script.type === 'application/json' || script.type === 'application/ld+json') {
+        try {
+          const parsed: unknown = JSON.parse(text);
+          const auth = extractAuthFromObject(parsed);
+          if (auth) return auth;
+        } catch {
+          // Fall through to regex extraction
+        }
+      }
 
-      const token = tokenMatch[1];
-
-      // Extract team_id from the same script block
-      const teamIdMatch = /["']team_id["']\s*:\s*["'](T[A-Z0-9]+)["']/.exec(text);
-      const teamId = teamIdMatch?.[1] ?? '';
-
-      // Extract team_url from the same script block
-      const teamUrlMatch = /["']team_url["']\s*:\s*["'](https?:\/\/[^"']+)["']/.exec(text);
-      const teamUrl = teamUrlMatch?.[1]?.replace(/\/$/, '') ?? '';
-
-      return {
-        token,
-        workspaceUrl: teamUrl || window.location.origin,
-        teamId,
-      };
+      const auth = extractAuthFromScriptText(text);
+      if (auth) return auth;
     }
+
+    // Check data attributes on the HTML element — some Slack versions embed
+    // boot data as a JSON attribute (e.g., data-boot on the root element)
+    const htmlEl = document.documentElement;
+    const bootAttr = htmlEl.getAttribute('data-boot');
+    if (bootAttr?.includes('xoxc-')) {
+      try {
+        const parsed: unknown = JSON.parse(bootAttr);
+        const auth = extractAuthFromObject(parsed);
+        if (auth) return auth;
+      } catch {
+        const auth = extractAuthFromScriptText(bootAttr);
+        if (auth) return auth;
+      }
+    }
+
     return null;
   } catch {
     return null;
@@ -138,9 +222,9 @@ const getAuthFromPageScripts = (): SlackAuth | null => {
 
 /**
  * Scan all localStorage keys for Slack auth tokens.
- * The modern app.slack.com client may store tokens under different key names
- * than the legacy `localConfig_v2`/`v3` keys. This scans all keys and parses
- * any JSON values that contain xoxc- tokens.
+ * The Slack web client may store tokens under key names that vary across
+ * versions. This brute-force scans all keys and parses any JSON values
+ * or raw strings that contain xoxc- tokens.
  */
 const getAuthFromLocalStorageScan = (): SlackAuth | null => {
   try {
@@ -162,11 +246,7 @@ const getAuthFromLocalStorageScan = (): SlackAuth | null => {
         // Not JSON — try regex extraction from raw string
         const tokenMatch = /(xoxc-[a-zA-Z0-9-]+)/.exec(raw);
         if (tokenMatch?.[1]) {
-          return {
-            token: tokenMatch[1],
-            workspaceUrl: window.location.origin,
-            teamId: '',
-          };
+          return buildAuth(tokenMatch[1]);
         }
       }
     }
@@ -178,29 +258,37 @@ const getAuthFromLocalStorageScan = (): SlackAuth | null => {
 
 /**
  * Recursively search a parsed JSON object for Slack auth fields
- * (`api_token` or `token` containing an xoxc- value).
+ * (`api_token` or `token` containing an xoxc- value). Searches objects
+ * and arrays up to 3 levels deep to handle nested config structures
+ * while avoiding excessive recursion on large Slack state objects.
  */
-const extractAuthFromObject = (obj: unknown): SlackAuth | null => {
-  if (typeof obj !== 'object' || obj === null) return null;
+const extractAuthFromObject = (obj: unknown, depth = 0): SlackAuth | null => {
+  if (depth > 3 || typeof obj !== 'object' || obj === null) return null;
+
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const result = extractAuthFromObject(item, depth + 1);
+      if (result) return result;
+    }
+    return null;
+  }
 
   const record = obj as Record<string, unknown>;
 
   // Check for api_token or token fields directly
   const tokenCandidate = record.api_token ?? record.token;
   if (typeof tokenCandidate === 'string' && tokenCandidate.startsWith('xoxc-')) {
-    const teamId = typeof record.team_id === 'string' ? record.team_id : '';
-    const teamUrl = typeof record.team_url === 'string' ? record.team_url : '';
-    return {
-      token: tokenCandidate,
-      workspaceUrl: teamUrl.replace(/\/$/, '') || window.location.origin,
-      teamId,
-    };
+    return buildAuth(
+      tokenCandidate,
+      typeof record.team_id === 'string' ? record.team_id : undefined,
+      typeof record.team_url === 'string' ? record.team_url : undefined,
+    );
   }
 
-  // Recurse one level into object values (avoid deep recursion on large structures)
+  // Recurse into object values
   for (const value of Object.values(record)) {
-    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      const result = extractAuthFromObject(value);
+    if (typeof value === 'object' && value !== null) {
+      const result = extractAuthFromObject(value, depth + 1);
       if (result) return result;
     }
   }
@@ -228,6 +316,33 @@ const getAuth = (): SlackAuth | null =>
  * Returns true if a valid token can be found from any source.
  */
 const isSlackAuthenticated = (): boolean => getAuth() !== null;
+
+/**
+ * Wait for Slack auth data to become available, retrying at short intervals.
+ * The app.slack.com SPA hydrates asynchronously after the page's
+ * `status=complete` event, so auth globals (window.boot_data, window.TS)
+ * may not be populated on the first check. This polls at 500ms intervals
+ * for up to 3 seconds — well within the 5-second isReady() timeout
+ * enforced by the browser extension.
+ */
+const waitForSlackAuth = (): Promise<boolean> =>
+  new Promise(resolve => {
+    let elapsed = 0;
+    const interval = 500;
+    const maxWait = 3000;
+    const timer = setInterval(() => {
+      elapsed += interval;
+      if (isSlackAuthenticated()) {
+        clearInterval(timer);
+        resolve(true);
+        return;
+      }
+      if (elapsed >= maxWait) {
+        clearInterval(timer);
+        resolve(false);
+      }
+    }, interval);
+  });
 
 /**
  * Call a Slack Web API method with proper authentication.
@@ -302,4 +417,4 @@ const slackApi = async <T extends Record<string, unknown>>(
   return data as T & { ok: true };
 };
 
-export { isSlackAuthenticated, slackApi };
+export { isSlackAuthenticated, waitForSlackAuth, slackApi };

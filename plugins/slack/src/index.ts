@@ -1,4 +1,4 @@
-import { isSlackAuthenticated } from './slack-api.js';
+import { isSlackAuthenticated, waitForSlackAuth } from './slack-api.js';
 import { addReaction } from './tools/add-reaction.js';
 import { createChannel } from './tools/create-channel.js';
 import { deleteMessage } from './tools/delete-message.js';
@@ -55,8 +55,15 @@ class SlackPlugin extends OpenTabsPlugin {
     unpinMessage,
   ];
 
-  isReady(): Promise<boolean> {
-    return Promise.resolve(isSlackAuthenticated());
+  /**
+   * Check if the Slack session is authenticated. On app.slack.com (SPA),
+   * auth globals may not be populated when the page first reaches
+   * `status=complete`. This method retries briefly to handle the SPA
+   * hydration delay, checking up to 3 seconds with 500ms intervals.
+   */
+  async isReady(): Promise<boolean> {
+    if (isSlackAuthenticated()) return true;
+    return waitForSlackAuth();
   }
 }
 

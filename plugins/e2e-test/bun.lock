@@ -5,21 +5,21 @@
     "": {
       "name": "opentabs-plugin-e2e-test",
       "dependencies": {
-        "@opentabs-dev/plugin-sdk": "^0.0.2",
+        "@opentabs-dev/plugin-sdk": "^0.0.6",
       },
       "devDependencies": {
-        "@opentabs-dev/cli": "^0.0.2",
+        "@opentabs-dev/cli": "^0.0.6",
         "eslint": "^9.39.2",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-prettier": "^5.5.5",
-        "jiti": "^2.4.2",
+        "jiti": "^2.6.1",
         "prettier": "^3.8.1",
         "typescript": "^5.9.3",
-        "typescript-eslint": "^8.55.0",
-        "zod": "^3.0.0",
+        "typescript-eslint": "^8.56.0",
+        "zod": "^4.3.6",
       },
       "peerDependencies": {
-        "zod": "^3.0.0",
+        "zod": "^4.0.0",
       },
     },
   },
@@ -50,11 +50,11 @@
 
     "@humanwhocodes/retry": ["@humanwhocodes/retry@0.4.3", "", {}, "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ=="],
 
-    "@opentabs-dev/cli": ["@opentabs-dev/cli@0.0.2", "", { "dependencies": { "@opentabs-dev/plugin-sdk": "^0.0.1", "@opentabs-dev/shared": "^0.0.1", "commander": "^14.0.3", "picocolors": "^1.1.1", "zod-to-json-schema": "^3.25.1" }, "bin": { "opentabs": "dist/cli.js" } }, "sha512-1+8RdbzObJGZhDG2ubUnQyXhHVgafj+YqFyacQrWEUXiaLqir6bUn+BlVkdZpo6CObuJ5GcXRIeZ7xcRXKgpRg=="],
+    "@opentabs-dev/cli": ["@opentabs-dev/cli@0.0.6", "", { "dependencies": { "@opentabs-dev/plugin-sdk": "^0.0.6", "@opentabs-dev/shared": "^0.0.6", "commander": "^14.0.3", "picocolors": "^1.1.1", "zod": "^4.3.6" }, "bin": { "opentabs": "dist/cli.js" } }, "sha512-/4kfU7K0IVDvGatyxPQiuLPLNLO7SQUqpPkMecgQCObIo5jyo3LRN1toVTBAwyuWkVDJyCgcBlRv0FdO4+OScQ=="],
 
-    "@opentabs-dev/plugin-sdk": ["@opentabs-dev/plugin-sdk@0.0.2", "", { "dependencies": { "@opentabs-dev/shared": "^0.0.1" }, "peerDependencies": { "zod": "^3.0.0" } }, "sha512-+jPvsQkGRhz3IKbfTmS5NOJCJRSzlWxkbsAMSdfotlD2hjz/fCutV4Q5aV+AQuP14w8Py9Nmhq4CtN3knDop5w=="],
+    "@opentabs-dev/plugin-sdk": ["@opentabs-dev/plugin-sdk@0.0.6", "", { "dependencies": { "@opentabs-dev/shared": "^0.0.6" }, "peerDependencies": { "zod": "^4.0.0" } }, "sha512-gtNb77i7aMLQolGTRgjcpzWyWy16JiSSJErwqL1n7FkPNyN2Q+fImviENWF1ctnCIY/9VtxNPJj6rncNwLq3GQ=="],
 
-    "@opentabs-dev/shared": ["@opentabs-dev/shared@0.0.1", "", {}, "sha512-D1DYQlyfQ3RSDlEZQYKE5u2YIo1bHbYJXOIeCcKS45lLK3/tAFsXbW7ljVrCA+RO8bEtm60U6gF/yfwcKUgUTg=="],
+    "@opentabs-dev/shared": ["@opentabs-dev/shared@0.0.6", "", {}, "sha512-b69ofJz2wkMTO5i442DPIxwbUAgxtUvL1oKo4UlPqngG9VvALB3GhxbWmRjdPrfe3Vdq5jMndD2Zw8GUFxjcVQ=="],
 
     "@pkgr/core": ["@pkgr/core@0.2.9", "", {}, "sha512-QNqXyfVS2wm9hweSYD2O7F0G06uurj9kZ96TRQE5Y9hU7+tgdZwIkbAKc5Ocy1HxEY2kuDQa6cQ1WRs/O5LFKA=="],
 
@@ -252,13 +252,9 @@
 
     "yocto-queue": ["yocto-queue@0.1.0", "", {}, "sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q=="],
 
-    "zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
-
-    "zod-to-json-schema": ["zod-to-json-schema@3.25.1", "", { "peerDependencies": { "zod": "^3.25 || ^4" } }, "sha512-pM/SU9d3YAggzi6MtR4h7ruuQlqKtad8e9S0fmxcMi+ueAK5Korys/aWcV9LIIHTVbj01NdzxcnXSN+O74ZIVA=="],
+    "zod": ["zod@4.3.6", "", {}, "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg=="],
 
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
-
-    "@opentabs-dev/cli/@opentabs-dev/plugin-sdk": ["@opentabs-dev/plugin-sdk@0.0.1", "", { "dependencies": { "@opentabs-dev/shared": "^0.0.1" }, "peerDependencies": { "zod": "^3.0.0" } }, "sha512-YRuz18jZ/TDyBCtwsBkamV2j3KgZxQe3S4ryRo8LCqWtmkU9hdAaRPDmi9HIpkJEozWWnlsg3kZXGI5uML8n5g=="],
 
     "@typescript-eslint/eslint-plugin/ignore": ["ignore@7.0.5", "", {}, "sha512-Hs59xBNfUIunMFgWAbGX5cq6893IbWg4KnrjbYwX3tx0ztorVgTDA6B2sxf8ejHJ4wz8BqGUMYlnzNBer5NvGg=="],
 

@@ -5,7 +5,7 @@
 
 import { validatePluginName, validateUrlPattern } from '@opentabs-dev/plugin-sdk';
 import pc from 'picocolors';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import { z } from 'zod';
 import { mkdirSync, watch } from 'node:fs';
 import { resolve, join, relative } from 'node:path';
 import type { Manifest, ManifestTool, OpenTabsPlugin, ToolDefinition } from '@opentabs-dev/plugin-sdk';
@@ -69,16 +69,11 @@ const validatePlugin = (plugin: OpenTabsPlugin): string[] => {
 };
 
 const convertToolSchemas = (tool: ToolDefinition) => {
-  // Uses jsonSchema7 target because it produces numeric exclusiveMinimum/Maximum
-  // values, which are valid in JSON Schema draft 2020-12 (required by the MCP
-  // protocol). The openApi3 and jsonSchema2012 targets in zod-to-json-schema
-  // v3.25 emit boolean exclusiveMinimum (draft-04 style), which Bedrock rejects.
-  const inputSchema = zodToJsonSchema(tool.input, { target: 'jsonSchema7', $refStrategy: 'none' });
-  const outputSchema = zodToJsonSchema(tool.output, { target: 'jsonSchema7', $refStrategy: 'none' });
+  const inputSchema = z.toJSONSchema(tool.input) as Record<string, unknown>;
+  const outputSchema = z.toJSONSchema(tool.output) as Record<string, unknown>;
 
-  // Remove the $schema property that zod-to-json-schema adds
-  delete (inputSchema as Record<string, unknown>)['$schema'];
-  delete (outputSchema as Record<string, unknown>)['$schema'];
+  delete inputSchema['$schema'];
+  delete outputSchema['$schema'];
 
   return { inputSchema, outputSchema };
 };
@@ -89,8 +84,8 @@ const generateManifest = (plugin: OpenTabsPlugin): Manifest => {
     return {
       name: tool.name,
       description: tool.description,
-      input_schema: inputSchema as Record<string, unknown>,
-      output_schema: outputSchema as Record<string, unknown>,
+      input_schema: inputSchema,
+      output_schema: outputSchema,
     };
   });
 

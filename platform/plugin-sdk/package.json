@@ -1,6 +1,6 @@
 {
   "name": "@opentabs-dev/plugin-sdk",
-  "version": "0.0.2",
+  "version": "0.0.6",
   "type": "module",
   "exports": {
     ".": {
@@ -19,10 +19,10 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@opentabs-dev/shared": "^0.0.2"
+    "@opentabs-dev/shared": "^0.0.6"
   },
   "peerDependencies": {
-    "zod": "^3.0.0"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "bun-types": "^1.3.9"

@@ -26,7 +26,7 @@ import { log } from './logger.js';
 import { prefixedToolName, isToolEnabled } from './state.js';
 import { version } from './version.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import { z } from 'zod';
 import type { ServerState, CachedBrowserTool, ToolLookupEntry } from './state.js';
 import type { ZodError } from 'zod';
 
@@ -96,16 +96,10 @@ const rebuildToolLookups = (state: ServerState): void => {
   }
   state.toolLookup = toolLookup;
 
-  // Browser tool schemas: pre-compute zodToJsonSchema once per reload.
-  // Uses jsonSchema7 target because it produces numeric exclusiveMinimum/Maximum
-  // values, which are valid in JSON Schema draft 2020-12 (required by the MCP
-  // protocol). The openApi3 and jsonSchema2012 targets in zod-to-json-schema
-  // v3.25 emit boolean exclusiveMinimum (draft-04 style), which Bedrock rejects.
+  // Browser tool schemas: pre-compute JSON Schema once per reload using
+  // Zod 4's native z.toJSONSchema() which produces valid draft 2020-12.
   state.cachedBrowserTools = state.browserTools.map((bt): CachedBrowserTool => {
-    const schema = zodToJsonSchema(bt.input, {
-      target: 'jsonSchema7',
-      $refStrategy: 'none',
-    }) as Record<string, unknown>;
+    const schema = z.toJSONSchema(bt.input) as Record<string, unknown>;
     delete schema['$schema'];
     return {
       name: bt.name,
@@ -190,7 +184,7 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
       }
 
       try {
-        const result = await cachedBt.tool.handler(parseResult.data as Record<string, unknown>, state);
+        const result = await cachedBt.tool.handler(parseResult.data, state);
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
         };

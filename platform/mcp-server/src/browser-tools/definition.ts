@@ -15,20 +15,17 @@ import type { ServerState } from '../state.js';
 import type { z } from 'zod';
 
 /** A browser tool definition with Zod input schema and a handler */
-interface BrowserToolDefinition {
-  name: string;
-  description: string;
-  input: z.ZodType;
-  handler: (args: Record<string, unknown>, state: ServerState) => Promise<unknown>;
-}
-
-/** Type-safe factory for defining browser tools */
-const defineBrowserTool = <TInput extends z.ZodType>(config: {
+interface BrowserToolDefinition<TInput extends z.ZodObject = z.ZodObject> {
   name: string;
   description: string;
   input: TInput;
   handler: (args: z.infer<TInput>, state: ServerState) => Promise<unknown>;
-}): BrowserToolDefinition => config as BrowserToolDefinition;
+}
+
+/** Type-safe factory for defining browser tools */
+const defineBrowserTool = <TInput extends z.ZodObject>(
+  config: BrowserToolDefinition<TInput>,
+): BrowserToolDefinition<TInput> => config;
 
 export type { BrowserToolDefinition };
 export { defineBrowserTool };

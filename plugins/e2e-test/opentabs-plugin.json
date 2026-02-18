@@ -84,12 +84,12 @@
         "type": "object",
         "properties": {
           "limit": {
-            "type": "number",
-            "description": "Maximum number of items to return (default 10, max 100)"
+            "description": "Maximum number of items to return (default 10, max 100)",
+            "type": "number"
           },
           "offset": {
-            "type": "number",
-            "description": "Offset for pagination (default 0)"
+            "description": "Offset for pagination (default 0)",
+            "type": "number"
           }
         },
         "additionalProperties": false
@@ -184,8 +184,8 @@
             "description": "Name for the new item"
           },
           "description": {
-            "type": "string",
-            "description": "Optional description for the item"
+            "description": "Optional description for the item",
+            "type": "string"
           }
         },
         "required": [
@@ -244,12 +244,12 @@
         "type": "object",
         "properties": {
           "error_code": {
-            "type": "string",
-            "description": "The error code the server should return (default \"deliberate_failure\")"
+            "description": "The error code the server should return (default \"deliberate_failure\")",
+            "type": "string"
           },
           "error_message": {
-            "type": "string",
-            "description": "The error message the server should return (default \"This tool always fails\")"
+            "description": "The error message the server should return (default \"This tool always fails\")",
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -269,5 +269,5 @@
       }
     }
   ],
-  "adapterHash": "099e3270c0e39ba0da3c934388628d295ae374a06fac21f24db3032dd45aa50f"
+  "adapterHash": "00e30d5070941e0d09dcad294f2540252ef951016a91d1d60ef32149b5d89da5"
 }

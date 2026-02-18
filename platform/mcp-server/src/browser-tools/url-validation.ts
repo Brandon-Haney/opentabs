@@ -9,19 +9,16 @@ import { z } from 'zod';
 const ALLOWED_URL_SCHEMES = new Set(['http:', 'https:']);
 
 /**
- * A Zod string schema that validates:
- * - Must be a valid URL (z.string().url())
+ * A Zod schema that validates:
+ * - Must be a valid URL (z.url())
  * - Must use http: or https: scheme (allowlist, not blocklist)
  */
-const safeUrl = z
-  .string()
-  .url()
-  .refine(
-    val => {
-      const parsed = new URL(val);
-      return ALLOWED_URL_SCHEMES.has(parsed.protocol);
-    },
-    { message: 'URL scheme must be http: or https:' },
-  );
+const safeUrl = z.url().refine(
+  val => {
+    const parsed = new URL(val);
+    return ALLOWED_URL_SCHEMES.has(parsed.protocol);
+  },
+  { message: 'URL scheme must be http: or https:' },
+);
 
 export { safeUrl };

@@ -11,18 +11,14 @@ export const removeReaction = defineTool({
       .string()
       .min(1)
       .describe('Timestamp of the message to remove the reaction from (e.g., 1234567890.123456)'),
-    name: z
-      .string()
-      .min(1)
-      .transform(s => s.replace(/^:|:$/g, ''))
-      .describe('Emoji name without colons (e.g., thumbsup, heart, rocket)'),
+    name: z.string().min(1).describe('Emoji name without colons (e.g., thumbsup, heart, rocket)'),
   }),
   output: z.object({}),
   handle: async params => {
     await slackApi<Record<string, never>>('reactions.remove', {
       channel: params.channel,
       timestamp: params.timestamp,
-      name: params.name,
+      name: params.name.replace(/^:|:$/g, ''),
     });
     return {};
   },

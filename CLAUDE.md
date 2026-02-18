@@ -276,6 +276,14 @@ When working on new or existing MCP tools (via plugins):
 - **Design for composability** - consider how tools can work together; tools should complement each other to make this MCP server the most powerful toolset for engineers
 - **Return actionable data** - tool responses should include IDs, references, and context that enable follow-up actions with other tools
 
+### Zod Schemas and JSON Schema Serialization
+
+Plugin tool schemas are serialized to JSON Schema (via `z.toJSONSchema()`) for the MCP protocol and plugin manifests. Keep schemas serialization-compatible:
+
+- **Never use `.transform()` in tool input/output schemas** - Zod transforms cannot be represented in JSON Schema. If input needs normalization (e.g., stripping colons from emoji names), do it in the tool's `handle` function, not in the schema. The schema defines the wire format; the handler implements business logic.
+- **Avoid Zod features that don't map to JSON Schema** - `.transform()`, `.pipe()`, `.preprocess()`, and effects produce runtime-only behavior that `z.toJSONSchema()` cannot serialize. If the serializer throws, the build breaks. Keep schemas declarative (primitives, objects, arrays, unions, literals, enums, refinements with standard validations).
+- **Fix the source, not the serializer** - when a schema feature conflicts with JSON Schema serialization, the correct fix is always to simplify the schema and move logic to the handler. Do not work around serialization limitations with options like `io: 'input'` — that hides the problem and produces a schema that doesn't match the handler's actual behavior.
+
 ### TypeScript Configuration
 
 Every `.ts`/`.tsx` file in the repository must be covered by a tsconfig that `tsc --build` reaches. No file may exist in a type-checking blind spot.

@@ -1,6 +1,80 @@
-import { validatePluginPayload } from './message-router.js';
-import { describe, expect, test } from 'bun:test';
+import { mock, describe, expect, test, beforeEach } from 'bun:test';
 import type { ValidatedPluginPayload } from './message-router.js';
+
+// ---------------------------------------------------------------------------
+// Module mocks — set up before importing message-router.js so that
+// handleServerMessage's internal references bind to the mocked versions.
+//
+// Only mock modules that have NO separate test file in this directory.
+// Modules with their own test files (plugin-storage, tab-matching) are NOT
+// mocked here to avoid contaminating their tests when Bun runs all test
+// files in the same process.
+// ---------------------------------------------------------------------------
+
+const mockSendToServer = mock<(data: unknown) => void>();
+const mockForwardToSidePanel = mock<(message: unknown) => void>();
+
+const mockHandleToolDispatch = mock<(params: Record<string, unknown>, id: string | number) => Promise<void>>();
+
+const mockHandleBrowserListTabs = mock<(id: string | number) => Promise<void>>();
+const mockHandleBrowserOpenTab = mock<(params: Record<string, unknown>, id: string | number) => Promise<void>>();
+const mockHandleBrowserCloseTab = mock<(params: Record<string, unknown>, id: string | number) => Promise<void>>();
+const mockHandleBrowserNavigateTab = mock<(params: Record<string, unknown>, id: string | number) => Promise<void>>();
+const mockHandleBrowserExecuteScript = mock<(params: Record<string, unknown>, id: string | number) => Promise<void>>();
+
+await mock.module('./messaging.js', () => ({
+  sendToServer: mockSendToServer,
+  forwardToSidePanel: mockForwardToSidePanel,
+}));
+
+await mock.module('./tool-dispatch.js', () => ({
+  handleToolDispatch: mockHandleToolDispatch,
+}));
+
+await mock.module('./browser-commands.js', () => ({
+  handleBrowserListTabs: mockHandleBrowserListTabs,
+  handleBrowserOpenTab: mockHandleBrowserOpenTab,
+  handleBrowserCloseTab: mockHandleBrowserCloseTab,
+  handleBrowserNavigateTab: mockHandleBrowserNavigateTab,
+  handleBrowserExecuteScript: mockHandleBrowserExecuteScript,
+}));
+
+// Chrome API stubs for modules that are NOT mocked (plugin-storage, iife-injection,
+// tab-state). These real modules call Chrome APIs internally, so stubs prevent
+// runtime errors when async handlers fire during routing tests.
+(globalThis as Record<string, unknown>).chrome = {
+  storage: {
+    local: {
+      get: mock(() => Promise.resolve({})),
+      set: mock(() => Promise.resolve()),
+    },
+    session: {
+      set: mock(() => Promise.resolve()),
+    },
+  },
+  runtime: {
+    reload: mock(),
+    sendMessage: mock(() => Promise.resolve()),
+  },
+  tabs: {
+    query: mock(() => Promise.resolve([])),
+  },
+  scripting: {
+    executeScript: mock(() => Promise.resolve([{ result: false }])),
+    unregisterContentScripts: mock(() => Promise.resolve()),
+    registerContentScripts: mock(() => Promise.resolve()),
+  },
+  windows: {
+    getLastFocused: mock(() => Promise.resolve({ id: 1 })),
+  },
+};
+
+// Import after mocking so message-router binds to the mocked dependencies
+const { validatePluginPayload, handleServerMessage } = await import('./message-router.js');
+
+// ---------------------------------------------------------------------------
+// validatePluginPayload tests (pure function — no mocking needed)
+// ---------------------------------------------------------------------------
 
 /** Minimal valid plugin payload for use as a base in tests */
 const validPayload = (): Record<string, unknown> => ({
@@ -291,6 +365,322 @@ describe('validatePluginPayload', () => {
 
     test('adapterHash is undefined when missing', () => {
       expect(expectValid(validPayload()).adapterHash).toBeUndefined();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleServerMessage tests — routing and side panel forwarding
+// ---------------------------------------------------------------------------
+
+/** Reset routing-related mocks between tests */
+const resetRoutingMocks = (): void => {
+  mockSendToServer.mockReset();
+  mockForwardToSidePanel.mockReset();
+  mockHandleToolDispatch.mockReset();
+  mockHandleBrowserListTabs.mockReset();
+  mockHandleBrowserOpenTab.mockReset();
+  mockHandleBrowserCloseTab.mockReset();
+  mockHandleBrowserNavigateTab.mockReset();
+  mockHandleBrowserExecuteScript.mockReset();
+};
+
+describe('handleServerMessage', () => {
+  beforeEach(() => {
+    resetRoutingMocks();
+    // Default mock implementations so async handlers don't throw
+    mockHandleToolDispatch.mockResolvedValue(undefined);
+    mockHandleBrowserListTabs.mockResolvedValue(undefined);
+    mockHandleBrowserOpenTab.mockResolvedValue(undefined);
+    mockHandleBrowserCloseTab.mockResolvedValue(undefined);
+    mockHandleBrowserNavigateTab.mockResolvedValue(undefined);
+    mockHandleBrowserExecuteScript.mockResolvedValue(undefined);
+  });
+
+  describe('sync.full routing', () => {
+    test('dispatches sync.full to the internal handler without error', () => {
+      // sync.full triggers handleSyncFull which calls plugin-storage and
+      // iife-injection internally. The handler runs asynchronously via
+      // .catch(console.error), so we verify it doesn't produce a -32601 error.
+      handleServerMessage({
+        method: 'sync.full',
+        params: {
+          plugins: [
+            {
+              name: 'test-plugin',
+              version: '1.0.0',
+              urlPatterns: ['*://example.com/*'],
+              tools: [{ name: 'do-thing', description: 'Does a thing', enabled: true }],
+            },
+          ],
+        },
+      });
+
+      // No -32601 error should be sent (method is recognized)
+      expect(mockSendToServer).not.toHaveBeenCalled();
+    });
+
+    test('does not forward sync.full to side panel', () => {
+      handleServerMessage({
+        method: 'sync.full',
+        params: { plugins: [] },
+      });
+
+      // sync.full is NOT in SIDE_PANEL_METHODS
+      expect(mockForwardToSidePanel).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('plugin.update routing', () => {
+    test('dispatches plugin.update to the internal handler without error', () => {
+      handleServerMessage({
+        method: 'plugin.update',
+        params: {
+          name: 'test-plugin',
+          version: '2.0.0',
+          urlPatterns: ['*://example.com/*'],
+          tools: [{ name: 'do-thing', description: 'Does a thing', enabled: true }],
+        },
+      });
+
+      expect(mockSendToServer).not.toHaveBeenCalled();
+    });
+
+    test('does not forward plugin.update to side panel', () => {
+      handleServerMessage({
+        method: 'plugin.update',
+        params: {
+          name: 'test-plugin',
+          version: '1.0.0',
+          urlPatterns: [],
+          tools: [],
+        },
+      });
+
+      expect(mockForwardToSidePanel).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('plugin.uninstall routing', () => {
+    test('dispatches plugin.uninstall with id to the internal handler', () => {
+      handleServerMessage({
+        method: 'plugin.uninstall',
+        id: 42,
+        params: { name: 'test-plugin' },
+      });
+
+      // No -32601 error (method is recognized)
+      expect(mockSendToServer).not.toHaveBeenCalled();
+    });
+
+    test('does not dispatch plugin.uninstall without an id', () => {
+      handleServerMessage({
+        method: 'plugin.uninstall',
+        params: { name: 'test-plugin' },
+      });
+
+      // Without id, the handler guard prevents execution — no error sent
+      expect(mockSendToServer).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('tool.dispatch routing', () => {
+    test('delegates to handleToolDispatch with params and id', () => {
+      handleServerMessage({
+        method: 'tool.dispatch',
+        id: 10,
+        params: { plugin: 'slack', tool: 'send-message', input: {} },
+      });
+
+      expect(mockHandleToolDispatch).toHaveBeenCalledTimes(1);
+      expect(mockHandleToolDispatch).toHaveBeenCalledWith({ plugin: 'slack', tool: 'send-message', input: {} }, 10);
+    });
+
+    test('does not dispatch tool.dispatch without an id', () => {
+      handleServerMessage({
+        method: 'tool.dispatch',
+        params: { plugin: 'slack', tool: 'send-message', input: {} },
+      });
+
+      expect(mockHandleToolDispatch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('browser command routing', () => {
+    test('dispatches browser.listTabs to handleBrowserListTabs', () => {
+      handleServerMessage({ method: 'browser.listTabs', id: 20 });
+
+      expect(mockHandleBrowserListTabs).toHaveBeenCalledTimes(1);
+      expect(mockHandleBrowserListTabs).toHaveBeenCalledWith(20);
+    });
+
+    test('dispatches browser.openTab to handleBrowserOpenTab', () => {
+      handleServerMessage({
+        method: 'browser.openTab',
+        id: 21,
+        params: { url: 'https://example.com' },
+      });
+
+      expect(mockHandleBrowserOpenTab).toHaveBeenCalledTimes(1);
+      expect(mockHandleBrowserOpenTab).toHaveBeenCalledWith({ url: 'https://example.com' }, 21);
+    });
+
+    test('dispatches browser.closeTab to handleBrowserCloseTab', () => {
+      handleServerMessage({
+        method: 'browser.closeTab',
+        id: 22,
+        params: { tabId: 5 },
+      });
+
+      expect(mockHandleBrowserCloseTab).toHaveBeenCalledTimes(1);
+      expect(mockHandleBrowserCloseTab).toHaveBeenCalledWith({ tabId: 5 }, 22);
+    });
+
+    test('dispatches browser.navigateTab to handleBrowserNavigateTab', () => {
+      handleServerMessage({
+        method: 'browser.navigateTab',
+        id: 23,
+        params: { tabId: 3, url: 'https://example.com/new' },
+      });
+
+      expect(mockHandleBrowserNavigateTab).toHaveBeenCalledTimes(1);
+      expect(mockHandleBrowserNavigateTab).toHaveBeenCalledWith({ tabId: 3, url: 'https://example.com/new' }, 23);
+    });
+
+    test('dispatches browser.executeScript to handleBrowserExecuteScript', () => {
+      handleServerMessage({
+        method: 'browser.executeScript',
+        id: 24,
+        params: { tabId: 7, code: 'return 1' },
+      });
+
+      expect(mockHandleBrowserExecuteScript).toHaveBeenCalledTimes(1);
+      expect(mockHandleBrowserExecuteScript).toHaveBeenCalledWith({ tabId: 7, code: 'return 1' }, 24);
+    });
+  });
+
+  describe('unrecognized method handling', () => {
+    test('sends -32601 error response for unrecognized method with id', () => {
+      handleServerMessage({ method: 'unknown.method', id: 99 });
+
+      expect(mockSendToServer).toHaveBeenCalledTimes(1);
+      expect(mockSendToServer).toHaveBeenCalledWith({
+        jsonrpc: '2.0',
+        error: { code: -32601, message: 'Method not found: unknown.method' },
+        id: 99,
+      });
+    });
+
+    test('does not send error for unrecognized method without id (notification)', () => {
+      handleServerMessage({ method: 'unknown.notification' });
+
+      expect(mockSendToServer).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('side panel forwarding', () => {
+    test('forwards tab.stateChanged to side panel', () => {
+      const message = {
+        method: 'tab.stateChanged',
+        params: { plugin: 'slack', state: 'ready', tabId: 1, url: 'https://slack.com' },
+      };
+
+      handleServerMessage(message);
+
+      expect(mockForwardToSidePanel).toHaveBeenCalledTimes(1);
+      expect(mockForwardToSidePanel).toHaveBeenCalledWith({
+        type: 'sp:serverMessage',
+        data: message,
+      });
+    });
+
+    test('forwards tool.invocationStart to side panel', () => {
+      const message = {
+        method: 'tool.invocationStart',
+        params: { plugin: 'slack', tool: 'send-message' },
+      };
+
+      handleServerMessage(message);
+
+      expect(mockForwardToSidePanel).toHaveBeenCalledTimes(1);
+      expect(mockForwardToSidePanel).toHaveBeenCalledWith({
+        type: 'sp:serverMessage',
+        data: message,
+      });
+    });
+
+    test('forwards tool.invocationEnd to side panel', () => {
+      const message = {
+        method: 'tool.invocationEnd',
+        params: { plugin: 'slack', tool: 'send-message' },
+      };
+
+      handleServerMessage(message);
+
+      expect(mockForwardToSidePanel).toHaveBeenCalledTimes(1);
+      expect(mockForwardToSidePanel).toHaveBeenCalledWith({
+        type: 'sp:serverMessage',
+        data: message,
+      });
+    });
+
+    test('forwards plugins.changed to side panel', () => {
+      const message = { method: 'plugins.changed' };
+
+      handleServerMessage(message);
+
+      expect(mockForwardToSidePanel).toHaveBeenCalledTimes(1);
+      expect(mockForwardToSidePanel).toHaveBeenCalledWith({
+        type: 'sp:serverMessage',
+        data: message,
+      });
+    });
+
+    test('does not forward sync.full to side panel', () => {
+      handleServerMessage({
+        method: 'sync.full',
+        params: { plugins: [] },
+      });
+
+      expect(mockForwardToSidePanel).not.toHaveBeenCalled();
+    });
+
+    test('does not forward tool.dispatch to side panel', () => {
+      handleServerMessage({
+        method: 'tool.dispatch',
+        id: 50,
+        params: { plugin: 'slack', tool: 'send-message', input: {} },
+      });
+
+      // tool.dispatch has a method, so isResponse is false.
+      // tool.dispatch is not in SIDE_PANEL_METHODS, so it should not be forwarded.
+      expect(mockForwardToSidePanel).not.toHaveBeenCalled();
+    });
+
+    test('forwards response messages (id without method) to side panel', () => {
+      const message = { id: 100, result: { ok: true } };
+
+      handleServerMessage(message);
+
+      expect(mockForwardToSidePanel).toHaveBeenCalledTimes(1);
+      expect(mockForwardToSidePanel).toHaveBeenCalledWith({
+        type: 'sp:serverMessage',
+        data: message,
+      });
+    });
+
+    test('does not forward non-side-panel notification methods', () => {
+      handleServerMessage({
+        method: 'plugin.update',
+        params: {
+          name: 'test-plugin',
+          version: '1.0.0',
+          urlPatterns: [],
+          tools: [],
+        },
+      });
+
+      expect(mockForwardToSidePanel).not.toHaveBeenCalled();
     });
   });
 });

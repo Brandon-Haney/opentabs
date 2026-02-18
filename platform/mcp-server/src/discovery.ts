@@ -166,8 +166,12 @@ const fileExists = async (path: string): Promise<boolean> => Bun.file(path).exis
  * 1. node_modules/opentabs-plugin-* directories
  * 2. node_modules/@* /opentabs-plugin-* directories (scoped packages)
  * 3. Any package with 'opentabs-plugin' keyword in package.json
+ *
+ * Only packages listed in allowedPackages are loaded. Discovered packages
+ * not in the allow list are logged as skipped with instructions to add them.
  */
-const discoverFromNodeModules = async (rootDir: string): Promise<DiscoveryResult[]> => {
+const discoverFromNodeModules = async (rootDir: string, allowedPackages: string[]): Promise<DiscoveryResult[]> => {
+  const allowedSet = new Set(allowedPackages);
   const results: DiscoveryResult[] = [];
   const nodeModulesDir = join(rootDir, 'node_modules');
 
@@ -191,6 +195,14 @@ const discoverFromNodeModules = async (rootDir: string): Promise<DiscoveryResult
     const pkgDir = join(nodeModulesDir, entry);
     if (!(await dirExists(pkgDir))) continue;
     if (!(await fileExists(join(pkgDir, 'opentabs-plugin.json')))) continue;
+
+    if (!allowedSet.has(entry)) {
+      log.info(
+        `Skipping npm plugin "${entry}" — not listed in config.npmPlugins. Add it to ~/.opentabs/config.json to enable.`,
+      );
+      discoveredDirs.add(pkgDir);
+      continue;
+    }
 
     const trustTier = determineTrustTier(entry, false);
     try {
@@ -222,6 +234,15 @@ const discoverFromNodeModules = async (rootDir: string): Promise<DiscoveryResult
       if (!(await fileExists(join(pkgDir, 'opentabs-plugin.json')))) continue;
 
       const fullPkgName = `${entry}/${scopeEntry}`;
+
+      if (!allowedSet.has(fullPkgName)) {
+        log.info(
+          `Skipping npm plugin "${fullPkgName}" — not listed in config.npmPlugins. Add it to ~/.opentabs/config.json to enable.`,
+        );
+        discoveredDirs.add(pkgDir);
+        continue;
+      }
+
       const trustTier = determineTrustTier(fullPkgName, false);
       try {
         const plugin = await loadPluginFromDir(pkgDir, trustTier, fullPkgName);
@@ -257,6 +278,14 @@ const discoverFromNodeModules = async (rootDir: string): Promise<DiscoveryResult
       const pkgJson = JSON.parse(await Bun.file(pkgJsonPath).text()) as Record<string, unknown>;
       const keywords = pkgJson.keywords as string[] | undefined;
       if (!Array.isArray(keywords) || !keywords.includes('opentabs-plugin')) continue;
+
+      if (!allowedSet.has(entry)) {
+        log.info(
+          `Skipping npm plugin "${entry}" — not listed in config.npmPlugins. Add it to ~/.opentabs/config.json to enable.`,
+        );
+        discoveredDirs.add(pkgDir);
+        continue;
+      }
 
       const trustTier = determineTrustTier(entry, false);
       const plugin = await loadPluginFromDir(pkgDir, trustTier, entry);
@@ -299,6 +328,15 @@ const discoverFromNodeModules = async (rootDir: string): Promise<DiscoveryResult
         if (!Array.isArray(keywords) || !keywords.includes('opentabs-plugin')) continue;
 
         const fullPkgName = `${entry}/${scopeEntry}`;
+
+        if (!allowedSet.has(fullPkgName)) {
+          log.info(
+            `Skipping npm plugin "${fullPkgName}" — not listed in config.npmPlugins. Add it to ~/.opentabs/config.json to enable.`,
+          );
+          discoveredDirs.add(pkgDir);
+          continue;
+        }
+
         const trustTier = determineTrustTier(fullPkgName, false);
         const plugin = await loadPluginFromDir(pkgDir, trustTier, fullPkgName);
         results.push({
@@ -351,9 +389,14 @@ const discoverFromLocalPaths = async (paths: string[]): Promise<DiscoveryResult[
  * Run full plugin discovery: node_modules + local paths.
  * Returns a new Map of discovered plugins — the caller swaps it onto
  * state.plugins atomically to avoid a window where plugins is empty.
+ *
+ * @param allowedNpmPackages - npm package names explicitly allowed for loading.
+ *   Only packages in this list are loaded from node_modules. Empty array means
+ *   no npm plugins are loaded.
  */
 export const discoverPlugins = async (
   localPaths: string[],
+  allowedNpmPackages: string[],
   rootDir?: string,
 ): Promise<Map<string, RegisteredPlugin>> => {
   const resolvedRoot = rootDir ?? PACKAGE_DIR;
@@ -362,7 +405,7 @@ export const discoverPlugins = async (
 
   // Discover from both sources in parallel
   const [npmResults, localResults] = await Promise.all([
-    discoverFromNodeModules(resolvedRoot),
+    discoverFromNodeModules(resolvedRoot, allowedNpmPackages),
     discoverFromLocalPaths(localPaths),
   ]);
 

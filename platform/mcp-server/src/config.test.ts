@@ -110,4 +110,53 @@ describe('loadConfig / saveConfig round-trip', () => {
     expect(typeof config.secret).toBe('string');
     expect(config.secret).toBeDefined();
   });
+
+  test('round-trips npmPlugins through save and load', async () => {
+    await loadConfig();
+
+    const custom: OpentabsConfig = {
+      plugins: [],
+      tools: {},
+      secret: 'test-secret-npm',
+      npmPlugins: ['opentabs-plugin-jira', '@myorg/opentabs-plugin-github'],
+    };
+    await saveConfigWrapped(custom);
+
+    const loaded = await loadConfig();
+    expect(loaded.npmPlugins).toEqual(['opentabs-plugin-jira', '@myorg/opentabs-plugin-github']);
+  });
+
+  test('filters non-string elements from npmPlugins array', async () => {
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        plugins: [],
+        tools: {},
+        secret: 'test-secret',
+        npmPlugins: ['valid-plugin', 123, null, true, 'another-plugin'],
+      }),
+    );
+
+    const config = await loadConfig();
+    expect(config.npmPlugins).toEqual(['valid-plugin', 'another-plugin']);
+  });
+
+  test('returns undefined npmPlugins when field is absent', async () => {
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        plugins: [],
+        tools: {},
+        secret: 'test-secret',
+      }),
+    );
+
+    const config = await loadConfig();
+    expect(config.npmPlugins).toBeUndefined();
+  });
+
+  test('default config includes empty npmPlugins array', async () => {
+    const config = await loadConfig();
+    expect(config.npmPlugins).toEqual([]);
+  });
 });

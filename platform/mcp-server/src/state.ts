@@ -98,6 +98,8 @@ export interface ServerState {
   toolConfig: ToolConfig;
   /** Local plugin paths from config */
   pluginPaths: string[];
+  /** npm package names explicitly allowed for npm plugin discovery */
+  npmPlugins: string[];
   /** Pending tool dispatches keyed by JSON-RPC id */
   pendingDispatches: Map<string | number, PendingDispatch>;
   /** Extension WebSocket connection (single connection) */
@@ -145,6 +147,7 @@ export const createState = (): ServerState => ({
   tabMapping: new Map(),
   toolConfig: {},
   pluginPaths: [],
+  npmPlugins: [],
   pendingDispatches: new Map(),
   extensionWs: null,
   nextRequestId: 1,

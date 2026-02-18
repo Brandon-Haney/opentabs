@@ -49,6 +49,7 @@ const createMcpCallbacks = (state: ServerState, sessionServers: McpServerInstanc
       plugins: state.pluginPaths,
       tools: { ...state.toolConfig },
       secret: state.wsSecret ?? undefined,
+      npmPlugins: state.npmPlugins.length > 0 ? state.npmPlugins : undefined,
     }).catch(() => {
       // Error already logged by saveConfig
     });

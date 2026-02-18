@@ -23,6 +23,8 @@ interface OpentabsConfig {
   tools: Record<string, boolean>;
   /** Shared secret for WebSocket authentication between MCP server and Chrome extension */
   secret?: string;
+  /** npm package names explicitly allowed for npm-discovered plugins (empty = none) */
+  npmPlugins?: string[];
 }
 
 /** Read the config directory, checking the environment variable on each call
@@ -61,7 +63,7 @@ const loadConfig = async (): Promise<OpentabsConfig> => {
     const configFile = Bun.file(configPath);
     if (!(await configFile.exists())) {
       // First run — create default config with a fresh shared secret
-      const config: OpentabsConfig = { plugins: [], tools: {}, secret: crypto.randomUUID() };
+      const config: OpentabsConfig = { plugins: [], tools: {}, secret: crypto.randomUUID(), npmPlugins: [] };
       await Bun.write(configPath, JSON.stringify(config, null, 2) + '\n');
       log.info(`Created default config at ${configPath}`);
       return config;
@@ -93,17 +95,21 @@ const loadConfig = async (): Promise<OpentabsConfig> => {
         }
       }
     }
+    const npmPlugins = Array.isArray(record.npmPlugins)
+      ? (record.npmPlugins as unknown[]).filter((p): p is string => typeof p === 'string')
+      : undefined;
+
     let secret = typeof record.secret === 'string' ? record.secret : undefined;
 
     // Generate secret if missing (upgrade from older config)
     if (!secret) {
       secret = crypto.randomUUID();
-      const updated = { plugins, tools, secret };
+      const updated: OpentabsConfig = { plugins, tools, secret, npmPlugins };
       await Bun.write(configPath, JSON.stringify(updated, null, 2) + '\n');
       log.info(`Generated WebSocket authentication secret in ${configPath}`);
     }
 
-    return { plugins, tools, secret };
+    return { plugins, tools, secret, npmPlugins };
   } catch (err) {
     log.warn(`Failed to load config from ${configPath}, using fallback:`, err);
     return { ...FALLBACK_CONFIG, secret: crypto.randomUUID() };

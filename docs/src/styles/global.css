@@ -159,3 +159,60 @@ nav.sidebar a[aria-current='page'],
 .sl-markdown-content a:hover {
   color: var(--primary);
 }
+
+/* Headings — RetroUI font-head (Archivo Black) */
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--font-head);
+}
+
+/* Code blocks — RetroUI border-2 + hard offset shadow */
+.sl-markdown-content pre {
+  border: 2px solid var(--border);
+  box-shadow: 4px 4px 0 0 var(--border);
+  border-radius: 0;
+}
+
+/* Inline code — bg-muted with slight border */
+.sl-markdown-content :not(pre) > code {
+  border: 1px solid var(--border);
+  background-color: var(--muted);
+  border-radius: 0;
+  padding: 0.125rem 0.375rem;
+}
+
+/* Tables — RetroUI border-2 on wrapper and cells */
+.sl-markdown-content table {
+  border: 2px solid var(--border);
+  border-collapse: collapse;
+}
+
+.sl-markdown-content :is(th, td) {
+  border: 1px solid var(--border);
+  padding: 0.5rem 1rem;
+}
+
+.sl-markdown-content th {
+  background-color: var(--card);
+  font-family: var(--font-head);
+  font-weight: 400;
+}
+
+/* Blockquotes — thick left border with primary color */
+.sl-markdown-content blockquote {
+  border-left: 4px solid var(--primary);
+  padding-left: 1rem;
+  margin-left: 0;
+  color: var(--muted-foreground);
+}
+
+/* Asides/callouts — RetroUI border-2 and hard offset shadow */
+.starlight-aside {
+  border: 2px solid var(--border);
+  box-shadow: 4px 4px 0 0 var(--border);
+  border-radius: 0;
+  background-color: var(--card);
+}
+
+.starlight-aside__title {
+  font-family: var(--font-head);
+}

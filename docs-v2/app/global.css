@@ -121,3 +121,37 @@ body {
 .nd-prose a:hover {
   text-decoration: underline;
 }
+
+/* RetroUI Steps component — CSS counter-based step numbering */
+.retro-steps {
+  counter-reset: retro-step;
+}
+
+.retro-step {
+  counter-increment: retro-step;
+}
+
+/*
+ * Step number indicator: a square box centered on the container's left border line.
+ * Container: ml-4 (16px margin) + border-l-2 (2px) + pl-10 (40px padding).
+ * .retro-step left edge is 42px (2px border + 40px padding) from the border line.
+ * Center a 2rem (32px) indicator on that line: left = -(42px + 16px) = -58px = -3.625rem.
+ */
+.retro-step::before {
+  content: counter(retro-step);
+  position: absolute;
+  left: -3.625rem;
+  top: 0;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  border: 2px solid var(--border);
+  font-family: var(--font-head);
+  font-weight: bold;
+  font-size: 0.875rem;
+  border-radius: 0;
+}

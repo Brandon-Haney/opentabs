@@ -138,6 +138,55 @@ This page demonstrates Fumadocs MDX components styled with the RetroUI neobrutal
   </Accordion>
 </Accordions>
 
+## Steps
+
+<Steps>
+  <Step>
+    ### Install dependencies
+
+    Install OpenTabs and its required peer dependencies using Bun:
+
+    ```bash
+    bun add @opentabs/sdk
+    ```
+  </Step>
+  <Step>
+    ### Configure the plugin
+
+    Create a configuration file at `~/.opentabs/config.json` and register your plugin path:
+
+    ```json
+    {
+      "plugins": ["./path/to/my-plugin"]
+    }
+    ```
+  </Step>
+  <Step>
+    ### Build the extension
+
+    Compile the TypeScript source and load the extension into Chrome:
+
+    ```bash
+    bun run build
+    ```
+
+    Then navigate to `chrome://extensions/`, enable Developer mode, and load the unpacked extension from `~/.opentabs/extension/`.
+  </Step>
+  <Step>
+    ### Start the MCP server
+
+    Run the MCP server with hot reload so changes take effect automatically:
+
+    ```bash
+    bun --hot platform/mcp-server/dist/index.js
+    ```
+
+    <Callout type="success" title="You're ready!">
+      The MCP server is now running. Connect your AI agent and start using OpenTabs tools.
+    </Callout>
+  </Step>
+</Steps>
+
 ### Tabs with Custom Values
 
 <Tabs items={['Installation', 'Configuration', 'Usage']}>

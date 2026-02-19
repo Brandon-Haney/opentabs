@@ -198,8 +198,12 @@ chrome.debugger.onEvent.addListener((source: chrome.debugger.Debuggee, method: s
       if (chrome.runtime.lastError || !result) return;
       const res = result as { body?: string; base64Encoded?: boolean };
       if (typeof res.body !== 'string') return;
-      // For text content, store directly; for base64-encoded text, decode it
-      const body = res.base64Encoded ? atob(res.body) : res.body;
+      // For text content, store directly; for base64-encoded text, decode from
+      // base64 to UTF-8 via Uint8Array + TextDecoder (bare atob returns Latin1,
+      // which corrupts non-ASCII characters like Chinese text or emoji).
+      const body = res.base64Encoded
+        ? new TextDecoder().decode(Uint8Array.from(atob(res.body), c => c.charCodeAt(0)))
+        : res.body;
       request.responseBody = truncateBody(body);
     });
   } else if (method === 'Runtime.consoleAPICalled') {

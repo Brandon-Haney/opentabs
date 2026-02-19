@@ -299,7 +299,7 @@ export const validateUrlPattern = (pattern: string): string | null => {
 
   const match = pattern.match(/^(\*|https?):\/\/(.+?)(\/.*)$/);
   if (!match) {
-    return `URL pattern "${pattern}" is not a valid Chrome match pattern (expected: <scheme>://<host>/<path>, scheme must be *, http, or https)`;
+    return `URL pattern "${pattern}" is not a valid Chrome match pattern — expected <scheme>://<host>/<path> where scheme is *, http, or https and path starts with / (e.g., https://example.com/*)`;
   }
 
   const path = match[3] ?? '/';

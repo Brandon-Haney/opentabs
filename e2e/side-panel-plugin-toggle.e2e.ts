@@ -147,8 +147,8 @@ test.describe('Side panel — tool toggle', () => {
       const pluginCard = sidePanelPage.locator('button[aria-expanded]').first();
       await pluginCard.click();
 
-      // Verify tool rows are visible (description is primary text; tool name is in tooltip)
-      await expect(sidePanelPage.getByText('Echo a message back')).toBeVisible({ timeout: 5_000 });
+      // Verify tool rows are visible (displayName is primary text; description is in tooltip)
+      await expect(sidePanelPage.getByText('Echo')).toBeVisible({ timeout: 5_000 });
 
       // Find the toggle for the 'echo' tool.
       // Each ToolRow has an aria-label "Toggle <name> tool" on its switch button.

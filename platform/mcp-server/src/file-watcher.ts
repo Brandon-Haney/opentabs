@@ -63,6 +63,25 @@ const readFileWithRetry = async (path: string, maxRetries = 3, initialDelayMs = 
 const fileExists = async (path: string): Promise<boolean> => Bun.file(path).exists();
 
 /**
+ * Extract the adapter hash embedded by the CLI's hash-setter snippet.
+ *
+ * The `opentabs build` CLI appends a self-contained hash-setter IIFE to every
+ * adapter bundle: `a.__adapterHash="<sha256-of-core-content>";`. The embedded
+ * hash is computed from the core IIFE content BEFORE the hash-setter is
+ * appended, so it matches what the injected adapter reports at runtime.
+ *
+ * Computing SHA-256 of the full file (including the hash-setter) produces a
+ * different value and causes spurious hash-mismatch errors in the extension.
+ * Reading the embedded hash directly is always correct.
+ *
+ * Returns undefined for old adapters built without the hash-setter.
+ */
+const extractEmbeddedAdapterHash = (iife: string): string | undefined => {
+  const match = iife.match(/\.__adapterHash="([0-9a-f]{64})"/);
+  return match?.[1];
+};
+
+/**
  * Handle an IIFE file change for a local plugin.
  */
 const handleIifeChange = async (
@@ -89,9 +108,15 @@ const handleIifeChange = async (
     // Update in-memory state
     plugin.iife = iife;
 
-    const hasher = new Bun.CryptoHasher('sha256');
-    hasher.update(iife);
-    plugin.adapterHash = hasher.digest('hex');
+    // Use the hash embedded in the IIFE by the CLI's hash-setter snippet. The
+    // embedded hash is SHA-256 of the core content (before the hash-setter was
+    // appended), which is what the adapter reports at runtime via __adapterHash.
+    // Computing SHA-256 of the full file would include the hash-setter and
+    // produce a value that never matches the runtime adapter hash.
+    const embeddedHash = extractEmbeddedAdapterHash(iife);
+    if (embeddedHash) {
+      plugin.adapterHash = embeddedHash;
+    }
 
     log.info(`File watcher: IIFE updated for "${pluginName}" — sending plugin.update`);
 
@@ -170,15 +195,19 @@ const handleManifestChange = async (
     }));
 
     // Re-read IIFE from disk so the extension has the latest adapter code.
-    // Recompute adapterHash from actual IIFE content (the manifest hash may be stale).
+    // Use the hash embedded in the IIFE rather than recomputing from the full
+    // file. The full file includes the hash-setter snippet, so SHA-256(full
+    // file) differs from SHA-256(core content) = the value the runtime adapter
+    // reports. The embedded hash is always authoritative.
     const iifePath = join(pluginDir, 'dist', 'adapter.iife.js');
     if (await fileExists(iifePath)) {
       try {
         const iife = await readFileWithRetry(iifePath);
         plugin.iife = iife;
-        const hasher = new Bun.CryptoHasher('sha256');
-        hasher.update(iife);
-        plugin.adapterHash = hasher.digest('hex');
+        const embeddedHash = extractEmbeddedAdapterHash(iife);
+        if (embeddedHash) {
+          plugin.adapterHash = embeddedHash;
+        }
       } catch {
         // IIFE read failed — the IIFE watcher will handle it separately
       }

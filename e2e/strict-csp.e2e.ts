@@ -513,22 +513,18 @@ test.describe('Strict CSP — file watcher IIFE re-injection', () => {
       expect(baseline.message).toBe('csp-before-update');
 
       // Verify no update marker is set initially
-      const markerBefore = await page.evaluate(() => {
-        const ot = (globalThis as Record<string, unknown>).__openTabs as
-          | { adapters?: Record<string, Record<string, unknown>> }
-          | undefined;
-        return ot?.adapters?.['e2e-test']?.['__updatedMarker'];
-      });
+      const markerBefore = await page.evaluate(() => (globalThis as Record<string, unknown>).__e2eReinjectMarker);
       expect(markerBefore).toBeUndefined();
 
-      // Modify the IIFE to add a marker property on the adapter.
-      // After re-injection, the marker proves the NEW code is active.
+      // Modify the IIFE to set a global marker variable on re-injection.
+      // The marker is a global (not a property on the adapter) because the
+      // adapter is frozen by the hash-setter snippet appended by opentabs build.
       const iifePath = path.join(pluginDir, 'dist', 'adapter.iife.js');
       const originalIife = fs.readFileSync(iifePath, 'utf-8');
       const markerCode = [
         '',
         '// Injected by E2E test to verify re-injection on strict-CSP page',
-        'globalThis.__openTabs.adapters["e2e-test"].__updatedMarker = true;',
+        'globalThis.__e2eReinjectMarker = true;',
       ].join('\n');
       const modifiedIife = originalIife.replace(/}\)\(\);[\s]*$/, `${markerCode}\n})();\n`);
       fs.writeFileSync(iifePath, modifiedIife, 'utf-8');
@@ -540,17 +536,14 @@ test.describe('Strict CSP — file watcher IIFE re-injection', () => {
       // on the strict-CSP page despite script-src 'none')
       await waitFor(
         async () => {
-          const marker = await page.evaluate(() => {
-            const ot = (globalThis as Record<string, unknown>).__openTabs as
-              | { adapters?: Record<string, Record<string, unknown>> }
-              | undefined;
-            return ot?.adapters?.['e2e-test']?.['__updatedMarker'] === true;
-          });
+          const marker = await page.evaluate(
+            () => (globalThis as Record<string, unknown>).__e2eReinjectMarker === true,
+          );
           return marker;
         },
         15_000,
         500,
-        'adapter __updatedMarker to be true after re-injection on strict-CSP page',
+        '__e2eReinjectMarker to be true after re-injection on strict-CSP page',
       );
 
       // Tool dispatch still works after re-injection on strict-CSP page

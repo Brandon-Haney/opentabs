@@ -57,22 +57,20 @@ test.describe('IIFE injection — plugin.update re-injection', () => {
       expect(baseline.message).toBe('before-update');
 
       // Verify no update marker is set initially
-      const markerBefore = await page.evaluate(() => {
-        const ot = (globalThis as Record<string, unknown>).__openTabs as
-          | { adapters?: Record<string, Record<string, unknown>> }
-          | undefined;
-        return ot?.adapters?.['e2e-test']?.['__updatedMarker'];
-      });
+      const markerBefore = await page.evaluate(() => (globalThis as Record<string, unknown>).__e2eReinjectMarker);
       expect(markerBefore).toBeUndefined();
 
-      // Modify the IIFE to add a marker property on the adapter.
-      // After re-injection, the marker proves the NEW code is active.
+      // Modify the IIFE to set a global marker variable on re-injection.
+      // The marker is a global (not a property on the adapter) because the
+      // adapter is frozen by the hash-setter snippet appended by opentabs build.
+      // Setting a property on a frozen object fails silently; a global variable
+      // is always writable and proves the NEW code ran after re-injection.
       const iifePath = path.join(ctx.pluginDir, 'dist', 'adapter.iife.js');
       const originalIife = fs.readFileSync(iifePath, 'utf-8');
       const markerCode = [
         '',
         '// Injected by E2E test to verify re-injection',
-        'globalThis.__openTabs.adapters["e2e-test"].__updatedMarker = true;',
+        'globalThis.__e2eReinjectMarker = true;',
       ].join('\n');
       // Append the marker code just before the closing `})();`
       // The IIFE ends with `})();` — insert the marker before the last line
@@ -85,17 +83,14 @@ test.describe('IIFE injection — plugin.update re-injection', () => {
       // Wait for the marker to appear in the page (proves re-injection happened)
       await waitFor(
         async () => {
-          const marker = await page.evaluate(() => {
-            const ot = (globalThis as Record<string, unknown>).__openTabs as
-              | { adapters?: Record<string, Record<string, unknown>> }
-              | undefined;
-            return ot?.adapters?.['e2e-test']?.['__updatedMarker'] === true;
-          });
+          const marker = await page.evaluate(
+            () => (globalThis as Record<string, unknown>).__e2eReinjectMarker === true,
+          );
           return marker;
         },
         15_000,
         500,
-        'adapter __updatedMarker to be true after re-injection',
+        '__e2eReinjectMarker to be true after re-injection',
       );
 
       // Tool dispatch still works after re-injection
@@ -629,7 +624,7 @@ test.describe('IIFE injection — plugin.update during active tool dispatch', ()
       const markerCode = [
         '',
         '// Injected by E2E test to verify re-injection during in-flight dispatch',
-        'globalThis.__openTabs.adapters["e2e-test"].__updatedMarker = true;',
+        'globalThis.__e2eReinjectMarker = true;',
       ].join('\n');
       const modifiedIife = originalIife.replace(/}\)\(\);[\s]*$/, `${markerCode}\n})();\n`);
       fs.writeFileSync(iifePath, modifiedIife, 'utf-8');
@@ -647,17 +642,14 @@ test.describe('IIFE injection — plugin.update during active tool dispatch', ()
       // Wait for the marker to appear in the page (proves re-injection happened)
       await waitFor(
         async () => {
-          const marker = await page.evaluate(() => {
-            const ot = (globalThis as Record<string, unknown>).__openTabs as
-              | { adapters?: Record<string, Record<string, unknown>> }
-              | undefined;
-            return ot?.adapters?.['e2e-test']?.['__updatedMarker'] === true;
-          });
+          const marker = await page.evaluate(
+            () => (globalThis as Record<string, unknown>).__e2eReinjectMarker === true,
+          );
           return marker;
         },
         15_000,
         500,
-        'adapter __updatedMarker to be true after re-injection during in-flight dispatch',
+        '__e2eReinjectMarker to be true after re-injection during in-flight dispatch',
       );
 
       // Reset slow mode and verify subsequent tool calls use the new adapter
@@ -713,7 +705,7 @@ test.describe('IIFE injection — teardown() lifecycle hook', () => {
       const markerCode = [
         '',
         '// Injected by E2E test to verify teardown lifecycle hook',
-        'globalThis.__openTabs.adapters["e2e-test"].__teardownTestMarker = true;',
+        'globalThis.__e2eTeardownTestMarker = true;',
       ].join('\n');
       const modifiedIife = originalIife.replace(/}\)\(\);[\s]*$/, `${markerCode}\n})();\n`);
       fs.writeFileSync(iifePath, modifiedIife, 'utf-8');
@@ -724,17 +716,14 @@ test.describe('IIFE injection — teardown() lifecycle hook', () => {
       // Wait for re-injection to complete (new adapter has the test marker)
       await waitFor(
         async () => {
-          const marker = await page.evaluate(() => {
-            const ot = (globalThis as Record<string, unknown>).__openTabs as
-              | { adapters?: Record<string, Record<string, unknown>> }
-              | undefined;
-            return ot?.adapters?.['e2e-test']?.['__teardownTestMarker'] === true;
-          });
+          const marker = await page.evaluate(
+            () => (globalThis as Record<string, unknown>).__e2eTeardownTestMarker === true,
+          );
           return marker;
         },
         15_000,
         500,
-        'adapter __teardownTestMarker to be true after re-injection',
+        '__e2eTeardownTestMarker to be true after re-injection',
       );
 
       // Verify teardown was called on the old adapter.

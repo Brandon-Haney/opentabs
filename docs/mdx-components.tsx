@@ -28,7 +28,7 @@ interface CalloutProps extends Omit<ComponentPropsWithoutRef<'div'>, 'title'> {
 const RetroCallout = ({ className, type = 'info', title, icon: _icon, children, ...props }: CalloutProps) => {
   const statusClasses = calloutStatusClasses[type] ?? calloutStatusClasses.info;
   return (
-    <div role="alert" className={cn('relative w-full rounded border-2 p-4', statusClasses, className)} {...props}>
+    <div role="alert" className={cn('relative my-6 w-full rounded border-2 p-4', statusClasses, className)} {...props}>
       {title && <p className="font-head mb-1 text-lg font-semibold">{title}</p>}
       <div className="font-sans text-sm">{children}</div>
     </div>
@@ -47,7 +47,7 @@ const RetroCard = ({ className, title, description, icon, href, external, childr
   const content = (
     <>
       {icon && <div className="mb-2 text-2xl">{icon}</div>}
-      <h3 className="font-head mb-1 text-xl font-medium">{title}</h3>
+      <h3 className="font-head mb-2 text-xl font-medium">{title}</h3>
       {description && <p className="text-muted-foreground font-sans text-sm">{description}</p>}
       {children}
     </>
@@ -78,7 +78,7 @@ const RetroCard = ({ className, title, description, icon, href, external, childr
 };
 
 const RetroCards = ({ className, ...props }: ComponentPropsWithoutRef<'div'>) => (
-  <div className={cn('my-6 grid grid-cols-1 gap-4 sm:grid-cols-2', className)} {...props} />
+  <div className={cn('my-8 grid grid-cols-1 gap-4 sm:grid-cols-2', className)} {...props} />
 );
 
 export function getMDXComponents(components?: MDXComponents): MDXComponents {

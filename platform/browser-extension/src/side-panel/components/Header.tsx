@@ -2,7 +2,7 @@ import { Badge } from './retro/Badge.js';
 import { Zap } from 'lucide-react';
 
 const Header = ({ connected }: { connected: boolean }) => (
-  <header className="border-border bg-background flex items-center justify-between border-b-2 px-4 py-2.5">
+  <header className="border-border bg-background flex items-center justify-between border-b-2 px-3 py-2.5">
     <div className="flex items-center gap-2">
       <Zap className="text-foreground h-5 w-5" />
       <h1 className="font-head text-foreground text-sm tracking-tight">OpenTabs</h1>

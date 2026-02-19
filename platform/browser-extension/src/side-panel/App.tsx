@@ -205,7 +205,7 @@ const App = () => {
               value={toolFilter}
               onChange={e => setToolFilter(e.target.value)}
               placeholder="Filter tools..."
-              className="pr-8 pl-9"
+              className="pr-8 pl-9 shadow-xs"
             />
             {toolFilter && (
               <button

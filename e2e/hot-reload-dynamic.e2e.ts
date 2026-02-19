@@ -379,6 +379,12 @@ test.describe('File watcher — IIFE changes', () => {
       // Wait for file watcher to be set up
       await waitForLog(server, 'File watcher: Watching', 10_000);
 
+      // Brief delay for FSEvents to fully register the watcher with the kernel.
+      // On macOS, fs.watch() returns before FSEvents is ready to deliver events.
+      // Other file-watcher tests have implicit delays (MCP client init, listTools)
+      // between watcher setup and file modification; this test needs an explicit one.
+      await new Promise(r => setTimeout(r, 500));
+
       // Modify the IIFE file
       const iifePath = path.join(pluginDir, 'dist', 'adapter.iife.js');
       const originalIife = fs.readFileSync(iifePath, 'utf-8');

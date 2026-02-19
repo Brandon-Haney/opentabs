@@ -20,8 +20,8 @@ const METHOD_LIMITS: ReadonlyMap<string, RateLimitConfig> = new Map([
   ['browser.enableNetworkCapture', { maxRequests: 2, windowMs: 1_000 }],
   ['browser.executeScript', { maxRequests: 10, windowMs: 1_000 }],
 
-  // Tool dispatch — moderate limit
-  ['tool.dispatch', { maxRequests: 5, windowMs: 1_000 }],
+  // Tool dispatch — allow bursts of sequential/concurrent tool calls from agents
+  ['tool.dispatch', { maxRequests: 30, windowMs: 1_000 }],
 ]);
 
 /** Default limit for methods without a specific config */

@@ -64,6 +64,24 @@ describe('isNewer', () => {
     });
   });
 
+  describe('NaN segment handling', () => {
+    test('malformed current segment treated as 0 (latest is newer)', () => {
+      expect(isNewer('1.0.abc', '2.0.0')).toBe(true);
+    });
+
+    test('malformed latest segment treated as 0 (current is newer)', () => {
+      expect(isNewer('2.0.0', '1.0.abc')).toBe(false);
+    });
+
+    test('both versions have malformed segments', () => {
+      expect(isNewer('1.abc.0', '2.xyz.0')).toBe(true);
+    });
+
+    test('malformed segment in same position compares as equal (both become 0)', () => {
+      expect(isNewer('1.abc.0', '1.xyz.0')).toBe(false);
+    });
+  });
+
   describe('edge cases', () => {
     test('missing patch version treated as 0', () => {
       expect(isNewer('1.0', '1.0.1')).toBe(true);

@@ -1992,9 +1992,11 @@ export const handleExtensionCheckAdapter = async (
               return { adapterPresent: false };
             }
             const toolNames: string[] = [];
-            if (typeof adapter.tools === 'object' && adapter.tools !== null) {
-              for (const key of Object.keys(adapter.tools as Record<string, unknown>)) {
-                toolNames.push(key);
+            if (Array.isArray(adapter.tools)) {
+              for (const tool of adapter.tools as unknown[]) {
+                if (tool && typeof tool === 'object' && typeof (tool as Record<string, unknown>).name === 'string') {
+                  toolNames.push((tool as Record<string, unknown>).name as string);
+                }
               }
             }
             return {

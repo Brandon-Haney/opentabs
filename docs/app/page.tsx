@@ -82,10 +82,10 @@ export default function HomePage() {
             {features.map(feature => (
               <div
                 key={feature.title}
-                className="border-border bg-card flex flex-col gap-3 border-2 p-5 shadow-md transition-all hover:translate-y-0.5 hover:shadow">
-                <div className="text-3xl">{feature.icon}</div>
+                className="border-border bg-card flex flex-col gap-3 border-2 p-6 shadow-md transition-all hover:translate-y-0.5 hover:shadow">
+                <div className="text-4xl">{feature.icon}</div>
                 <h3 className="font-head text-lg font-medium">{feature.title}</h3>
-                <p className="text-muted-foreground font-sans text-sm">{feature.description}</p>
+                <p className="text-muted-foreground font-sans text-sm leading-relaxed">{feature.description}</p>
               </div>
             ))}
           </div>
@@ -114,12 +114,12 @@ export default function HomePage() {
                 desc: 'Use the Plugin SDK to define new tools for any website. Publish as an npm package for the community.',
               },
             ].map(({ step, title, desc }) => (
-              <div key={step} className="border-border bg-card border-2 p-5 shadow-md">
-                <div className="font-head border-border bg-primary mb-3 inline-flex size-10 items-center justify-center border-2 text-lg font-bold">
+              <div key={step} className="border-border bg-card border-2 p-6 shadow-md">
+                <div className="font-head border-border bg-primary mb-3 inline-flex size-12 items-center justify-center border-2 text-xl font-bold">
                   {step}
                 </div>
                 <h3 className="font-head mb-2 text-lg font-medium">{title}</h3>
-                <p className="text-muted-foreground font-sans text-sm">{desc}</p>
+                <p className="text-muted-foreground font-sans text-sm leading-relaxed">{desc}</p>
               </div>
             ))}
           </div>

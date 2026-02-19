@@ -27,6 +27,18 @@ describe('validateUrlPattern', () => {
       expect(validateUrlPattern('*://localhost:3000/*')).toBeNull();
     });
 
+    test('IPv4 address', () => {
+      expect(validateUrlPattern('*://192.168.1.1/*')).toBeNull();
+    });
+
+    test('IPv4 address with port', () => {
+      expect(validateUrlPattern('https://10.0.0.1:8080/*')).toBeNull();
+    });
+
+    test('IPv4 loopback', () => {
+      expect(validateUrlPattern('*://127.0.0.1/*')).toBeNull();
+    });
+
     test('specific path', () => {
       expect(validateUrlPattern('https://example.com/api/*')).toBeNull();
     });

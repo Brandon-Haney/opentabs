@@ -156,6 +156,7 @@ export const sendTabSyncAll = async (): Promise<void> => {
  */
 export const clearTabStateCache = (): void => {
   lastKnownState.clear();
+  pluginLocks.clear();
 };
 
 /**

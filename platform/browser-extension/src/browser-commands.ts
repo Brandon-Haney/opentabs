@@ -1757,7 +1757,7 @@ export const handleBrowserGetResourceContent = async (
       // Decode base64 text resources to UTF-8 strings
       if (base64Encoded && isTextMimeType(match.mimeType)) {
         try {
-          content = atob(content);
+          content = new TextDecoder().decode(Uint8Array.from(atob(content), c => c.charCodeAt(0)));
           base64Encoded = false;
         } catch {
           // Decoding failed — return base64 as-is

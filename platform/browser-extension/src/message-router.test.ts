@@ -104,6 +104,7 @@ const mockHandleExtensionGetState = mock(asyncNoop as (id: string | number) => P
 const mockHandleExtensionGetLogs = mock(
   asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
 );
+const mockHandleExtensionGetSidePanel = mock(asyncNoop as (id: string | number) => Promise<void>);
 
 await mock.module('./messaging.js', () => ({
   sendToServer: mockSendToServer,
@@ -147,6 +148,7 @@ await mock.module('./browser-commands.js', () => ({
   handleBrowserHandleDialog: mockHandleBrowserHandleDialog,
   handleExtensionGetState: mockHandleExtensionGetState,
   handleExtensionGetLogs: mockHandleExtensionGetLogs,
+  handleExtensionGetSidePanel: mockHandleExtensionGetSidePanel,
 }));
 
 // Chrome API stubs for modules that are NOT mocked (plugin-storage, iife-injection,
@@ -517,6 +519,7 @@ const resetRoutingMocks = (): void => {
   mockHandleBrowserHandleDialog.mockReset();
   mockHandleExtensionGetState.mockReset();
   mockHandleExtensionGetLogs.mockReset();
+  mockHandleExtensionGetSidePanel.mockReset();
 };
 
 describe('handleServerMessage', () => {
@@ -549,6 +552,7 @@ describe('handleServerMessage', () => {
     mockHandleBrowserHandleDialog.mockResolvedValue(undefined);
     mockHandleExtensionGetState.mockResolvedValue(undefined);
     mockHandleExtensionGetLogs.mockResolvedValue(undefined);
+    mockHandleExtensionGetSidePanel.mockResolvedValue(undefined);
   });
 
   describe('sync.full routing', () => {
@@ -1017,6 +1021,13 @@ describe('handleServerMessage', () => {
 
       expect(mockHandleExtensionGetLogs).toHaveBeenCalledTimes(1);
       expect(mockHandleExtensionGetLogs).toHaveBeenCalledWith({ level: 'error' }, 50);
+    });
+
+    test('dispatches extension.getSidePanel to handleExtensionGetSidePanel', () => {
+      handleServerMessage({ method: 'extension.getSidePanel', id: 51 });
+
+      expect(mockHandleExtensionGetSidePanel).toHaveBeenCalledTimes(1);
+      expect(mockHandleExtensionGetSidePanel).toHaveBeenCalledWith(51);
     });
   });
 

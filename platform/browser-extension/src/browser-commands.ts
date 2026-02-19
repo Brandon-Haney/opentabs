@@ -15,7 +15,7 @@ import { sanitizeErrorMessage } from './sanitize-error.js';
 import { getLastKnownStates } from './tab-state.js';
 import { isBlockedUrlScheme } from '@opentabs-dev/shared';
 import type { LogEntry, LogFilterOptions, LogStats } from './log-collector.js';
-import type { BgGetLogsMessage } from './types.js';
+import type { BgGetLogsMessage, SpGetStateMessage } from './types.js';
 
 interface CdpFrame {
   id: string;
@@ -1918,5 +1918,31 @@ export const handleExtensionGetLogs = async (params: Record<string, unknown>, id
       error: { code: -32603, message: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)) },
       id,
     });
+  }
+};
+
+export const handleExtensionGetSidePanel = async (id: string | number): Promise<void> => {
+  try {
+    const SIDE_PANEL_TIMEOUT_MS = 3000;
+
+    const sidePanelResult = await Promise.race([
+      chrome.runtime.sendMessage({ type: 'sp:getState' } satisfies SpGetStateMessage).then((raw: unknown) => raw),
+      new Promise<null>(resolve => setTimeout(() => resolve(null), SIDE_PANEL_TIMEOUT_MS)),
+    ]);
+
+    if (!sidePanelResult || typeof sidePanelResult !== 'object') {
+      sendToServer({ jsonrpc: '2.0', result: { open: false }, id });
+      return;
+    }
+
+    const response = sidePanelResult as { state?: unknown; html?: string };
+    sendToServer({
+      jsonrpc: '2.0',
+      result: { open: true, state: response.state, html: response.html },
+      id,
+    });
+  } catch {
+    // Side panel not open or message failed — return { open: false }
+    sendToServer({ jsonrpc: '2.0', result: { open: false }, id });
   }
 };

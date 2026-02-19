@@ -235,6 +235,7 @@ export const BROWSER_TOOL_NAMES = [
   'browser_handle_dialog',
   'extension_get_state',
   'extension_get_logs',
+  'extension_get_side_panel',
 ];
 
 // ---------------------------------------------------------------------------

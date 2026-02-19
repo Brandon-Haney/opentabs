@@ -24,6 +24,17 @@ const App = () => {
   /** Buffer tab.stateChanged notifications that arrive before fetchConfigState resolves. */
   const pendingTabStates = useRef<Map<string, TabState>>(new Map());
 
+  /** Refs for sp:getState handler — reads latest values without adding useEffect dependencies */
+  const connectedRef = useRef(connected);
+  const loadingRef = useRef(loading);
+  const pluginsRef = useRef(plugins);
+
+  useEffect(() => {
+    connectedRef.current = connected;
+    loadingRef.current = loading;
+    pluginsRef.current = plugins;
+  });
+
   const loadPlugins = useCallback(() => {
     const now = Date.now();
     if (now - lastFetchRef.current < 200) return;
@@ -118,6 +129,22 @@ const App = () => {
       _sender: chrome.runtime.MessageSender,
       sendResponse: (response?: unknown) => void,
     ): boolean | undefined => {
+      if (message.type === 'sp:getState') {
+        const rootEl = document.getElementById('root');
+        const html = rootEl ? rootEl.innerHTML.slice(0, 50000) : '';
+        const currentPlugins = pluginsRef.current;
+        sendResponse({
+          state: {
+            connected: connectedRef.current,
+            loading: loadingRef.current,
+            pluginCount: currentPlugins.length,
+            plugins: currentPlugins.map(p => ({ name: p.name, tabState: p.tabState })),
+          },
+          html,
+        });
+        return true;
+      }
+
       if (message.type === 'sp:connectionState') {
         const isConnected = message.data.connected;
         setConnected(isConnected);

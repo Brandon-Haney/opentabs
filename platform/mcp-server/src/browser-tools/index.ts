@@ -10,6 +10,7 @@ import { disableNetworkCapture } from './disable-network-capture.js';
 import { enableNetworkCapture } from './enable-network-capture.js';
 import { executeScript } from './execute-script.js';
 import { extensionGetLogs } from './extension-get-logs.js';
+import { extensionGetSidePanel } from './extension-get-side-panel.js';
 import { extensionGetState } from './extension-get-state.js';
 import { focusTab } from './focus-tab.js';
 import { getConsoleLogs } from './get-console-logs.js';
@@ -71,6 +72,7 @@ const browserTools: BrowserToolDefinition[] = [
   handleDialog,
   extensionGetState,
   extensionGetLogs,
+  extensionGetSidePanel,
 ];
 
 export { browserTools };

@@ -64,6 +64,11 @@ export interface BgGetLogsMessage {
   };
 }
 
+/** Background → Side panel: request current React state and rendered HTML */
+export interface SpGetStateMessage {
+  type: 'sp:getState';
+}
+
 /** Background → Side panel: WebSocket connection state update */
 export interface SpConnectionStateMessage {
   type: 'sp:connectionState';
@@ -87,6 +92,7 @@ export type InternalMessage =
   | BgSendMessage
   | BgGetConnectionStateMessage
   | BgGetLogsMessage
+  | SpGetStateMessage
   | SpConnectionStateMessage
   | SpRelayMessage;
 

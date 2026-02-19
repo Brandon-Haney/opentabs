@@ -13,6 +13,7 @@
  * to avoid a window where state.plugins is empty during async discovery.
  */
 
+import { browserTools } from './browser-tools/index.js';
 import { log } from './logger.js';
 import { parseManifest } from './manifest-schema.js';
 import { validatePluginName, validateUrlPattern } from '@opentabs-dev/shared';
@@ -477,14 +478,9 @@ const discoverPlugins = async (
  * Browser tool names that should not appear in plugin tool descriptions.
  * Presence of these names may indicate a prompt injection attempt where
  * a plugin tries to instruct the AI agent to invoke browser-level tools.
+ * Derived from the browserTools array so the list stays in sync automatically.
  */
-const BROWSER_TOOL_NAMES = [
-  'browser_execute_script',
-  'browser_list_tabs',
-  'browser_open_tab',
-  'browser_close_tab',
-  'browser_navigate_tab',
-];
+const BROWSER_TOOL_NAMES = browserTools.map(t => t.name);
 
 /**
  * Check plugin tool descriptions for references to browser tool names.

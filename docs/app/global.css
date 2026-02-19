@@ -154,6 +154,7 @@ body {
   background-color: var(--primary);
   color: var(--primary-foreground);
   font-weight: 600;
+  border-left: 4px solid var(--primary-foreground);
 }
 
 /* Sidebar section dividers: 2px border lines */
@@ -169,6 +170,8 @@ body {
   font-size: 0.8125rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  margin-top: 1rem;
+  margin-bottom: 0.25rem;
 }
 
 /* Mobile drawer: border-l-2 on the left side */

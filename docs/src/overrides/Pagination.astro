@@ -15,7 +15,7 @@ const nextIcon = isRtl ? leftArrow : rightArrow;
       <a
         href={prev.href}
         rel="prev"
-        class="font-head transition-all rounded outline-hidden cursor-pointer duration-200 font-medium flex justify-center items-center shadow-md hover:shadow active:shadow-none bg-transparent border-2 border-black hover:translate-y-1 active:translate-y-2 active:translate-x-1 px-4 py-3 text-base no-underline text-foreground"
+        class="font-head transition-all rounded outline-hidden cursor-pointer duration-200 font-medium flex justify-center items-center shadow-md hover:shadow active:shadow-none bg-transparent border-2 border-border hover:translate-y-1 active:translate-y-2 active:translate-x-1 px-4 py-3 text-base no-underline text-foreground"
       >
         <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="arrow-icon" set:html={prevIcon} />
         <span class="link-content">
@@ -31,7 +31,7 @@ const nextIcon = isRtl ? leftArrow : rightArrow;
       <a
         href={next.href}
         rel="next"
-        class="font-head transition-all rounded outline-hidden cursor-pointer duration-200 font-medium flex justify-center items-center shadow-md hover:shadow active:shadow-none bg-primary text-primary-foreground border-2 border-black hover:translate-y-1 active:translate-y-2 active:translate-x-1 hover:bg-primary-hover px-4 py-3 text-base no-underline"
+        class="font-head transition-all rounded outline-hidden cursor-pointer duration-200 font-medium flex justify-center items-center shadow-md hover:shadow active:shadow-none bg-primary text-primary-foreground border-2 border-border hover:translate-y-1 active:translate-y-2 active:translate-x-1 hover:bg-primary-hover px-4 py-3 text-base no-underline"
       >
         <span class="link-content">
           {Astro.locals.t('page.nextLink')}

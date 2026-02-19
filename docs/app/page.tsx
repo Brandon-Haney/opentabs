@@ -48,7 +48,7 @@ export default function HomePage() {
         component: undefined,
       }}>
       {/* Hero */}
-      <section className="border-border bg-background border-b-2 px-6 py-16 md:py-24">
+      <section className="border-border bg-background border-b-2 px-6 py-20 md:py-28">
         <div className="mx-auto max-w-5xl">
           <div className="border-border bg-primary mb-4 inline-flex items-center gap-2 border-2 px-3 py-1 font-sans text-sm font-semibold">
             Now in beta
@@ -58,7 +58,7 @@ export default function HomePage() {
             <br />
             <span className="bg-primary px-2">any web app</span>
           </h1>
-          <p className="text-muted-foreground mb-8 max-w-2xl font-sans text-lg md:text-xl">
+          <p className="text-muted-foreground mb-10 max-w-2xl font-sans text-lg md:text-xl">
             OpenTabs gives AI agents access to any web application through your authenticated browser session — no API
             integrations, no new credentials, no changes to the app.
           </p>
@@ -74,10 +74,10 @@ export default function HomePage() {
       </section>
 
       {/* Features */}
-      <section className="border-border bg-background border-b-2 px-6 py-16">
+      <section className="border-border bg-background border-b-2 px-6 py-20">
         <div className="mx-auto max-w-5xl">
           <h2 className="font-head mb-2 text-3xl font-semibold">Everything you need</h2>
-          <p className="text-muted-foreground mb-10 font-sans">A complete platform for AI-powered web automation.</p>
+          <p className="text-muted-foreground mb-12 font-sans">A complete platform for AI-powered web automation.</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {features.map(feature => (
               <div
@@ -93,7 +93,7 @@ export default function HomePage() {
       </section>
 
       {/* How it works */}
-      <section className="border-border bg-muted/30 border-b-2 px-6 py-16">
+      <section className="border-border bg-muted/30 border-b-2 px-6 py-20">
         <div className="mx-auto max-w-5xl">
           <h2 className="font-head mb-10 text-3xl font-semibold">How it works</h2>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -127,7 +127,7 @@ export default function HomePage() {
       </section>
 
       {/* CTA */}
-      <section className="px-6 py-16">
+      <section className="px-6 py-20">
         <div className="mx-auto max-w-5xl text-center">
           <h2 className="font-head mb-4 text-3xl font-semibold">Ready to get started?</h2>
           <p className="text-muted-foreground mb-8 font-sans">

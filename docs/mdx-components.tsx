@@ -28,7 +28,7 @@ interface CalloutProps extends Omit<ComponentPropsWithoutRef<'div'>, 'title'> {
 const RetroCallout = ({ className, type = 'info', title, icon: _icon, children, ...props }: CalloutProps) => {
   const statusClasses = calloutStatusClasses[type] ?? calloutStatusClasses.info;
   return (
-    <div role="alert" className={cn('relative my-6 w-full border-2 p-5', statusClasses, className)} {...props}>
+    <div role="alert" className={cn('relative my-6 w-full border-2 p-3 md:p-5', statusClasses, className)} {...props}>
       {title && <p className="font-head mb-2 text-lg font-semibold">{title}</p>}
       <div className="font-sans text-sm">{children}</div>
     </div>
@@ -82,17 +82,17 @@ const RetroCards = ({ className, ...props }: ComponentPropsWithoutRef<'div'>) =>
 export const getMDXComponents = (components?: MDXComponents): MDXComponents => ({
   ...defaultMdxComponents,
   h1: ({ className, children, ...props }: ComponentPropsWithoutRef<'h1'>) => (
-    <h1 className={cn('font-head mt-8 mb-4 text-4xl font-bold lg:text-5xl', className)} {...props}>
+    <h1 className={cn('font-head mt-8 mb-4 text-2xl font-bold md:text-4xl lg:text-5xl', className)} {...props}>
       {children}
     </h1>
   ),
   h2: ({ className, children, ...props }: ComponentPropsWithoutRef<'h2'>) => (
-    <h2 className={cn('font-head mt-12 mb-4 text-3xl font-semibold lg:text-4xl', className)} {...props}>
+    <h2 className={cn('font-head mt-12 mb-4 text-xl font-semibold md:text-3xl lg:text-4xl', className)} {...props}>
       {children}
     </h2>
   ),
   h3: ({ className, children, ...props }: ComponentPropsWithoutRef<'h3'>) => (
-    <h3 className={cn('font-head mt-8 mb-3 text-2xl font-medium', className)} {...props}>
+    <h3 className={cn('font-head mt-8 mb-3 text-lg font-medium md:text-2xl', className)} {...props}>
       {children}
     </h3>
   ),
@@ -148,7 +148,10 @@ export const getMDXComponents = (components?: MDXComponents): MDXComponents => (
       <code className={className} style={style} {...props} />
     ) : (
       <code
-        className={cn('bg-muted border-border border-2 px-1.5 py-0.5 font-mono text-sm font-semibold', className)}
+        className={cn(
+          'bg-muted border-border border-2 px-1.5 py-0.5 font-mono text-sm font-semibold break-words',
+          className,
+        )}
         {...props}
       />
     ),
@@ -167,10 +170,13 @@ export const getMDXComponents = (components?: MDXComponents): MDXComponents => (
     <tr className={cn('hover:bg-primary/15 border-b-2 transition-colors', className)} {...props} />
   ),
   th: ({ className, ...props }: ComponentPropsWithoutRef<'th'>) => (
-    <th className={cn('text-primary-foreground h-12 px-4 text-left align-middle font-medium', className)} {...props} />
+    <th
+      className={cn('text-primary-foreground h-12 px-2 text-left align-middle font-medium md:px-4', className)}
+      {...props}
+    />
   ),
   td: ({ className, ...props }: ComponentPropsWithoutRef<'td'>) => (
-    <td className={cn('px-4 py-3 align-middle', className)} {...props} />
+    <td className={cn('px-2 py-2 align-middle md:px-4 md:py-3', className)} {...props} />
   ),
   // Fumadocs MDX special components — overridden with RetroUI styling
   Callout: RetroCallout,

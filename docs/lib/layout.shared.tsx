@@ -1,24 +1,20 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
-import { RetroNavbar } from '@/components/retro-navbar';
+import { GlobalHeader } from '@/components/global-header';
 import { RetroSearchToggleLg } from '@/components/retro-search-toggle';
-import { RetroThemeToggle } from '@/components/retro-theme-toggle';
 
 export const baseOptions: BaseLayoutProps = {
   nav: {
-    title: (
-      <span className="font-head inline-flex items-center gap-2 text-xl">
-        <img src="/icon.svg" alt="" width={24} height={24} className="size-6" />
-        OpenTabs
-      </span>
-    ),
-    component: <RetroNavbar />,
+    /* Suppress the sidebar title — the GlobalHeader owns the logo on all pages. */
+    title: () => null,
+    component: <GlobalHeader />,
   },
   searchToggle: {
     components: {
       lg: <RetroSearchToggleLg hideIfDisabled />,
     },
   },
+  /* Disable the default theme switch — GlobalHeader renders its own RetroThemeToggle. */
   themeSwitch: {
-    component: <RetroThemeToggle />,
+    enabled: false,
   },
 };

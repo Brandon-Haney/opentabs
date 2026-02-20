@@ -9,24 +9,6 @@ interface Props {
   hideIfDisabled?: boolean;
 }
 
-export function RetroSearchToggleSm({ className, hideIfDisabled }: Props) {
-  const { setOpenSearch, enabled } = useSearchContext();
-  if (hideIfDisabled && !enabled) return null;
-  return (
-    <button
-      type="button"
-      aria-label="Open Search"
-      data-search=""
-      onClick={() => setOpenSearch(true)}
-      className={cn(
-        'border-border bg-background flex items-center justify-center border-2 p-2 shadow-sm transition-all hover:translate-y-0.5 hover:shadow-none',
-        className,
-      )}>
-      <Search className="size-4" />
-    </button>
-  );
-}
-
 export function RetroSearchToggleLg({ className, hideIfDisabled }: Props) {
   const { setOpenSearch, enabled, hotKey } = useSearchContext();
   if (hideIfDisabled && !enabled) return null;

@@ -20,7 +20,7 @@ export function CommandDisplay({ command }: CommandDisplayProps) {
     }
   };
 
-  const syntaxColors = ['text-blue-300', 'text-yellow-300', 'text-green-300', 'text-purple-300'];
+  const syntaxColors = ['text-primary', 'text-accent-foreground', 'text-muted-foreground', 'text-foreground'];
 
   // Split the command into parts for syntax highlighting
   const parts = command.split(' ').map((part, index) => {
@@ -33,7 +33,7 @@ export function CommandDisplay({ command }: CommandDisplayProps) {
   });
 
   return (
-    <div className="group relative flex items-center bg-black/90 py-2 pl-4 font-mono text-xs">
+    <div className="group bg-secondary text-secondary-foreground relative flex items-center py-2 pl-4 font-mono text-xs">
       <div className="flex-1 overflow-hidden whitespace-nowrap">
         <div className="overflow-hidden text-ellipsis">
           {parts.map((part, index) => (
@@ -48,7 +48,7 @@ export function CommandDisplay({ command }: CommandDisplayProps) {
         onClick={copyToClipboard}
         className="text-muted-foreground hover:text-foreground mr-2 shrink-0 p-1 transition-colors"
         aria-label="Copy command">
-        {copied ? <CheckIcon className="h-4 w-4 text-green-400" /> : <ClipboardIcon className="h-4 w-4" />}
+        {copied ? <CheckIcon className="text-primary h-4 w-4" /> : <ClipboardIcon className="h-4 w-4" />}
       </button>
     </div>
   );

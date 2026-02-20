@@ -7,17 +7,17 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const toggleVariants = cva(
-  'inline-flex items-center justify-center text-sm font-medium ring-offset-background transition-colors hover:bg-muted hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 gap-2',
+  'inline-flex items-center justify-center text-sm font-medium ring-offset-background transition-colors hover:bg-muted hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 gap-2',
   {
     variants: {
       variant: {
-        default: 'bg-transparent hover:bg-muted/70 hover:text-muted-foreground data-[state=on]:bg-muted',
+        default: 'bg-transparent hover:bg-muted hover:text-muted-foreground data-[state=on]:bg-muted',
         outlined:
-          'border-2 border-input bg-transparent hover:bg-accent hover:text-accent-foreground/80 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground',
+          'border-2 border-border bg-transparent hover:bg-accent hover:text-accent-foreground/80 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground',
         solid:
-          'border-2 border-input bg-transparent hover:bg-secondary hover:text-secondary-foreground hover:border-secondary data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground data-[state=on]:border-secondary',
+          'border-2 border-border bg-transparent hover:bg-secondary hover:text-secondary-foreground hover:border-secondary data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground data-[state=on]:border-secondary',
         'outline-muted':
-          'border-2 border-input bg-transparent hover:hover:bg-muted/70 hover:hover:text-muted-foreground data-[state=on]:bg-muted',
+          'border-2 border-border bg-transparent hover:bg-muted hover:text-muted-foreground data-[state=on]:bg-muted',
       },
       size: {
         default: 'h-10 px-3 min-w-10',

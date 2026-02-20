@@ -41,12 +41,7 @@ const features = [
 
 export default function HomePage() {
   return (
-    <HomeLayout
-      {...baseOptions}
-      nav={{
-        ...baseOptions.nav,
-        component: undefined,
-      }}>
+    <HomeLayout {...baseOptions}>
       {/* Hero */}
       <section className="border-border bg-background border-b-2 px-6 py-20 md:py-28">
         <div className="mx-auto max-w-5xl">

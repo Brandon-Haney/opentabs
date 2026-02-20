@@ -7,6 +7,12 @@
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
   --radius: var(--radius);
+  --radius-sm: calc(var(--radius) - 0.125rem);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 0.125rem);
+  --radius-xl: calc(var(--radius) + 0.25rem);
+  --radius-2xl: calc(var(--radius) + 0.5rem);
+  --radius-3xl: calc(var(--radius) + 0.75rem);
   --shadow-xs: 1px 1px 0 0 var(--border);
   --shadow-sm: 2px 2px 0 0 var(--border);
   --shadow: 3px 3px 0 0 var(--border);
@@ -32,6 +38,23 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
 
+  /* Alias tokens for components that reference shadcn/ui defaults */
+  --color-input: var(--border);
+  --color-ring: var(--border);
+  --color-popover: var(--card);
+  --color-popover-foreground: var(--card-foreground);
+
+  /* Callout/alert status colors — theme-aware, light/dark via CSS variables */
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-border: var(--info-border);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-border: var(--warning-border);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-border: var(--success-border);
+
   /* Fumadocs dynamic color tokens mapped to RetroUI variables */
   --color-fd-background: var(--background);
   --color-fd-foreground: var(--foreground);
@@ -49,7 +72,7 @@
   --color-fd-ring: var(--border);
   --color-fd-popover: var(--card);
   --color-fd-popover-foreground: var(--card-foreground);
-  --color-fd-overlay: rgba(0, 0, 0, 0.8);
+  --color-fd-overlay: var(--overlay);
 }
 
 /* Fumadocs static color tokens — used by shiki.css diff highlighting and callout icons */
@@ -83,6 +106,16 @@
   --destructive: #e63946;
   --destructive-foreground: #fff;
   --border: #000;
+  --info: #bfdbfe;
+  --info-foreground: #1e3a5f;
+  --info-border: #1e40af;
+  --warning: #fde68a;
+  --warning-foreground: #713f12;
+  --warning-border: #92400e;
+  --success: #bbf7d0;
+  --success-foreground: #14532d;
+  --success-border: #166534;
+  --overlay: rgba(0, 0, 0, 0.8);
 }
 
 .dark {
@@ -102,6 +135,16 @@
   --destructive: #e63946;
   --destructive-foreground: #fff;
   --border: #5c5c5c;
+  --info: rgba(30, 64, 175, 0.4);
+  --info-foreground: #93c5fd;
+  --info-border: #3b82f6;
+  --warning: rgba(146, 64, 14, 0.4);
+  --warning-foreground: #fde68a;
+  --warning-border: #f59e0b;
+  --success: rgba(22, 101, 52, 0.4);
+  --success-foreground: #86efac;
+  --success-border: #22c55e;
+  --overlay: rgba(0, 0, 0, 0.8);
 }
 
 body {
@@ -121,15 +164,19 @@ body {
   text-decoration: underline;
 }
 
-/* ===== RetroUI Home Layout Navbar Overrides ===== */
+/* ===== GlobalHeader — docs layout grid integration ===== */
 
-/* Home page header (#nd-nav): 2px border, solid background, no blur.
- * HeaderNavigationMenu renders as: <header id="nd-nav"> > <div class="border-b ..."> */
-#nd-nav > div {
-  border-bottom-width: 2px;
-  border-bottom-color: var(--border);
-  background-color: var(--background);
-  backdrop-filter: none;
+/* Inside the DocsLayout grid (#nd-docs-layout), the GlobalHeader occupies the full-width
+ * "header" grid area (row 1, all 5 columns). The grid template is overridden in
+ * app/docs/layout.tsx to give the header its own dedicated row above the sidebar. */
+#nd-docs-layout > #nd-global-header {
+  grid-area: header;
+}
+
+/* Allocate 56px (h-14) for the global header row so sidebar and content offset below it.
+ * --fd-header-height is used by Fumadocs to compute --fd-docs-row-2 (sidebar sticky top). */
+#nd-docs-layout {
+  --fd-header-height: 3.5rem;
 }
 
 /* ===== RetroUI Navbar / Sidebar Overrides ===== */
@@ -231,10 +278,10 @@ body {
 
 /* ===== RetroUI Search Dialog Overrides ===== */
 
-/* Content container: sharp corners (override rounded-xl), 2px border, flat offset shadow
+/* Content container: rounded corners, 2px border, flat offset shadow.
  * Targets the Radix DialogContent element which has role="dialog" + data-state. */
 [role='dialog'][data-state] {
-  border-radius: 0;
+  border-radius: var(--radius-xl);
   border-width: 2px;
   box-shadow: var(--shadow-lg);
 }
@@ -244,10 +291,10 @@ body {
   border-bottom-width: 2px;
 }
 
-/* Search result items: sharp corners, primary yellow active state.
+/* Search result items: rounded corners, primary yellow active state.
  * Fumadocs sets aria-selected on active items and uses JS onPointerMove to activate on hover. */
 [role='dialog'] button[aria-selected] {
-  border-radius: 0;
+  border-radius: var(--radius);
 }
 
 [role='dialog'] button[aria-selected='true'] {
@@ -258,7 +305,7 @@ body {
 /* Close (ESC) button: RetroUI outline button press effect.
  * Selector targets button that is a direct child of the header div (direct child of the dialog). */
 [role='dialog'] > div > button[type='button'] {
-  border-radius: 0;
+  border-radius: var(--radius);
   border-width: 2px;
   box-shadow: var(--shadow-sm);
   transition-property: box-shadow, transform;
@@ -278,12 +325,12 @@ body {
   font-family: var(--font-head);
 }
 
-/* Sidebar and mobile drawer: sharp corners on all interactive elements. */
+/* Sidebar and mobile drawer: rounded corners on all interactive elements. */
 #nd-sidebar a,
 #nd-sidebar button,
 #nd-sidebar-mobile a,
 #nd-sidebar-mobile button {
-  border-radius: 0;
+  border-radius: var(--radius);
 }
 
 /* Page tree nav links/buttons: transparent left border reserve (prevents layout shift when
@@ -296,9 +343,9 @@ body {
   border-left: 4px solid transparent;
 }
 
-/* Sidebar collapsed panel: sharp corners (override rounded-xl) */
+/* Sidebar collapsed panel: rounded corners */
 [data-sidebar-panel] > * {
-  border-radius: 0;
+  border-radius: var(--radius-lg);
 }
 
 /* Mobile TOC popover header: 2px border, no blur */
@@ -306,12 +353,6 @@ body {
   border-bottom-width: 2px;
   backdrop-filter: none;
   background-color: var(--background);
-}
-
-/* Home layout nav items: sharp corners */
-#nd-nav a,
-#nd-nav button {
-  border-radius: 0;
 }
 
 /* Code blocks ejected from Fumadocs: ensure font-mono is used */
@@ -351,5 +392,5 @@ code {
   font-family: var(--font-head);
   font-weight: bold;
   font-size: 0.875rem;
-  border-radius: 0;
+  border-radius: var(--radius);
 }

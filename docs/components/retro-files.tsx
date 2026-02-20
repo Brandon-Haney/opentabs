@@ -23,7 +23,7 @@ export const RetroFile = ({
 }: RetroFileProps) => (
   <div
     className={cn(
-      'hover:bg-primary/20 hover:text-foreground flex cursor-default flex-row items-center gap-2 px-2 py-1.5 font-sans text-sm transition-colors',
+      'hover:bg-accent hover:text-accent-foreground flex cursor-default flex-row items-center gap-2 px-2 py-1.5 font-sans text-sm transition-colors',
       className,
     )}
     {...props}>
@@ -53,7 +53,7 @@ export const RetroFolder = ({
       <CollapsiblePrimitive.Trigger
         disabled={disabled}
         className={cn(
-          'font-head hover:bg-primary/20 flex w-full flex-row items-center gap-2 px-2 py-1.5 text-sm font-semibold transition-colors',
+          'font-head hover:bg-accent flex w-full flex-row items-center gap-2 px-2 py-1.5 text-sm font-semibold transition-colors',
           disabled && 'cursor-default opacity-50',
         )}>
         <span className="text-primary">

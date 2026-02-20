@@ -9,16 +9,14 @@ import { RetroAccordions, RetroAccordion } from '@/components/retro-accordion';
 import { RetroSteps, RetroStep } from '@/components/retro-steps';
 import { RetroFiles, RetroFile, RetroFolder } from '@/components/retro-files';
 
-// Mapping from Fumadocs callout type to RetroUI Alert status color classes
+// Mapping from Fumadocs callout type to RetroUI Alert status color classes (theme-aware)
 const calloutStatusClasses: Record<string, string> = {
-  info: 'bg-blue-300 text-blue-800 border-blue-800 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-500',
-  warn: 'bg-yellow-300 text-yellow-800 border-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-500',
-  warning:
-    'bg-yellow-300 text-yellow-800 border-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-500',
-  error: 'bg-red-300 text-red-800 border-red-800 dark:bg-red-900/40 dark:text-red-300 dark:border-red-500',
-  success:
-    'bg-green-300 text-green-800 border-green-800 dark:bg-green-900/40 dark:text-green-300 dark:border-green-500',
-  idea: 'bg-blue-300 text-blue-800 border-blue-800 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-500',
+  info: 'bg-info text-info-foreground border-info-border',
+  warn: 'bg-warning text-warning-foreground border-warning-border',
+  warning: 'bg-warning text-warning-foreground border-warning-border',
+  error: 'bg-destructive text-destructive-foreground border-destructive',
+  success: 'bg-success text-success-foreground border-success-border',
+  idea: 'bg-info text-info-foreground border-info-border',
 };
 
 interface CalloutProps extends Omit<ComponentPropsWithoutRef<'div'>, 'title'> {

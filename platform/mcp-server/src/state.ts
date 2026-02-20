@@ -150,6 +150,8 @@ export interface ServerState {
   configWatcher: FSWatcher | null;
   /** Last-seen mtime (ms) of ~/.opentabs/config.json — used by mtime polling fallback */
   configLastSeenMtime: number | null;
+  /** Timer ID for periodic mtime polling — cleared by stopFileWatching */
+  mtimePollTimerId: ReturnType<typeof setInterval> | null;
 }
 
 /** Increment when changing the type of an existing ServerState field */
@@ -180,6 +182,7 @@ export const createState = (): ServerState => ({
   fileWatcherGeneration: 0,
   configWatcher: null,
   configLastSeenMtime: null,
+  mtimePollTimerId: null,
 });
 
 /** Generate a cryptographically random JSON-RPC request ID */

@@ -30,6 +30,9 @@ import { join } from 'node:path';
 import type { ServerState, FileWatcherEntry } from './state.js';
 import type { FSWatcher } from 'node:fs';
 
+/** Polling interval for mtime-based fallback detection (ms) */
+const MTIME_POLL_INTERVAL_MS = 30_000;
+
 /** Callbacks for file watcher events */
 interface FileWatcherCallbacks {
   /** Called when a plugin's manifest changes (tools may have changed) */
@@ -480,6 +483,89 @@ const startConfigWatching = (state: ServerState, callbacks: FileWatcherCallbacks
 };
 
 /**
+ * Start periodic mtime polling as a fallback for stale fs.watch() watchers.
+ *
+ * fs.watch() can go stale on macOS (FSEvents bug in long-running Bun processes)
+ * and Linux (inotify limits). This polling loop stats every watched file and
+ * config.json on a fixed interval. If a file's mtime is newer than what was
+ * last recorded, the appropriate handler is invoked — the same handler that
+ * fs.watch() would have called. Because handlers already debounce and check
+ * fileWatcherGeneration, duplicate invocations from both fs.watch() and
+ * polling are safely deduplicated.
+ */
+const startMtimePolling = (state: ServerState, callbacks: FileWatcherCallbacks): void => {
+  // Clean up any existing poll timer (defensive — stopFileWatching should clear this)
+  if (state.mtimePollTimerId !== null) {
+    clearInterval(state.mtimePollTimerId);
+    state.mtimePollTimerId = null;
+  }
+
+  const gen = state.fileWatcherGeneration;
+
+  state.mtimePollTimerId = setInterval(() => {
+    // Bail out if a new generation started (hot reload happened)
+    if (state.fileWatcherGeneration !== gen) {
+      if (state.mtimePollTimerId !== null) {
+        clearInterval(state.mtimePollTimerId);
+        state.mtimePollTimerId = null;
+      }
+      return;
+    }
+
+    // Poll plugin files (manifest + IIFE)
+    for (const entry of state.fileWatcherEntries) {
+      const manifestPath = join(entry.pluginDir, 'opentabs-plugin.json');
+      const iifePath = join(entry.pluginDir, 'dist', 'adapter.iife.js');
+
+      const isPending = entry.pluginName.startsWith('(pending:');
+
+      // Check manifest mtime
+      const manifestMtime = getFileMtimeMs(manifestPath);
+      const lastManifestMtime = entry.lastSeenMtimes.get(manifestPath);
+      if (manifestMtime !== null && lastManifestMtime !== undefined && manifestMtime > lastManifestMtime) {
+        log.info(
+          `Mtime poll: Detected change to ${manifestPath} (old=${lastManifestMtime}, new=${manifestMtime}) — fs.watch may be stale`,
+        );
+        entry.lastSeenMtimes.set(manifestPath, manifestMtime);
+        if (isPending) {
+          void handlePendingPluginChange(state, entry.pluginDir, callbacks);
+        } else {
+          void handleManifestChange(state, entry.pluginName, entry.pluginDir, callbacks);
+        }
+      }
+
+      // Check IIFE mtime
+      const iifeMtime = getFileMtimeMs(iifePath);
+      const lastIifeMtime = entry.lastSeenMtimes.get(iifePath);
+      if (iifeMtime !== null && lastIifeMtime !== undefined && iifeMtime > lastIifeMtime) {
+        log.info(
+          `Mtime poll: Detected change to ${iifePath} (old=${lastIifeMtime}, new=${iifeMtime}) — fs.watch may be stale`,
+        );
+        entry.lastSeenMtimes.set(iifePath, iifeMtime);
+        if (isPending) {
+          void handlePendingPluginChange(state, entry.pluginDir, callbacks);
+        } else {
+          void handleIifeChange(state, entry.pluginName, entry.pluginDir, callbacks);
+        }
+      }
+    }
+
+    // Poll config.json mtime
+    const configPath = join(getConfigDir(), 'config.json');
+    const configMtime = getFileMtimeMs(configPath);
+    if (configMtime !== null && state.configLastSeenMtime !== null && configMtime > state.configLastSeenMtime) {
+      log.info(
+        `Mtime poll: Detected change to ${configPath} (old=${state.configLastSeenMtime}, new=${configMtime}) — fs.watch may be stale`,
+      );
+      state.configLastSeenMtime = configMtime;
+      callbacks.onConfigChanged();
+    }
+  }, MTIME_POLL_INTERVAL_MS);
+
+  log.info(`Mtime polling started (interval=${MTIME_POLL_INTERVAL_MS}ms)`);
+};
+
+/**
  * Start file watching for all local plugins and pending plugin paths.
  *
  * Watches two categories:
@@ -551,6 +637,9 @@ const startFileWatching = (
   } else {
     log.info(`File watcher: Watching ${loadedCount} loaded + ${pendingCount} pending plugin path(s)`);
   }
+
+  // Start mtime polling as a fallback for stale fs.watch() watchers
+  startMtimePolling(state, callbacks);
 };
 
 /**
@@ -570,6 +659,12 @@ const stopFileWatching = (state: ServerState): void => {
   if (state.configWatcher) {
     state.configWatcher.close();
     state.configWatcher = null;
+  }
+
+  // Stop mtime polling
+  if (state.mtimePollTimerId !== null) {
+    clearInterval(state.mtimePollTimerId);
+    state.mtimePollTimerId = null;
   }
 
   for (const timer of state.fileWatcherTimers.values()) {

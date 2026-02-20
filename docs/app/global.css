@@ -276,12 +276,14 @@ body {
   font-family: var(--font-head);
 }
 
-/* Sidebar and mobile drawer links/buttons: sharp corners (override rounded-lg from itemVariants) */
+/* Sidebar and mobile drawer links/buttons: sharp corners, transparent left border reserve (prevents
+ * layout shift when active state adds a solid left border). */
 #nd-sidebar a,
 #nd-sidebar button,
 #nd-sidebar-mobile a,
 #nd-sidebar-mobile button {
   border-radius: 0;
+  border-left: 4px solid transparent;
 }
 
 /* Sidebar collapsed panel: sharp corners (override rounded-xl) */

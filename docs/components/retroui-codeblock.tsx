@@ -46,7 +46,7 @@ const RetroCopyButton = ({
       aria-label={checked ? 'Copied Text' : 'Copy Text'}
       onClick={onClick}
       className={cn(
-        'inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center border-2 p-1.5 transition-all',
+        'inline-flex cursor-pointer items-center justify-center rounded border-2 p-1.5 transition-all',
         'shadow-sm hover:shadow-none active:translate-x-0.5 active:translate-y-0.5',
         className,
       )}>
@@ -89,7 +89,7 @@ const RetroCodeBlock = ({
       data-line-numbers-start={lineNumbersStart}
       {...props}
       className={cn(
-        'shiki not-prose border-border relative my-6 overflow-hidden border-2 text-sm shadow-md',
+        'shiki not-prose border-border relative my-6 overflow-hidden rounded border-2 text-sm shadow-md',
         keepBackground && 'bg-(--shiki-light-bg) dark:bg-(--shiki-dark-bg)',
         className,
       )}>

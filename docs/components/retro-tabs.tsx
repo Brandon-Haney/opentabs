@@ -72,14 +72,14 @@ export function RetroTabs({
       }}
       {...props}>
       {items && (
-        <RadixTabs.List className="not-prose flex flex-row space-x-2">
+        <RadixTabs.List className="not-prose border-border flex flex-row space-x-2 border-b-2 pb-0">
           {label && <span className="my-auto me-auto text-sm font-medium">{label}</span>}
           {items.map(item => (
             <RadixTabs.Trigger
               key={item}
               value={escapeValue(item)}
               className={cn(
-                'cursor-pointer border-2 border-transparent px-4 py-1 font-sans text-sm transition-all focus:outline-none',
+                '-mb-[2px] cursor-pointer border-2 border-transparent px-4 py-1 font-sans text-sm transition-all focus:outline-none',
                 'data-[state=active]:border-border data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:font-semibold',
               )}>
               {item}

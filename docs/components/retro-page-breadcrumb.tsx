@@ -25,7 +25,7 @@ export const RetroPageBreadcrumb = () => {
               <Link
                 href={item.url}
                 className={cn(
-                  'hover:text-foreground font-medium transition-colors',
+                  'hover:text-foreground inline-block max-w-[120px] truncate font-medium transition-colors sm:max-w-none',
                   i === items.length - 1 && 'text-foreground font-semibold',
                 )}>
                 {item.name}

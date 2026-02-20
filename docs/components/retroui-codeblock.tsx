@@ -129,7 +129,7 @@ const RetroCodeBlock = ({
         aria-label="Code content"
         tabIndex={0}
         className={cn(
-          'fd-scroll-container max-h-[600px] overflow-auto bg-(--shiki-light-bg) p-4 font-mono dark:bg-(--shiki-dark-bg)',
+          'fd-scroll-container max-h-[400px] overflow-auto bg-(--shiki-light-bg) p-4 font-mono sm:max-h-[600px] dark:bg-(--shiki-dark-bg)',
           'focus-visible:ring-border focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset',
           viewportProps.className,
         )}

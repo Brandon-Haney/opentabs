@@ -181,6 +181,7 @@ const createHandleFetch =
         mcpClients: transports.size,
         plugins: state.plugins.size,
         pluginDetails,
+        failedPlugins: state.failedPlugins,
         toolCount,
         uptime: uptimeSeconds,
         reloadCount: hs?.reloadCount ?? 0,

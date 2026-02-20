@@ -77,6 +77,12 @@ export interface CachedBrowserTool {
 /** Tool config: maps prefixed tool name → enabled boolean */
 export type ToolConfig = Record<string, boolean>;
 
+/** A plugin path that failed discovery, with a human-readable error */
+export interface FailedPlugin {
+  path: string;
+  error: string;
+}
+
 /** Info about an outdated npm plugin */
 export interface OutdatedPlugin {
   name: string;
@@ -108,6 +114,8 @@ export interface ServerState {
   pendingDispatches: Map<string | number, PendingDispatch>;
   /** Extension WebSocket connection (single connection) */
   extensionWs: WsHandle | null;
+  /** Plugin paths that failed discovery, with human-readable errors */
+  failedPlugins: FailedPlugin[];
   /** Outdated npm plugins detected on startup */
   outdatedPlugins: OutdatedPlugin[];
   /** Browser tools — updated on each hot reload so existing session handlers see fresh definitions */
@@ -152,6 +160,7 @@ export const createState = (): ServerState => ({
   npmPlugins: [],
   pendingDispatches: new Map(),
   extensionWs: null,
+  failedPlugins: [],
   outdatedPlugins: [],
   browserTools: [],
   fileWatcherEntries: [],

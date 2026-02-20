@@ -21,7 +21,7 @@ import { readdir, realpath, stat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { RegisteredPlugin } from './state.js';
+import type { FailedPlugin, RegisteredPlugin } from './state.js';
 import type { TrustTier } from '@opentabs-dev/shared';
 
 /**
@@ -394,24 +394,33 @@ const isAllowedPluginPath = async (resolvedPath: string): Promise<boolean> => {
   return allRoots.some(root => realPath.startsWith(root + '/') || realPath === root);
 };
 
-const discoverFromLocalPaths = async (paths: string[]): Promise<DiscoveryResult[]> => {
+const discoverFromLocalPaths = async (
+  paths: string[],
+): Promise<{ results: DiscoveryResult[]; failures: FailedPlugin[] }> => {
   const results: DiscoveryResult[] = [];
+  const failures: FailedPlugin[] = [];
 
   for (const pluginPath of paths) {
     const resolvedPath = resolve(pluginPath);
 
     if (!(await isAllowedPluginPath(resolvedPath))) {
-      log.warn(`Rejected plugin path outside allowed directories: ${resolvedPath}`);
+      const msg = `Rejected plugin path outside allowed directories: ${resolvedPath}`;
+      log.warn(msg);
+      failures.push({ path: resolvedPath, error: 'Path is outside allowed directories' });
       continue;
     }
 
     if (!(await dirExists(resolvedPath))) {
-      log.warn(`Local plugin path does not exist: ${resolvedPath}`);
+      const msg = `Local plugin path does not exist: ${resolvedPath}`;
+      log.warn(msg);
+      failures.push({ path: resolvedPath, error: 'Directory does not exist' });
       continue;
     }
 
     if (!(await fileExists(join(resolvedPath, 'opentabs-plugin.json')))) {
-      log.warn(`No opentabs-plugin.json found at: ${resolvedPath}`);
+      const msg = `No opentabs-plugin.json found at: ${resolvedPath}`;
+      log.warn(msg);
+      failures.push({ path: resolvedPath, error: 'No opentabs-plugin.json found' });
       continue;
     }
 
@@ -419,11 +428,13 @@ const discoverFromLocalPaths = async (paths: string[]): Promise<DiscoveryResult[
       const plugin = await loadPluginFromDir(resolvedPath, 'local', null, resolvedPath);
       results.push({ plugin, source: resolvedPath });
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
       log.error(`Failed to load local plugin from ${resolvedPath}:`, err);
+      failures.push({ path: resolvedPath, error: errorMsg });
     }
   }
 
-  return results;
+  return { results, failures };
 };
 
 /**
@@ -435,23 +446,30 @@ const discoverFromLocalPaths = async (paths: string[]): Promise<DiscoveryResult[
  *   Only packages in this list are loaded from node_modules. Empty array means
  *   no npm plugins are loaded.
  */
+/** Result of full plugin discovery: successfully loaded plugins and failed paths */
+interface DiscoveryOutcome {
+  plugins: Map<string, RegisteredPlugin>;
+  failures: FailedPlugin[];
+}
+
 const discoverPlugins = async (
   localPaths: string[],
   allowedNpmPackages: string[],
   rootDir?: string,
-): Promise<Map<string, RegisteredPlugin>> => {
+): Promise<DiscoveryOutcome> => {
   const resolvedRoot = rootDir ?? PACKAGE_DIR;
 
   log.info('Starting plugin discovery...');
 
   // Discover from both sources in parallel
-  const [npmResults, localResults] = await Promise.all([
+  const [npmResults, localDiscovery] = await Promise.all([
     discoverFromNodeModules(resolvedRoot, allowedNpmPackages),
     discoverFromLocalPaths(localPaths),
   ]);
 
   // Local results first so local plugins take precedence over npm in dedup
-  const allResults = [...localResults, ...npmResults];
+  const allResults = [...localDiscovery.results, ...npmResults];
+  const failures = [...localDiscovery.failures];
 
   // Build new plugin Map, checking for duplicates
   const plugins = new Map<string, RegisteredPlugin>();
@@ -473,7 +491,7 @@ const discoverPlugins = async (
 
   log.info(`Plugin discovery complete: ${loaded} plugin(s) loaded`);
 
-  return plugins;
+  return { plugins, failures };
 };
 
 /**

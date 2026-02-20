@@ -400,14 +400,17 @@ code {
 
 /*
  * Step number indicator: a square box centered on the container's left border line.
- * Container: ml-4 (16px margin) + border-l-2 (2px) + pl-10 (40px padding).
- * .retro-step left edge is 42px (2px border + 40px padding) from the border line.
- * Center a 2rem (32px) indicator on that line: left = -(42px + 16px) = -58px = -3.625rem.
+ *
+ * Mobile (< md): ml-2 (8px) + border-l-2 (2px) + pl-7 (28px).
+ *   left = -(28px + 2px + 16px) = -46px = -2.875rem.
+ *
+ * Desktop (md+): ml-4 (16px) + border-l-2 (2px) + pl-10 (40px).
+ *   left = -(40px + 2px + 16px) = -58px = -3.625rem.
  */
 .retro-step::before {
   content: counter(retro-step);
   position: absolute;
-  left: -3.625rem;
+  left: -2.875rem;
   top: 2rem;
   width: 2rem;
   height: 2rem;
@@ -421,4 +424,10 @@ code {
   font-weight: bold;
   font-size: 0.875rem;
   border-radius: var(--radius);
+}
+
+@media (min-width: 768px) {
+  .retro-step::before {
+    left: -3.625rem;
+  }
 }

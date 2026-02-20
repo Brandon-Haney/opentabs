@@ -8,11 +8,11 @@ The `opentabs` CLI manages the MCP server, plugins, configuration, and diagnosti
 
 ## Global options
 
-| Flag | Description |
-|---|---|
+| Flag              | Description                                                                      |
+| ----------------- | -------------------------------------------------------------------------------- |
 | `--port <number>` | MCP server port. Falls back to `OPENTABS_PORT` env var, then defaults to `9515`. |
-| `-V, --version` | Print CLI version. |
-| `-h, --help` | Show help for any command. |
+| `-V, --version`   | Print CLI version.                                                               |
+| `-h, --help`      | Show help for any command.                                                       |
 
 ## opentabs dev
 
@@ -22,11 +22,11 @@ Start the MCP server with hot reload.
 opentabs dev [options]
 ```
 
-| Option | Default | Description |
-|---|---|---|
-| `--port <number>` | `9515` | Server port. |
-| `--verbose` | — | Enable debug logging (shorthand for `--log-level debug`). |
-| `--log-level <level>` | `info` | Log level: `debug`, `info`, `warn`, `error`, or `silent`. Cannot be combined with `--verbose`. |
+| Option                | Default | Description                                                                                    |
+| --------------------- | ------- | ---------------------------------------------------------------------------------------------- |
+| `--port <number>`     | `9515`  | Server port.                                                                                   |
+| `--verbose`           | —       | Enable debug logging (shorthand for `--log-level debug`).                                      |
+| `--log-level <level>` | `info`  | Log level: `debug`, `info`, `warn`, `error`, or `silent`. Cannot be combined with `--verbose`. |
 
 The server runs under `bun --hot` for automatic module re-evaluation on file changes. Output is teed to the terminal and `~/.opentabs/server.log`. The process exits if the port is already in use.
 
@@ -46,8 +46,8 @@ Build the current plugin directory. Must be run from a plugin project root (a di
 opentabs build [options]
 ```
 
-| Option | Description |
-|---|---|
+| Option        | Description                                                                 |
+| ------------- | --------------------------------------------------------------------------- |
 | `-w, --watch` | Watch `dist/` for `.js` changes and rebuild automatically (100ms debounce). |
 
 The build process:
@@ -74,10 +74,10 @@ Show MCP server status and connected plugins.
 opentabs status [options]
 ```
 
-| Option | Description |
-|---|---|
-| `--port <number>` | Server port to check (default: `9515`). |
-| `--json` | Output raw JSON from the `/health` endpoint. |
+| Option            | Description                                  |
+| ----------------- | -------------------------------------------- |
+| `--port <number>` | Server port to check (default: `9515`).      |
+| `--json`          | Output raw JSON from the `/health` endpoint. |
 
 Displays server version, uptime, extension connection, MCP client count, plugin count, total tool count, and per-plugin details (tab state, tool count).
 
@@ -97,8 +97,8 @@ Run diagnostic checks on your OpenTabs setup.
 opentabs doctor [options]
 ```
 
-| Option | Description |
-|---|---|
+| Option            | Description                             |
+| ----------------- | --------------------------------------- |
 | `--port <number>` | Server port to check (default: `9515`). |
 
 Performs the following checks:
@@ -139,10 +139,10 @@ Tail the MCP server log output.
 opentabs logs [options]
 ```
 
-| Option | Default | Description |
-|---|---|---|
-| `--lines <n>` | `50` | Number of lines to display. |
-| `--no-follow` | — | Print recent lines and exit instead of following new output. |
+| Option        | Default | Description                                                  |
+| ------------- | ------- | ------------------------------------------------------------ |
+| `--lines <n>` | `50`    | Number of lines to display.                                  |
+| `--no-follow` | —       | Print recent lines and exit instead of following new output. |
 
 Reads from `~/.opentabs/server.log`. By default, follows the file for new output (like `tail -f`). Handles file truncation gracefully.
 
@@ -162,10 +162,10 @@ Reload server configuration and plugins, or trigger an extension reload.
 opentabs reload [options]
 ```
 
-| Option | Description |
-|---|---|
-| `--port <number>` | Server port (default: `9515`). |
-| `--extension` | Reload the Chrome extension instead of server config. |
+| Option            | Description                                           |
+| ----------------- | ----------------------------------------------------- |
+| `--port <number>` | Server port (default: `9515`).                        |
+| `--extension`     | Reload the Chrome extension instead of server config. |
 
 **Default behavior**: sends `POST /reload` to the server, which rediscovers plugins and reloads configuration. Returns plugin count and duration.
 
@@ -191,8 +191,8 @@ Display the current configuration (secret redacted).
 opentabs config show [options]
 ```
 
-| Option | Description |
-|---|---|
+| Option   | Description            |
+| -------- | ---------------------- |
 | `--json` | Output config as JSON. |
 
 ```bash
@@ -208,8 +208,8 @@ Create a config file with defaults.
 opentabs config init [options]
 ```
 
-| Option | Description |
-|---|---|
+| Option    | Description                |
+| --------- | -------------------------- |
 | `--force` | Overwrite existing config. |
 
 Creates `~/.opentabs/config.json` with `plugins: []`, `tools: {}`, and an auto-generated `secret`. Exits with a warning if the config already exists (unless `--force` is passed).
@@ -259,12 +259,12 @@ Scaffold a new plugin project.
 opentabs plugin create <name> --domain <domain> [options]
 ```
 
-| Argument/Option | Required | Description |
-|---|---|---|
-| `<name>` | Yes | Plugin name (lowercase alphanumeric + hyphens). |
-| `--domain <domain>` | Yes | Target domain (e.g., `.slack.com`, `github.com`). |
-| `--display <name>` | No | Display name (e.g., `Slack`). |
-| `--description <desc>` | No | Plugin description. |
+| Argument/Option        | Required | Description                                       |
+| ---------------------- | -------- | ------------------------------------------------- |
+| `<name>`               | Yes      | Plugin name (lowercase alphanumeric + hyphens).   |
+| `--domain <domain>`    | Yes      | Target domain (e.g., `.slack.com`, `github.com`). |
+| `--display <name>`     | No       | Display name (e.g., `Slack`).                     |
+| `--description <desc>` | No       | Plugin description.                               |
 
 Generates a standalone npm package with TypeScript config, `package.json` (with `@opentabs-dev/plugin-sdk` and `@opentabs-dev/cli` dependencies), a scaffolded plugin class, and an example tool. Auto-registers the plugin in `~/.opentabs/config.json`.
 
@@ -282,17 +282,17 @@ List configured plugins and their status.
 opentabs plugin list [options]
 ```
 
-| Option | Description |
-|---|---|
+| Option   | Description                 |
+| -------- | --------------------------- |
 | `--json` | Output plugin info as JSON. |
 
 Each plugin shows a status indicator:
 
-| Indicator | Meaning |
-|---|---|
-| `+` (green) | Ready — manifest and IIFE bundle present. |
-| `~` (yellow) | Not built — manifest missing. |
-| `!` (red) | Not found — directory missing. |
+| Indicator    | Meaning                                   |
+| ------------ | ----------------------------------------- |
+| `+` (green)  | Ready — manifest and IIFE bundle present. |
+| `~` (yellow) | Not built — manifest missing.             |
+| `!` (red)    | Not found — directory missing.            |
 
 ```bash
 opentabs plugin list

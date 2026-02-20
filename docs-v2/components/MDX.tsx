@@ -30,8 +30,15 @@ const components = {
   li: (props: HTMLAttributes<HTMLHeadElement>) => (
     <Text as="li" className="mb-2" {...props} />
   ),
-  img: (props: HTMLAttributes<HTMLImageElement>) => (
-    <img className="mx-auto w-full max-w-[600px] my-8" {...props} />
+  img: ({ src, alt = "" }: React.ImgHTMLAttributes<HTMLImageElement>) => (
+    <Image
+      src={src ?? ""}
+      alt={alt}
+      width={600}
+      height={400}
+      className="mx-auto w-full max-w-[600px] my-8"
+      unoptimized
+    />
   ),
   a: (props: AnchorHTMLAttributes<HTMLAnchorElement>) => {
     const { href, target, rel, ...rest } = props;

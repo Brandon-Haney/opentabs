@@ -8,14 +8,14 @@ The OpenTabs MCP server runs on `localhost:9515` by default and exposes HTTP end
 
 ## HTTP endpoints
 
-| Endpoint | Method(s) | Auth | Description |
-|---|---|---|---|
-| `/mcp` | `POST`, `GET`, `DELETE` | Bearer token | MCP Streamable HTTP transport — AI clients connect here. |
-| `/ws` | WebSocket upgrade | `Sec-WebSocket-Protocol` | Chrome extension connection (full-duplex JSON-RPC). |
-| `/ws-info` | `GET` | Bearer token or rate-limited | Returns WebSocket URL and auth secret for extension bootstrap. |
-| `/health` | `GET` | None | Server health, plugin status, and metrics. |
-| `/reload` | `POST` | Bearer token, rate-limited | Trigger config reload and plugin re-discovery. |
-| `/extension/reload` | `POST` | Bearer token, rate-limited | Signal the Chrome extension to reload. |
+| Endpoint            | Method(s)               | Auth                         | Description                                                    |
+| ------------------- | ----------------------- | ---------------------------- | -------------------------------------------------------------- |
+| `/mcp`              | `POST`, `GET`, `DELETE` | Bearer token                 | MCP Streamable HTTP transport — AI clients connect here.       |
+| `/ws`               | WebSocket upgrade       | `Sec-WebSocket-Protocol`     | Chrome extension connection (full-duplex JSON-RPC).            |
+| `/ws-info`          | `GET`                   | Bearer token or rate-limited | Returns WebSocket URL and auth secret for extension bootstrap. |
+| `/health`           | `GET`                   | None                         | Server health, plugin status, and metrics.                     |
+| `/reload`           | `POST`                  | Bearer token, rate-limited   | Trigger config reload and plugin re-discovery.                 |
+| `/extension/reload` | `POST`                  | Bearer token, rate-limited   | Signal the Chrome extension to reload.                         |
 
 ## /mcp — MCP Streamable HTTP
 
@@ -27,10 +27,10 @@ The primary endpoint for MCP clients. Implements the [MCP Streamable HTTP transp
 
 ### Headers
 
-| Header | Required | Description |
-|---|---|---|
-| `Authorization` | Yes (if secret configured) | `Bearer <secret>` where `<secret>` is the 64-char hex token from `~/.opentabs/config.json`. |
-| `mcp-session-id` | After initialization | Session UUID returned by the server on the initial `initialize` request. |
+| Header           | Required                   | Description                                                                                 |
+| ---------------- | -------------------------- | ------------------------------------------------------------------------------------------- |
+| `Authorization`  | Yes (if secret configured) | `Bearer <secret>` where `<secret>` is the 64-char hex token from `~/.opentabs/config.json`. |
+| `mcp-session-id` | After initialization       | Session UUID returned by the server on the initial `initialize` request.                    |
 
 ### Session lifecycle
 
@@ -58,9 +58,9 @@ The server echoes `opentabs` as the accepted subprotocol.
 
 ### Limits
 
-| Setting | Value |
-|---|---|
-| Max payload | 10 MB |
+| Setting                | Value                |
+| ---------------------- | -------------------- |
+| Max payload            | 10 MB                |
 | Concurrent connections | 1 (new replaces old) |
 
 ## /ws-info — WebSocket bootstrap
@@ -143,12 +143,12 @@ curl -X POST http://localhost:9515/extension/reload \
 
 All authenticated endpoints use the same shared secret from `~/.opentabs/config.json` (the `secret` field — a 64-char hex string auto-generated on first server run).
 
-| Transport | Method |
-|---|---|
-| HTTP endpoints (`/mcp`, `/reload`, `/extension/reload`) | `Authorization: Bearer <secret>` header |
-| WebSocket (`/ws`) | `Sec-WebSocket-Protocol: opentabs, <secret>` header |
-| `/ws-info` | Bearer token, or rate-limited access (10 req/min) |
-| `/health` | No authentication required |
+| Transport                                               | Method                                              |
+| ------------------------------------------------------- | --------------------------------------------------- |
+| HTTP endpoints (`/mcp`, `/reload`, `/extension/reload`) | `Authorization: Bearer <secret>` header             |
+| WebSocket (`/ws`)                                       | `Sec-WebSocket-Protocol: opentabs, <secret>` header |
+| `/ws-info`                                              | Bearer token, or rate-limited access (10 req/min)   |
+| `/health`                                               | No authentication required                          |
 
 When no secret is configured (field missing or null), authentication checks are skipped and all endpoints are open.
 
@@ -166,26 +166,26 @@ The extension and server communicate over JSON-RPC 2.0. Key message types:
 
 ### Server → Extension
 
-| Method | Type | Description |
-|---|---|---|
-| `sync.full` | Notification | Full plugin list — sent on connection and after reload. |
-| `plugin.update` | Notification | Single plugin updated (file watcher detected changes). |
-| `tool.dispatch` | Request | Dispatch a tool call to the correct tab's adapter. |
-| `tool.invocationStart` | Notification | Tool execution started (for side panel UI animation). |
-| `tool.invocationEnd` | Notification | Tool execution completed (for side panel UI animation). |
-| `extension.reload` | Request | Signal the extension to reload. |
-| `pong` | Notification | Reply to keepalive ping. |
+| Method                 | Type         | Description                                             |
+| ---------------------- | ------------ | ------------------------------------------------------- |
+| `sync.full`            | Notification | Full plugin list — sent on connection and after reload. |
+| `plugin.update`        | Notification | Single plugin updated (file watcher detected changes).  |
+| `tool.dispatch`        | Request      | Dispatch a tool call to the correct tab's adapter.      |
+| `tool.invocationStart` | Notification | Tool execution started (for side panel UI animation).   |
+| `tool.invocationEnd`   | Notification | Tool execution completed (for side panel UI animation). |
+| `extension.reload`     | Request      | Signal the extension to reload.                         |
+| `pong`                 | Notification | Reply to keepalive ping.                                |
 
 ### Extension → Server
 
-| Method | Type | Description |
-|---|---|---|
-| `tab.syncAll` | Notification | Full tab-to-plugin state mapping — sent on connection. |
-| `tab.stateChanged` | Request | Plugin tab state changed (closed/unavailable/ready). |
-| `config.getState` | Request | Fetch current config state (used by side panel). |
-| `config.setToolEnabled` | Request | Enable or disable a single tool. |
-| `config.setAllToolsEnabled` | Request | Enable or disable all tools for a plugin. |
-| `ping` | Notification | Keepalive ping. |
+| Method                      | Type         | Description                                            |
+| --------------------------- | ------------ | ------------------------------------------------------ |
+| `tab.syncAll`               | Notification | Full tab-to-plugin state mapping — sent on connection. |
+| `tab.stateChanged`          | Request      | Plugin tab state changed (closed/unavailable/ready).   |
+| `config.getState`           | Request      | Fetch current config state (used by side panel).       |
+| `config.setToolEnabled`     | Request      | Enable or disable a single tool.                       |
+| `config.setAllToolsEnabled` | Request      | Enable or disable all tools for a plugin.              |
+| `ping`                      | Notification | Keepalive ping.                                        |
 
 ## Tool dispatch
 
@@ -199,9 +199,9 @@ When an MCP client calls a tool:
 
 ### Timeouts
 
-| Stage | Timeout | Description |
-|---|---|---|
-| Server dispatch | 30 seconds | Server rejects the tool call if no response from extension. |
+| Stage                      | Timeout    | Description                                                                                    |
+| -------------------------- | ---------- | ---------------------------------------------------------------------------------------------- |
+| Server dispatch            | 30 seconds | Server rejects the tool call if no response from extension.                                    |
 | Extension script execution | 25 seconds | Extension kills the script — deliberately shorter than server timeout to guarantee a response. |
 
 ### Concurrency

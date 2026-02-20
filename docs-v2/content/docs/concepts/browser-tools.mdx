@@ -10,102 +10,102 @@ Browser tools are registered automatically when the MCP server starts. They appe
 
 ## Tab Management
 
-| Tool | Description |
-| --- | --- |
-| `browser_list_tabs` | List all open browser tabs with ID, title, URL, and active status. |
-| `browser_open_tab` | Open a new browser tab with a specified URL. |
-| `browser_close_tab` | Close a browser tab by its tab ID. |
-| `browser_navigate_tab` | Navigate an existing tab to a new URL. |
-| `browser_focus_tab` | Focus a tab by making it active and bringing the window to the foreground. Required before taking screenshots. |
-| `browser_get_tab_info` | Get detailed information about a tab: loading status, URL, title, favicon, active/incognito status. |
+| Tool                   | Description                                                                                                    |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `browser_list_tabs`    | List all open browser tabs with ID, title, URL, and active status.                                             |
+| `browser_open_tab`     | Open a new browser tab with a specified URL.                                                                   |
+| `browser_close_tab`    | Close a browser tab by its tab ID.                                                                             |
+| `browser_navigate_tab` | Navigate an existing tab to a new URL.                                                                         |
+| `browser_focus_tab`    | Focus a tab by making it active and bringing the window to the foreground. Required before taking screenshots. |
+| `browser_get_tab_info` | Get detailed information about a tab: loading status, URL, title, favicon, active/incognito status.            |
 
 ## Content Retrieval
 
-| Tool | Description |
-| --- | --- |
-| `browser_get_tab_content` | Extract visible text content from a page or specific element. Supports a CSS selector and configurable max length (default 50,000 chars). |
-| `browser_get_page_html` | Extract raw HTML (outerHTML) from a page or specific element. Useful for DOM inspection, finding data attributes, and embedded JSON. |
-| `browser_execute_script` | Execute arbitrary JavaScript in a tab's MAIN world with full DOM access. CSP is bypassed via file-based injection. Supports async code and returns JSON-serializable values. |
-| `browser_screenshot_tab` | Capture a screenshot of the visible tab area as a base64-encoded PNG. Auto-focuses the tab before capture. |
+| Tool                      | Description                                                                                                                                                                  |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `browser_get_tab_content` | Extract visible text content from a page or specific element. Supports a CSS selector and configurable max length (default 50,000 chars).                                    |
+| `browser_get_page_html`   | Extract raw HTML (outerHTML) from a page or specific element. Useful for DOM inspection, finding data attributes, and embedded JSON.                                         |
+| `browser_execute_script`  | Execute arbitrary JavaScript in a tab's MAIN world with full DOM access. CSP is bypassed via file-based injection. Supports async code and returns JSON-serializable values. |
+| `browser_screenshot_tab`  | Capture a screenshot of the visible tab area as a base64-encoded PNG. Auto-focuses the tab before capture.                                                                   |
 
 ## DOM Interaction
 
-| Tool | Description |
-| --- | --- |
-| `browser_click_element` | Click an element matching a CSS selector. Returns the tag name and text content of the clicked element. |
-| `browser_type_text` | Type text into an input field or textarea. Optionally clears the field first (default: true). |
-| `browser_select_option` | Select an option from a `<select>` dropdown by value or label. |
-| `browser_query_elements` | Query all elements matching a CSS selector. Returns tag names, text, and attributes (id, class, href, src, type, name, value, placeholder). Configurable limit (default 100). |
-| `browser_wait_for_element` | Wait for an element to appear in the DOM with a configurable timeout (default 10s). Optionally wait for visibility. |
-| `browser_hover_element` | Dispatch hover events (mouseenter, mouseover, pointermove) to trigger dropdowns, tooltips, and menus. |
-| `browser_press_key` | Dispatch keyboard events on a page element. Supports modifier keys (shift, ctrl, alt, meta) and standard `KeyboardEvent.key` values like Enter, Escape, Tab, ArrowDown. |
+| Tool                       | Description                                                                                                                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `browser_click_element`    | Click an element matching a CSS selector. Returns the tag name and text content of the clicked element.                                                                       |
+| `browser_type_text`        | Type text into an input field or textarea. Optionally clears the field first (default: true).                                                                                 |
+| `browser_select_option`    | Select an option from a `<select>` dropdown by value or label.                                                                                                                |
+| `browser_query_elements`   | Query all elements matching a CSS selector. Returns tag names, text, and attributes (id, class, href, src, type, name, value, placeholder). Configurable limit (default 100). |
+| `browser_wait_for_element` | Wait for an element to appear in the DOM with a configurable timeout (default 10s). Optionally wait for visibility.                                                           |
+| `browser_hover_element`    | Dispatch hover events (mouseenter, mouseover, pointermove) to trigger dropdowns, tooltips, and menus.                                                                         |
+| `browser_press_key`        | Dispatch keyboard events on a page element. Supports modifier keys (shift, ctrl, alt, meta) and standard `KeyboardEvent.key` values like Enter, Escape, Tab, ArrowDown.       |
 
 ## Scroll & Dialogs
 
-| Tool | Description |
-| --- | --- |
-| `browser_scroll` | Scroll a page or container by direction, distance, or absolute position. Returns current scroll position, total scroll size, and viewport dimensions. |
-| `browser_handle_dialog` | Handle JavaScript dialogs (alert, confirm, prompt) that block page execution. Accepts or dismisses, with optional prompt text. |
+| Tool                    | Description                                                                                                                                           |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `browser_scroll`        | Scroll a page or container by direction, distance, or absolute position. Returns current scroll position, total scroll size, and viewport dimensions. |
+| `browser_handle_dialog` | Handle JavaScript dialogs (alert, confirm, prompt) that block page execution. Accepts or dismisses, with optional prompt text.                        |
 
 ## Storage & Cookies
 
-| Tool | Description |
-| --- | --- |
-| `browser_get_storage` | Read localStorage or sessionStorage from a tab. Useful for discovering auth tokens, session data, feature flags, and app config. |
-| `browser_get_cookies` | Get cookies for a URL, including HttpOnly cookies not accessible from JavaScript. |
-| `browser_set_cookie` | Create or overwrite a browser cookie with full control over domain, path, secure, httpOnly, and expiration. |
-| `browser_delete_cookies` | Delete a specific cookie by URL and name. |
+| Tool                     | Description                                                                                                                      |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `browser_get_storage`    | Read localStorage or sessionStorage from a tab. Useful for discovering auth tokens, session data, feature flags, and app config. |
+| `browser_get_cookies`    | Get cookies for a URL, including HttpOnly cookies not accessible from JavaScript.                                                |
+| `browser_set_cookie`     | Create or overwrite a browser cookie with full control over domain, path, secure, httpOnly, and expiration.                      |
+| `browser_delete_cookies` | Delete a specific cookie by URL and name.                                                                                        |
 
 ## Network Capture
 
 Network capture uses the Chrome DevTools Protocol (`chrome.debugger`) to intercept requests and responses.
 
-| Tool | Description |
-| --- | --- |
-| `browser_enable_network_capture` | Start capturing network requests and responses for a tab. Captures URL, method, status, headers, request/response bodies (text-based), MIME type, and timing. One capture session per tab. Also enables console log capture. |
-| `browser_get_network_requests` | Retrieve captured network requests. Useful for reverse-engineering API shapes and understanding data flows. Optionally clears the buffer after reading. |
-| `browser_disable_network_capture` | Stop capturing and release the Chrome DevTools Protocol debugger session. |
+| Tool                              | Description                                                                                                                                                                                                                  |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `browser_enable_network_capture`  | Start capturing network requests and responses for a tab. Captures URL, method, status, headers, request/response bodies (text-based), MIME type, and timing. One capture session per tab. Also enables console log capture. |
+| `browser_get_network_requests`    | Retrieve captured network requests. Useful for reverse-engineering API shapes and understanding data flows. Optionally clears the buffer after reading.                                                                      |
+| `browser_disable_network_capture` | Stop capturing and release the Chrome DevTools Protocol debugger session.                                                                                                                                                    |
 
 ## Console Logs
 
 Console log capture is enabled alongside network capture via `browser_enable_network_capture`.
 
-| Tool | Description |
-| --- | --- |
-| `browser_get_console_logs` | Get console log messages from a tab. Filter by level: log, warn, error, info, debug, or all. Optionally clears the buffer. |
-| `browser_clear_console_logs` | Clear the console log buffer for a tab without disabling capture. |
+| Tool                         | Description                                                                                                                |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `browser_get_console_logs`   | Get console log messages from a tab. Filter by level: log, warn, error, info, debug, or all. Optionally clears the buffer. |
+| `browser_clear_console_logs` | Clear the console log buffer for a tab without disabling capture.                                                          |
 
 ## Resource Inspection
 
-| Tool | Description |
-| --- | --- |
-| `browser_list_resources` | Enumerate all resources loaded by a page (scripts, stylesheets, images, fonts, XHR, Fetch, WebSocket, etc.) via Chrome DevTools Protocol. Filter by resource type. |
+| Tool                           | Description                                                                                                                                                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `browser_list_resources`       | Enumerate all resources loaded by a page (scripts, stylesheets, images, fonts, XHR, Fetch, WebSocket, etc.) via Chrome DevTools Protocol. Filter by resource type.                                            |
 | `browser_get_resource_content` | Read content of a specific resource by URL from the browser cache (no re-fetch). Returns text as a string or binary as base64. Useful for reading JavaScript source to understand API patterns and endpoints. |
 
 ## Extension Diagnostics
 
 These tools control and diagnose the OpenTabs Chrome extension itself. They use the `extension_` prefix instead of `browser_`.
 
-| Tool | Description |
-| --- | --- |
-| `extension_reload` | Reload the Chrome extension. The extension briefly disconnects and automatically reconnects. |
-| `extension_get_state` | Get the complete internal state of the extension: WebSocket connection status, all plugins with tab states, active network captures, offscreen document status. |
-| `extension_get_logs` | Retrieve internal logs from the background script and offscreen document. Filter by level and source. |
-| `extension_get_side_panel` | Get the side panel's React state and rendered HTML, or `{open: false}` if the panel is not open. |
-| `extension_check_adapter` | Check adapter injection status for a plugin across all matching tabs. Reports adapter presence, hash validity, isReady() result, and tool names per tab. |
-| `extension_force_reconnect` | Force a WebSocket disconnect and immediate reconnection without reloading the full extension. |
+| Tool                        | Description                                                                                                                                                     |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extension_reload`          | Reload the Chrome extension. The extension briefly disconnects and automatically reconnects.                                                                    |
+| `extension_get_state`       | Get the complete internal state of the extension: WebSocket connection status, all plugins with tab states, active network captures, offscreen document status. |
+| `extension_get_logs`        | Retrieve internal logs from the background script and offscreen document. Filter by level and source.                                                           |
+| `extension_get_side_panel`  | Get the side panel's React state and rendered HTML, or `{open: false}` if the panel is not open.                                                                |
+| `extension_check_adapter`   | Check adapter injection status for a plugin across all matching tabs. Reports adapter presence, hash validity, isReady() result, and tool names per tab.        |
+| `extension_force_reconnect` | Force a WebSocket disconnect and immediate reconnection without reloading the full extension.                                                                   |
 
 ## Summary
 
-| Category | Count | Prefix |
-| --- | --- | --- |
-| Tab Management | 6 | `browser_` |
-| Content Retrieval | 4 | `browser_` |
-| DOM Interaction | 7 | `browser_` |
-| Scroll & Dialogs | 2 | `browser_` |
-| Storage & Cookies | 4 | `browser_` |
-| Network Capture | 3 | `browser_` |
-| Console Logs | 2 | `browser_` |
-| Resource Inspection | 2 | `browser_` |
-| Extension Diagnostics | 6 | `extension_` |
-| **Total** | **36** | |
+| Category              | Count  | Prefix       |
+| --------------------- | ------ | ------------ |
+| Tab Management        | 6      | `browser_`   |
+| Content Retrieval     | 4      | `browser_`   |
+| DOM Interaction       | 7      | `browser_`   |
+| Scroll & Dialogs      | 2      | `browser_`   |
+| Storage & Cookies     | 4      | `browser_`   |
+| Network Capture       | 3      | `browser_`   |
+| Console Logs          | 2      | `browser_`   |
+| Resource Inspection   | 2      | `browser_`   |
+| Extension Diagnostics | 6      | `extension_` |
+| **Total**             | **36** |              |

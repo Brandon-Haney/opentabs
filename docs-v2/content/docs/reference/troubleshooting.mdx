@@ -19,9 +19,11 @@ If the doctor output doesn't resolve your issue, find the specific symptom below
 **Checks**:
 
 1. **Server running?** — Verify the MCP server is up:
+
    ```bash
    curl http://localhost:9515/health
    ```
+
    If the request fails, start the server with `opentabs dev` or `bun --hot platform/mcp-server/dist/index.js`.
 
 2. **Correct port?** — The default port is `9515`. If you're using a custom port (`PORT` env var or `--port` flag), ensure the extension is configured for the same port.
@@ -72,12 +74,12 @@ The MCP server has a 30-second dispatch timeout. The extension enforces a 25-sec
 
 **Common causes**:
 
-| Cause | Solution |
-|---|---|
-| `handle()` function takes too long | Optimize the tool's adapter code. Break long operations into multiple tool calls. |
-| Tab unresponsive or crashed | Refresh the target tab. Check Chrome's task manager (`Shift+Esc`) for hung tabs. |
-| Extension disconnected mid-call | The server detects this and returns an error. Reconnect the extension. |
-| Network request in `handle()` stalled | Add timeout logic to `fetch()` calls within the adapter's `handle()` function. |
+| Cause                                 | Solution                                                                          |
+| ------------------------------------- | --------------------------------------------------------------------------------- |
+| `handle()` function takes too long    | Optimize the tool's adapter code. Break long operations into multiple tool calls. |
+| Tab unresponsive or crashed           | Refresh the target tab. Check Chrome's task manager (`Shift+Esc`) for hung tabs.  |
+| Extension disconnected mid-call       | The server detects this and returns an error. Reconnect the extension.            |
+| Network request in `handle()` stalled | Add timeout logic to `fetch()` calls within the adapter's `handle()` function.    |
 
 ## Hot reload not working
 
@@ -172,22 +174,22 @@ The side panel communicates with the background service worker, which relays dat
 
 **Common causes**:
 
-| Error | Cause | Solution |
-|---|---|---|
-| TypeScript errors | Type mismatches or missing types | Fix the type errors reported by `tsc`. Run `bun run type-check` for details. |
+| Error                    | Cause                                                         | Solution                                                                                                                     |
+| ------------------------ | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| TypeScript errors        | Type mismatches or missing types                              | Fix the type errors reported by `tsc`. Run `bun run type-check` for details.                                                 |
 | Zod schema serialization | `.transform()`, `.pipe()`, or `.preprocess()` in tool schemas | Remove transforms from schemas — they cannot be serialized to JSON Schema. Move the logic to the tool's `handle()` function. |
-| Plugin name validation | Name contains invalid characters or is reserved | Plugin names must match `^[a-z][a-z0-9-]*$` and must not be a reserved name (e.g., `browser`, `extension`). |
-| Missing dependencies | `@opentabs-dev/plugin-sdk` not installed | Run `bun install` in the plugin directory. |
+| Plugin name validation   | Name contains invalid characters or is reserved               | Plugin names must match `^[a-z][a-z0-9-]*$` and must not be a reserved name (e.g., `browser`, `extension`).                  |
+| Missing dependencies     | `@opentabs-dev/plugin-sdk` not installed                      | Run `bun install` in the plugin directory.                                                                                   |
 
 ## Diagnostic commands
 
-| Command | What it does |
-|---|---|
-| `opentabs doctor` | Full setup diagnostic — Bun, config, server, extension, plugins. |
-| `opentabs status` | Server health, plugin list, tab states, tool counts. |
-| `opentabs status --json` | Raw JSON from the `/health` endpoint. |
-| `opentabs logs` | Tail the MCP server log output in real time. |
-| `opentabs logs --lines 100 --no-follow` | Show the last 100 log lines and exit. |
-| `curl http://localhost:9515/health` | Direct health check (no CLI needed). |
-| `opentabs plugin list` | Show configured plugins and their build status. |
-| `opentabs config show` | View current configuration (secret redacted). |
+| Command                                 | What it does                                                     |
+| --------------------------------------- | ---------------------------------------------------------------- |
+| `opentabs doctor`                       | Full setup diagnostic — Bun, config, server, extension, plugins. |
+| `opentabs status`                       | Server health, plugin list, tab states, tool counts.             |
+| `opentabs status --json`                | Raw JSON from the `/health` endpoint.                            |
+| `opentabs logs`                         | Tail the MCP server log output in real time.                     |
+| `opentabs logs --lines 100 --no-follow` | Show the last 100 log lines and exit.                            |
+| `curl http://localhost:9515/health`     | Direct health check (no CLI needed).                             |
+| `opentabs plugin list`                  | Show configured plugins and their build status.                  |
+| `opentabs config show`                  | View current configuration (secret redacted).                    |

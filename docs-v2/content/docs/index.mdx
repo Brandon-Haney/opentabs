@@ -12,11 +12,11 @@ Point your MCP client at `http://localhost:9515/mcp`, open a web app in Chrome, 
 
 OpenTabs has three core components that work together:
 
-| Component | Role |
-| --- | --- |
-| **MCP Server** | Discovers plugins, registers their tools as MCP tools, and dispatches tool calls to the Chrome extension via WebSocket. Runs on `localhost:9515` by default. |
+| Component            | Role                                                                                                                                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **MCP Server**       | Discovers plugins, registers their tools as MCP tools, and dispatches tool calls to the Chrome extension via WebSocket. Runs on `localhost:9515` by default.                                                       |
 | **Chrome Extension** | Receives plugin definitions from the server, injects adapter scripts into matching tabs, and executes tool calls in the page's MAIN world context with full access to DOM, cookies, and localStorage. Manifest V3. |
-| **Plugin SDK** | Provides the `OpenTabsPlugin` base class and `defineTool` factory for building plugins. Plugins define tools with Zod schemas; the CLI bundles them into injectable adapters. |
+| **Plugin SDK**       | Provides the `OpenTabsPlugin` base class and `defineTool` factory for building plugins. Plugins define tools with Zod schemas; the CLI bundles them into injectable adapters.                                      |
 
 The data flow for a tool call:
 

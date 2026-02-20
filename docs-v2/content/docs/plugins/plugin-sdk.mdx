@@ -15,20 +15,22 @@ bun add @opentabs-dev/plugin-sdk
 Every plugin extends `OpenTabsPlugin` and exports a single instance as the default export:
 
 ```typescript
-import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
-import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
+import { OpenTabsPlugin } from "@opentabs-dev/plugin-sdk";
+import type { ToolDefinition } from "@opentabs-dev/plugin-sdk";
 
 class MyPlugin extends OpenTabsPlugin {
-  readonly name = 'my-plugin';
-  readonly version = '0.0.1';
-  readonly description = 'Give AI agents access to My App';
-  readonly displayName = 'My App';
-  readonly urlPatterns = ['*://*.myapp.com/*'];
-  readonly tools: ToolDefinition[] = [/* ... */];
+  readonly name = "my-plugin";
+  readonly version = "0.0.1";
+  readonly description = "Give AI agents access to My App";
+  readonly displayName = "My App";
+  readonly urlPatterns = ["*://*.myapp.com/*"];
+  readonly tools: ToolDefinition[] = [
+    /* ... */
+  ];
 
   async isReady(): Promise<boolean> {
     // Check if the user is authenticated
-    return document.cookie.includes('session=');
+    return document.cookie.includes("session=");
   }
 }
 
@@ -37,14 +39,14 @@ export default new MyPlugin();
 
 ### Abstract Properties
 
-| Property | Type | Description |
-| --- | --- | --- |
-| `name` | `string` | Unique plugin identifier. Lowercase alphanumeric with hyphens (`^[a-z0-9]+(-[a-z0-9]+)*$`). Used as the tool name prefix (e.g., `slack` → `slack_send_message`). Reserved names: `system`, `browser`, `opentabs`, `extension`, `config`, `plugin`, `tool`, `mcp`. |
-| `version` | `string` | Semver version string (e.g., `0.0.1`). |
-| `description` | `string` | Brief description of the plugin's purpose. Shown to AI agents in MCP tool listings. |
-| `displayName` | `string` | Human-readable name shown in the Chrome extension side panel and health endpoint (e.g., `Slack`). |
-| `urlPatterns` | `string[]` | Chrome match patterns that determine which tabs get the adapter injected. See [Chrome match patterns](https://developer.chrome.com/docs/extensions/develop/concepts/match-patterns). |
-| `tools` | `ToolDefinition[]` | Array of tool definitions created with `defineTool()`. At least one tool is required. |
+| Property      | Type               | Description                                                                                                                                                                                                                                                       |
+| ------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`        | `string`           | Unique plugin identifier. Lowercase alphanumeric with hyphens (`^[a-z0-9]+(-[a-z0-9]+)*$`). Used as the tool name prefix (e.g., `slack` → `slack_send_message`). Reserved names: `system`, `browser`, `opentabs`, `extension`, `config`, `plugin`, `tool`, `mcp`. |
+| `version`     | `string`           | Semver version string (e.g., `0.0.1`).                                                                                                                                                                                                                            |
+| `description` | `string`           | Brief description of the plugin's purpose. Shown to AI agents in MCP tool listings.                                                                                                                                                                               |
+| `displayName` | `string`           | Human-readable name shown in the Chrome extension side panel and health endpoint (e.g., `Slack`).                                                                                                                                                                 |
+| `urlPatterns` | `string[]`         | Chrome match patterns that determine which tabs get the adapter injected. See [Chrome match patterns](https://developer.chrome.com/docs/extensions/develop/concepts/match-patterns).                                                                              |
+| `tools`       | `ToolDefinition[]` | Array of tool definitions created with `defineTool()`. At least one tool is required.                                                                                                                                                                             |
 
 ### Abstract Methods
 
@@ -54,11 +56,11 @@ Readiness probe called by the Chrome extension to determine if the web app in th
 
 Returns `true` if the user is authenticated and the service is operational. The result maps to the [tab state machine](/docs/concepts/tab-state-machine):
 
-| Condition | Tab State |
-| --- | --- |
-| No tab matches `urlPatterns` | `closed` |
+| Condition                               | Tab State     |
+| --------------------------------------- | ------------- |
+| No tab matches `urlPatterns`            | `closed`      |
 | Tab exists, `isReady()` returns `false` | `unavailable` |
-| Tab exists, `isReady()` returns `true` | `ready` |
+| Tab exists, `isReady()` returns `true`  | `ready`       |
 
 The extension probes `isReady()` with a 5-second timeout. If the probe times out or throws, the tab is treated as `unavailable`.
 
@@ -112,26 +114,29 @@ class MyPlugin extends OpenTabsPlugin {
 The `defineTool()` factory creates type-safe tool definitions with full generic inference:
 
 ```typescript
-import { defineTool } from '@opentabs-dev/plugin-sdk';
-import { z } from 'zod';
+import { defineTool } from "@opentabs-dev/plugin-sdk";
+import { z } from "zod";
 
 export const sendMessage = defineTool({
-  name: 'send_message',
-  displayName: 'Send Message',
-  description: 'Send a message to a channel or thread',
-  icon: 'send',
+  name: "send_message",
+  displayName: "Send Message",
+  description: "Send a message to a channel or thread",
+  icon: "send",
   input: z.object({
-    channel: z.string().min(1).describe('Channel ID (e.g., C01234567)'),
-    text: z.string().min(1).describe('Message text to send'),
-    thread_ts: z.string().optional().describe('Thread timestamp to reply in a thread'),
+    channel: z.string().min(1).describe("Channel ID (e.g., C01234567)"),
+    text: z.string().min(1).describe("Message text to send"),
+    thread_ts: z
+      .string()
+      .optional()
+      .describe("Thread timestamp to reply in a thread"),
   }),
   output: z.object({
-    channel: z.string().describe('Channel ID the message was posted to'),
-    ts: z.string().describe('Timestamp of the posted message'),
+    channel: z.string().describe("Channel ID the message was posted to"),
+    ts: z.string().describe("Timestamp of the posted message"),
   }),
   handle: async (params) => {
-    const response = await fetch('/api/messages', {
-      method: 'POST',
+    const response = await fetch("/api/messages", {
+      method: "POST",
       body: JSON.stringify(params),
     });
     const data = await response.json();
@@ -142,15 +147,15 @@ export const sendMessage = defineTool({
 
 ### Configuration Properties
 
-| Property | Type | Description |
-| --- | --- | --- |
-| `name` | `string` | Tool name in `snake_case`. Auto-prefixed with the plugin name when registered as an MCP tool (e.g., `send_message` → `slack_send_message`). |
-| `displayName` | `string` | Human-readable name shown in the side panel (e.g., `Send Message`). |
-| `description` | `string` | Description shown to AI agents. Must be accurate and informative — AI agents rely on this to choose the right tool. Maximum 1000 characters. |
-| `icon` | `LucideIconName` | Kebab-case [Lucide](https://lucide.dev/icons) icon name displayed in the side panel (e.g., `send`, `message-square`, `search`). |
-| `input` | `z.ZodObject` | Zod object schema defining the tool's input parameters. Serialized to JSON Schema for MCP registration and manifest generation. |
-| `output` | `z.ZodType` | Zod schema defining the tool's return value shape. Serialized to JSON Schema for manifest generation. |
-| `handle` | `(params: TInput) => Promise<TOutput>` | Async function that executes the tool. Receives pre-validated input. Runs in the browser page's MAIN world context. |
+| Property      | Type                                   | Description                                                                                                                                  |
+| ------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`        | `string`                               | Tool name in `snake_case`. Auto-prefixed with the plugin name when registered as an MCP tool (e.g., `send_message` → `slack_send_message`).  |
+| `displayName` | `string`                               | Human-readable name shown in the side panel (e.g., `Send Message`).                                                                          |
+| `description` | `string`                               | Description shown to AI agents. Must be accurate and informative — AI agents rely on this to choose the right tool. Maximum 1000 characters. |
+| `icon`        | `LucideIconName`                       | Kebab-case [Lucide](https://lucide.dev/icons) icon name displayed in the side panel (e.g., `send`, `message-square`, `search`).              |
+| `input`       | `z.ZodObject`                          | Zod object schema defining the tool's input parameters. Serialized to JSON Schema for MCP registration and manifest generation.              |
+| `output`      | `z.ZodType`                            | Zod schema defining the tool's return value shape. Serialized to JSON Schema for manifest generation.                                        |
+| `handle`      | `(params: TInput) => Promise<TOutput>` | Async function that executes the tool. Receives pre-validated input. Runs in the browser page's MAIN world context.                          |
 
 ### handle() Execution Context
 
@@ -190,13 +195,20 @@ Tool input and output schemas are serialized to JSON Schema via `z.toJSONSchema(
 
 ```typescript
 // BAD — throws if input is not a valid URL
-z.string().url().refine((s) => new URL(s).hostname.endsWith('.slack.com'))
+z.string()
+  .url()
+  .refine((s) => new URL(s).hostname.endsWith(".slack.com"));
 
 // GOOD — catches errors from invalid input
-z.string().url().refine((s) => {
-  try { return new URL(s).hostname.endsWith('.slack.com'); }
-  catch { return false; }
-})
+z.string()
+  .url()
+  .refine((s) => {
+    try {
+      return new URL(s).hostname.endsWith(".slack.com");
+    } catch {
+      return false;
+    }
+  });
 ```
 
 If the schema causes `z.toJSONSchema()` to throw, the `opentabs build` CLI will fail. The fix is always to simplify the schema and move logic to the `handle()` function.
@@ -206,14 +218,14 @@ If the schema causes `z.toJSONSchema()` to throw, the `opentabs build` CLI will 
 The `ToolError` class provides structured error reporting from tool handlers. The platform catches these and returns them as MCP error responses with a machine-readable `code` field:
 
 ```typescript
-import { ToolError } from '@opentabs-dev/plugin-sdk';
+import { ToolError } from "@opentabs-dev/plugin-sdk";
 
 export const getChannel = defineTool({
   // ...
   handle: async (params) => {
     const channel = findChannel(params.name);
     if (!channel) {
-      throw new ToolError('Channel not found', 'CHANNEL_NOT_FOUND');
+      throw new ToolError("Channel not found", "CHANNEL_NOT_FOUND");
     }
     return channel;
   },
@@ -226,10 +238,10 @@ export const getChannel = defineTool({
 new ToolError(message: string, code: string)
 ```
 
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `message` | `string` | Human-readable error message. |
-| `code` | `string` | Machine-readable error code (e.g., `CHANNEL_NOT_FOUND`, `UNAUTHORIZED`, `RATE_LIMITED`). AI agents can use this to decide how to handle the error. |
+| Parameter | Type     | Description                                                                                                                                        |
+| --------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `message` | `string` | Human-readable error message.                                                                                                                      |
+| `code`    | `string` | Machine-readable error code (e.g., `CHANNEL_NOT_FOUND`, `UNAUTHORIZED`, `RATE_LIMITED`). AI agents can use this to decide how to handle the error. |
 
 Unhandled errors (non-`ToolError` exceptions) are caught by the platform, sanitized (file paths, IPs, and URLs stripped), and returned as generic error responses.
 
@@ -237,17 +249,17 @@ Unhandled errors (non-`ToolError` exceptions) are caught by the platform, saniti
 
 The `@opentabs-dev/plugin-sdk` package exports:
 
-| Export | Kind | Description |
-| --- | --- | --- |
-| `OpenTabsPlugin` | Class | Abstract base class for plugins |
-| `defineTool()` | Function | Type-safe tool definition factory |
-| `ToolError` | Class | Structured error class for tool handlers |
-| `ToolDefinition` | Type | TypeScript interface for tool definitions |
-| `Manifest` | Type | TypeScript type for `opentabs-plugin.json` |
-| `ManifestTool` | Type | TypeScript type for a single tool in the manifest |
-| `LucideIconName` | Type | String union of valid Lucide icon names |
-| `LUCIDE_ICON_NAMES` | Set | Runtime set of valid Lucide icon names |
-| `NAME_REGEX` | RegExp | Pattern for valid plugin names |
-| `RESERVED_NAMES` | Set | Set of reserved plugin name strings |
-| `validatePluginName()` | Function | Validates a plugin name, returns error string or `null` |
+| Export                 | Kind     | Description                                                      |
+| ---------------------- | -------- | ---------------------------------------------------------------- |
+| `OpenTabsPlugin`       | Class    | Abstract base class for plugins                                  |
+| `defineTool()`         | Function | Type-safe tool definition factory                                |
+| `ToolError`            | Class    | Structured error class for tool handlers                         |
+| `ToolDefinition`       | Type     | TypeScript interface for tool definitions                        |
+| `Manifest`             | Type     | TypeScript type for `opentabs-plugin.json`                       |
+| `ManifestTool`         | Type     | TypeScript type for a single tool in the manifest                |
+| `LucideIconName`       | Type     | String union of valid Lucide icon names                          |
+| `LUCIDE_ICON_NAMES`    | Set      | Runtime set of valid Lucide icon names                           |
+| `NAME_REGEX`           | RegExp   | Pattern for valid plugin names                                   |
+| `RESERVED_NAMES`       | Set      | Set of reserved plugin name strings                              |
+| `validatePluginName()` | Function | Validates a plugin name, returns error string or `null`          |
 | `validateUrlPattern()` | Function | Validates a Chrome match pattern, returns error string or `null` |

@@ -8,11 +8,11 @@ Each plugin in OpenTabs has a **tab state** that reflects whether the user has t
 
 ## Three States
 
-| State | Meaning | When |
-| --- | --- | --- |
-| `closed` | No matching tab exists | No Chrome tab matches the plugin's URL patterns |
+| State         | Meaning                  | When                                                                                                                    |
+| ------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `closed`      | No matching tab exists   | No Chrome tab matches the plugin's URL patterns                                                                         |
 | `unavailable` | Tab exists but not ready | A matching tab is open, but the adapter's `isReady()` returns `false` (e.g., user is not logged in, page still loading) |
-| `ready` | Tab exists and ready | At least one matching tab has an injected adapter and `isReady()` returns `true` |
+| `ready`       | Tab exists and ready     | At least one matching tab has an injected adapter and `isReady()` returns `true`                                        |
 
 State is computed **per-plugin**, not per-tab. If a plugin has multiple matching tabs (e.g., two Slack windows), the plugin is `ready` as long as _any_ matching tab is ready.
 
@@ -33,12 +33,12 @@ The `isReady()` probe has a **5-second timeout**. If the adapter doesn't respond
 
 When multiple tabs match a plugin's URL patterns, the extension ranks them to decide which tab executes a tool call:
 
-| Rank | Condition | Example |
-| --- | --- | --- |
-| 3 (best) | Active tab in the focused window | The Slack tab you're looking at right now |
-| 2 | Active tab in any window | A Slack tab that's active in a background window |
-| 1 | Any tab in the focused window | A non-active Slack tab in the window you're working in |
-| 0 | Any other matching tab | A Slack tab in a minimized window |
+| Rank     | Condition                        | Example                                                |
+| -------- | -------------------------------- | ------------------------------------------------------ |
+| 3 (best) | Active tab in the focused window | The Slack tab you're looking at right now              |
+| 2        | Active tab in any window         | A Slack tab that's active in a background window       |
+| 1        | Any tab in the focused window    | A non-active Slack tab in the window you're working in |
+| 0        | Any other matching tab           | A Slack tab in a minimized window                      |
 
 During tool dispatch, the extension tries tabs in rank order. If the highest-ranked tab fails (adapter not ready or tab inaccessible), it falls back to the next tab. This means keeping the target web app in an active, focused tab gives the best results.
 
@@ -55,7 +55,11 @@ Sent on WebSocket connect or reconnect. Contains the full state map for all plug
   "method": "tab.syncAll",
   "params": {
     "tabs": {
-      "slack": { "state": "ready", "tabId": 42, "url": "https://app.slack.com/..." },
+      "slack": {
+        "state": "ready",
+        "tabId": 42,
+        "url": "https://app.slack.com/..."
+      },
       "github": { "state": "closed", "tabId": null, "url": null }
     }
   }
@@ -84,11 +88,11 @@ The extension suppresses redundant notifications — if a tab event triggers a r
 
 State recomputation is triggered by three browser events:
 
-| Event | Trigger | Scope |
-| --- | --- | --- |
-| URL change | `chrome.tabs.onUpdated` with `changeInfo.url` | Plugins matching the new URL + plugins with an active state for that tab |
+| Event              | Trigger                                                         | Scope                                                                                   |
+| ------------------ | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| URL change         | `chrome.tabs.onUpdated` with `changeInfo.url`                   | Plugins matching the new URL + plugins with an active state for that tab                |
 | Page load complete | `chrome.tabs.onUpdated` with `changeInfo.status === 'complete'` | All plugins matching the loaded URL (adapters are injected first, then state is probed) |
-| Tab closed | `chrome.tabs.onRemoved` | All plugins (the removed tab might have been the only matching tab) |
+| Tab closed         | `chrome.tabs.onRemoved`                                         | All plugins (the removed tab might have been the only matching tab)                     |
 
 State computations for different plugins run in parallel, but computations for the _same_ plugin are serialized with a per-plugin lock to prevent cache corruption from concurrent events.
 
@@ -104,11 +108,11 @@ When an AI agent calls a tool, the MCP server dispatches it to the extension. Th
 
 ### Tool Dispatch Timeouts
 
-| Timeout | Value | Purpose |
-| --- | --- | --- |
-| MCP server dispatch | 30 seconds | Maximum time the server waits for a tool result before timing out |
+| Timeout                    | Value      | Purpose                                                                                                     |
+| -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------- |
+| MCP server dispatch        | 30 seconds | Maximum time the server waits for a tool result before timing out                                           |
 | Extension script execution | 25 seconds | Maximum time for `chrome.scripting.executeScript` — fires before the server timeout to guarantee a response |
-| `isReady()` probe | 5 seconds | Maximum time to wait for a readiness check during state computation |
+| `isReady()` probe          | 5 seconds  | Maximum time to wait for a readiness check during state computation                                         |
 
 The extension timeout (25s) is deliberately shorter than the server timeout (30s) to ensure the extension always returns a result — either success or timeout error — before the server gives up. This prevents orphaned script executions.
 

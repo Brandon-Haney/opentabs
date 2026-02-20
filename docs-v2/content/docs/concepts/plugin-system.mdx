@@ -10,10 +10,10 @@ OpenTabs uses a plugin-based architecture where each plugin is a standalone npm 
 
 A plugin consists of two build artifacts:
 
-| File | Purpose |
-| --- | --- |
+| File                   | Purpose                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
 | `opentabs-plugin.json` | Manifest declaring the plugin's name, URL patterns, and tool definitions with JSON Schema |
-| `dist/adapter.iife.js` | Self-contained IIFE bundle that runs in the browser page's MAIN world context |
+| `dist/adapter.iife.js` | Self-contained IIFE bundle that runs in the browser page's MAIN world context             |
 
 Plugins extend the `OpenTabsPlugin` base class from `@opentabs-dev/plugin-sdk` and define tools using the `defineTool()` factory. The `opentabs build` CLI compiles the plugin source into these two artifacts.
 
@@ -92,11 +92,11 @@ The `opentabs-plugin.json` manifest is validated against a Zod schema at discove
 
 Plugin tools are exposed to MCP clients with a `<plugin>_<tool>` prefix to prevent name collisions:
 
-| Plugin | Tool | MCP Name |
-| --- | --- | --- |
-| `slack` | `send_message` | `slack_send_message` |
-| `slack` | `read_messages` | `slack_read_messages` |
-| `github` | `create_issue` | `github_create_issue` |
+| Plugin   | Tool            | MCP Name              |
+| -------- | --------------- | --------------------- |
+| `slack`  | `send_message`  | `slack_send_message`  |
+| `slack`  | `read_messages` | `slack_read_messages` |
+| `github` | `create_issue`  | `github_create_issue` |
 
 Individual tools can be disabled via the `tools` field in `config.json`:
 
@@ -112,11 +112,11 @@ Individual tools can be disabled via the `tools` field in `config.json`:
 
 Each plugin is assigned a trust tier based on its source. The tier is prefixed to tool descriptions in the MCP tool list so AI agents can assess trust:
 
-| Tier | Source | MCP Description Prefix |
-| --- | --- | --- |
-| Official | `@opentabs-dev/*` npm packages | `[Official]` |
-| Community | Other npm packages | `[Community plugin — unverified]` |
-| Local | File paths from `config.plugins` | `[Local plugin]` |
+| Tier      | Source                           | MCP Description Prefix            |
+| --------- | -------------------------------- | --------------------------------- |
+| Official  | `@opentabs-dev/*` npm packages   | `[Official]`                      |
+| Community | Other npm packages               | `[Community plugin — unverified]` |
+| Local     | File paths from `config.plugins` | `[Local plugin]`                  |
 
 Official plugins are published by the OpenTabs team. Community plugins are published to npm by third parties and are not verified. Local plugins run from the developer's machine.
 
@@ -132,8 +132,8 @@ When a user opens a tab that matches a plugin's URL patterns, the Chrome extensi
 ```typescript
 chrome.scripting.executeScript({
   target: { tabId },
-  world: 'MAIN',
-  files: [`adapters/${pluginName}.js`]
+  world: "MAIN",
+  files: [`adapters/${pluginName}.js`],
 });
 ```
 
@@ -144,8 +144,12 @@ globalThis.__openTabs = globalThis.__openTabs || { adapters: {} };
 globalThis.__openTabs.adapters["slack"] = {
   version: "0.0.1",
   __adapterHash: "a1b2c3...",
-  handle: async (tool, input) => { /* ... */ },
-  teardown: () => { /* ... */ }
+  handle: async (tool, input) => {
+    /* ... */
+  },
+  teardown: () => {
+    /* ... */
+  },
 };
 ```
 

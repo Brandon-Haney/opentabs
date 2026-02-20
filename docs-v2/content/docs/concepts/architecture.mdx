@@ -35,14 +35,14 @@ The MCP server (`platform/mcp-server`) runs on `localhost:9515` by default (conf
 
 ### HTTP Endpoints
 
-| Endpoint | Method | Auth | Description |
-| --- | --- | --- | --- |
-| `/mcp` | POST/GET/DELETE | Bearer token | MCP Streamable HTTP transport. AI agents connect here. |
-| `/ws` | WebSocket | Sec-WebSocket-Protocol | Chrome extension WebSocket connection. |
-| `/ws-info` | GET | Bearer token | Returns WebSocket URL and auth secret for extension bootstrap. |
-| `/health` | GET | None | Server status: plugins, tools, uptime, reload count. |
-| `/reload` | POST | Bearer token | Trigger config and plugin rediscovery. |
-| `/extension/reload` | POST | Bearer token | Send reload signal to the extension via WebSocket. |
+| Endpoint            | Method          | Auth                   | Description                                                    |
+| ------------------- | --------------- | ---------------------- | -------------------------------------------------------------- |
+| `/mcp`              | POST/GET/DELETE | Bearer token           | MCP Streamable HTTP transport. AI agents connect here.         |
+| `/ws`               | WebSocket       | Sec-WebSocket-Protocol | Chrome extension WebSocket connection.                         |
+| `/ws-info`          | GET             | Bearer token           | Returns WebSocket URL and auth secret for extension bootstrap. |
+| `/health`           | GET             | None                   | Server status: plugins, tools, uptime, reload count.           |
+| `/reload`           | POST            | Bearer token           | Trigger config and plugin rediscovery.                         |
+| `/extension/reload` | POST            | Bearer token           | Send reload signal to the extension via WebSocket.             |
 
 ### Hot Reload
 
@@ -96,27 +96,27 @@ All server ↔ extension communication uses **JSON-RPC 2.0** over WebSocket. Mes
 
 **Server → Extension:**
 
-| Method | Purpose |
-| --- | --- |
-| `sync.full` | Full plugin list sent on connection |
-| `plugin.update` | Plugin metadata changed (file watcher detected changes) |
-| `plugin.uninstall` | Plugin removed from discovery |
-| `tool.dispatch` | Execute a plugin tool on a matching tab |
-| `tool.invocationStart` | Tool execution started (side panel animation) |
-| `tool.invocationEnd` | Tool execution completed (duration, success flag) |
-| `browser.*` | Built-in browser tool commands (36 tools) |
-| `pong` | Keepalive response |
+| Method                 | Purpose                                                 |
+| ---------------------- | ------------------------------------------------------- |
+| `sync.full`            | Full plugin list sent on connection                     |
+| `plugin.update`        | Plugin metadata changed (file watcher detected changes) |
+| `plugin.uninstall`     | Plugin removed from discovery                           |
+| `tool.dispatch`        | Execute a plugin tool on a matching tab                 |
+| `tool.invocationStart` | Tool execution started (side panel animation)           |
+| `tool.invocationEnd`   | Tool execution completed (duration, success flag)       |
+| `browser.*`            | Built-in browser tool commands (36 tools)               |
+| `pong`                 | Keepalive response                                      |
 
 **Extension → Server:**
 
-| Method | Purpose |
-| --- | --- |
-| `tab.syncAll` | Full tab state for all plugins (sent on connect/reconnect) |
-| `tab.stateChanged` | Single plugin's tab state changed |
-| `config.getState` | Fetch config state for side panel |
-| `config.setToolEnabled` | Enable/disable a single tool |
-| `config.setAllToolsEnabled` | Enable/disable all tools in a plugin |
-| `ping` | Keepalive probe |
+| Method                      | Purpose                                                    |
+| --------------------------- | ---------------------------------------------------------- |
+| `tab.syncAll`               | Full tab state for all plugins (sent on connect/reconnect) |
+| `tab.stateChanged`          | Single plugin's tab state changed                          |
+| `config.getState`           | Fetch config state for side panel                          |
+| `config.setToolEnabled`     | Enable/disable a single tool                               |
+| `config.setAllToolsEnabled` | Enable/disable all tools in a plugin                       |
+| `ping`                      | Keepalive probe                                            |
 
 ### Timeouts
 
@@ -153,16 +153,16 @@ During plugin discovery, tool descriptions are scanned for references to browser
 
 Plugins are classified by source and the trust tier is prefixed to tool descriptions shown to AI agents:
 
-| Tier | Source | Description Prefix |
-| --- | --- | --- |
-| Official | `@opentabs-dev/*` npm scope | `[Official]` |
-| Community | Any other npm package | `[Community plugin — unverified]` |
-| Local | Filesystem path | `[Local plugin]` |
+| Tier      | Source                      | Description Prefix                |
+| --------- | --------------------------- | --------------------------------- |
+| Official  | `@opentabs-dev/*` npm scope | `[Official]`                      |
+| Community | Any other npm package       | `[Community plugin — unverified]` |
+| Local     | Filesystem path             | `[Local plugin]`                  |
 
 ## Hot Reload Summary
 
-| Component | Reload Method | Trigger |
-| --- | --- | --- |
-| MCP Server | `bun --hot` (automatic) | Compiled `.js` files change in `dist/` |
-| Plugin adapters | File watcher (automatic) | `opentabs-plugin.json` or `dist/adapter.iife.js` changes |
-| Chrome extension | Manual reload from `chrome://extensions` | Any extension source file changes |
+| Component        | Reload Method                            | Trigger                                                  |
+| ---------------- | ---------------------------------------- | -------------------------------------------------------- |
+| MCP Server       | `bun --hot` (automatic)                  | Compiled `.js` files change in `dist/`                   |
+| Plugin adapters  | File watcher (automatic)                 | `opentabs-plugin.json` or `dist/adapter.iife.js` changes |
+| Chrome extension | Manual reload from `chrome://extensions` | Any extension source file changes                        |

@@ -24,28 +24,23 @@ The config file is created automatically on first server run with sensible defau
 
 ## Config fields
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `plugins` | `string[]` | `[]` | Local plugin directory paths. Relative paths are resolved from the config directory. Absolute paths are also supported. All paths must be under `$HOME` or `$TMPDIR` (security restriction). |
-| `tools` | `Record<string, boolean>` | `{}` | Per-tool enable/disable overrides. Keys are prefixed tool names (e.g., `slack_send_message`). Absent keys default to enabled. Set to `false` to disable a tool. |
-| `secret` | `string` | *(auto-generated)* | 64-character hex string (256-bit) used for authentication. Shared between the MCP server and Chrome extension. Auto-generated on first run if missing. |
-| `npmPlugins` | `string[]` | `[]` | npm package names explicitly allowed for plugin discovery. Only packages listed here will be loaded from `node_modules`. |
+| Field        | Type                      | Default            | Description                                                                                                                                                                                  |
+| ------------ | ------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `plugins`    | `string[]`                | `[]`               | Local plugin directory paths. Relative paths are resolved from the config directory. Absolute paths are also supported. All paths must be under `$HOME` or `$TMPDIR` (security restriction). |
+| `tools`      | `Record<string, boolean>` | `{}`               | Per-tool enable/disable overrides. Keys are prefixed tool names (e.g., `slack_send_message`). Absent keys default to enabled. Set to `false` to disable a tool.                              |
+| `secret`     | `string`                  | _(auto-generated)_ | 64-character hex string (256-bit) used for authentication. Shared between the MCP server and Chrome extension. Auto-generated on first run if missing.                                       |
+| `npmPlugins` | `string[]`                | `[]`               | npm package names explicitly allowed for plugin discovery. Only packages listed here will be loaded from `node_modules`.                                                                     |
 
 ## Example config
 
 ```json
 {
-  "plugins": [
-    "../plugins/slack",
-    "/Users/you/projects/my-opentabs-plugin"
-  ],
+  "plugins": ["../plugins/slack", "/Users/you/projects/my-opentabs-plugin"],
   "tools": {
     "slack_delete_message": false
   },
   "secret": "a1b2c3d4e5f6...64 hex characters...",
-  "npmPlugins": [
-    "opentabs-plugin-jira"
-  ]
+  "npmPlugins": ["opentabs-plugin-jira"]
 }
 ```
 
@@ -93,10 +88,7 @@ An explicit allowlist of npm package names that the server will load as plugins 
 
 ```json
 {
-  "npmPlugins": [
-    "opentabs-plugin-jira",
-    "opentabs-plugin-linear"
-  ]
+  "npmPlugins": ["opentabs-plugin-jira", "opentabs-plugin-linear"]
 }
 ```
 
@@ -104,9 +96,9 @@ An empty array (the default) means no npm plugins are loaded — only local plug
 
 ## Environment variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `9515` | HTTP server port for the MCP server. |
+| Variable              | Default       | Description                                                                                                     |
+| --------------------- | ------------- | --------------------------------------------------------------------------------------------------------------- |
+| `PORT`                | `9515`        | HTTP server port for the MCP server.                                                                            |
 | `OPENTABS_CONFIG_DIR` | `~/.opentabs` | Override the config directory path. Useful for running multiple server instances or isolated test environments. |
 
 ## Config directory structure

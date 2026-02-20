@@ -26,12 +26,12 @@ opentabs plugin create my-plugin --domain .example.com --display "My App"
 
 **Options:**
 
-| Flag | Required | Description |
-| --- | --- | --- |
-| `<name>` | Yes | Plugin name — lowercase, alphanumeric, hyphens only |
-| `--domain <domain>` | Yes | Target domain (e.g., `.slack.com`, `github.com`) |
-| `--display <name>` | No | Human-readable display name (defaults to title-cased name) |
-| `--description <desc>` | No | Plugin description |
+| Flag                   | Required | Description                                                |
+| ---------------------- | -------- | ---------------------------------------------------------- |
+| `<name>`               | Yes      | Plugin name — lowercase, alphanumeric, hyphens only        |
+| `--domain <domain>`    | Yes      | Target domain (e.g., `.slack.com`, `github.com`)           |
+| `--display <name>`     | No       | Human-readable display name (defaults to title-cased name) |
+| `--description <desc>` | No       | Plugin description                                         |
 
 The scaffolder creates the following project structure:
 
@@ -62,23 +62,23 @@ bun install
 The plugin class in `src/index.ts` extends `OpenTabsPlugin` and declares the plugin's identity, URL patterns, and tools:
 
 ```typescript
-import { OpenTabsPlugin, type ToolDefinition } from '@opentabs-dev/plugin-sdk';
-import { example } from './tools/example.js';
+import { OpenTabsPlugin, type ToolDefinition } from "@opentabs-dev/plugin-sdk";
+import { example } from "./tools/example.js";
 
 class MyPlugin extends OpenTabsPlugin {
-  readonly name = 'my-plugin';
-  readonly version = '0.1.0';
-  readonly description = 'OpenTabs plugin for My App';
-  override readonly displayName = 'My App';
+  readonly name = "my-plugin";
+  readonly version = "0.1.0";
+  readonly description = "OpenTabs plugin for My App";
+  override readonly displayName = "My App";
 
-  readonly urlPatterns = ['*://*.example.com/*'];
+  readonly urlPatterns = ["*://*.example.com/*"];
 
   readonly tools: ToolDefinition[] = [example];
 
   async isReady(): Promise<boolean> {
     // Return true when the user is authenticated.
     // This runs in the browser page context.
-    const token = localStorage.getItem('auth_token');
+    const token = localStorage.getItem("auth_token");
     return token !== null;
   }
 }
@@ -98,18 +98,18 @@ export default new MyPlugin();
 Each tool lives in its own file under `src/tools/`. Use the `defineTool()` factory:
 
 ```typescript
-import { defineTool } from '@opentabs-dev/plugin-sdk';
-import { z } from 'zod';
+import { defineTool } from "@opentabs-dev/plugin-sdk";
+import { z } from "zod";
 
 export const getPageTitle = defineTool({
-  name: 'get_page_title',
-  displayName: 'Get Page Title',
-  description: 'Returns the current page title and URL.',
-  icon: 'file-text',
+  name: "get_page_title",
+  displayName: "Get Page Title",
+  description: "Returns the current page title and URL.",
+  icon: "file-text",
   input: z.object({}),
   output: z.object({
-    title: z.string().describe('The page title'),
-    url: z.string().describe('The current URL'),
+    title: z.string().describe("The page title"),
+    url: z.string().describe("The current URL"),
   }),
   handle: async () => {
     return {
@@ -124,46 +124,46 @@ A more complete example with input parameters:
 
 ```typescript
 export const submitForm = defineTool({
-  name: 'submit_form',
-  displayName: 'Submit Form',
-  description: 'Fills and submits a form on the page.',
-  icon: 'send',
+  name: "submit_form",
+  displayName: "Submit Form",
+  description: "Fills and submits a form on the page.",
+  icon: "send",
   input: z.object({
-    name: z.string().min(1).describe('The name to enter in the form'),
-    email: z.string().email().describe('The email address to enter'),
+    name: z.string().min(1).describe("The name to enter in the form"),
+    email: z.string().email().describe("The email address to enter"),
   }),
   output: z.object({
-    success: z.boolean().describe('Whether the form was submitted'),
-    message: z.string().describe('Status message'),
+    success: z.boolean().describe("Whether the form was submitted"),
+    message: z.string().describe("Status message"),
   }),
   handle: async (params) => {
-    const nameInput = document.querySelector<HTMLInputElement>('#name');
-    const emailInput = document.querySelector<HTMLInputElement>('#email');
+    const nameInput = document.querySelector<HTMLInputElement>("#name");
+    const emailInput = document.querySelector<HTMLInputElement>("#email");
 
     if (!nameInput || !emailInput) {
-      return { success: false, message: 'Form fields not found' };
+      return { success: false, message: "Form fields not found" };
     }
 
     nameInput.value = params.name;
     emailInput.value = params.email;
-    document.querySelector<HTMLFormElement>('form')?.submit();
+    document.querySelector<HTMLFormElement>("form")?.submit();
 
-    return { success: true, message: 'Form submitted' };
+    return { success: true, message: "Form submitted" };
   },
 });
 ```
 
 **Tool configuration:**
 
-| Property | Type | Description |
-| --- | --- | --- |
-| `name` | `string` | Tool name in snake_case. Exposed as `<plugin>_<name>` in MCP. |
-| `displayName` | `string` | Human-readable name for UI. |
-| `description` | `string` | Shown to AI agents — must be accurate and informative. |
-| `icon` | `string` | [Lucide icon](https://lucide.dev/icons/) name in kebab-case. |
-| `input` | `ZodObject` | Zod schema for input parameters. |
-| `output` | `ZodObject` | Zod schema for return value. |
-| `handle` | `(params) => Promise<TOutput>` | Async function that executes the tool. |
+| Property      | Type                           | Description                                                   |
+| ------------- | ------------------------------ | ------------------------------------------------------------- |
+| `name`        | `string`                       | Tool name in snake*case. Exposed as `<plugin>*<name>` in MCP. |
+| `displayName` | `string`                       | Human-readable name for UI.                                   |
+| `description` | `string`                       | Shown to AI agents — must be accurate and informative.        |
+| `icon`        | `string`                       | [Lucide icon](https://lucide.dev/icons/) name in kebab-case.  |
+| `input`       | `ZodObject`                    | Zod schema for input parameters.                              |
+| `output`      | `ZodObject`                    | Zod schema for return value.                                  |
+| `handle`      | `(params) => Promise<TOutput>` | Async function that executes the tool.                        |
 
 ### handle() Execution Context
 
@@ -184,13 +184,15 @@ Input and output schemas are serialized to JSON Schema for the MCP protocol. Kee
 - **`.refine()` callbacks must not throw** — Zod may run `.refine()` even when the base validator fails. Wrap throwable operations in try-catch:
 
 ```typescript
-z.string().url().refine((val) => {
-  try {
-    return new URL(val).hostname.endsWith('.example.com');
-  } catch {
-    return false;
-  }
-}, 'Must be an example.com URL');
+z.string()
+  .url()
+  .refine((val) => {
+    try {
+      return new URL(val).hostname.endsWith(".example.com");
+    } catch {
+      return false;
+    }
+  }, "Must be an example.com URL");
 ```
 
 ### Error Handling
@@ -198,12 +200,12 @@ z.string().url().refine((val) => {
 Use `ToolError` for structured errors with machine-readable codes:
 
 ```typescript
-import { ToolError } from '@opentabs-dev/plugin-sdk';
+import { ToolError } from "@opentabs-dev/plugin-sdk";
 
 handle: async (params) => {
   const response = await fetch(`/api/items/${params.id}`);
   if (response.status === 404) {
-    throw new ToolError('Item not found', 'NOT_FOUND');
+    throw new ToolError("Item not found", "NOT_FOUND");
   }
   // ...
 };

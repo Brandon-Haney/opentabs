@@ -459,15 +459,3 @@ code {
   border-bottom-width: 2px;
 }
 
-/* Reduce shadow offsets on mobile for retro components with shadow-md (4px) or larger.
- * The RetroUI offset shadow consumes significant horizontal/vertical space on narrow screens.
- * Downgrade shadow-md → shadow-xs (1px) and shadow-lg → shadow-sm (2px) below sm breakpoint. */
-@media (max-width: 639px) {
-  .shadow-md {
-    box-shadow: var(--shadow-xs);
-  }
-
-  .shadow-lg {
-    box-shadow: var(--shadow-sm);
-  }
-}

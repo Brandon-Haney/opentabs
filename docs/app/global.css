@@ -474,6 +474,28 @@ code {
   [role='dialog'] button[aria-selected] {
     min-height: 2.75rem;
   }
+
+  /* Tab scroll fade: horizontal gradient mask hints at offscreen tabs.
+   * The 2rem transparent→opaque zones at each edge fade content that
+   * overflows, signaling more tabs are available by scrolling. On lists
+   * that fit without overflow the gradient edges fall outside the visible
+   * content area, so nothing is clipped. */
+  .retro-tabs-list {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      black 2rem,
+      black calc(100% - 2rem),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      black 2rem,
+      black calc(100% - 2rem),
+      transparent
+    );
+  }
 }
 
 /* Mobile TOC popover container: 2px border to match RetroUI styling */

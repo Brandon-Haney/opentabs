@@ -78,7 +78,7 @@ const RetroCard = ({ className, title, description, icon, href, external, childr
 };
 
 const RetroCards = ({ className, ...props }: ComponentPropsWithoutRef<'div'>) => (
-  <div className={cn('my-8 grid grid-cols-1 gap-4 sm:grid-cols-2', className)} {...props} />
+  <div className={cn('my-8 grid grid-cols-1 gap-5 sm:grid-cols-2', className)} {...props} />
 );
 
 export function getMDXComponents(components?: MDXComponents): MDXComponents {

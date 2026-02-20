@@ -152,6 +152,10 @@ export interface ServerState {
   configLastSeenMtime: number | null;
   /** Timer ID for periodic mtime polling — cleared by stopFileWatching */
   mtimePollTimerId: ReturnType<typeof setInterval> | null;
+  /** Timestamp (ms since epoch) of the last mtime polling tick, or null if polling hasn't run yet */
+  mtimeLastPollAt: number | null;
+  /** Running count of times mtime polling detected a change that fs.watch missed */
+  mtimePollDetections: number;
 }
 
 /** Increment when changing the type of an existing ServerState field */
@@ -183,6 +187,8 @@ export const createState = (): ServerState => ({
   configWatcher: null,
   configLastSeenMtime: null,
   mtimePollTimerId: null,
+  mtimeLastPollAt: null,
+  mtimePollDetections: 0,
 });
 
 /** Generate a cryptographically random JSON-RPC request ID */

@@ -512,6 +512,8 @@ const startMtimePolling = (state: ServerState, callbacks: FileWatcherCallbacks):
       return;
     }
 
+    state.mtimeLastPollAt = Date.now();
+
     // Poll plugin files (manifest + IIFE)
     for (const entry of state.fileWatcherEntries) {
       const manifestPath = join(entry.pluginDir, 'opentabs-plugin.json');
@@ -526,6 +528,7 @@ const startMtimePolling = (state: ServerState, callbacks: FileWatcherCallbacks):
         log.info(
           `Mtime poll: Detected change to ${manifestPath} (old=${lastManifestMtime}, new=${manifestMtime}) — fs.watch may be stale`,
         );
+        state.mtimePollDetections++;
         entry.lastSeenMtimes.set(manifestPath, manifestMtime);
         if (isPending) {
           void handlePendingPluginChange(state, entry.pluginDir, callbacks);
@@ -541,6 +544,7 @@ const startMtimePolling = (state: ServerState, callbacks: FileWatcherCallbacks):
         log.info(
           `Mtime poll: Detected change to ${iifePath} (old=${lastIifeMtime}, new=${iifeMtime}) — fs.watch may be stale`,
         );
+        state.mtimePollDetections++;
         entry.lastSeenMtimes.set(iifePath, iifeMtime);
         if (isPending) {
           void handlePendingPluginChange(state, entry.pluginDir, callbacks);
@@ -557,6 +561,7 @@ const startMtimePolling = (state: ServerState, callbacks: FileWatcherCallbacks):
       log.info(
         `Mtime poll: Detected change to ${configPath} (old=${state.configLastSeenMtime}, new=${configMtime}) — fs.watch may be stale`,
       );
+      state.mtimePollDetections++;
       state.configLastSeenMtime = configMtime;
       callbacks.onConfigChanged();
     }

@@ -174,6 +174,9 @@ const createHandleFetch =
       const toolCount = state.toolLookup.size + state.cachedBrowserTools.length;
       const uptimeSeconds = Math.floor((Date.now() - state.startedAt) / 1000);
 
+      const pendingPlugins = state.fileWatcherEntries.filter(e => e.pluginName.startsWith('(pending:')).length;
+      const watchedPlugins = state.fileWatcherEntries.length - pendingPlugins;
+
       return Response.json({
         status: 'ok',
         version,
@@ -188,6 +191,12 @@ const createHandleFetch =
         lastReloadTimestamp: hs?.lastReloadTimestamp ?? 0,
         lastReloadDurationMs: hs?.lastReloadDurationMs ?? 0,
         stateSchemaVersion: STATE_SCHEMA_VERSION,
+        fileWatcher: {
+          watchedPlugins,
+          pendingPlugins,
+          lastPollAt: state.mtimeLastPollAt,
+          pollDetections: state.mtimePollDetections,
+        },
       });
     }
 

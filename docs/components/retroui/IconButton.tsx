@@ -1,5 +1,5 @@
-import React, { ButtonHTMLAttributes } from 'react';
 import { cn } from '@/lib/utils';
+import type { ButtonHTMLAttributes } from 'react';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: 'sm' | 'md' | 'lg';
@@ -19,17 +19,17 @@ const variantClasses = {
   link: 'bg-transparent text-primary hover:underline border-0 shadow-none',
 } as const;
 
-export function IconButton({ children, size = 'md', className, variant = 'primary', ...props }: ButtonProps) {
-  return (
-    <button
-      className={cn(
-        'font-head border-border border-2 shadow-md transition-all hover:shadow-xs',
-        sizeClasses[size],
-        variantClasses[variant],
-        className,
-      )}
-      {...props}>
-      {children}
-    </button>
-  );
-}
+const IconButton = ({ children, size = 'md', className, variant = 'primary', ...props }: ButtonProps) => (
+  <button
+    className={cn(
+      'font-head border-border border-2 shadow-md transition-all hover:shadow-xs',
+      sizeClasses[size],
+      variantClasses[variant],
+      className,
+    )}
+    {...props}>
+    {children}
+  </button>
+);
+
+export { IconButton };

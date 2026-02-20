@@ -1,21 +1,22 @@
 'use client';
 
-import { useTheme } from 'next-themes';
-import { Moon, Sun } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { Moon, Sun } from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { useSyncExternalStore } from 'react';
 
 interface Props {
   className?: string;
 }
 
-export function RetroThemeToggle({ className }: Props) {
-  const { resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+// Hydration-safe mounted check using useSyncExternalStore
+const subscribe = () => () => {};
+const getSnapshot = () => true;
+const getServerSnapshot = () => false;
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+export const RetroThemeToggle = ({ className }: Props) => {
+  const { resolvedTheme, setTheme } = useTheme();
+  const mounted = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   const isDark = mounted ? resolvedTheme === 'dark' : false;
 
@@ -32,4 +33,4 @@ export function RetroThemeToggle({ className }: Props) {
       {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
     </button>
   );
-}
+};

@@ -1,21 +1,17 @@
 'use client';
 
-import { useFooterItems } from 'fumadocs-ui/utils/use-footer-items';
+import { cn } from '@/lib/utils';
 import { usePathname } from 'fumadocs-core/framework';
+import Link from 'fumadocs-core/link';
+import { useFooterItems } from 'fumadocs-ui/utils/use-footer-items';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
-import Link from 'fumadocs-core/link';
-import { cn } from '@/lib/utils';
 
-function normalizeUrl(url: string): string {
-  return url.length > 1 && url.endsWith('/') ? url.slice(0, -1) : url;
-}
+const normalizeUrl = (url: string): string => (url.length > 1 && url.endsWith('/') ? url.slice(0, -1) : url);
 
-function isPageActive(href: string, pathname: string): boolean {
-  return normalizeUrl(href) === normalizeUrl(pathname);
-}
+const isPageActive = (href: string, pathname: string): boolean => normalizeUrl(href) === normalizeUrl(pathname);
 
-export function RetroPageFooter() {
+export const RetroPageFooter = () => {
   const footerList = useFooterItems();
   const pathname = usePathname();
 
@@ -57,4 +53,4 @@ export function RetroPageFooter() {
       )}
     </div>
   );
-}
+};

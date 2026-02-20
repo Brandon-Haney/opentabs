@@ -1,13 +1,13 @@
+import { RetroAccordions, RetroAccordion } from '@/components/retro-accordion';
+import { RetroFiles, RetroFile, RetroFolder } from '@/components/retro-files';
+import { RetroSteps, RetroStep } from '@/components/retro-steps';
+import { RetroTabs, RetroTab } from '@/components/retro-tabs';
+import { RetroCodeBlock, Pre } from '@/components/retroui-codeblock';
+import { cn } from '@/lib/utils';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
+import type { CodeBlockProps } from 'fumadocs-ui/components/codeblock';
 import type { MDXComponents } from 'mdx/types';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
-import { cn } from '@/lib/utils';
-import { RetroCodeBlock, Pre } from '@/components/retroui-codeblock';
-import type { CodeBlockProps } from 'fumadocs-ui/components/codeblock';
-import { RetroTabs, RetroTab } from '@/components/retro-tabs';
-import { RetroAccordions, RetroAccordion } from '@/components/retro-accordion';
-import { RetroSteps, RetroStep } from '@/components/retro-steps';
-import { RetroFiles, RetroFile, RetroFolder } from '@/components/retro-files';
 
 // Mapping from Fumadocs callout type to RetroUI Alert status color classes (theme-aware)
 const calloutStatusClasses: Record<string, string> = {
@@ -79,108 +79,115 @@ const RetroCards = ({ className, ...props }: ComponentPropsWithoutRef<'div'>) =>
   <div className={cn('my-8 grid grid-cols-1 gap-5 sm:grid-cols-2', className)} {...props} />
 );
 
-export function getMDXComponents(components?: MDXComponents): MDXComponents {
-  return {
-    ...defaultMdxComponents,
-    h1: ({ className, ...props }: ComponentPropsWithoutRef<'h1'>) => (
-      <h1 className={cn('font-head mt-8 mb-4 text-4xl font-bold lg:text-5xl', className)} {...props} />
-    ),
-    h2: ({ className, ...props }: ComponentPropsWithoutRef<'h2'>) => (
-      <h2 className={cn('font-head mt-12 mb-4 text-3xl font-semibold lg:text-4xl', className)} {...props} />
-    ),
-    h3: ({ className, ...props }: ComponentPropsWithoutRef<'h3'>) => (
-      <h3 className={cn('font-head mt-8 mb-3 text-2xl font-medium', className)} {...props} />
-    ),
-    h4: ({ className, ...props }: ComponentPropsWithoutRef<'h4'>) => (
-      <h4 className={cn('font-head mt-4 mb-2 text-xl font-normal', className)} {...props} />
-    ),
-    h5: ({ className, ...props }: ComponentPropsWithoutRef<'h5'>) => (
-      <h5 className={cn('font-head mt-4 mb-2 text-lg font-normal', className)} {...props} />
-    ),
-    h6: ({ className, ...props }: ComponentPropsWithoutRef<'h6'>) => (
-      <h6 className={cn('font-head mt-4 mb-2 text-base font-normal', className)} {...props} />
-    ),
-    p: ({ className, ...props }: ComponentPropsWithoutRef<'p'>) => (
-      <p className={cn('mb-5 font-sans text-base leading-relaxed', className)} {...props} />
-    ),
-    ul: ({ className, ...props }: ComponentPropsWithoutRef<'ul'>) => (
-      <ul className={cn('mb-5 list-outside list-disc space-y-2 pl-6 font-sans', className)} {...props} />
-    ),
-    ol: ({ className, ...props }: ComponentPropsWithoutRef<'ol'>) => (
-      <ol className={cn('mb-5 list-outside list-decimal space-y-2 pl-6 font-sans', className)} {...props} />
-    ),
-    li: ({ className, ...props }: ComponentPropsWithoutRef<'li'>) => (
-      <li className={cn('font-sans text-base leading-relaxed', className)} {...props} />
-    ),
-    blockquote: ({ className, ...props }: ComponentPropsWithoutRef<'blockquote'>) => (
-      <blockquote
-        className={cn(
-          'border-primary bg-accent/20 my-6 border-l-4 px-4 py-3 font-sans leading-relaxed italic',
-          className,
-        )}
+export const getMDXComponents = (components?: MDXComponents): MDXComponents => ({
+  ...defaultMdxComponents,
+  h1: ({ className, children, ...props }: ComponentPropsWithoutRef<'h1'>) => (
+    <h1 className={cn('font-head mt-8 mb-4 text-4xl font-bold lg:text-5xl', className)} {...props}>
+      {children}
+    </h1>
+  ),
+  h2: ({ className, children, ...props }: ComponentPropsWithoutRef<'h2'>) => (
+    <h2 className={cn('font-head mt-12 mb-4 text-3xl font-semibold lg:text-4xl', className)} {...props}>
+      {children}
+    </h2>
+  ),
+  h3: ({ className, children, ...props }: ComponentPropsWithoutRef<'h3'>) => (
+    <h3 className={cn('font-head mt-8 mb-3 text-2xl font-medium', className)} {...props}>
+      {children}
+    </h3>
+  ),
+  h4: ({ className, children, ...props }: ComponentPropsWithoutRef<'h4'>) => (
+    <h4 className={cn('font-head mt-4 mb-2 text-xl font-normal', className)} {...props}>
+      {children}
+    </h4>
+  ),
+  h5: ({ className, children, ...props }: ComponentPropsWithoutRef<'h5'>) => (
+    <h5 className={cn('font-head mt-4 mb-2 text-lg font-normal', className)} {...props}>
+      {children}
+    </h5>
+  ),
+  h6: ({ className, children, ...props }: ComponentPropsWithoutRef<'h6'>) => (
+    <h6 className={cn('font-head mt-4 mb-2 text-base font-normal', className)} {...props}>
+      {children}
+    </h6>
+  ),
+  p: ({ className, ...props }: ComponentPropsWithoutRef<'p'>) => (
+    <p className={cn('mb-5 font-sans text-base leading-relaxed', className)} {...props} />
+  ),
+  ul: ({ className, ...props }: ComponentPropsWithoutRef<'ul'>) => (
+    <ul className={cn('mb-5 list-outside list-disc space-y-2 pl-6 font-sans', className)} {...props} />
+  ),
+  ol: ({ className, ...props }: ComponentPropsWithoutRef<'ol'>) => (
+    <ol className={cn('mb-5 list-outside list-decimal space-y-2 pl-6 font-sans', className)} {...props} />
+  ),
+  li: ({ className, ...props }: ComponentPropsWithoutRef<'li'>) => (
+    <li className={cn('font-sans text-base leading-relaxed', className)} {...props} />
+  ),
+  blockquote: ({ className, ...props }: ComponentPropsWithoutRef<'blockquote'>) => (
+    <blockquote
+      className={cn(
+        'border-primary bg-accent/20 my-6 border-l-4 px-4 py-3 font-sans leading-relaxed italic',
+        className,
+      )}
+      {...props}
+    />
+  ),
+  hr: ({ className, ...props }: ComponentPropsWithoutRef<'hr'>) => (
+    <hr className={cn('border-border my-8 border-x-0 border-t-2 border-b-0', className)} {...props} />
+  ),
+  // Fenced code blocks — RetroUI styling: border-2 shadow-md, primary title bar, outline copy button
+  pre: (props: CodeBlockProps) => (
+    <RetroCodeBlock {...props}>
+      <Pre>{props.children}</Pre>
+    </RetroCodeBlock>
+  ),
+  // Inline code — skips fenced code blocks (those have shiki style props from the rehype transform).
+  // The style prop presence distinguishes fenced blocks (shiki adds --shiki-* CSS variables) from inline `code`.
+  code: ({ className, style, ...props }: ComponentPropsWithoutRef<'code'>) =>
+    style ? (
+      <code className={className} style={style} {...props} />
+    ) : (
+      <code
+        className={cn('bg-muted border-border border-2 px-1.5 py-0.5 font-mono text-sm font-semibold', className)}
         {...props}
       />
     ),
-    hr: ({ className, ...props }: ComponentPropsWithoutRef<'hr'>) => (
-      <hr className={cn('border-border my-8 border-x-0 border-t-2 border-b-0', className)} {...props} />
-    ),
-    // Fenced code blocks — RetroUI styling: border-2 shadow-md, primary title bar, outline copy button
-    pre: (props: CodeBlockProps) => (
-      <RetroCodeBlock {...props}>
-        <Pre>{props.children}</Pre>
-      </RetroCodeBlock>
-    ),
-    // Inline code — skips fenced code blocks (those have shiki style props from the rehype transform).
-    // The style prop presence distinguishes fenced blocks (shiki adds --shiki-* CSS variables) from inline `code`.
-    code: ({ className, style, ...props }: ComponentPropsWithoutRef<'code'>) =>
-      style ? (
-        <code className={className} style={style} {...props} />
-      ) : (
-        <code
-          className={cn('bg-muted border-border border-2 px-1.5 py-0.5 font-mono text-sm font-semibold', className)}
-          {...props}
-        />
-      ),
-    table: ({ className, ...props }: ComponentPropsWithoutRef<'table'>) => (
-      <div className="relative my-6 w-full overflow-auto">
-        <table className={cn('w-full caption-bottom border-2 text-sm shadow-lg', className)} {...props} />
-      </div>
-    ),
-    thead: ({ className, ...props }: ComponentPropsWithoutRef<'thead'>) => (
-      <thead className={cn('bg-primary text-primary-foreground font-head [&_tr]:border-b-2', className)} {...props} />
-    ),
-    tbody: ({ className, ...props }: ComponentPropsWithoutRef<'tbody'>) => (
-      <tbody className={cn('[&_tr:last-child]:border-0', className)} {...props} />
-    ),
-    tr: ({ className, ...props }: ComponentPropsWithoutRef<'tr'>) => (
-      <tr className={cn('hover:bg-primary/15 border-b-2 transition-colors', className)} {...props} />
-    ),
-    th: ({ className, ...props }: ComponentPropsWithoutRef<'th'>) => (
-      <th
-        className={cn('text-primary-foreground h-12 px-4 text-left align-middle font-medium', className)}
-        {...props}
-      />
-    ),
-    td: ({ className, ...props }: ComponentPropsWithoutRef<'td'>) => (
-      <td className={cn('px-4 py-3 align-middle', className)} {...props} />
-    ),
-    // Fumadocs MDX special components — overridden with RetroUI styling
-    Callout: RetroCallout,
-    Card: RetroCard,
-    Cards: RetroCards,
-    // Tabs — Radix UI root + RetroUI visual classes matching RetroUI Tab.tsx
-    Tabs: RetroTabs,
-    Tab: RetroTab,
-    // Accordion — Radix UI primitives + RetroUI visual classes matching RetroUI Accordion.tsx
-    Accordions: RetroAccordions,
-    Accordion: RetroAccordion,
-    // Steps — CSS counter-based numbered steps with RetroUI primary color indicators
-    Steps: RetroSteps,
-    Step: RetroStep,
-    // File tree — Card-like container (border-2, shadow-md) with primary color folder icons
-    Files: RetroFiles,
-    File: RetroFile,
-    Folder: RetroFolder,
-    ...components,
-  };
-}
+  table: ({ className, ...props }: ComponentPropsWithoutRef<'table'>) => (
+    <div className="relative my-6 w-full overflow-auto">
+      <table className={cn('w-full caption-bottom border-2 text-sm shadow-lg', className)} {...props} />
+    </div>
+  ),
+  thead: ({ className, ...props }: ComponentPropsWithoutRef<'thead'>) => (
+    <thead className={cn('bg-primary text-primary-foreground font-head [&_tr]:border-b-2', className)} {...props} />
+  ),
+  tbody: ({ className, ...props }: ComponentPropsWithoutRef<'tbody'>) => (
+    <tbody className={cn('[&_tr:last-child]:border-0', className)} {...props} />
+  ),
+  tr: ({ className, ...props }: ComponentPropsWithoutRef<'tr'>) => (
+    <tr className={cn('hover:bg-primary/15 border-b-2 transition-colors', className)} {...props} />
+  ),
+  th: ({ className, ...props }: ComponentPropsWithoutRef<'th'>) => (
+    <th className={cn('text-primary-foreground h-12 px-4 text-left align-middle font-medium', className)} {...props} />
+  ),
+  td: ({ className, ...props }: ComponentPropsWithoutRef<'td'>) => (
+    <td className={cn('px-4 py-3 align-middle', className)} {...props} />
+  ),
+  // Fumadocs MDX special components — overridden with RetroUI styling
+  Callout: RetroCallout,
+  Card: RetroCard,
+  Cards: RetroCards,
+  // Tabs — Radix UI root + RetroUI visual classes matching RetroUI Tab.tsx
+  Tabs: RetroTabs,
+  Tab: RetroTab,
+  // Accordion — Radix UI primitives + RetroUI visual classes matching RetroUI Accordion.tsx
+  Accordions: RetroAccordions,
+  Accordion: RetroAccordion,
+  // Steps — CSS counter-based numbered steps with RetroUI primary color indicators
+  Steps: RetroSteps,
+  Step: RetroStep,
+  // File tree — Card-like container (border-2, shadow-md) with primary color folder icons
+  Files: RetroFiles,
+  File: RetroFile,
+  Folder: RetroFolder,
+  ...components,
+});

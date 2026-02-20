@@ -1,7 +1,8 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import React, { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import type React from 'react';
 
 interface TOCItem {
   title: string;
@@ -23,7 +24,7 @@ interface TableOfContentsProps {
   data?: ManualTOCItem[];
 }
 
-function generateTOCFromDOM(depth: number = 6): TOCItem[] {
+const generateTOCFromDOM = (depth: number = 6): TOCItem[] => {
   const headings: NodeListOf<HTMLHeadingElement> = document.querySelectorAll(
     Array.from({ length: depth }, (_, i) => `h${i + 1}`).join(', '),
   );
@@ -36,7 +37,7 @@ function generateTOCFromDOM(depth: number = 6): TOCItem[] {
     const id =
       heading.id ||
       heading.textContent
-        ?.toLowerCase()
+        .toLowerCase()
         .replace(/\s+/g, '-')
         .replace(/[^\w-]/g, '') ||
       '';
@@ -67,9 +68,9 @@ function generateTOCFromDOM(depth: number = 6): TOCItem[] {
   });
 
   return items;
-}
+};
 
-function convertManualDataToTOC(data: ManualTOCItem[]): TOCItem[] {
+const convertManualDataToTOC = (data: ManualTOCItem[]): TOCItem[] => {
   const items: TOCItem[] = [];
   const stack: TOCItem[] = [];
 
@@ -96,10 +97,10 @@ function convertManualDataToTOC(data: ManualTOCItem[]): TOCItem[] {
   });
 
   return items;
-}
+};
 
-function renderTOCItems(items: TOCItem[], level = 0, activeId: string | null) {
-  if (!items || items.length === 0) return null;
+const renderTOCItems = (items: TOCItem[], level = 0, activeId: string | null) => {
+  if (items.length === 0) return null;
 
   return (
     <ul className={`space-y-1 ${level > 0 ? 'mt-1 ml-4' : ''}`}>
@@ -122,36 +123,54 @@ function renderTOCItems(items: TOCItem[], level = 0, activeId: string | null) {
       })}
     </ul>
   );
-}
+};
 
-export function TableOfContents({ depth = 2, className = '', children, data }: TableOfContentsProps) {
-  const [tocItems, setTocItems] = useState<TOCItem[]>([]);
+const emptyTOC: TOCItem[] = [];
+
+const useDOMTocItems = (depth: number, enabled: boolean): TOCItem[] => {
+  const itemsRef = useRef<TOCItem[]>(emptyTOC);
+
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (!enabled) return () => {};
+
+      itemsRef.current = generateTOCFromDOM(depth);
+
+      const observer = new MutationObserver(() => {
+        itemsRef.current = generateTOCFromDOM(depth);
+        onStoreChange();
+      });
+
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['id'],
+      });
+
+      return () => observer.disconnect();
+    },
+    [depth, enabled],
+  );
+
+  const getSnapshot = useCallback(() => itemsRef.current, []);
+  const getServerSnapshot = useCallback(() => emptyTOC, []);
+
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+};
+
+const subscribeNoop = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
+const TableOfContents = ({ depth = 2, className = '', children, data }: TableOfContentsProps) => {
+  const isMounted = useSyncExternalStore(subscribeNoop, getClientSnapshot, getServerSnapshot);
+
+  const dataItems = useMemo(() => (data ? convertManualDataToTOC(data) : emptyTOC), [data]);
+
+  const domItems = useDOMTocItems(depth, isMounted && !data);
+
   const [activeId, setActiveId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (data) {
-      const items = convertManualDataToTOC(data);
-      setTocItems(items);
-      return;
-    }
-
-    const items = generateTOCFromDOM(depth);
-    setTocItems(items);
-
-    const observer = new MutationObserver(() => {
-      const updatedItems = generateTOCFromDOM(depth);
-      setTocItems(updatedItems);
-    });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['id'],
-    });
-
-    return () => observer.disconnect();
-  }, [depth, data]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -171,6 +190,8 @@ export function TableOfContents({ depth = 2, className = '', children, data }: T
     return () => observer.disconnect();
   }, []);
 
+  const tocItems = data ? dataItems : domItems;
+
   if (tocItems.length === 0) {
     return null;
   }
@@ -181,4 +202,6 @@ export function TableOfContents({ depth = 2, className = '', children, data }: T
       {renderTOCItems(tocItems, 0, activeId)}
     </div>
   );
-}
+};
+
+export { TableOfContents };

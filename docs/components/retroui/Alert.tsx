@@ -1,8 +1,8 @@
-import { HtmlHTMLAttributes } from 'react';
-import { cva, type VariantProps } from 'class-variance-authority';
-
-import { cn } from '@/lib/utils';
 import { Text } from '@/components/retroui/Text';
+import { cn } from '@/lib/utils';
+import { cva } from 'class-variance-authority';
+import type { VariantProps } from 'class-variance-authority';
+import type { HtmlHTMLAttributes } from 'react';
 
 const alertVariants = cva('relative w-full rounded border-2 p-4', {
   variants: {
@@ -22,23 +22,21 @@ const alertVariants = cva('relative w-full rounded border-2 p-4', {
   },
 });
 
-interface IAlertProps extends HtmlHTMLAttributes<HTMLDivElement>, VariantProps<typeof alertVariants> {}
+type IAlertProps = HtmlHTMLAttributes<HTMLDivElement> & VariantProps<typeof alertVariants>;
 
 const Alert = ({ className, variant, status, ...props }: IAlertProps) => (
   <div role="alert" className={cn(alertVariants({ variant, status }), className)} {...props} />
 );
-Alert.displayName = 'Alert';
 
-interface IAlertTitleProps extends HtmlHTMLAttributes<HTMLHeadingElement> {}
+type IAlertTitleProps = HtmlHTMLAttributes<HTMLHeadingElement>;
+
 const AlertTitle = ({ className, ...props }: IAlertTitleProps) => <Text as="h5" className={cn(className)} {...props} />;
-AlertTitle.displayName = 'AlertTitle';
 
-interface IAlertDescriptionProps extends HtmlHTMLAttributes<HTMLParagraphElement> {}
+type IAlertDescriptionProps = HtmlHTMLAttributes<HTMLParagraphElement>;
+
 const AlertDescription = ({ className, ...props }: IAlertDescriptionProps) => (
   <div className={cn('text-muted-foreground', className)} {...props} />
 );
-
-AlertDescription.displayName = 'AlertDescription';
 
 const AlertComponent = Object.assign(Alert, {
   Title: AlertTitle,

@@ -1,15 +1,15 @@
 'use client';
 
+import { cn } from '@/lib/utils';
 import { useSearchContext } from 'fumadocs-ui/contexts/search';
 import { Search } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 interface Props {
   className?: string;
   hideIfDisabled?: boolean;
 }
 
-export function RetroSearchToggleLg({ className, hideIfDisabled }: Props) {
+export const RetroSearchToggleLg = ({ className, hideIfDisabled }: Props) => {
   const { setOpenSearch, enabled, hotKey } = useSearchContext();
   if (hideIfDisabled && !enabled) return null;
   return (
@@ -34,4 +34,4 @@ export function RetroSearchToggleLg({ className, hideIfDisabled }: Props) {
       )}
     </button>
   );
-}
+};

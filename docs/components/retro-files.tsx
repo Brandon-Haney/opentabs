@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { cn } from '@/lib/utils';
 import * as CollapsiblePrimitive from '@radix-ui/react-collapsible';
 import { File as FileIcon, Folder as FolderIcon, FolderOpen, ChevronRight } from 'lucide-react';
+import { useState } from 'react';
 import type { HTMLAttributes, ReactNode } from 'react';
-import { cn } from '@/lib/utils';
 
-export const RetroFiles = ({ className, ...props }: HTMLAttributes<HTMLDivElement>) => (
+const RetroFiles = ({ className, ...props }: HTMLAttributes<HTMLDivElement>) => (
   <div className={cn('not-prose border-border bg-card border-2 p-2 ps-3 shadow-md', className)} {...props} />
 );
 
@@ -15,12 +15,7 @@ interface RetroFileProps extends HTMLAttributes<HTMLDivElement> {
   icon?: ReactNode;
 }
 
-export const RetroFile = ({
-  name,
-  icon = <FileIcon className="size-4 shrink-0" />,
-  className,
-  ...props
-}: RetroFileProps) => (
+const RetroFile = ({ name, icon = <FileIcon className="size-4 shrink-0" />, className, ...props }: RetroFileProps) => (
   <div
     className={cn(
       'hover:bg-accent hover:text-accent-foreground flex cursor-default flex-row items-center gap-2 px-2 py-1.5 font-sans text-sm transition-colors',
@@ -38,7 +33,7 @@ interface RetroFolderProps extends HTMLAttributes<HTMLDivElement> {
   disabled?: boolean;
 }
 
-export const RetroFolder = ({
+const RetroFolder = ({
   name,
   defaultOpen = false,
   disabled,
@@ -73,3 +68,5 @@ export const RetroFolder = ({
     </CollapsiblePrimitive.Root>
   );
 };
+
+export { RetroFiles, RetroFile, RetroFolder };

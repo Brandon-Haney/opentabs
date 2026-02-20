@@ -1,19 +1,19 @@
 'use client';
 
-import type { CodeBlockProps } from 'fumadocs-ui/components/codeblock';
+import { cn } from '@/lib/utils';
 import { Pre } from 'fumadocs-ui/components/codeblock';
 import { Check, Clipboard } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { RefObject } from 'react';
-import { cn } from '@/lib/utils';
+import type { CodeBlockProps } from 'fumadocs-ui/components/codeblock';
+import type { CSSProperties, RefObject } from 'react';
 
-function RetroCopyButton({
+const RetroCopyButton = ({
   containerRef,
   className,
 }: {
   containerRef: RefObject<HTMLDivElement | null>;
   className?: string;
-}) {
+}) => {
   const [checked, setChecked] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
 
@@ -25,7 +25,7 @@ function RetroCopyButton({
     clone.querySelectorAll('.nd-copy-ignore').forEach(node => {
       node.replaceWith('\n');
     });
-    void navigator.clipboard.writeText(clone.textContent ?? '').then(() => {
+    void navigator.clipboard.writeText(clone.textContent || '').then(() => {
       setChecked(true);
       timeoutRef.current = setTimeout(() => {
         setChecked(false);
@@ -33,11 +33,12 @@ function RetroCopyButton({
     });
   }, [containerRef]);
 
-  useEffect(() => {
-    return () => {
+  useEffect(
+    () => () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, []);
+    },
+    [],
+  );
 
   return (
     <button
@@ -52,9 +53,9 @@ function RetroCopyButton({
       {checked ? <Check className="size-3.5" /> : <Clipboard className="size-3.5" />}
     </button>
   );
-}
+};
 
-export function RetroCodeBlock({
+const RetroCodeBlock = ({
   title,
   allowCopy = true,
   keepBackground = false,
@@ -67,11 +68,11 @@ export function RetroCodeBlock({
   'data-line-numbers': lineNumbers,
   'data-line-numbers-start': lineNumbersStart,
   ...props
-}: CodeBlockProps) {
+}: CodeBlockProps) => {
   const areaRef = useRef<HTMLDivElement>(null);
 
-  const viewportStyle: React.CSSProperties = {
-    ...(lineNumbers ? { counterSet: `line ${Number(lineNumbersStart ?? 1) - 1}` } : {}),
+  const viewportStyle: CSSProperties = {
+    ...(lineNumbers ? { counterSet: `line ${(lineNumbersStart ?? 1) - 1}` } : {}),
     // Override shiki line padding — the viewport div handles padding uniformly on all sides.
     // Without title, add extra right padding for the floating copy button.
     ['--padding-left' as string]: '0',
@@ -82,6 +83,7 @@ export function RetroCodeBlock({
   return (
     <figure
       dir="ltr"
+      role="group"
       tabIndex={-1}
       data-line-numbers={lineNumbers}
       data-line-numbers-start={lineNumbersStart}
@@ -124,6 +126,7 @@ export function RetroCodeBlock({
         ref={areaRef}
         {...viewportProps}
         role="region"
+        aria-label="Code content"
         tabIndex={0}
         className={cn(
           'fd-scroll-container max-h-[600px] overflow-auto bg-(--shiki-light-bg) p-4 font-mono dark:bg-(--shiki-dark-bg)',
@@ -135,7 +138,7 @@ export function RetroCodeBlock({
       </div>
     </figure>
   );
-}
+};
 
 // Re-export Pre so callers can use it alongside RetroCodeBlock
-export { Pre };
+export { RetroCodeBlock, Pre };

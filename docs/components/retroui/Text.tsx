@@ -1,6 +1,7 @@
-import { ElementType, HTMLAttributes } from 'react';
-import { VariantProps, cva } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
+import { cva } from 'class-variance-authority';
+import type { VariantProps } from 'class-variance-authority';
+import type { ElementType, HTMLAttributes } from 'react';
 
 const textVariants = cva('font-head', {
   variants: {

@@ -2,14 +2,12 @@
 
 import { cn } from '@/lib/utils';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import React, { ComponentPropsWithoutRef } from 'react';
+import type { ComponentPropsWithoutRef } from 'react';
 
 const Menu = DropdownMenu.Root;
 const Trigger = DropdownMenu.Trigger;
 
-interface IMenuContent extends ComponentPropsWithoutRef<typeof DropdownMenu.Content> {}
-
-const Content = ({ className, ...props }: IMenuContent) => (
+const Content = ({ className, ...props }: ComponentPropsWithoutRef<typeof DropdownMenu.Content>) => (
   <DropdownMenu.Portal>
     <DropdownMenu.Content
       side="bottom"
@@ -20,19 +18,20 @@ const Content = ({ className, ...props }: IMenuContent) => (
   </DropdownMenu.Portal>
 );
 
-const MenuItem = React.forwardRef<HTMLDivElement, ComponentPropsWithoutRef<typeof DropdownMenu.Item>>(
-  ({ className, ...props }, ref) => (
-    <DropdownMenu.Item
-      ref={ref}
-      className={cn(
-        'hover:bg-primary focus:bg-primary text-foreground relative flex cursor-default items-center px-2 py-1.5 text-sm outline-hidden transition-colors select-none data-disabled:pointer-events-none data-disabled:opacity-50',
-        className,
-      )}
-      {...props}
-    />
-  ),
+const MenuItem = ({
+  ref,
+  className,
+  ...props
+}: ComponentPropsWithoutRef<typeof DropdownMenu.Item> & { ref?: React.Ref<HTMLDivElement> }) => (
+  <DropdownMenu.Item
+    ref={ref}
+    className={cn(
+      'hover:bg-primary focus:bg-primary text-foreground relative flex cursor-default items-center px-2 py-1.5 text-sm outline-hidden transition-colors select-none data-disabled:pointer-events-none data-disabled:opacity-50',
+      className,
+    )}
+    {...props}
+  />
 );
-MenuItem.displayName = 'MenuItem';
 
 const MenuComponent = Object.assign(Menu, {
   Trigger,

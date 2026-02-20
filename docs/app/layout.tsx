@@ -1,5 +1,5 @@
-import { Archivo_Black, Space_Grotesk, Space_Mono } from 'next/font/google';
 import { Provider } from '@/components/provider';
+import { Archivo_Black, Space_Grotesk, Space_Mono } from 'next/font/google';
 import type { ReactNode } from 'react';
 import './global.css';
 

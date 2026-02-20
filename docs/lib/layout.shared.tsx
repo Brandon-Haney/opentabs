@@ -1,6 +1,6 @@
-import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 import { GlobalHeader } from '@/components/global-header';
 import { RetroSearchToggleLg } from '@/components/retro-search-toggle';
+import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 
 export const baseOptions: BaseLayoutProps = {
   nav: {

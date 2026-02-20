@@ -1,7 +1,7 @@
-import { HomeLayout } from 'fumadocs-ui/layouts/home';
-import { baseOptions } from '@/lib/layout.shared';
-import Link from 'next/link';
 import { Button } from '@/components/retroui/Button';
+import { baseOptions } from '@/lib/layout.shared';
+import { HomeLayout } from 'fumadocs-ui/layouts/home';
+import Link from 'next/link';
 
 const features = [
   {

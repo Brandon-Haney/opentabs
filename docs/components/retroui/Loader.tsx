@@ -1,6 +1,7 @@
-import * as React from 'react';
-import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
+import { cva } from 'class-variance-authority';
+import type { VariantProps } from 'class-variance-authority';
+import type * as React from 'react';
 
 const loaderVariants = cva('flex gap-1', {
   variants: {
@@ -23,35 +24,39 @@ const loaderVariants = cva('flex gap-1', {
 
 interface LoaderProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'color'>, VariantProps<typeof loaderVariants> {
   asChild?: boolean;
-  count?: number; // number of bouncing dots
-  duration?: number; // animation duration in seconds
-  delayStep?: number; // delay in ms
+  count?: number;
+  duration?: number;
+  delayStep?: number;
 }
 
-const Loader = React.forwardRef<HTMLDivElement, LoaderProps>(
-  ({ className, variant, size, count = 3, duration = 0.5, delayStep = 100, ...props }, ref) => {
-    return (
+const Loader = ({
+  ref,
+  className,
+  variant,
+  size,
+  count = 3,
+  duration = 0.5,
+  delayStep = 100,
+  ...props
+}: LoaderProps & { ref?: React.Ref<HTMLDivElement> }) => (
+  <div
+    className={cn(loaderVariants({ variant, size }), className)}
+    ref={ref}
+    role="status"
+    aria-label="Loading..."
+    {...props}>
+    {Array.from({ length: count }).map((_, i) => (
       <div
-        className={cn(loaderVariants({ variant, size }), className)}
-        ref={ref}
-        role="status"
-        aria-label="Loading..."
-        {...props}>
-        {Array.from({ length: count }).map((_, i) => (
-          <div
-            key={i}
-            className="animate-bounce border-2"
-            style={{
-              animationDuration: `${duration}s`,
-              animationIterationCount: 'infinite',
-              animationDelay: `${i * delayStep}ms`,
-            }}
-          />
-        ))}
-      </div>
-    );
-  },
+        key={i}
+        className="animate-bounce border-2"
+        style={{
+          animationDuration: `${duration}s`,
+          animationIterationCount: 'infinite',
+          animationDelay: `${i * delayStep}ms`,
+        }}
+      />
+    ))}
+  </div>
 );
 
-Loader.displayName = 'Loader';
 export { Loader };

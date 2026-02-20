@@ -1,17 +1,19 @@
 'use client';
 
-import * as React from 'react';
+import { cn } from '@/lib/utils';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import { ChevronDown } from 'lucide-react';
-
-import { cn } from '@/lib/utils';
+import type * as React from 'react';
 
 const Accordion = AccordionPrimitive.Root;
 
-const AccordionItem = React.forwardRef<
-  React.ElementRef<typeof AccordionPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Item>
->(({ className, ...props }, ref) => (
+const AccordionItem = ({
+  ref,
+  className,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Item> & {
+  ref?: React.Ref<React.ComponentRef<typeof AccordionPrimitive.Item>>;
+}) => (
   <AccordionPrimitive.Item
     ref={ref}
     className={cn(
@@ -20,13 +22,16 @@ const AccordionItem = React.forwardRef<
     )}
     {...props}
   />
-));
-AccordionItem.displayName = AccordionPrimitive.Item.displayName;
+);
 
-const AccordionHeader = React.forwardRef<
-  React.ElementRef<typeof AccordionPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Trigger>
->(({ className, children, ...props }, ref) => (
+const AccordionHeader = ({
+  ref,
+  className,
+  children,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Trigger> & {
+  ref?: React.Ref<React.ComponentRef<typeof AccordionPrimitive.Trigger>>;
+}) => (
   <AccordionPrimitive.Header className="flex">
     <AccordionPrimitive.Trigger
       ref={ref}
@@ -39,22 +44,23 @@ const AccordionHeader = React.forwardRef<
       <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200" />
     </AccordionPrimitive.Trigger>
   </AccordionPrimitive.Header>
-));
-AccordionHeader.displayName = AccordionPrimitive.Header.displayName;
+);
 
-const AccordionContent = React.forwardRef<
-  React.ElementRef<typeof AccordionPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+const AccordionContent = ({
+  ref,
+  className,
+  children,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Content> & {
+  ref?: React.Ref<React.ComponentRef<typeof AccordionPrimitive.Content>>;
+}) => (
   <AccordionPrimitive.Content
     ref={ref}
     className="data-[state=open]:animate-accordion-down data-[state=closed]:animate-accordion-up bg-background text-foreground overflow-hidden font-sans"
     {...props}>
     <div className={cn('px-4 pt-2 pb-4', className)}>{children}</div>
   </AccordionPrimitive.Content>
-));
-
-AccordionContent.displayName = AccordionPrimitive.Content.displayName;
+);
 
 const AccordionComponent = Object.assign(Accordion, {
   Item: AccordionItem,

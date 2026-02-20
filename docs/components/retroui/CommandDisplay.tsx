@@ -7,17 +7,19 @@ interface CommandDisplayProps {
   command: string;
 }
 
-export function CommandDisplay({ command }: CommandDisplayProps) {
+export const CommandDisplay = ({ command }: CommandDisplayProps) => {
   const [copied, setCopied] = useState(false);
 
-  const copyToClipboard = async () => {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy text: ', err);
-    }
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(command).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      },
+      (err: unknown) => {
+        console.error('Failed to copy text: ', err);
+      },
+    );
   };
 
   const syntaxColors = ['text-primary', 'text-accent-foreground', 'text-muted-foreground', 'text-foreground'];
@@ -52,4 +54,4 @@ export function CommandDisplay({ command }: CommandDisplayProps) {
       </button>
     </div>
   );
-}
+};

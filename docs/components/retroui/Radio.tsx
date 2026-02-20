@@ -1,6 +1,8 @@
 import { cn } from '@/lib/utils';
 import * as RadioPrimitive from '@radix-ui/react-radio-group';
-import { cva, VariantProps } from 'class-variance-authority';
+import { cva } from 'class-variance-authority';
+import type { VariantProps } from 'class-variance-authority';
+import type * as React from 'react';
 
 const radioVariants = cva('border-border border-2', {
   variants: {
@@ -40,15 +42,15 @@ const radioIndicatorVariants = cva('flex ', {
   },
 });
 
-interface RadioGroupProps extends React.ComponentProps<typeof RadioPrimitive.Root> {}
+type RadioGroupProps = React.ComponentProps<typeof RadioPrimitive.Root>;
 
-export const RadioGroupRoot = ({ className, ...props }: RadioGroupProps) => (
+const RadioGroupRoot = ({ className, ...props }: RadioGroupProps) => (
   <RadioPrimitive.Root className={cn('grid gap-2', className)} {...props} />
 );
 
-interface RadioProps extends React.ComponentProps<typeof RadioPrimitive.Item>, VariantProps<typeof radioVariants> {}
+type RadioProps = React.ComponentProps<typeof RadioPrimitive.Item> & VariantProps<typeof radioVariants>;
 
-export const RadioItem = ({ children, className, size, variant, ...props }: RadioProps) => (
+const RadioItem = ({ children, className, size, variant, ...props }: RadioProps) => (
   <RadioPrimitive.Item
     {...props}
     className={cn(
@@ -69,4 +71,4 @@ const RadioComponent = Object.assign(RadioGroupRoot, {
   Item: RadioItem,
 });
 
-export { RadioComponent as RadioGroup };
+export { RadioGroupRoot, RadioItem, RadioComponent as RadioGroup };

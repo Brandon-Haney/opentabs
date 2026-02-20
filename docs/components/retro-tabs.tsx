@@ -1,9 +1,9 @@
 'use client';
 
+import { cn } from '@/lib/utils';
 import * as RadixTabs from '@radix-ui/react-tabs';
 import { createContext, useContext, useEffect, useId, useMemo, useState } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
-import { cn } from '@/lib/utils';
 
 // Context for collection index tracking — same pattern as Fumadocs internal tabs
 interface RetroTabsContextType {
@@ -13,34 +13,33 @@ interface RetroTabsContextType {
 
 const RetroTabsContext = createContext<RetroTabsContextType | null>(null);
 
-function useTabContext(): RetroTabsContextType {
+const useTabContext = (): RetroTabsContextType => {
   const ctx = useContext(RetroTabsContext);
   if (!ctx) throw new Error('Must be rendered inside <Tabs>');
   return ctx;
-}
+};
 
 // Track registration order of Tab children so Tab can resolve its value from index
-function useCollectionIndex(): number {
+const useCollectionIndex = (): number => {
   const key = useId();
   const { collection } = useTabContext();
-  useEffect(() => {
-    return () => {
+  useEffect(
+    () => () => {
       const idx = collection.indexOf(key);
       if (idx !== -1) collection.splice(idx, 1);
-    };
-  }, [key, collection]);
+    },
+    [key, collection],
+  );
   if (!collection.includes(key)) collection.push(key);
   return collection.indexOf(key);
-}
+};
 
 // Escape whitespace in tab values (same as Fumadocs)
-function escapeValue(v: string): string {
-  return v.toLowerCase().replace(/\s/g, '-');
-}
+const escapeValue = (v: string): string => v.toLowerCase().replace(/\s/g, '-');
 
 // ── RetroTabs (root) ────────────────────────────────────────────────────────
 
-export interface RetroTabsProps extends Omit<ComponentProps<typeof RadixTabs.Root>, 'value' | 'onValueChange'> {
+interface RetroTabsProps extends Omit<ComponentProps<typeof RadixTabs.Root>, 'value' | 'onValueChange'> {
   /** Tab labels — each item becomes a trigger button */
   items?: string[];
   /** Shortcut for defaultValue when items is provided (0-based index) */
@@ -49,7 +48,7 @@ export interface RetroTabsProps extends Omit<ComponentProps<typeof RadixTabs.Roo
   label?: ReactNode;
 }
 
-export function RetroTabs({
+const RetroTabs = ({
   className,
   items,
   label,
@@ -57,7 +56,7 @@ export function RetroTabs({
   defaultValue = items?.[defaultIndex] ? escapeValue(items[defaultIndex]) : undefined,
   children,
   ...props
-}: RetroTabsProps) {
+}: RetroTabsProps) => {
   const [value, setValue] = useState(defaultValue);
   const collection = useMemo<string[]>(() => [], []);
 
@@ -92,16 +91,16 @@ export function RetroTabs({
       </RetroTabsContext.Provider>
     </RadixTabs.Root>
   );
-}
+};
 
 // ── RetroTab (content panel) ────────────────────────────────────────────────
 
-export interface RetroTabProps extends Omit<ComponentProps<typeof RadixTabs.Content>, 'value'> {
+interface RetroTabProps extends Omit<ComponentProps<typeof RadixTabs.Content>, 'value'> {
   /** Tab value — resolved from index in items mode if omitted */
   value?: string;
 }
 
-export function RetroTab({ value, className, ...props }: RetroTabProps) {
+const RetroTab = ({ value, className, ...props }: RetroTabProps) => {
   const { items } = useTabContext();
   const index = useCollectionIndex();
   const resolved = value ?? items?.at(index);
@@ -115,4 +114,7 @@ export function RetroTab({ value, className, ...props }: RetroTabProps) {
       {...props}
     />
   );
-}
+};
+
+export { RetroTabs, RetroTab };
+export type { RetroTabsProps, RetroTabProps };

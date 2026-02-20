@@ -1,13 +1,13 @@
 'use client';
 
-import { useTreeContext, useTreePath } from 'fumadocs-ui/contexts/tree';
+import { cn } from '@/lib/utils';
 import { getBreadcrumbItemsFromPath } from 'fumadocs-core/breadcrumb';
+import Link from 'fumadocs-core/link';
+import { useTreeContext, useTreePath } from 'fumadocs-ui/contexts/tree';
 import { ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
-import Link from 'fumadocs-core/link';
-import { cn } from '@/lib/utils';
 
-export function RetroPageBreadcrumb() {
+export const RetroPageBreadcrumb = () => {
   const path = useTreePath();
   const { root } = useTreeContext();
 
@@ -40,4 +40,4 @@ export function RetroPageBreadcrumb() {
       </ol>
     </nav>
   );
-}
+};

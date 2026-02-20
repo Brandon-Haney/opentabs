@@ -41,7 +41,9 @@ const config: Linter.Config[] = [
       sourceType: 'module',
       parserOptions: {
         ecmaFeatures: { jsx: true },
-        projectService: true,
+        projectService: {
+          allowDefaultProject: ['eslint.config.ts', 'knip.ts'],
+        },
       },
       globals: {
         ...es2020,
@@ -110,6 +112,8 @@ const config: Linter.Config[] = [
       'import-x/consistent-type-specifier-style': 'error',
       'import-x/exports-last': 'error',
       'import-x/first': 'error',
+      // Scrollable containers with role="region" and tabIndex={0} are a valid WCAG pattern
+      'jsx-a11y/no-noninteractive-tabindex': ['error', { tags: [], roles: ['tabpanel', 'region'] }],
     },
     linterOptions: {
       reportUnusedDisableDirectives: 'error',

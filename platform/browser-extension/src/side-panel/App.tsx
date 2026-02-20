@@ -191,6 +191,7 @@ const App = () => {
   }, [loadPlugins]);
 
   const totalTools = plugins.reduce((sum, p) => sum + p.tools.length, 0);
+  const showPlugins = !loading && connected && plugins.length > 0;
 
   return (
     <div className="text-foreground flex min-h-screen flex-col">
@@ -216,7 +217,7 @@ const App = () => {
           </div>
         </div>
       )}
-      <main className="flex-1 px-3 py-2">
+      <main className={`flex-1 px-3 py-2 ${showPlugins ? '' : 'flex items-center justify-center'}`}>
         {loading ? (
           <LoadingState />
         ) : !connected ? (

@@ -18,11 +18,7 @@ const DisconnectedState = () => (
   </Empty>
 );
 
-const LoadingState = () => (
-  <div className="flex items-center justify-center py-16">
-    <Loader size="md" />
-  </div>
-);
+const LoadingState = () => <Loader size="md" />;
 
 const EmptyState = () => (
   <Empty>

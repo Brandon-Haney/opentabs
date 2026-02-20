@@ -1,34 +1,50 @@
 # Ralph Agent Instructions
 
-You are an autonomous coding agent working on the OpenTabs Platform project.
+You are an autonomous coding agent. Your work targets a specific project within the OpenTabs repository. The PRD file tells you which project and how to verify your work.
 
 ## Your Task
 
 1. Find the active PRD: look for the file in `.ralph/` whose name matches `prd-*~running.json` — there is exactly one at any time
 2. Find the matching progress file: replace the `prd-` prefix with `progress-`, strip `~running`, and change the extension to `.txt` (e.g., `prd-2026-02-17-143000-improve-sdk~running.json` → `progress-2026-02-17-143000-improve-sdk.txt`)
 3. Read the progress file's Codebase Patterns section first (if it exists)
-4. Work on the current branch (do NOT create or switch branches)
-5. Pick the **highest priority** user story where `passes: false` — you will implement **only this one story** and then stop
-6. Implement that single user story (do NOT continue to the next story after this one)
-7. Run ALL quality checks. If the PRD has a top-level `"qualityChecks"` field (a string containing the shell command), use that instead of the default. Otherwise use the default: `bun run build && bun run type-check && bun run lint && bun run knip && bun run test && bun run test:e2e`
-8. **If ANY check fails, fix it before proceeding** — even pre-existing failures. See "Own the Codebase" below.
-9. Update CLAUDE.md files if you discover reusable patterns (see below)
-10. **Only if ALL checks exit 0**, commit code changes (see Git Rules below)
-11. **After committing**, update the PRD to set `passes: true` for the completed story
-12. **After committing**, append your progress to the matching progress file
-13. **STOP.** Do not pick up another story. Your invocation is done. End your response.
+4. **Read the PRD and determine the target project** (see "Determining Your Target Project" below)
+5. **Read the target project's CLAUDE.md** (if one exists) for project-specific conventions and patterns
+6. Work on the current branch (do NOT create or switch branches)
+7. Pick the **highest priority** user story where `passes: false` — you will implement **only this one story** and then stop
+8. Implement that single user story (do NOT continue to the next story after this one)
+9. **Run ALL quality checks using the PRD's verification command** (see "Quality Checks" below)
+10. **If ANY check fails, fix it before proceeding** — even pre-existing failures. See "Own the Codebase" below.
+11. Update CLAUDE.md files if you discover reusable patterns (see below)
+12. **Only if ALL checks exit 0**, commit code changes (see Git Rules below)
+13. **After committing**, update the PRD to set `passes: true` for the completed story
+14. **After committing**, append your progress to the matching progress file
+15. **STOP.** Do not pick up another story. Your invocation is done. End your response.
 
-## Project Context
+## Determining Your Target Project
 
-This is the OpenTabs Platform project — an open-source platform enabling AI agents to interact with web applications through browser-authenticated sessions. It uses:
+This repository contains multiple projects with different build systems and verification suites. The PRD tells you which project you are working on:
 
-- **Language**: TypeScript (strict, ES Modules)
-- **Runtime**: Bun
-- **Build**: `bun run build` (tsc --build + extension bundling), `bun run type-check` (tsc --noEmit)
-- **Quality**: `bun run lint` (ESLint), `bun run knip` (unused code), `bun run test` (unit tests)
-- **Structure**: `platform/*` (mcp-server, browser-extension, plugin-sdk, create-plugin) and `plugins/*` (slack, etc.) — all at the project root
+### PRD Fields
 
-All file paths are relative to the project root (where `.ralph/` lives).
+- **`qualityChecks`** (string, optional): The shell command to run for verification. If present, use this **exactly** instead of any default. Example: `"cd docs && bun run build && bun run type-check && bun run lint && bun run knip"`
+- **`workingDirectory`** (string, optional): The subdirectory containing the target project, relative to the repo root. Example: `"docs"` or `"plugins/slack"`
+
+### How to Use These Fields
+
+1. **Read the PRD first.** Before doing any work, read the PRD JSON and check for `qualityChecks` and `workingDirectory`.
+2. **If `workingDirectory` is set**, the story targets a standalone subproject. Read that directory's `CLAUDE.md`, `package.json`, and any project-specific configuration to understand its conventions. File paths in story notes are relative to the repo root (e.g., `docs/mdx-components.tsx`), but the project's own tooling runs from within the subdirectory.
+3. **If `qualityChecks` is set**, use that command for verification instead of the default suite.
+4. **If neither is set**, the story targets the root monorepo. Use the default verification suite and the root `CLAUDE.md` for conventions.
+
+### Known Project Types
+
+| Target                    | `workingDirectory` | Default `qualityChecks`                                                                                   |
+| ------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------- |
+| Root monorepo (platform/) | _(not set)_        | `bun run build && bun run type-check && bun run lint && bun run knip && bun run test && bun run test:e2e` |
+| Docs site                 | `docs`             | `cd docs && bun run build && bun run type-check && bun run lint && bun run knip`                          |
+| Plugins                   | `plugins/<name>`   | `cd plugins/<name> && bun run build && bun run type-check && bun run lint`                                |
+
+These are examples. Always trust the PRD's `qualityChecks` field over this table. If the PRD specifies a command, use it verbatim.
 
 ## Finding Your Files
 
@@ -40,6 +56,19 @@ The PRD and progress files use a naming convention based on the file name state 
 ```
 
 Use a glob pattern to find the active PRD: `.ralph/prd-*~running.json`
+
+## Quality Checks
+
+**The PRD is the source of truth for verification.** Do not assume which commands to run.
+
+1. Read the PRD's `qualityChecks` field
+2. If `qualityChecks` is set: run that exact command
+3. If `qualityChecks` is NOT set: run the default root monorepo suite:
+   ```bash
+   bun run build && bun run type-check && bun run lint && bun run knip && bun run test && bun run test:e2e
+   ```
+
+**Critical:** Do NOT run the root monorepo's `bun run build` / `bun run type-check` / etc. when working on a standalone subproject. These commands do not cover standalone subprojects and will give you a false green. Conversely, do NOT run a subproject's commands when working on the root monorepo. Always match the verification to the target project as specified in the PRD.
 
 ## Progress Report Format
 
@@ -98,15 +127,6 @@ Before committing, check if any edited files have learnings worth preserving in 
 
 Only update CLAUDE.md if you have **genuinely reusable knowledge** that would help future work in that directory.
 
-## Quality Requirements
-
-- ALL commits must pass the quality checks. If the PRD has a `"qualityChecks"` field, use that command. Otherwise use the default: `bun run build && bun run type-check && bun run lint && bun run knip && bun run test && bun run test:e2e`
-- Do NOT commit broken code
-- Keep changes focused and minimal
-- Follow existing code patterns in the codebase
-- Use arrow function expressions (not function declarations)
-- No TODO/FIXME/HACK comments — if something needs to be done, do it now
-
 ## Own the Codebase — Hard Gate
 
 **You MUST NOT commit code unless ALL quality checks exit 0.** This is a hard gate, not a suggestion.
@@ -121,7 +141,7 @@ If quality checks fail — even on code you did not write — you MUST fix them 
 
 If you cannot fix the failing check within your iteration, do NOT commit your story. Leave it as `passes: false` and document what's blocking in the progress file. A committed story with failing checks is worse than an uncommitted story — it poisons the codebase for all future iterations.
 
-**The verification command must exit 0 end-to-end.** If the PRD has a top-level `"qualityChecks"` field, use that command. Otherwise use the default:
+**The verification command must exit 0 end-to-end.** Use the PRD's `qualityChecks` field if set, otherwise use the default:
 
 ```bash
 bun run build && bun run type-check && bun run lint && bun run knip && bun run test && bun run test:e2e
@@ -150,7 +170,7 @@ git add path/to/file1.ts path/to/file2.ts
 git commit -m "feat: [Story ID] - [Story Title]"
 ```
 
-Steps 10 and 11 (updating the PRD and progress file) must happen **after** the commit, so these files are never in the staging area during a commit.
+Steps 12 and 13 (updating the PRD and progress file) must happen **after** the commit, so these files are never in the staging area during a commit.
 
 ## Stop Condition — CRITICAL
 

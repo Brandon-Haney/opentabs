@@ -1,5 +1,5 @@
 ---
-name: opentabs-ralph
+name: ralph
 description: 'Plan work and generate ralph task files for autonomous execution. Use when the user wants to plan tasks, create a prd, run ralph, or fix a batch of issues. Triggers on: ralph, create tasks, plan this, run ralph, prd.'
 ---
 
@@ -15,33 +15,73 @@ Ralph is a bash script (`.ralph/ralph.sh`) that runs as a long-lived daemon, pol
 
 **PRD files MUST always be written to the root `.ralph/` directory** (the one containing `ralph.sh`). The ralph daemon only watches this single directory — it does not scan subdirectories or other `.ralph/` folders elsewhere in the repo.
 
-Even when the task targets a standalone subproject (like `docs/`), the PRD goes in root `.ralph/`. The `qualityChecks` field in the PRD tells the ralph agent how to verify the work (see "Standalone Subprojects" below).
+Even when the task targets a standalone subproject (like `docs/`), the PRD goes in root `.ralph/`. The `workingDirectory` and `qualityChecks` fields in the PRD tell the ralph agent which project it's working on and how to verify the work.
 
 ---
 
-## Standalone Subprojects
+## Multi-Project Repository
 
-Some directories in the repo are **standalone projects** with their own `package.json`, build system, and tooling — separate from the root monorepo. Currently:
+This repository contains multiple projects with different build systems and verification suites. **Every PRD must target exactly one project.** If work spans multiple projects, create separate PRDs for each.
 
-- **`docs/`** — Next.js + Fumadocs static docs site. Has its own `package.json` with `build`, `type-check`, `lint`, `lint:fix`, `format`, `format:check`, and `knip` scripts. No test scripts.
+### Identifying the Target Project
 
-When planning work for a standalone subproject:
+When the user describes a task, determine which project it targets:
 
-1. **PRD goes in root `.ralph/`** (not in the subproject)
-2. **Add a `"qualityChecks"` field** to the PRD with the subproject-specific verification command. This overrides the default `bun run build && bun run type-check && ...` suite. Example:
-   ```json
-   {
-     "project": "OpenTabs Docs",
-     "qualityChecks": "cd docs && bun run build",
-     "userStories": [...]
-   }
-   ```
-3. **Acceptance criteria** should reference the actual checks that apply, not the root monorepo's full suite. For example, for `docs/` stories use `"cd docs && bun run build passes (next build)"` instead of the default 6-command suite.
-4. **Notes should use paths relative to the repo root** (e.g., `docs/mdx-components.tsx`, not `mdx-components.tsx`) since the ralph agent runs from the project root.
+1. **Check which files/directories the task affects**
+2. **Check if that directory is a standalone subproject** — does it have its own `package.json` that is NOT in the root `workspaces` field? The root workspace only includes `platform/*`.
+3. **If standalone**, read the subproject's `package.json` to discover its available scripts and construct the correct `qualityChecks` command
+4. **If not standalone** (i.e., the work targets `platform/`, `e2e/`, or root configs), it targets the root monorepo — omit `workingDirectory` and `qualityChecks` to use defaults
 
-### How to detect a standalone subproject
+### Setting PRD Fields for Each Project Type
 
-Check if the target directory has its own `package.json` that is NOT listed in the root workspace configuration. If it does, it's standalone and needs a custom `qualityChecks` field. Read the subproject's `package.json` `scripts` to determine which verification commands are available.
+**Root monorepo** (targets `platform/`, `e2e/`, root configs):
+
+```json
+{
+  "project": "OpenTabs Platform",
+  "userStories": [...]
+}
+```
+
+No `workingDirectory` or `qualityChecks` — ralph uses the default suite.
+
+**Docs site** (targets `docs/`):
+
+```json
+{
+  "project": "OpenTabs Docs",
+  "workingDirectory": "docs",
+  "qualityChecks": "cd docs && bun run build && bun run type-check && bun run lint && bun run knip",
+  "userStories": [...]
+}
+```
+
+**Plugins** (targets `plugins/<name>/`):
+
+```json
+{
+  "project": "OpenTabs Plugin — <name>",
+  "workingDirectory": "plugins/<name>",
+  "qualityChecks": "cd plugins/<name> && bun run build && bun run type-check && bun run lint",
+  "userStories": [...]
+}
+```
+
+**For any standalone subproject you haven't seen before:** read its `package.json` scripts to determine which checks are available. Only include checks that the subproject actually defines. Common scripts to look for: `build`, `type-check`, `lint`, `knip`, `test`.
+
+### Acceptance Criteria Must Match the Target Project
+
+Story acceptance criteria must reference the verification commands appropriate for the target project:
+
+- **Root monorepo stories**: `bun run build passes`, `bun run type-check passes`, `bun run lint passes`, `bun run knip passes`, `bun run test passes`, `bun run test:e2e passes`
+- **Docs stories**: `cd docs && bun run build passes`, `cd docs && bun run type-check passes`, `cd docs && bun run lint passes`, `cd docs && bun run knip passes`
+- **Plugin stories**: `cd plugins/<name> && bun run build passes`, `cd plugins/<name> && bun run type-check passes`, `cd plugins/<name> && bun run lint passes`
+
+Do NOT list checks that the target project doesn't have scripts for.
+
+### Notes Must Use Repo-Root-Relative Paths
+
+All file paths in story notes must be relative to the repo root (e.g., `docs/mdx-components.tsx`, not `mdx-components.tsx`), since the ralph agent always runs from the project root.
 
 ---
 
@@ -62,15 +102,29 @@ This skill writes with `~draft` (no timestamp). At publish time, a **shell comma
 ## The Job
 
 1. Receive a feature description or task from the user
-2. Ask 3-5 essential clarifying questions (with lettered options) if the request is ambiguous
-3. Generate the PRD file with `~draft` suffix and NO timestamp (safe from premature pickup)
-4. Publish: use a shell command to rename with the current timestamp (ensures accurate ordering)
+2. **Determine the target project** (see "Identifying the Target Project" above)
+3. Ask 3-5 essential clarifying questions (with lettered options) if the request is ambiguous
+4. Generate the PRD file with `~draft` suffix and NO timestamp (safe from premature pickup)
+5. Publish: use a shell command to rename with the current timestamp (ensures accurate ordering)
 
 **Important:** Do NOT start implementing. Do NOT launch ralph. Just create the PRD file. The ralph daemon (`ralph.sh`) must already be running and will pick up the file automatically.
 
 ---
 
-## Step 1: Clarifying Questions
+## Step 1: Determine Target Project
+
+Before asking questions or writing the PRD:
+
+1. Identify which directories the task affects
+2. Check if the target directory has its own `package.json` outside the root workspace
+3. If standalone: read its `package.json` scripts to build the `qualityChecks` command
+4. If root monorepo: no special fields needed
+
+This step is mandatory. Getting the target project wrong means ralph will run the wrong verification suite.
+
+---
+
+## Step 2: Clarifying Questions
 
 Ask only critical questions where the initial prompt is ambiguous. Skip this step entirely if the request is already specific enough (e.g., a concrete bug fix list). Focus on:
 
@@ -96,7 +150,7 @@ This lets users respond with "1A, 2B" for quick iteration.
 
 ---
 
-## Step 2: Generate PRD File
+## Step 3: Generate PRD File
 
 ### File Naming
 
@@ -108,7 +162,7 @@ Use a short kebab-case objective slug with NO timestamp:
 
 Example: `.ralph/prd-improve-sdk-error-handling~draft.json`
 
-**Do NOT put a timestamp in the draft filename.** The timestamp is added by a shell command at publish time (Step 3). This prevents timestamp inaccuracies from AI model clock drift.
+**Do NOT put a timestamp in the draft filename.** The timestamp is added by a shell command at publish time (Step 4). This prevents timestamp inaccuracies from AI model clock drift.
 
 Keep the objective slug to 3-5 words max.
 
@@ -116,7 +170,7 @@ Keep the objective slug to 3-5 words max.
 
 1. **Write** the PRD to `.ralph/prd-objective-slug~draft.json` (no timestamp)
 2. **Verify** the JSON is valid: `python3 -c "import json; json.load(open('.ralph/prd-objective-slug~draft.json')); print('Valid')"`
-3. **Publish** via shell command (see Step 3)
+3. **Publish** via shell command (see Step 4)
 
 ### PRD Format
 
@@ -124,7 +178,8 @@ Keep the objective slug to 3-5 words max.
 {
   "project": "[Project Name]",
   "description": "[What this batch of work accomplishes]",
-  "qualityChecks": "[Optional — override for standalone subprojects, omit for root monorepo work]",
+  "workingDirectory": "[Optional — subdirectory for standalone subprojects, e.g. 'docs' or 'plugins/slack'. Omit for root monorepo.]",
+  "qualityChecks": "[Optional — shell command for verification. Omit for root monorepo to use default suite.]",
   "userStories": [
     {
       "id": "US-001",
@@ -133,12 +188,7 @@ Keep the objective slug to 3-5 words max.
       "acceptanceCriteria": [
         "Specific verifiable criterion",
         "Another criterion",
-        "bun run build passes",
-        "bun run type-check passes",
-        "bun run lint passes",
-        "bun run knip passes",
-        "bun run test passes",
-        "bun run test:e2e passes"
+        "[verification commands matching the target project]"
       ],
       "priority": 1,
       "passes": false,
@@ -150,12 +200,13 @@ Keep the objective slug to 3-5 words max.
 
 **Fields:**
 
-- `qualityChecks` (optional): A shell command string that overrides the default verification suite. Use this for standalone subprojects (see "Standalone Subprojects" above). Omit this field for work targeting the root monorepo — the ralph agent defaults to `bun run build && bun run type-check && bun run lint && bun run knip && bun run test && bun run test:e2e`.
+- `workingDirectory` (optional): The subdirectory containing the target project, relative to the repo root (e.g., `"docs"`, `"plugins/slack"`). Omit for root monorepo work. The ralph agent uses this to know which project's conventions and CLAUDE.md to read.
+- `qualityChecks` (optional): A shell command string that overrides the default verification suite. Must match the target project's available scripts. Omit for root monorepo work — the ralph agent defaults to `bun run build && bun run type-check && bun run lint && bun run knip && bun run test && bun run test:e2e`.
 - `passes`: MUST be the boolean `false`, not `null` or omitted. Ralph checks `passes == false` to find incomplete stories.
 
 ---
 
-## Step 3: Publish (Rename with Timestamp)
+## Step 4: Publish (Rename with Timestamp)
 
 After writing and validating the PRD, publish it using this exact shell command:
 
@@ -215,16 +266,7 @@ Each criterion must be something the agent can CHECK, not something vague.
 **Good:** "saveConfig call includes secret field", "z.number() params have .min(1)", "Dropdown shows 3 options"
 **Bad:** "Works correctly", "Handles edge cases", "Good UX"
 
-**Always include the verification suite** as the final acceptance criteria for every story. For root monorepo work, use the full suite:
-
-- `bun run build` passes
-- `bun run type-check` passes
-- `bun run lint` passes
-- `bun run knip` passes
-- `bun run test` passes
-- `bun run test:e2e` passes
-
-For standalone subprojects, use the commands from the `qualityChecks` field instead (e.g., `cd docs && bun run build passes` for the docs project). Do not list checks that don't exist in the subproject.
+**Always include the verification suite** as the final acceptance criteria for every story, using commands that match the target project (see "Acceptance Criteria Must Match the Target Project" above).
 
 ### Notes Field
 
@@ -239,13 +281,14 @@ Good notes dramatically increase success rate per iteration.
 
 ---
 
-## Step 4: Confirm and Monitor
+## Step 5: Confirm and Monitor
 
 After publishing the PRD file, tell the user:
 
 1. **PRD file created:** the full path and story count
-2. **Auto-pickup:** the ralph daemon will pick it up automatically (no manual launch needed)
-3. **Monitoring commands:**
+2. **Target project:** which project the PRD targets and what verification commands will be used
+3. **Auto-pickup:** the ralph daemon will pick it up automatically (no manual launch needed)
+4. **Monitoring commands:**
    - **Watch ralph daemon:** `tail -f .ralph/ralph.log`
    - **Check PRD state:** `ls -la .ralph/prd-*.json` (look for `~running` suffix)
    - **Check progress:** `cat .ralph/progress-*.txt`
@@ -263,13 +306,17 @@ Ralph commits code changes only — never ralph's own state files.
 
 ## Checklist Before Publishing
 
+- [ ] **Target project identified** — determined whether this is root monorepo, docs, or a plugin
 - [ ] PRD is in root `.ralph/` (not in a subdirectory)
+- [ ] **`workingDirectory` set** if targeting a standalone subproject (omitted for root monorepo)
+- [ ] **`qualityChecks` set** if targeting a standalone subproject (omitted for root monorepo)
+- [ ] **`qualityChecks` matches the subproject's actual available scripts** (verified by reading its `package.json`)
+- [ ] **Acceptance criteria use the correct project's verification commands** (not the root monorepo's commands for a subproject, or vice versa)
 - [ ] Each story completable in one iteration
 - [ ] Stories ordered by dependency (no story depends on a later story)
 - [ ] Acceptance criteria are verifiable (not vague)
 - [ ] Notes field has implementation hints for non-trivial stories
-- [ ] Verification suite in acceptance criteria matches the project (full suite for root monorepo, `qualityChecks` for standalone subprojects)
-- [ ] `qualityChecks` field set if targeting a standalone subproject
+- [ ] Notes use repo-root-relative file paths
 - [ ] `passes` field is boolean `false` for every story
 - [ ] JSON is valid
 - [ ] File written with `~draft` suffix and NO timestamp in filename

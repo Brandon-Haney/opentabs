@@ -1,5 +1,5 @@
 ---
-name: opentabs-perfect
+name: perfect
 description: 'Systematically improve one aspect of the OpenTabs platform to production-grade quality. Use when the user wants to perfect, harden, polish, or improve a specific area. Triggers on: perfect, improve, harden, polish, make robust, review and improve.'
 ---
 
@@ -104,7 +104,7 @@ A session that finds nothing to improve and reports "this area is already at the
 
 ## The Job
 
-This skill has two phases: **Review** (audit and triage) and **Delegation** (hand off to ralph via the `opentabs-ralph` skill).
+This skill has two phases: **Review** (audit and triage) and **Delegation** (hand off to ralph via the `ralph` skill).
 
 ### Phase 1: Review
 
@@ -117,11 +117,11 @@ This skill has two phases: **Review** (audit and triage) and **Delegation** (han
 
 ### Phase 2: Delegate to Ralph
 
-7. **Load the `opentabs-ralph` skill** and use it to generate a timestamped PRD file from the triaged findings
+7. **Load the `ralph` skill** and use it to generate a timestamped PRD file from the triaged findings
 8. Each finding that passed triage becomes a user story in the PRD
 9. The ralph daemon (`ralph.sh`) automatically picks up the ready PRD file — no manual launch needed
 
-**Critical:** Do NOT implement fixes directly. This skill is a review and planning skill. After completing the audit and triage (Phase 1), always hand off to `opentabs-ralph` (Phase 2) to create the PRD file. The ralph daemon handles execution autonomously.
+**Critical:** Do NOT implement fixes directly. This skill is a review and planning skill. After completing the audit and triage (Phase 1), always hand off to `ralph` (Phase 2) to create the PRD file. The ralph daemon handles execution autonomously.
 
 **Important:** Do NOT redesign or rearchitect what is already well-designed. Do identify everything that falls short of the highest standard -- whether that is a bug, poor code quality, a fragile pattern, or a missing abstraction. But every finding must represent a **genuine defect** -- the kind of issue that ends the conversation, not the kind that starts a new one.
 
@@ -131,10 +131,12 @@ This skill has two phases: **Review** (audit and triage) and **Delegation** (han
 
 When the user says "improve X" or "perfect X", first determine exactly which files and modules constitute X.
 
-1. **Map the area**: identify every file that participates in the feature
-2. **Read all of them**: do not skim -- read every line of every relevant file
-3. **Trace the data flow**: understand how data enters, transforms, and exits the feature
-4. **Identify the boundaries**: what does this feature depend on? What depends on it?
+1. **Identify the target project**: Does the area being audited belong to the root monorepo (`platform/`, `e2e/`), a standalone subproject (`docs/`), or a plugin (`plugins/<name>/`)? A directory is standalone if it has its own `package.json` that is NOT in the root `workspaces` field (`platform/*`).
+2. **If targeting a standalone subproject**: Read its `package.json` to determine available scripts. The PRD you generate must include `workingDirectory` and `qualityChecks` fields matching this subproject's tooling.
+3. **Map the area**: identify every file that participates in the feature
+4. **Read all of them**: do not skim -- read every line of every relevant file
+5. **Trace the data flow**: understand how data enters, transforms, and exits the feature
+6. **Identify the boundaries**: what does this feature depend on? What depends on it?
 
 Do not skip this step. Do not start making changes after reading one file. The audit requires complete understanding.
 
@@ -251,7 +253,7 @@ If the answer is yes, include it as a finding. If the code is already excellent 
 
 ## Step 4: Generate Ralph Tasks
 
-After triaging findings, **do not implement fixes directly**. Instead, load the `opentabs-ralph` skill and convert each triaged finding into a ralph user story.
+After triaging findings, **do not implement fixes directly**. Instead, load the `ralph` skill and convert each triaged finding into a ralph user story.
 
 For each triaged defect, the user story should include:
 
@@ -283,7 +285,7 @@ If a finding involves a judgment call between two valid approaches and you canno
 - **No speculative additions**: do not create stories for code "in case" something might be needed later. Only create stories for things that genuinely fall short now.
 - **No half-measures**: if a fix is worth making, the story must cover it completely. Do not create stories for partial improvements that require follow-up stories.
 
-After generating the PRD via the `opentabs-ralph` skill, the ralph daemon picks it up automatically.
+After generating the PRD via the `ralph` skill, the ralph daemon picks it up automatically.
 
 ---
 
@@ -298,20 +300,17 @@ Verify the audit is thorough and the ralph task file is well-formed:
 - Every file in the target area was read (not skimmed)
 - Every finding is triaged against the convergence test
 - The PRD stories are right-sized (one iteration each) and ordered by dependency
+- **The PRD targets the correct project** — `workingDirectory` and `qualityChecks` are set for standalone subprojects, omitted for root monorepo work
+- **Acceptance criteria reference the correct verification commands** — not root monorepo commands for a subproject, or vice versa
 
 ### During Execution (ralph daemon)
 
-Each ralph iteration runs the full verification suite as part of its acceptance criteria:
+Each ralph iteration runs the verification suite specified in the PRD. The commands depend on the target project:
 
-```bash
-bun run build
-bun run type-check
-bun run lint
-bun run knip
-bun run test
-```
+- **Root monorepo**: `bun run build && bun run type-check && bun run lint && bun run knip && bun run test && bun run test:e2e`
+- **Standalone subprojects**: The command from the PRD's `qualityChecks` field (e.g., `cd docs && bun run build && bun run type-check && bun run lint && bun run knip` for docs)
 
-Every command must exit 0. Ralph handles this automatically via the acceptance criteria in each story.
+Every command must exit 0. Ralph handles this automatically via the acceptance criteria in each story and the PRD's `qualityChecks` field.
 
 ---
 
@@ -344,7 +343,7 @@ Issues found but not suitable for ralph stories in this session (too large, need
 
 ### Next Step
 
-After presenting the report, load the `opentabs-ralph` skill and generate the timestamped PRD file from the findings. The ralph daemon picks it up automatically — no manual launch needed.
+After presenting the report, load the `ralph` skill and generate the timestamped PRD file from the findings. The ralph daemon picks it up automatically — no manual launch needed.
 
 ---
 
@@ -455,6 +454,7 @@ These are the specific behaviors this skill exists to prevent:
 
 ## Checklist Before Handing Off to Ralph
 
+- [ ] **Target project identified** — determined whether findings target root monorepo, docs, a plugin, or another standalone subproject
 - [ ] Read every file in the target area (not skimmed)
 - [ ] Audited against all quality dimensions
 - [ ] Every finding triaged: genuine quality gap or lateral move?
@@ -468,7 +468,9 @@ These are the specific behaviors this skill exists to prevent:
 - [ ] Results include both findings and confirmed-excellent areas
 - [ ] **"Already at Standard" list is comprehensive** — covers every sub-area reviewed, giving future sessions clear signal on what not to re-examine
 - [ ] **Did NOT implement fixes directly** — all fixes are delegated to ralph via PRD file
-- [ ] **Loaded `opentabs-ralph` skill** and generated timestamped PRD file from findings
+- [ ] **Loaded `ralph` skill** and generated timestamped PRD file from findings
+- [ ] **PRD has correct `workingDirectory` and `qualityChecks`** if targeting a standalone subproject (omitted for root monorepo)
+- [ ] **Acceptance criteria use the correct project's verification commands** — not root monorepo commands for a subproject
 - [ ] Each ralph story is right-sized (completable in one iteration)
 - [ ] Ralph stories are ordered by dependency (no story depends on a later story)
 - [ ] Each story has specific acceptance criteria and implementation hints in the notes field

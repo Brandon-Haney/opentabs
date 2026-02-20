@@ -385,4 +385,4 @@ const stopFileWatching = (state: ServerState): void => {
 };
 
 export type { FileWatcherCallbacks };
-export { startConfigWatching, startFileWatching, stopFileWatching };
+export { handleManifestChange, startConfigWatching, startFileWatching, stopFileWatching };

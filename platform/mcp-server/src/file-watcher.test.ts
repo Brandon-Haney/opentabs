@@ -1,4 +1,4 @@
-import { startConfigWatching, startFileWatching, stopFileWatching } from './file-watcher.js';
+import { handleManifestChange, startConfigWatching, startFileWatching, stopFileWatching } from './file-watcher.js';
 import { createState } from './state.js';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -331,5 +331,182 @@ describe('config file watcher', () => {
 
     // The callback should NOT have executed because the generation changed
     expect(callCount).toBe(0);
+  });
+});
+
+// ---- handleManifestChange helpers ----
+
+/**
+ * Build a valid opentabs-plugin.json manifest JSON string for pluginName.
+ * pluginName is the short name (e.g. "test-plugin"); manifest name becomes
+ * "opentabs-plugin-<pluginName>".
+ */
+const makeManifestJson = (pluginName: string, overrides: Record<string, unknown> = {}): string =>
+  JSON.stringify({
+    name: `opentabs-plugin-${pluginName}`,
+    version: '2.0.0',
+    displayName: 'Test Plugin Updated',
+    description: 'An updated plugin for unit testing',
+    url_patterns: ['https://test.example.com/*'],
+    tools: [
+      {
+        name: 'do_something',
+        displayName: 'Do Something',
+        description: 'Does something useful',
+        icon: 'wrench',
+        input_schema: { type: 'object' },
+        output_schema: { type: 'object' },
+      },
+    ],
+    adapterHash: 'manifest-hash-000',
+    ...overrides,
+  });
+
+/** 64-char hex string to use as an embedded adapter hash */
+const EMBEDDED_HASH = 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890';
+
+/** Build an IIFE string that contains the embedded hash-setter snippet */
+const makeIifeWithHash = (hash = EMBEDDED_HASH): string => `(function(){/* adapter */})();a.__adapterHash="${hash}";`;
+
+describe('handleManifestChange', () => {
+  let tmpDir: string;
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('successful manifest update modifies plugin state', async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'hmchange-'));
+    const pluginDir = join(tmpDir, 'test-plugin');
+    mkdirSync(join(pluginDir, 'dist'), { recursive: true });
+    writeFileSync(join(pluginDir, 'opentabs-plugin.json'), makeManifestJson('test-plugin'));
+    writeFileSync(join(pluginDir, 'dist', 'adapter.iife.js'), makeIifeWithHash());
+
+    const state = createState();
+    state.plugins.set('test-plugin', makePlugin({ adapterHash: 'old-hash' }));
+    let manifestChangedFor = '';
+    const callbacks = {
+      ...noopCallbacks,
+      onManifestChanged: (name: string) => {
+        manifestChangedFor = name;
+      },
+    };
+
+    await handleManifestChange(state, 'test-plugin', pluginDir, callbacks);
+
+    const plugin = state.plugins.get('test-plugin');
+    expect(plugin?.version).toBe('2.0.0');
+    expect(plugin?.displayName).toBe('Test Plugin Updated');
+    expect(plugin?.urlPatterns).toEqual(['https://test.example.com/*']);
+    expect(manifestChangedFor).toBe('test-plugin');
+  });
+
+  test('manifest file not found logs warning and does not crash', async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'hmchange-'));
+    const pluginDir = join(tmpDir, 'test-plugin');
+    mkdirSync(pluginDir, { recursive: true });
+    // No opentabs-plugin.json written
+
+    const state = createState();
+    state.plugins.set('test-plugin', makePlugin());
+    let onManifestChangedCalled = false;
+    const callbacks = {
+      ...noopCallbacks,
+      onManifestChanged: () => {
+        onManifestChangedCalled = true;
+      },
+    };
+
+    await handleManifestChange(state, 'test-plugin', pluginDir, callbacks);
+    expect(onManifestChangedCalled).toBe(false);
+  });
+
+  test('plugin name mismatch logs warning and skips update', async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'hmchange-'));
+    const pluginDir = join(tmpDir, 'test-plugin');
+    mkdirSync(pluginDir, { recursive: true });
+    // Manifest name says "different-name" but we pass pluginName "test-plugin"
+    writeFileSync(join(pluginDir, 'opentabs-plugin.json'), makeManifestJson('different-name'));
+
+    const state = createState();
+    state.plugins.set('test-plugin', makePlugin({ version: '1.0.0' }));
+    let onManifestChangedCalled = false;
+    const callbacks = {
+      ...noopCallbacks,
+      onManifestChanged: () => {
+        onManifestChangedCalled = true;
+      },
+    };
+
+    await handleManifestChange(state, 'test-plugin', pluginDir, callbacks);
+
+    // Plugin version should remain unchanged
+    expect(state.plugins.get('test-plugin')?.version).toBe('1.0.0');
+    expect(onManifestChangedCalled).toBe(false);
+  });
+
+  test('all URL patterns invalid after filtering skips update', async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'hmchange-'));
+    const pluginDir = join(tmpDir, 'test-plugin');
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(
+      join(pluginDir, 'opentabs-plugin.json'),
+      makeManifestJson('test-plugin', { url_patterns: ['not-a-valid-pattern'] }),
+    );
+
+    const state = createState();
+    state.plugins.set('test-plugin', makePlugin({ version: '1.0.0' }));
+    let onManifestChangedCalled = false;
+    const callbacks = {
+      ...noopCallbacks,
+      onManifestChanged: () => {
+        onManifestChangedCalled = true;
+      },
+    };
+
+    await handleManifestChange(state, 'test-plugin', pluginDir, callbacks);
+
+    // Plugin should not be updated
+    expect(state.plugins.get('test-plugin')?.version).toBe('1.0.0');
+    expect(onManifestChangedCalled).toBe(false);
+  });
+
+  test('plugin not in state (stale callback) skips silently', async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'hmchange-'));
+    const pluginDir = join(tmpDir, 'test-plugin');
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(join(pluginDir, 'opentabs-plugin.json'), makeManifestJson('test-plugin'));
+
+    // State has no plugin registered
+    const state = createState();
+    let onManifestChangedCalled = false;
+    const callbacks = {
+      ...noopCallbacks,
+      onManifestChanged: () => {
+        onManifestChangedCalled = true;
+      },
+    };
+
+    await handleManifestChange(state, 'test-plugin', pluginDir, callbacks);
+    expect(onManifestChangedCalled).toBe(false);
+  });
+
+  test('IIFE re-read updates adapterHash from embedded hash-setter', async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'hmchange-'));
+    const pluginDir = join(tmpDir, 'test-plugin');
+    mkdirSync(join(pluginDir, 'dist'), { recursive: true });
+    writeFileSync(
+      join(pluginDir, 'opentabs-plugin.json'),
+      makeManifestJson('test-plugin', { adapterHash: 'manifest-hash-111' }),
+    );
+    writeFileSync(join(pluginDir, 'dist', 'adapter.iife.js'), makeIifeWithHash(EMBEDDED_HASH));
+
+    const state = createState();
+    state.plugins.set('test-plugin', makePlugin({ adapterHash: 'old-hash' }));
+
+    await handleManifestChange(state, 'test-plugin', pluginDir, noopCallbacks);
+
+    // The embedded hash from the IIFE should override the manifest's adapterHash
+    expect(state.plugins.get('test-plugin')?.adapterHash).toBe(EMBEDDED_HASH);
   });
 });

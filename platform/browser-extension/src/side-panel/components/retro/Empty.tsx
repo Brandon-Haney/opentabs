@@ -36,7 +36,7 @@ const EmptyTitle = ({ className, ...props }: IEmptyProps) => (
 EmptyTitle.displayName = 'Empty.Title';
 
 const EmptySeparator = ({ className, ...props }: IEmptyProps) => (
-  <div role="separator" className={cn('bg-primary h-1 w-full', className)} {...props} />
+  <div role="separator" className={cn('bg-primary h-1 w-16', className)} {...props} />
 );
 EmptySeparator.displayName = 'Empty.Separator';
 

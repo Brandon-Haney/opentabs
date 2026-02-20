@@ -100,7 +100,7 @@ Only update CLAUDE.md if you have **genuinely reusable knowledge** that would he
 
 ## Quality Requirements
 
-- ALL commits must pass: `bun run build && bun run type-check && bun run lint && bun run knip && bun run test && bun run test:e2e`
+- ALL commits must pass the quality checks. If the PRD has a `"qualityChecks"` field, use that command. Otherwise use the default: `bun run build && bun run type-check && bun run lint && bun run knip && bun run test && bun run test:e2e`
 - Do NOT commit broken code
 - Keep changes focused and minimal
 - Follow existing code patterns in the codebase

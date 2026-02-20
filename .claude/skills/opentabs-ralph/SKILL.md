@@ -23,7 +23,7 @@ Even when the task targets a standalone subproject (like `docs/`), the PRD goes 
 
 Some directories in the repo are **standalone projects** with their own `package.json`, build system, and tooling — separate from the root monorepo. Currently:
 
-- **`docs/`** — Next.js + Fumadocs static docs site. Has its own `package.json` with `bun run build` (runs `next build`). No lint, knip, type-check, or test scripts.
+- **`docs/`** — Next.js + Fumadocs static docs site. Has its own `package.json` with `build`, `type-check`, `lint`, `lint:fix`, `format`, `format:check`, and `knip` scripts. No test scripts.
 
 When planning work for a standalone subproject:
 

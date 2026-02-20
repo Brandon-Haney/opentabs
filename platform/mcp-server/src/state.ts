@@ -156,6 +156,8 @@ export interface ServerState {
   mtimeLastPollAt: number | null;
   /** Running count of times mtime polling detected a change that fs.watch missed */
   mtimePollDetections: number;
+  /** Timestamps (ms since epoch) of recent mtime poll detections — used for stale watcher warning */
+  mtimePollDetectionTimestamps: number[];
 }
 
 /** Increment when changing the type of an existing ServerState field */
@@ -189,6 +191,7 @@ export const createState = (): ServerState => ({
   mtimePollTimerId: null,
   mtimeLastPollAt: null,
   mtimePollDetections: 0,
+  mtimePollDetectionTimestamps: [],
 });
 
 /** Generate a cryptographically random JSON-RPC request ID */

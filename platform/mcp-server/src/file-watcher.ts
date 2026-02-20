@@ -33,6 +33,15 @@ import type { FSWatcher } from 'node:fs';
 /** Polling interval for mtime-based fallback detection (ms) */
 const MTIME_POLL_INTERVAL_MS = 30_000;
 
+/** Number of polling detections within the window that triggers a stale-watcher warning */
+const STALE_WATCHER_THRESHOLD = 3;
+
+/** Time window (ms) for counting polling detections toward a stale-watcher warning */
+const STALE_WATCHER_WINDOW_MS = 5 * 60 * 1000;
+
+/** Maximum number of detection timestamps to keep (prevents unbounded growth) */
+const MAX_DETECTION_TIMESTAMPS = 20;
+
 /** Callbacks for file watcher events */
 interface FileWatcherCallbacks {
   /** Called when a plugin's manifest changes (tools may have changed) */
@@ -93,6 +102,32 @@ const recordMtime = (entry: FileWatcherEntry, filePath: string): void => {
   const mtime = getFileMtimeMs(filePath);
   if (mtime !== null) {
     entry.lastSeenMtimes.set(filePath, mtime);
+  }
+};
+
+/**
+ * Record a mtime poll detection and emit a warning if detections exceed the
+ * threshold within the rolling window. Keeps the timestamps array bounded.
+ */
+const recordPollDetection = (state: ServerState): void => {
+  const now = Date.now();
+  state.mtimePollDetections++;
+  state.mtimePollDetectionTimestamps.push(now);
+
+  // Trim to bounded size
+  if (state.mtimePollDetectionTimestamps.length > MAX_DETECTION_TIMESTAMPS) {
+    state.mtimePollDetectionTimestamps = state.mtimePollDetectionTimestamps.slice(-MAX_DETECTION_TIMESTAMPS);
+  }
+
+  // Count detections within the window
+  const windowStart = now - STALE_WATCHER_WINDOW_MS;
+  const recentDetections = state.mtimePollDetectionTimestamps.filter(ts => ts >= windowStart);
+
+  // Emit warning exactly when crossing the threshold (not on every subsequent detection)
+  if (recentDetections.length === STALE_WATCHER_THRESHOLD) {
+    log.warn(
+      `File watchers may be stale — detected ${STALE_WATCHER_THRESHOLD} changes via polling that fs.watch missed. Consider restarting the MCP server.`,
+    );
   }
 };
 
@@ -528,7 +563,7 @@ const startMtimePolling = (state: ServerState, callbacks: FileWatcherCallbacks):
         log.info(
           `Mtime poll: Detected change to ${manifestPath} (old=${lastManifestMtime}, new=${manifestMtime}) — fs.watch may be stale`,
         );
-        state.mtimePollDetections++;
+        recordPollDetection(state);
         entry.lastSeenMtimes.set(manifestPath, manifestMtime);
         if (isPending) {
           void handlePendingPluginChange(state, entry.pluginDir, callbacks);
@@ -544,7 +579,7 @@ const startMtimePolling = (state: ServerState, callbacks: FileWatcherCallbacks):
         log.info(
           `Mtime poll: Detected change to ${iifePath} (old=${lastIifeMtime}, new=${iifeMtime}) — fs.watch may be stale`,
         );
-        state.mtimePollDetections++;
+        recordPollDetection(state);
         entry.lastSeenMtimes.set(iifePath, iifeMtime);
         if (isPending) {
           void handlePendingPluginChange(state, entry.pluginDir, callbacks);
@@ -561,7 +596,7 @@ const startMtimePolling = (state: ServerState, callbacks: FileWatcherCallbacks):
       log.info(
         `Mtime poll: Detected change to ${configPath} (old=${state.configLastSeenMtime}, new=${configMtime}) — fs.watch may be stale`,
       );
-      state.mtimePollDetections++;
+      recordPollDetection(state);
       state.configLastSeenMtime = configMtime;
       callbacks.onConfigChanged();
     }

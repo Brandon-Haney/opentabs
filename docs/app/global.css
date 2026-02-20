@@ -179,6 +179,25 @@ body {
   --fd-header-height: 3.5rem;
 }
 
+/* Custom 5-column grid for desktop: header spans full width, sidebar and TOC flank the main
+ * content. Applied only at md+ so Fumadocs' responsive behavior (sidebar drawer, TOC popover)
+ * takes over on mobile, giving the main content full width. */
+@media (min-width: 768px) {
+  #nd-docs-layout {
+    grid-template:
+      'header header header header header'
+      'sidebar sidebar toc-popover toc toc'
+      'sidebar sidebar main toc toc' 1fr / minmax(min-content, 1fr) var(--fd-sidebar-col)
+      minmax(
+        0,
+        calc(
+          var(--fd-layout-width, 97rem) - var(--fd-sidebar-width) - var(--fd-toc-width)
+        )
+      )
+      var(--fd-toc-width) minmax(min-content, 1fr);
+  }
+}
+
 /* ===== RetroUI Navbar / Sidebar Overrides ===== */
 
 /* Desktop sidebar: 2px right border, solid bg-background (override fd-card) */

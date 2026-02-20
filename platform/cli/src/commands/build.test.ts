@@ -1,7 +1,7 @@
 import { convertToolSchemas, formatBytes, formatTimestamp, validatePlugin } from './build.js';
 import { describe, expect, test } from 'bun:test';
 import { z } from 'zod';
-import type { OpenTabsPlugin, ToolDefinition } from '@opentabs-dev/plugin-sdk';
+import type { LucideIconName, OpenTabsPlugin, ToolDefinition } from '@opentabs-dev/plugin-sdk';
 
 /**
  * Creates a minimal valid plugin for testing. Override fields as needed.
@@ -189,6 +189,44 @@ describe('validatePlugin', () => {
     test('produces two errors for tool with both empty name and empty description', () => {
       const errors = validatePlugin(makePlugin({ tools: [makeTool({ name: '', description: '' })] }));
       expect(errors.filter(e => e.includes('name') || e.includes('description'))).toHaveLength(2);
+    });
+  });
+
+  // -- Plugin displayName validation --
+  describe('displayName', () => {
+    test('empty displayName string produces a validation error', () => {
+      const errors = validatePlugin(makePlugin({ displayName: '' }));
+      expect(errors.some(e => e.toLowerCase().includes('displayname'))).toBe(true);
+    });
+
+    test('valid displayName passes validation', () => {
+      expect(validatePlugin(makePlugin({ displayName: 'My Plugin' }))).toEqual([]);
+    });
+  });
+
+  // -- Tool icon and displayName validation --
+  describe('tools — icon', () => {
+    test('invalid icon name (not in LUCIDE_ICON_NAMES) produces a validation error', () => {
+      // Cast needed because icon is typed as LucideIconName — we're intentionally passing an invalid value
+      const errors = validatePlugin(
+        makePlugin({ tools: [makeTool({ icon: 'nonexistent-icon-name' as unknown as LucideIconName })] }),
+      );
+      expect(errors.some(e => e.includes('invalid icon'))).toBe(true);
+    });
+
+    test('valid icon name passes validation', () => {
+      expect(validatePlugin(makePlugin({ tools: [makeTool({ icon: 'wrench' })] }))).toEqual([]);
+    });
+  });
+
+  describe('tools — displayName', () => {
+    test('tool with empty displayName produces a validation error', () => {
+      const errors = validatePlugin(makePlugin({ tools: [makeTool({ displayName: '' })] }));
+      expect(errors.some(e => e.includes('missing a displayName'))).toBe(true);
+    });
+
+    test('tool with valid displayName passes validation', () => {
+      expect(validatePlugin(makePlugin({ tools: [makeTool({ displayName: 'Send Message' })] }))).toEqual([]);
     });
   });
 

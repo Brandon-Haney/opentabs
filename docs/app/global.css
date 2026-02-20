@@ -149,6 +149,7 @@
 
 body {
   font-family: var(--font-sans);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* RetroUI prose link styling — applies to all links in docs content */
@@ -169,6 +170,11 @@ body {
 /* Inside the DocsLayout grid (#nd-docs-layout), the GlobalHeader occupies the full-width
  * "header" grid area (row 1, all 5 columns). The grid template is overridden in
  * app/docs/layout.tsx to give the header its own dedicated row above the sidebar. */
+#nd-global-header {
+  padding-left: max(1rem, env(safe-area-inset-left, 1rem));
+  padding-right: max(1rem, env(safe-area-inset-right, 1rem));
+}
+
 #nd-docs-layout > #nd-global-header {
   grid-area: header;
 }

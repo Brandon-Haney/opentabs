@@ -1,5 +1,6 @@
 import { Provider } from '@/components/provider';
 import { Archivo_Black, Space_Grotesk, Space_Mono } from 'next/font/google';
+import type { Viewport } from 'next';
 import type { ReactNode } from 'react';
 import './global.css';
 
@@ -30,3 +31,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     </html>
   );
 }
+
+export const viewport: Viewport = {
+  viewportFit: 'cover',
+};

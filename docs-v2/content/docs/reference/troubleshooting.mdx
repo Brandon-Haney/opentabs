@@ -6,65 +6,43 @@ lastUpdated: 2026-02-20
 
 ## Extension not connecting
 
-**Symptom**: The Chrome extension side panel shows "Disconnected" or the `/health` endpoint reports `"extensionConnected": false`.
+**Symptom**: The side panel shows "Disconnected" or `/health` reports `"extensionConnected": false`.
 
-**Checks**:
-
-1. **Server running?** — Verify the MCP server is up:
-
-   ```bash
-   curl http://localhost:9515/health
-   ```
-
-   If the request fails, start the server with `opentabs dev` or `bun --hot platform/mcp-server/dist/index.js`.
-
-2. **Correct port?** — The default port is `9515`. If you're using a custom port (`PORT` env var or `--port` flag), ensure the extension is configured for the same port.
-
-3. **Extension loaded?** — Open `chrome://extensions` and verify the OpenTabs extension is loaded and enabled. If it shows errors, click the error link for details.
-
-4. **Extension version match?** — Run `opentabs doctor` to compare the installed extension version against the CLI version. A mismatch can cause connection issues. Rebuild with `bun run build` and reload the extension.
-
-5. **Secret mismatch?** — The extension fetches the auth secret via `/ws-info` on first connect. If the server's secret changed (e.g., after a config reset), the extension may have a stale secret. Close and reopen the side panel to trigger a reconnect.
+1. **Server running?** — `curl http://localhost:9515/health`. If it fails, start with `opentabs dev`.
+2. **Correct port?** — Default is 9515. If using a custom port, make sure the extension is configured for the same one.
+3. **Extension loaded?** — Open `chrome://extensions` and verify OpenTabs is loaded and enabled. Click any error link for details.
+4. **Version mismatch?** — Run `opentabs doctor`. A mismatch between the installed extension and CLI version can cause failures. Rebuild with `bun run build` and reload the extension.
+5. **Stale secret?** — The extension fetches the auth secret via `/ws-info` on first connect. If the secret changed, close and reopen the side panel to reconnect.
 
 ## Extension reconnection delays
 
 **Symptom**: After the server restarts, the extension takes several seconds to reconnect.
 
-The extension uses exponential backoff for WebSocket reconnection: 1s, 2s, 4s, 8s, up to a 30-second cap. The backoff resets to 1s after a successful connection. A keepalive ping runs every 15 seconds — if the pong doesn't arrive within 5 seconds, the connection is considered dead and reconnection starts.
-
-**To speed up reconnection**: Close and reopen the extension side panel, which triggers an immediate reconnect attempt.
+The extension uses exponential backoff: 1s, 2s, 4s, 8s, up to a 30-second cap. Backoff resets after a successful connection. To force an immediate reconnect, close and reopen the side panel.
 
 ## Plugin showing as "unavailable"
 
-**Symptom**: The plugin appears in the side panel but shows as "unavailable" rather than "ready".
+**Symptom**: The plugin appears in the side panel but shows as "unavailable".
 
-A plugin is **unavailable** when a matching Chrome tab exists (URL matches the plugin's `urlPatterns`) but the adapter's `isReady()` function returns `false`. This usually means the user is not authenticated in the target web app.
+A plugin is unavailable when a matching tab exists but `isReady()` returns false — usually because the user is not logged in.
 
-**Solutions**:
-
-1. **Log in** — Open the target web app in Chrome and sign in. The extension re-probes `isReady()` on tab navigation and activation events.
-2. **Refresh the tab** — Sometimes the adapter needs a fresh page load to detect authentication state.
-3. **Check isReady() logic** — If you're developing a plugin, verify that `isReady()` checks the correct authentication signal (localStorage token, DOM element, cookie, etc.). The probe has a 5-second timeout — if `isReady()` doesn't respond in time, the tab is reported as unavailable.
+1. **Log in** — Sign into the target web app. The extension re-probes `isReady()` on navigation and tab events.
+2. **Refresh the tab** — A fresh page load may be needed to detect the authentication state.
+3. **Check isReady() logic** — Verify it checks the right signal (localStorage token, DOM element, cookie). The probe has a 5-second timeout.
 
 ## Plugin showing as "closed"
 
 **Symptom**: The plugin shows as "closed" in the side panel or MCP tool list.
 
-A plugin is **closed** when no Chrome tab matches its URL patterns. The extension uses `chrome.tabs.query({url: pattern})` to find matching tabs.
+A plugin is closed when no Chrome tab matches its URL patterns.
 
-**Solutions**:
-
-1. **Open the target web app** — Navigate to the URL that matches the plugin's `urlPatterns` (e.g., open `https://app.slack.com` for the Slack plugin).
-2. **Check URL patterns** — Verify the plugin's `package.json` `opentabs.urlPatterns` field has the correct patterns. The patterns use [Chrome match pattern syntax](https://developer.chrome.com/docs/extensions/develop/concepts/match-patterns).
-3. **Multiple windows** — The extension searches across all Chrome windows, not just the focused one.
+1. **Open the target web app** — Navigate to a URL matching the plugin's `urlPatterns`.
+2. **Check URL patterns** — Verify the `opentabs.urlPatterns` field in `package.json` uses valid [Chrome match pattern syntax](https://developer.chrome.com/docs/extensions/develop/concepts/match-patterns).
+3. **Multiple windows** — The extension searches across all Chrome windows.
 
 ## Tool dispatch timeout
 
-**Symptom**: Tool calls fail with a timeout error after approximately 30 seconds.
-
-The MCP server has a 30-second dispatch timeout. The extension enforces a 25-second script execution timeout (deliberately 5 seconds shorter to guarantee a response before the server times out).
-
-**Common causes**:
+**Symptom**: Tool calls fail after ~30 seconds.
 
 <Table>
   <Table.Header>
@@ -75,116 +53,73 @@ The MCP server has a 30-second dispatch timeout. The extension enforces a 25-sec
   </Table.Header>
   <Table.Body>
     <Table.Row>
-      <Table.Cell className="font-medium">`handle()` function takes too long</Table.Cell>
-      <Table.Cell>Optimize the tool's adapter code. Break long operations into multiple tool calls.</Table.Cell>
+      <Table.Cell className="font-medium">handle() takes too long</Table.Cell>
+      <Table.Cell>Optimize the adapter code. Break long operations into multiple tool calls.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">Tab unresponsive or crashed</Table.Cell>
-      <Table.Cell>Refresh the target tab. Check Chrome's task manager (`Shift+Esc`) for hung tabs.</Table.Cell>
+      <Table.Cell>Refresh the target tab. Check Chrome's task manager (Shift+Esc) for hung tabs.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">Extension disconnected mid-call</Table.Cell>
       <Table.Cell>The server detects this and returns an error. Reconnect the extension.</Table.Cell>
     </Table.Row>
     <Table.Row>
-      <Table.Cell className="font-medium">Network request in `handle()` stalled</Table.Cell>
-      <Table.Cell>Add timeout logic to `fetch()` calls within the adapter's `handle()` function.</Table.Cell>
+      <Table.Cell className="font-medium">Network request in handle() stalled</Table.Cell>
+      <Table.Cell>Add timeouts to fetch() calls inside the adapter.</Table.Cell>
     </Table.Row>
   </Table.Body>
 </Table>
 
 ## Hot reload not working
 
-**Symptom**: After running `bun run build`, the MCP server does not pick up the changes. The `/health` endpoint's `reloadCount` stays the same.
+**Symptom**: After `bun run build`, the server doesn't pick up changes. The `/health` endpoint's `reloadCount` stays the same.
 
-The MCP server runs under `bun --hot`, which watches compiled `.js` files in the `dist/` directory. Known issue: Bun's file watcher can go stale on long-running processes (22+ hours).
+Bun's file watcher can go stale on long-running processes (22+ hours).
 
-**Solutions**:
-
-1. **Check uptime** — Fetch `/health` and check the `uptime` field. If the server has been running for 22+ hours, restart it.
-2. **Restart the server** — Stop the server process and start it again:
-   ```bash
-   # If using opentabs dev
-   # Ctrl+C to stop, then:
-   opentabs dev
-   ```
-3. **Verify the build succeeded** — Ensure `bun run build` (or `tsc --build`) completed without errors. If TypeScript has errors, no `.js` files change and hot reload has nothing to detect.
+1. **Check uptime** — Fetch `/health` and check the `uptime` field. If 22+ hours, restart the server.
+2. **Restart**: `Ctrl+C` then `opentabs dev`
+3. **Verify the build** — Ensure `bun run build` completed without errors. TypeScript errors mean no `.js` files changed.
 
 ## Extension changes not taking effect
 
-**Symptom**: After modifying Chrome extension source code and rebuilding, the extension behaves as before.
+**Symptom**: After modifying extension source and rebuilding, behavior is unchanged.
 
-The Chrome extension does **not** auto-reload. Unlike the MCP server (which uses `bun --hot`), extension changes require a manual reload step.
+The Chrome extension does not auto-reload. After `bun run build`:
 
-**Steps**:
-
-1. Build: `bun run build`
-2. Open `chrome://extensions`
-3. Find the OpenTabs extension card
-4. Click the circular refresh icon on the card
-5. Close and reopen the side panel (if it was open)
+1. Open `chrome://extensions`
+2. Find the OpenTabs card and click the circular refresh icon
+3. Close and reopen the side panel
 
 ## Plugin changes not picked up
 
-**Symptom**: After modifying and rebuilding a plugin, the MCP server still serves the old tool definitions.
+**Symptom**: After rebuilding a plugin, the server still serves old tool definitions.
 
-The MCP server's file watcher monitors local plugin directories for changes to `dist/tools.json` and `dist/adapter.iife.js`. On detection, it re-reads the files and sends a `plugin.update` to the extension.
+The file watcher monitors `dist/tools.json` and `dist/adapter.iife.js`. If auto-detection fails:
 
-**If auto-detection fails**:
-
-1. **Trigger manually** — Run `opentabs reload` or send `POST /reload` to the server.
-2. **Check file watcher status** — Fetch `/health` and check the `fileWatcher` object:
-   ```bash
-   curl -s http://localhost:9515/health | jq .fileWatcher
-   ```
-   A `pollDetections` count greater than 0 indicates the file watcher fell back to polling (a sign that the native `fs.watch` went stale).
-3. **Verify the build** — Ensure the plugin build completed: check that `dist/tools.json` and `dist/adapter.iife.js` exist in the plugin directory.
+1. **Trigger manually** — `opentabs reload`
+2. **Check file watcher** — `curl -s http://localhost:9515/health | jq .fileWatcher`. A `pollDetections` count above 0 means the native watcher went stale.
+3. **Verify the build** — Check that `dist/tools.json` and `dist/adapter.iife.js` exist.
 
 ## MCP client cannot connect
 
-**Symptom**: Claude Code, Cursor, or another MCP client reports a connection error or authentication failure.
+**Symptom**: Claude Code, Cursor, or another MCP client reports a connection or authentication error.
 
-**Checks**:
-
-1. **Server running?** — Verify with `curl http://localhost:9515/health`.
-2. **Correct URL** — The MCP endpoint is `http://localhost:9515/mcp` (not `/ws`, not the root `/`).
-3. **Auth token** — The `Authorization: Bearer <secret>` header must match the `secret` field in `~/.opentabs/config.json`. View it with:
-   ```bash
-   opentabs config show --json | jq -r .secret
-   ```
-4. **Client configuration** — For Claude Code, verify your `.mcp.json`:
-   ```json
-   {
-     "mcpServers": {
-       "opentabs": {
-         "type": "streamable-http",
-         "url": "http://localhost:9515/mcp",
-         "headers": {
-           "Authorization": "Bearer <secret>"
-         }
-       }
-     }
-   }
-   ```
-5. **CORS** — The server rejects requests with a browser `Origin` header (except `chrome-extension://`). MCP clients running as native processes (Claude Code, Cursor) don't send Origin headers, so this should not be an issue. If testing from a browser, use `curl` or a non-browser HTTP client instead.
+1. **Server running?** — `curl http://localhost:9515/health`
+2. **Correct URL** — The endpoint is `http://localhost:9515/mcp` (not `/ws` or `/`)
+3. **Auth token** — `Authorization: Bearer <secret>` must match the `secret` in `~/.opentabs/config.json`. Get it with `opentabs config show --json | jq -r .secret`
+4. **Client config** — For Claude Code, verify your `.mcp.json` has `"type": "streamable-http"` and the correct URL and Authorization header
+5. **CORS** — The server rejects requests with a browser `Origin` header. Native MCP clients don't send Origin headers, so this should only affect browser-based testing.
 
 ## Side panel not updating
 
-**Symptom**: The Chrome extension side panel shows stale data (wrong plugin list, incorrect tool counts, old tab states).
+**Symptom**: The side panel shows stale data (wrong plugins, old tab states).
 
-The side panel communicates with the background service worker, which relays data from the MCP server via WebSocket.
-
-**Solutions**:
-
-1. **Close and reopen** — Right-click the extension icon and select "Open side panel". This re-establishes the internal connection.
-2. **Reload the extension** — From `chrome://extensions`, click the refresh icon on the OpenTabs card.
-3. **Check server connection** — If the side panel shows "Disconnected", see the [Extension not connecting](#extension-not-connecting) section.
+1. **Close and reopen** — Right-click the extension icon and select "Open side panel"
+2. **Reload the extension** — From `chrome://extensions`, click the refresh icon
+3. **Check server connection** — If "Disconnected", see [Extension not connecting](#extension-not-connecting)
 
 ## Build failures
-
-**Symptom**: `bun run build` or `opentabs build` fails with errors.
-
-**Common causes**:
 
 <Table>
   <Table.Header>
@@ -198,17 +133,17 @@ The side panel communicates with the background service worker, which relays dat
     <Table.Row>
       <Table.Cell className="font-medium">TypeScript errors</Table.Cell>
       <Table.Cell>Type mismatches or missing types</Table.Cell>
-      <Table.Cell>Fix the type errors reported by `tsc`. Run `bun run type-check` for details.</Table.Cell>
+      <Table.Cell>Run `bun run type-check` for details and fix the errors.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">Zod schema serialization</Table.Cell>
       <Table.Cell>`.transform()`, `.pipe()`, or `.preprocess()` in tool schemas</Table.Cell>
-      <Table.Cell>Remove transforms from schemas — they cannot be serialized to JSON Schema. Move the logic to the tool's `handle()` function.</Table.Cell>
+      <Table.Cell>Move the logic to `handle()` — transforms can't be serialized to JSON Schema.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">Plugin name validation</Table.Cell>
-      <Table.Cell>Name contains invalid characters or is reserved</Table.Cell>
-      <Table.Cell>Plugin names must match `^[a-z][a-z0-9-]*$` and must not be a reserved name (e.g., `browser`, `extension`).</Table.Cell>
+      <Table.Cell>Name has invalid characters or is reserved</Table.Cell>
+      <Table.Cell>Names must match `^[a-z][a-z0-9-]*$` and not be reserved (e.g., `browser`, `extension`).</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">Missing dependencies</Table.Cell>
@@ -237,16 +172,8 @@ The side panel communicates with the background service worker, which relays dat
       <Table.Cell>Server health, plugin list, tab states, tool counts.</Table.Cell>
     </Table.Row>
     <Table.Row>
-      <Table.Cell className="font-medium">`opentabs status --json`</Table.Cell>
-      <Table.Cell>Raw JSON from the `/health` endpoint.</Table.Cell>
-    </Table.Row>
-    <Table.Row>
       <Table.Cell className="font-medium">`opentabs logs`</Table.Cell>
-      <Table.Cell>Tail the MCP server log output in real time.</Table.Cell>
-    </Table.Row>
-    <Table.Row>
-      <Table.Cell className="font-medium">`opentabs logs --lines 100 --no-follow`</Table.Cell>
-      <Table.Cell>Show the last 100 log lines and exit.</Table.Cell>
+      <Table.Cell>Tail the MCP server log in real time.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`curl http://localhost:9515/health`</Table.Cell>

@@ -4,8 +4,6 @@ description: How OpenTabs tracks tab states — closed, unavailable, and ready �
 lastUpdated: 2026-02-20
 ---
 
-Each plugin in OpenTabs has a **tab state** that reflects whether the user has the target web app open and ready for tool execution. The extension computes state per-plugin and reports changes to the MCP server in real time.
-
 ## Three States
 
 <Table>
@@ -19,40 +17,37 @@ Each plugin in OpenTabs has a **tab state** that reflects whether the user has t
   <Table.Body>
     <Table.Row>
       <Table.Cell className="font-medium">`closed`</Table.Cell>
-      <Table.Cell>No matching tab exists</Table.Cell>
+      <Table.Cell>No matching tab</Table.Cell>
       <Table.Cell>No Chrome tab matches the plugin's URL patterns</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`unavailable`</Table.Cell>
       <Table.Cell>Tab exists but not ready</Table.Cell>
-      <Table.Cell>A matching tab is open, but the adapter's `isReady()` returns `false` (e.g., user is not logged in, page still loading)</Table.Cell>
+      <Table.Cell>A matching tab is open, but `isReady()` returns false (e.g., not logged in)</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`ready`</Table.Cell>
       <Table.Cell>Tab exists and ready</Table.Cell>
-      <Table.Cell>At least one matching tab has an injected adapter and `isReady()` returns `true`</Table.Cell>
+      <Table.Cell>At least one matching tab has an injected adapter and `isReady()` returns true</Table.Cell>
     </Table.Row>
   </Table.Body>
 </Table>
 
-State is computed **per-plugin**, not per-tab. If a plugin has multiple matching tabs (e.g., two Slack windows), the plugin is `ready` as long as _any_ matching tab is ready.
+State is computed per-plugin, not per-tab. If a plugin has multiple matching tabs, it is `ready` as long as any one tab is ready.
 
 ## State Computation
 
 The extension computes a plugin's state by:
 
-1. **Finding matching tabs** — queries `chrome.tabs` for tabs whose URL matches the plugin's URL patterns (Chrome match patterns like `*://*.slack.com/*`)
-2. **Probing readiness** — for each matching tab, executes `chrome.scripting.executeScript` in the MAIN world to call the adapter's `isReady()` function
-3. **Determining state**:
-   - No matching tabs → `closed`
-   - Matching tabs exist, but none have `isReady() === true` → `unavailable`
-   - At least one tab has `isReady() === true` → `ready`
+1. Querying Chrome for tabs whose URL matches the plugin's URL patterns
+2. For each matching tab, calling the adapter's `isReady()` in the MAIN world
+3. Determining state: no tabs → `closed`, tabs exist but none ready → `unavailable`, at least one ready → `ready`
 
-The `isReady()` probe has a **5-second timeout**. If the adapter doesn't respond in time, the tab is treated as unavailable.
+The `isReady()` probe has a 5-second timeout. If the adapter doesn't respond in time, the tab is treated as unavailable.
 
 ## Tab Ranking
 
-When multiple tabs match a plugin's URL patterns, the extension ranks them to decide which tab executes a tool call:
+When multiple tabs match, the extension ranks them to decide which one executes the tool call:
 
 <Table>
   <Table.Header>
@@ -71,12 +66,12 @@ When multiple tabs match a plugin's URL patterns, the extension ranks them to de
     <Table.Row>
       <Table.Cell className="font-medium">2</Table.Cell>
       <Table.Cell>Active tab in any window</Table.Cell>
-      <Table.Cell>A Slack tab that's active in a background window</Table.Cell>
+      <Table.Cell>A Slack tab active in a background window</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">1</Table.Cell>
       <Table.Cell>Any tab in the focused window</Table.Cell>
-      <Table.Cell>A non-active Slack tab in the window you're working in</Table.Cell>
+      <Table.Cell>A non-active Slack tab in your current window</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">0</Table.Cell>
@@ -86,94 +81,71 @@ When multiple tabs match a plugin's URL patterns, the extension ranks them to de
   </Table.Body>
 </Table>
 
-During tool dispatch, the extension tries tabs in rank order. If the highest-ranked tab fails (adapter not ready or tab inaccessible), it falls back to the next tab. This means keeping the target web app in an active, focused tab gives the best results.
+Tabs are tried in rank order. If the highest-ranked tab fails, the extension falls back to the next. Keeping the target web app in an active, focused tab gives the best results.
 
 ## State Change Notifications
 
-The extension sends state updates to the MCP server over WebSocket using two JSON-RPC 2.0 messages:
+The extension sends two JSON-RPC 2.0 messages to the MCP server:
 
-### `tab.syncAll`
-
-Sent on WebSocket connect or reconnect. Contains the full state map for all plugins:
+**`tab.syncAll`** — sent on WebSocket connect or reconnect, contains the full state for all plugins:
 
 ```json
 {
   "method": "tab.syncAll",
   "params": {
     "tabs": {
-      "slack": {
-        "state": "ready",
-        "tabId": 42,
-        "url": "https://app.slack.com/..."
-      },
+      "slack": { "state": "ready", "tabId": 42, "url": "https://app.slack.com/..." },
       "github": { "state": "closed", "tabId": null, "url": null }
     }
   }
 }
 ```
 
-### `tab.stateChanged`
-
-Sent when a single plugin's state changes:
+**`tab.stateChanged`** — sent when a single plugin's state changes:
 
 ```json
 {
   "method": "tab.stateChanged",
-  "params": {
-    "plugin": "slack",
-    "state": "ready",
-    "tabId": 42,
-    "url": "https://app.slack.com/..."
-  }
+  "params": { "plugin": "slack", "state": "ready", "tabId": 42, "url": "https://app.slack.com/..." }
 }
 ```
 
-The extension suppresses redundant notifications — if a tab event triggers a recomputation but the resulting state is the same as the cached state, no message is sent.
+Redundant notifications are suppressed — if recomputation produces the same state as the cached value, no message is sent.
 
 ## When State Is Recomputed
-
-State recomputation is triggered by three browser events:
 
 <Table>
   <Table.Header>
     <Table.Row>
       <Table.Head>Event</Table.Head>
-      <Table.Head>Trigger</Table.Head>
       <Table.Head>Scope</Table.Head>
     </Table.Row>
   </Table.Header>
   <Table.Body>
     <Table.Row>
       <Table.Cell className="font-medium">URL change</Table.Cell>
-      <Table.Cell>`chrome.tabs.onUpdated` with `changeInfo.url`</Table.Cell>
-      <Table.Cell>Plugins matching the new URL + plugins with an active state for that tab</Table.Cell>
+      <Table.Cell>Plugins matching the new URL, plus plugins with an active state for that tab</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">Page load complete</Table.Cell>
-      <Table.Cell>`chrome.tabs.onUpdated` with `changeInfo.status === 'complete'`</Table.Cell>
-      <Table.Cell>All plugins matching the loaded URL (adapters are injected first, then state is probed)</Table.Cell>
+      <Table.Cell>All plugins matching the loaded URL (adapters injected first, then state probed)</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">Tab closed</Table.Cell>
-      <Table.Cell>`chrome.tabs.onRemoved`</Table.Cell>
-      <Table.Cell>All plugins (the removed tab might have been the only matching tab)</Table.Cell>
+      <Table.Cell>All plugins</Table.Cell>
     </Table.Row>
   </Table.Body>
 </Table>
 
-State computations for different plugins run in parallel, but computations for the _same_ plugin are serialized with a per-plugin lock to prevent cache corruption from concurrent events.
+Computations for different plugins run in parallel; computations for the same plugin are serialized to prevent race conditions.
 
 ## How State Affects Tool Dispatch
 
-When an AI agent calls a tool, the MCP server dispatches it to the extension. The extension's response depends on the plugin's tab state:
+- **`ready`** — tool executes on the best-ranked tab. Falls back to the next tab if the adapter is no longer ready at dispatch time.
+- **`unavailable`** — dispatch is still attempted. May succeed if the adapter became ready between the last check and dispatch, or fails with error code `-32002`.
+- **`closed`** — returns an error immediately (code `-32001`). The server returns a user-friendly message explaining which web app needs to be open.
 
-1. **`ready`** — the extension executes the tool on the best-ranked matching tab. If that tab's adapter reports it's not ready at dispatch time (race condition), the extension falls back to the next matching tab.
-
-2. **`unavailable`** — the extension still attempts dispatch. The tool may succeed if the adapter became ready between the last state check and the dispatch, or it may fail with an adapter-not-ready error (code `-32002`).
-
-3. **`closed`** — the extension returns an error immediately (code `-32001`, no matching tab). The MCP server wraps this in a user-friendly error explaining which web app needs to be open.
-
-### Tool Dispatch Timeouts
+### Timeouts
 
 <Table>
   <Table.Header>
@@ -187,27 +159,17 @@ When an AI agent calls a tool, the MCP server dispatches it to the extension. Th
     <Table.Row>
       <Table.Cell className="font-medium">MCP server dispatch</Table.Cell>
       <Table.Cell>30 seconds</Table.Cell>
-      <Table.Cell>Maximum time the server waits for a tool result before timing out</Table.Cell>
+      <Table.Cell>Maximum time the server waits for a tool result</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">Extension script execution</Table.Cell>
       <Table.Cell>25 seconds</Table.Cell>
-      <Table.Cell>Maximum time for `chrome.scripting.executeScript` — fires before the server timeout to guarantee a response</Table.Cell>
+      <Table.Cell>Deliberately shorter than server timeout to guarantee a response always arrives</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`isReady()` probe</Table.Cell>
       <Table.Cell>5 seconds</Table.Cell>
-      <Table.Cell>Maximum time to wait for a readiness check during state computation</Table.Cell>
+      <Table.Cell>Maximum time for a readiness check</Table.Cell>
     </Table.Row>
   </Table.Body>
 </Table>
-
-The extension timeout (25s) is deliberately shorter than the server timeout (30s) to ensure the extension always returns a result — either success or timeout error — before the server gives up. This prevents orphaned script executions.
-
-## Server-Side State Tracking
-
-The MCP server maintains a `tabMapping` for each plugin, updated by `tab.syncAll` and `tab.stateChanged` messages. This state is:
-
-- Exposed to the side panel UI via the `config.getState` response, allowing the side panel to show plugin availability
-- Used for diagnostics (`opentabs status`, `opentabs doctor`, `/health` endpoint)
-- Cleared when the WebSocket disconnects (state is unknown until the extension reconnects and sends a fresh `tab.syncAll`)

@@ -6,8 +6,6 @@ lastUpdated: 2026-02-20
 
 ## Step 1: Scaffold a New Plugin
 
-The fastest way to create a plugin is with the scaffolding CLI:
-
 ```bash
 bunx create-opentabs-plugin my-plugin --domain .example.com --display "My App"
 ```
@@ -17,8 +15,6 @@ Or use the `opentabs` CLI directly:
 ```bash
 opentabs plugin create my-plugin --domain .example.com --display "My App"
 ```
-
-**Options:**
 
 <Table>
   <Table.Header>
@@ -35,41 +31,24 @@ opentabs plugin create my-plugin --domain .example.com --display "My App"
       <Table.Cell>Plugin name — lowercase, alphanumeric, hyphens only</Table.Cell>
     </Table.Row>
     <Table.Row>
-      <Table.Cell className="font-medium">`--domain <domain>`</Table.Cell>
+      <Table.Cell className="font-medium">`--domain`</Table.Cell>
       <Table.Cell>Yes</Table.Cell>
       <Table.Cell>Target domain (e.g., `.slack.com`, `github.com`)</Table.Cell>
     </Table.Row>
     <Table.Row>
-      <Table.Cell className="font-medium">`--display <name>`</Table.Cell>
+      <Table.Cell className="font-medium">`--display`</Table.Cell>
       <Table.Cell>No</Table.Cell>
       <Table.Cell>Human-readable display name (defaults to title-cased name)</Table.Cell>
     </Table.Row>
     <Table.Row>
-      <Table.Cell className="font-medium">`--description <desc>`</Table.Cell>
+      <Table.Cell className="font-medium">`--description`</Table.Cell>
       <Table.Cell>No</Table.Cell>
       <Table.Cell>Plugin description</Table.Cell>
     </Table.Row>
   </Table.Body>
 </Table>
 
-The scaffolder creates the following project structure:
-
-```
-my-plugin/
-├── src/
-│   ├── index.ts          # Plugin class extending OpenTabsPlugin
-│   └── tools/
-│       └── example.ts    # Example tool using defineTool()
-├── package.json          # Dependencies: @opentabs-dev/plugin-sdk, @opentabs-dev/cli
-├── tsconfig.json         # TypeScript strict mode, ES2022 target
-├── eslint.config.ts      # ESLint flat config with TypeScript
-├── .prettierrc           # Prettier configuration
-└── .gitignore            # dist/, node_modules/, *.tsbuildinfo
-```
-
-The scaffolder also auto-registers the plugin in `~/.opentabs/config.json`, so the MCP server discovers it immediately.
-
-Install dependencies:
+The scaffolder creates a standalone npm package and auto-registers the plugin in `~/.opentabs/config.json`.
 
 ```bash
 cd my-plugin
@@ -77,8 +56,6 @@ bun install
 ```
 
 ## Step 2: Define Your Plugin Class
-
-The plugin class in `src/index.ts` extends `OpenTabsPlugin` and declares the plugin's identity, URL patterns, and tools:
 
 ```typescript
 import { OpenTabsPlugin, type ToolDefinition } from "@opentabs-dev/plugin-sdk";
@@ -89,14 +66,10 @@ class MyPlugin extends OpenTabsPlugin {
   readonly version = "0.1.0";
   readonly description = "OpenTabs plugin for My App";
   override readonly displayName = "My App";
-
   readonly urlPatterns = ["*://*.example.com/*"];
-
   readonly tools: ToolDefinition[] = [example];
 
   async isReady(): Promise<boolean> {
-    // Return true when the user is authenticated.
-    // This runs in the browser page context.
     const token = localStorage.getItem("auth_token");
     return token !== null;
   }
@@ -105,139 +78,54 @@ class MyPlugin extends OpenTabsPlugin {
 export default new MyPlugin();
 ```
 
-**Key properties:**
-
-- **`name`** — Unique identifier. Lowercase alphanumeric and hyphens only. Used as the tool prefix (e.g., tools become `my-plugin_example` in MCP).
-- **`urlPatterns`** — [Chrome match patterns](https://developer.chrome.com/docs/extensions/develop/concepts/match-patterns) that determine which tabs the plugin is injected into.
-- **`tools`** — Array of tool definitions created with `defineTool()`.
-- **`isReady()`** — Readiness probe called by the Chrome extension. Return `true` when the user is authenticated and the page is ready for tool execution. Return `false` otherwise (the plugin shows as "unavailable").
+- **`name`** — unique identifier, used as the tool prefix (e.g., `my-plugin_example` in MCP)
+- **`urlPatterns`** — [Chrome match patterns](https://developer.chrome.com/docs/extensions/develop/concepts/match-patterns) for which tabs get the adapter
+- **`isReady()`** — return true when the user is authenticated; false shows the plugin as unavailable
 
 ## Step 3: Define Tools
 
-Each tool lives in its own file under `src/tools/`. Use the `defineTool()` factory:
+Each tool lives in `src/tools/`. Use `defineTool()`:
 
 ```typescript
 import { defineTool } from "@opentabs-dev/plugin-sdk";
 import { z } from "zod";
 
-export const getPageTitle = defineTool({
-  name: "get_page_title",
-  displayName: "Get Page Title",
-  description: "Returns the current page title and URL.",
-  icon: "file-text",
-  input: z.object({}),
-  output: z.object({
-    title: z.string().describe("The page title"),
-    url: z.string().describe("The current URL"),
-  }),
-  handle: async () => {
-    return {
-      title: document.title,
-      url: window.location.href,
-    };
-  },
-});
-```
-
-A more complete example with input parameters:
-
-```typescript
 export const submitForm = defineTool({
   name: "submit_form",
   displayName: "Submit Form",
   description: "Fills and submits a form on the page.",
   icon: "send",
   input: z.object({
-    name: z.string().min(1).describe("The name to enter in the form"),
+    name: z.string().min(1).describe("The name to enter"),
     email: z.string().email().describe("The email address to enter"),
   }),
   output: z.object({
-    success: z.boolean().describe("Whether the form was submitted"),
-    message: z.string().describe("Status message"),
+    success: z.boolean(),
+    message: z.string(),
   }),
   handle: async (params) => {
     const nameInput = document.querySelector<HTMLInputElement>("#name");
     const emailInput = document.querySelector<HTMLInputElement>("#email");
-
     if (!nameInput || !emailInput) {
       return { success: false, message: "Form fields not found" };
     }
-
     nameInput.value = params.name;
     emailInput.value = params.email;
     document.querySelector<HTMLFormElement>("form")?.submit();
-
     return { success: true, message: "Form submitted" };
   },
 });
 ```
 
-**Tool configuration:**
-
-<Table>
-  <Table.Header>
-    <Table.Row>
-      <Table.Head>Property</Table.Head>
-      <Table.Head>Type</Table.Head>
-      <Table.Head>Description</Table.Head>
-    </Table.Row>
-  </Table.Header>
-  <Table.Body>
-    <Table.Row>
-      <Table.Cell className="font-medium">`name`</Table.Cell>
-      <Table.Cell className="*:text-xs">`string`</Table.Cell>
-      <Table.Cell>Tool name in snake_case. Exposed as `<plugin>_<name>` in MCP.</Table.Cell>
-    </Table.Row>
-    <Table.Row>
-      <Table.Cell className="font-medium">`displayName`</Table.Cell>
-      <Table.Cell className="*:text-xs">`string`</Table.Cell>
-      <Table.Cell>Human-readable name for UI.</Table.Cell>
-    </Table.Row>
-    <Table.Row>
-      <Table.Cell className="font-medium">`description`</Table.Cell>
-      <Table.Cell className="*:text-xs">`string`</Table.Cell>
-      <Table.Cell>Shown to AI agents — must be accurate and informative.</Table.Cell>
-    </Table.Row>
-    <Table.Row>
-      <Table.Cell className="font-medium">`icon`</Table.Cell>
-      <Table.Cell className="*:text-xs">`string`</Table.Cell>
-      <Table.Cell>[Lucide icon](https://lucide.dev/icons/) name in kebab-case.</Table.Cell>
-    </Table.Row>
-    <Table.Row>
-      <Table.Cell className="font-medium">`input`</Table.Cell>
-      <Table.Cell className="*:text-xs">`ZodObject`</Table.Cell>
-      <Table.Cell>Zod schema for input parameters.</Table.Cell>
-    </Table.Row>
-    <Table.Row>
-      <Table.Cell className="font-medium">`output`</Table.Cell>
-      <Table.Cell className="*:text-xs">`ZodObject`</Table.Cell>
-      <Table.Cell>Zod schema for return value.</Table.Cell>
-    </Table.Row>
-    <Table.Row>
-      <Table.Cell className="font-medium">`handle`</Table.Cell>
-      <Table.Cell className="*:text-xs">`(params) => Promise<TOutput>`</Table.Cell>
-      <Table.Cell>Async function that executes the tool.</Table.Cell>
-    </Table.Row>
-  </Table.Body>
-</Table>
-
-### handle() Execution Context
-
-The `handle` function runs in the browser page's MAIN world — the same JavaScript context as the web application. This means it has full access to:
-
-- **DOM** — `document.querySelector()`, `document.createElement()`, etc.
-- **Web APIs** — `fetch()` (same-origin with the page's cookies/session), `localStorage`, `sessionStorage`
-- **Page globals** — Any JavaScript variables or functions the web application exposes on `window`
-
-It does **not** have access to Chrome extension APIs, Node.js/Bun APIs, or the file system.
+`handle()` runs in the page's MAIN world with full access to DOM, `fetch()` (with the page's session cookies), `localStorage`, and any globals the web app exposes. It does not have access to Chrome extension APIs or Node.js.
 
 ### Zod Schema Requirements
 
-Input and output schemas are serialized to JSON Schema for the MCP protocol. Keep schemas serialization-compatible:
+Schemas are serialized to JSON Schema — keep them compatible:
 
-- **Never use `.transform()`** — Zod transforms cannot be represented in JSON Schema. Normalize input in the `handle` function instead.
-- **Avoid `.pipe()` and `.preprocess()`** — These produce runtime-only behavior that JSON Schema cannot represent.
-- **`.refine()` callbacks must not throw** — Zod may run `.refine()` even when the base validator fails. Wrap throwable operations in try-catch:
+- **Never use `.transform()`** — transforms can't be represented in JSON Schema. Normalize input in `handle()` instead.
+- **Avoid `.pipe()` and `.preprocess()`** — same reason.
+- **`.refine()` callbacks must not throw** — Zod may run `.refine()` even when the base validator fails. Wrap throwable operations:
 
 ```typescript
 z.string()
@@ -253,7 +141,7 @@ z.string()
 
 ### Error Handling
 
-Use `ToolError` for structured errors with machine-readable codes:
+Use `ToolError` for structured errors:
 
 ```typescript
 import { ToolError } from "@opentabs-dev/plugin-sdk";
@@ -263,155 +151,85 @@ handle: async (params) => {
   if (response.status === 404) {
     throw new ToolError("Item not found", "NOT_FOUND");
   }
-  // ...
 };
 ```
 
 ## Step 4: Implement isReady()
 
-The `isReady()` method is a readiness probe that the Chrome extension calls periodically. It determines whether the plugin's tab state is "ready" or "unavailable".
-
 Common patterns:
 
 ```typescript
-// Check for an authentication token in localStorage
+// localStorage token
 async isReady(): Promise<boolean> {
   return localStorage.getItem('session_token') !== null;
 }
-```
 
-```typescript
-// Check for a specific DOM element that indicates the app has loaded
+// DOM element present after login
 async isReady(): Promise<boolean> {
-  return document.querySelector('[data-app-ready]') !== null;
+  return document.querySelector('[data-user-id]') !== null;
 }
-```
 
-```typescript
-// Check for a cookie
+// Cookie check
 async isReady(): Promise<boolean> {
   return document.cookie.includes('auth=');
 }
 ```
 
-The probe has a **5-second timeout** — if `isReady()` doesn't resolve within 5 seconds, the tab is considered unavailable.
+The probe has a 5-second timeout — if `isReady()` doesn't resolve in time, the tab is treated as unavailable.
 
 ## Step 5: Build the Plugin
-
-Build the plugin with:
 
 ```bash
 bun run build
 ```
 
-This runs two steps:
+This runs `tsc` then `opentabs build`, which:
 
-1. **`tsc`** — Compiles TypeScript to `dist/`
-2. **`opentabs build`** — Bundles `dist/adapter.iife.js` (browser-injectable IIFE) and generates `dist/tools.json` (tool definitions with JSON Schema input/output schemas)
+1. Validates plugin metadata (name format, semver version, URL patterns, tool names, Zod schemas)
+2. Bundles `dist/adapter.iife.js`
+3. Generates `dist/tools.json` with serialized JSON Schema tool definitions
 
-The build validates your plugin:
-
-- Plugin name format (lowercase, hyphens)
-- Version is valid semver
-- At least one URL pattern and one tool defined
-- Tool names are snake_case and unique
-- Tool icons are valid Lucide icon names
-- Zod schemas are JSON Schema-compatible (no `.transform()`, `.pipe()`, `.preprocess()`)
-
-### Watch Mode
-
-For development, use watch mode to rebuild automatically on file changes:
+For development, watch mode rebuilds automatically:
 
 ```bash
 bun run dev
 ```
 
-This runs `tsc --watch` and `opentabs build --watch` in parallel. When you edit source files, TypeScript recompiles to `dist/`, and `opentabs build` detects the change and regenerates the adapter IIFE and manifest.
-
-The MCP server's file watcher picks up changes to `dist/tools.json` and `dist/adapter.iife.js` and pushes updates to the Chrome extension automatically — no server restart or extension reload needed.
+The MCP server's file watcher picks up changes to `dist/tools.json` and `dist/adapter.iife.js` and pushes updates to the extension — no server restart or extension reload needed.
 
 ## Step 6: Register the Plugin
 
-If you used `create-opentabs-plugin` or `opentabs plugin create`, the plugin is already registered in `~/.opentabs/config.json`.
-
-To register a plugin manually:
+If you used the scaffolder, the plugin is already registered. To register manually:
 
 ```bash
 opentabs plugin add ./path/to/my-plugin
 ```
 
-Or add the path directly to `~/.opentabs/config.json`:
-
-```json
-{
-  "plugins": ["../plugins/my-plugin"],
-  "tools": {},
-  "secret": "..."
-}
-```
-
-Plugin paths are relative to the config directory (`~/.opentabs/`) or absolute. They must be under `$HOME` or `$TMPDIR` for security.
-
-### Verify Registration
-
-Check that the MCP server sees your plugin:
+Verify the server sees it:
 
 ```bash
 opentabs plugin list
 ```
 
-Output:
-
-```
-Configured plugins:
-  ✓ my-plugin v0.1.0  2 tools  ../plugins/my-plugin
-```
-
 ## Step 7: Test with an AI Agent
 
-1. **Start the MCP server** (if not already running):
-
-```bash
-opentabs dev
-```
-
-2. **Open the target web app** in Chrome (e.g., navigate to `example.com` and log in).
-
-3. **Check plugin status** in the Chrome extension side panel — the plugin should show as "ready" (green) if `isReady()` returns `true`.
-
-4. **Use your AI agent** to invoke the tools. Tools are prefixed with the plugin name:
-
-```
-Use the my-plugin_get_page_title tool to get the current page title.
-```
-
-5. **Iterate** — with `bun run dev` running in watch mode, edits to your plugin source are automatically rebuilt and pushed to the extension.
+1. Start the server: `opentabs dev`
+2. Open the target web app in Chrome and log in
+3. Check the extension side panel — the plugin should show as "ready"
+4. Ask your AI agent to use a tool: `Use the my-plugin_get_page_title tool`
+5. Edit and rebuild with `bun run dev` running — changes are pushed to the extension automatically
 
 ## Publishing to npm
-
-To share your plugin with others, publish it to npm:
 
 1. Ensure `package.json` has the `opentabs-plugin` keyword (included by the scaffolder)
 2. Build: `bun run build`
 3. Publish: `npm publish`
 
-Users install your plugin with:
-
-```bash
-npm install opentabs-plugin-my-plugin
-```
-
-Then add the package name to the `plugins` array in `~/.opentabs/config.json`:
-
-```json
-{
-  "plugins": ["opentabs-plugin-my-plugin"]
-}
-```
+Users install with `npm install opentabs-plugin-my-plugin` and add the package name to their `plugins` array in `~/.opentabs/config.json`.
 
 ## Next Steps
 
-- [Plugin SDK Reference](/docs/plugins/plugin-sdk) — Full API documentation for `OpenTabsPlugin`, `defineTool`, and `ToolError`
-- [Plugin System](/docs/concepts/plugin-system) — How plugin discovery, trust tiers, and adapter injection work
-- [Tab State Machine](/docs/concepts/tab-state-machine) — How tab states affect tool dispatch
-- [Slack Plugin](/docs/plugins/slack) — A real-world plugin example with 22 tools
+- [Plugin SDK Reference](/docs/plugins/plugin-sdk) — full API for OpenTabsPlugin, defineTool, and ToolError
+- [Plugin System](/docs/concepts/plugin-system) — discovery, trust tiers, and adapter injection
+- [Tab State Machine](/docs/concepts/tab-state-machine) — how tab states affect tool dispatch
+- [Slack Plugin](/docs/plugins/slack) — a real-world plugin with 22 tools

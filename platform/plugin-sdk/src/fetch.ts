@@ -9,6 +9,37 @@ export interface FetchFromPageOptions extends RequestInit {
   timeout?: number;
 }
 
+/** Maps an HTTP error response to a ToolError with the appropriate category. */
+export const httpStatusToToolError = (response: Response, message: string): ToolError => {
+  const status = response.status;
+  if (status === 401 || status === 403) {
+    return ToolError.auth(message);
+  }
+  if (status === 404) {
+    return ToolError.notFound(message);
+  }
+  if (status === 429) {
+    const retryAfter = response.headers.get('Retry-After');
+    const retryAfterMs = retryAfter !== null ? parseRetryAfterMs(retryAfter) : undefined;
+    return ToolError.rateLimited(message, retryAfterMs);
+  }
+  return new ToolError(message, 'http_error', { category: 'internal' });
+};
+
+/** Parses a Retry-After header value (seconds or HTTP-date) into milliseconds. */
+export const parseRetryAfterMs = (value: string): number | undefined => {
+  const seconds = Number(value);
+  if (!Number.isNaN(seconds) && seconds >= 0) {
+    return seconds * 1000;
+  }
+  const date = Date.parse(value);
+  if (!Number.isNaN(date)) {
+    const ms = date - Date.now();
+    return ms > 0 ? ms : undefined;
+  }
+  return undefined;
+};
+
 /**
  * Fetches a URL using the page's authenticated session (credentials: 'include').
  * Provides built-in timeout via AbortSignal and throws a descriptive ToolError
@@ -29,7 +60,7 @@ export const fetchFromPage = async (url: string, init?: FetchFromPageOptions): P
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'TimeoutError') {
-      throw new ToolError(`fetchFromPage: request timed out after ${timeout}ms for ${url}`, 'timeout');
+      throw ToolError.timeout(`fetchFromPage: request timed out after ${timeout}ms for ${url}`);
     }
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new ToolError(`fetchFromPage: request aborted for ${url}`, 'aborted');
@@ -37,12 +68,14 @@ export const fetchFromPage = async (url: string, init?: FetchFromPageOptions): P
     throw new ToolError(
       `fetchFromPage: network error for ${url}: ${error instanceof Error ? error.message : String(error)}`,
       'network_error',
+      { category: 'internal', retryable: true },
     );
   }
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => response.statusText);
-    throw new ToolError(`fetchFromPage: HTTP ${response.status} for ${url}: ${errorText}`, 'http_error');
+    const msg = `fetchFromPage: HTTP ${response.status} for ${url}: ${errorText}`;
+    throw httpStatusToToolError(response, msg);
   }
 
   return response;
@@ -58,7 +91,7 @@ export const fetchJSON = async <T>(url: string, init?: FetchFromPageOptions): Pr
   try {
     return (await response.json()) as T;
   } catch {
-    throw new ToolError(`fetchJSON: failed to parse JSON response from ${url}`, 'json_parse_error');
+    throw ToolError.validation(`fetchJSON: failed to parse JSON response from ${url}`);
   }
 };
 

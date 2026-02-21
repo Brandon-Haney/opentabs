@@ -34,6 +34,25 @@ beforeAll(() => {
         return new Response('Not Found', { status: 404 });
       }
 
+      if (url.pathname === '/error-401') {
+        return new Response('Unauthorized', { status: 401 });
+      }
+
+      if (url.pathname === '/error-403') {
+        return new Response('Forbidden', { status: 403 });
+      }
+
+      if (url.pathname === '/error-429') {
+        return new Response('Too Many Requests', {
+          status: 429,
+          headers: { 'Retry-After': '30' },
+        });
+      }
+
+      if (url.pathname === '/error-429-no-header') {
+        return new Response('Too Many Requests', { status: 429 });
+      }
+
       if (url.pathname === '/error-500') {
         return new Response('Internal Server Error', { status: 500 });
       }
@@ -119,20 +138,76 @@ describe('fetchFromPage', () => {
     expect(response.ok).toBe(true);
   });
 
-  test('throws ToolError with http_error code on non-ok status', async () => {
+  test('throws ToolError with not_found category on 404 status', async () => {
     try {
       await fetchFromPage(`${baseUrl}/error-404`);
       expect.unreachable('should have thrown');
     } catch (error) {
       expect(error).toBeInstanceOf(ToolError);
       const toolError = error as ToolError;
-      expect(toolError.code).toBe('http_error');
+      expect(toolError.code).toBe('NOT_FOUND');
+      expect(toolError.category).toBe('not_found');
+      expect(toolError.retryable).toBe(false);
       expect(toolError.message).toContain('HTTP 404');
       expect(toolError.message).toContain('Not Found');
     }
   });
 
-  test('throws ToolError on 500 status with response body', async () => {
+  test('throws ToolError with auth category on 401 status', async () => {
+    try {
+      await fetchFromPage(`${baseUrl}/error-401`);
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ToolError);
+      const toolError = error as ToolError;
+      expect(toolError.code).toBe('AUTH_ERROR');
+      expect(toolError.category).toBe('auth');
+      expect(toolError.retryable).toBe(false);
+    }
+  });
+
+  test('throws ToolError with auth category on 403 status', async () => {
+    try {
+      await fetchFromPage(`${baseUrl}/error-403`);
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ToolError);
+      const toolError = error as ToolError;
+      expect(toolError.code).toBe('AUTH_ERROR');
+      expect(toolError.category).toBe('auth');
+      expect(toolError.retryable).toBe(false);
+    }
+  });
+
+  test('throws ToolError with rate_limit category on 429 status with Retry-After', async () => {
+    try {
+      await fetchFromPage(`${baseUrl}/error-429`);
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ToolError);
+      const toolError = error as ToolError;
+      expect(toolError.code).toBe('RATE_LIMITED');
+      expect(toolError.category).toBe('rate_limit');
+      expect(toolError.retryable).toBe(true);
+      expect(toolError.retryAfterMs).toBe(30_000);
+    }
+  });
+
+  test('throws ToolError with rate_limit category on 429 without Retry-After', async () => {
+    try {
+      await fetchFromPage(`${baseUrl}/error-429-no-header`);
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ToolError);
+      const toolError = error as ToolError;
+      expect(toolError.code).toBe('RATE_LIMITED');
+      expect(toolError.category).toBe('rate_limit');
+      expect(toolError.retryable).toBe(true);
+      expect(toolError.retryAfterMs).toBeUndefined();
+    }
+  });
+
+  test('throws ToolError with internal category on 500 status', async () => {
     try {
       await fetchFromPage(`${baseUrl}/error-500`);
       expect.unreachable('should have thrown');
@@ -140,19 +215,23 @@ describe('fetchFromPage', () => {
       expect(error).toBeInstanceOf(ToolError);
       const toolError = error as ToolError;
       expect(toolError.code).toBe('http_error');
+      expect(toolError.category).toBe('internal');
+      expect(toolError.retryable).toBe(false);
       expect(toolError.message).toContain('HTTP 500');
       expect(toolError.message).toContain('Internal Server Error');
     }
   });
 
-  test('throws ToolError with timeout code when request times out', async () => {
+  test('throws ToolError with timeout category when request times out', async () => {
     try {
       await fetchFromPage(`${baseUrl}/slow`, { timeout: 100 });
       expect.unreachable('should have thrown');
     } catch (error) {
       expect(error).toBeInstanceOf(ToolError);
       const toolError = error as ToolError;
-      expect(toolError.code).toBe('timeout');
+      expect(toolError.code).toBe('TIMEOUT');
+      expect(toolError.category).toBe('timeout');
+      expect(toolError.retryable).toBe(true);
       expect(toolError.message).toContain('timed out after 100ms');
     }
   });
@@ -177,7 +256,7 @@ describe('fetchFromPage', () => {
     expect(response.ok).toBe(true);
   });
 
-  test('throws ToolError with network_error code for invalid URL', async () => {
+  test('throws ToolError with internal category and retryable for network errors', async () => {
     try {
       await fetchFromPage('http://localhost:1/nonexistent');
       expect.unreachable('should have thrown');
@@ -185,6 +264,8 @@ describe('fetchFromPage', () => {
       expect(error).toBeInstanceOf(ToolError);
       const toolError = error as ToolError;
       expect(toolError.code).toBe('network_error');
+      expect(toolError.category).toBe('internal');
+      expect(toolError.retryable).toBe(true);
     }
   });
 });
@@ -199,26 +280,28 @@ describe('fetchJSON', () => {
     expect(data).toEqual({ status: 'success' });
   });
 
-  test('throws ToolError with json_parse_error on invalid JSON', async () => {
+  test('throws ToolError with validation category on invalid JSON', async () => {
     try {
       await fetchJSON(`${baseUrl}/text`);
       expect.unreachable('should have thrown');
     } catch (error) {
       expect(error).toBeInstanceOf(ToolError);
       const toolError = error as ToolError;
-      expect(toolError.code).toBe('json_parse_error');
+      expect(toolError.code).toBe('VALIDATION_ERROR');
+      expect(toolError.category).toBe('validation');
       expect(toolError.message).toContain('failed to parse JSON');
     }
   });
 
-  test('propagates http_error from fetchFromPage on non-ok status', async () => {
+  test('propagates not_found error from fetchFromPage on 404 status', async () => {
     try {
       await fetchJSON(`${baseUrl}/error-404`);
       expect.unreachable('should have thrown');
     } catch (error) {
       expect(error).toBeInstanceOf(ToolError);
       const toolError = error as ToolError;
-      expect(toolError.code).toBe('http_error');
+      expect(toolError.code).toBe('NOT_FOUND');
+      expect(toolError.category).toBe('not_found');
     }
   });
 
@@ -229,7 +312,8 @@ describe('fetchJSON', () => {
     } catch (error) {
       expect(error).toBeInstanceOf(ToolError);
       const toolError = error as ToolError;
-      expect(toolError.code).toBe('timeout');
+      expect(toolError.code).toBe('TIMEOUT');
+      expect(toolError.category).toBe('timeout');
     }
   });
 });
@@ -260,7 +344,7 @@ describe('postJSON', () => {
     expect(data.received).toEqual({ data: 1 });
   });
 
-  test('propagates http_error on non-ok status', async () => {
+  test('propagates internal error on 500 status', async () => {
     try {
       await postJSON(`${baseUrl}/error-500`, { data: 'test' });
       expect.unreachable('should have thrown');
@@ -268,6 +352,7 @@ describe('postJSON', () => {
       expect(error).toBeInstanceOf(ToolError);
       const toolError = error as ToolError;
       expect(toolError.code).toBe('http_error');
+      expect(toolError.category).toBe('internal');
     }
   });
 
@@ -278,7 +363,8 @@ describe('postJSON', () => {
     } catch (error) {
       expect(error).toBeInstanceOf(ToolError);
       const toolError = error as ToolError;
-      expect(toolError.code).toBe('timeout');
+      expect(toolError.code).toBe('TIMEOUT');
+      expect(toolError.category).toBe('timeout');
     }
   });
 });

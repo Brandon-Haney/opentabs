@@ -261,7 +261,7 @@ export type { WaitForSelectorOptions, ObserveDOMOptions } from './dom.js';
 // SDK utilities — Fetch
 // ---------------------------------------------------------------------------
 
-export { fetchFromPage, fetchJSON, postJSON } from './fetch.js';
+export { fetchFromPage, fetchJSON, httpStatusToToolError, parseRetryAfterMs, postJSON } from './fetch.js';
 export type { FetchFromPageOptions } from './fetch.js';
 
 // ---------------------------------------------------------------------------

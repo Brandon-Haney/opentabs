@@ -1,4 +1,11 @@
-import { checkBunVersion, checkConfigFile, checkExtensionConnected, checkNpmPlugins, checkPlugins } from './doctor.js';
+import {
+  checkBunVersion,
+  checkConfigFile,
+  checkExtensionConnected,
+  checkMcpClientConfig,
+  checkNpmPlugins,
+  checkPlugins,
+} from './doctor.js';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -276,5 +283,109 @@ describe('checkNpmPlugins', () => {
     expect(results).toHaveLength(1);
     expect(results[0]?.ok).toBe(true);
     expect(results[0]?.detail).toContain('none discovered');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkMcpClientConfig
+// ---------------------------------------------------------------------------
+
+describe('checkMcpClientConfig', () => {
+  test('returns pass when Claude Code config has opentabs entry', async () => {
+    const configDir = join(TEST_BASE_DIR, 'mcp-claude');
+    mkdirSync(configDir, { recursive: true });
+    const configPath = join(configDir, 'mcp.json');
+    await Bun.write(configPath, JSON.stringify({ mcpServers: { opentabs: { command: 'opentabs' } } }));
+
+    const result = await checkMcpClientConfig([{ name: 'Claude Code', path: configPath }]);
+    expect(result.ok).toBe(true);
+    expect(result.label).toBe('MCP client config');
+    expect(result.detail).toContain('Claude Code');
+    expect(result.detail).toContain(configPath);
+  });
+
+  test('returns pass when Cursor config has opentabs entry', async () => {
+    const configDir = join(TEST_BASE_DIR, 'mcp-cursor');
+    mkdirSync(configDir, { recursive: true });
+    const configPath = join(configDir, 'mcp.json');
+    await Bun.write(configPath, JSON.stringify({ mcpServers: { opentabs: { url: 'http://localhost:9515/mcp' } } }));
+
+    const result = await checkMcpClientConfig([{ name: 'Cursor', path: configPath }]);
+    expect(result.ok).toBe(true);
+    expect(result.label).toBe('MCP client config');
+    expect(result.detail).toContain('Cursor');
+  });
+
+  test('returns warn when no config files exist', async () => {
+    const result = await checkMcpClientConfig([
+      { name: 'Claude Code', path: join(TEST_BASE_DIR, 'nonexistent', 'mcp.json') },
+      { name: 'Cursor', path: join(TEST_BASE_DIR, 'nonexistent2', 'mcp.json') },
+    ]);
+    expect(result.ok).toBe(false);
+    expect(result.fatal).toBe(false);
+    expect(result.label).toBe('MCP client config');
+    expect(result.detail).toContain('no MCP client configured');
+    expect(result.hint).toContain('mcp.json');
+  });
+
+  test('returns warn when config exists but has no opentabs entry', async () => {
+    const configDir = join(TEST_BASE_DIR, 'mcp-no-opentabs');
+    mkdirSync(configDir, { recursive: true });
+    const configPath = join(configDir, 'mcp.json');
+    await Bun.write(configPath, JSON.stringify({ mcpServers: { other: { command: 'other' } } }));
+
+    const result = await checkMcpClientConfig([{ name: 'Claude Code', path: configPath }]);
+    expect(result.ok).toBe(false);
+    expect(result.fatal).toBe(false);
+    expect(result.detail).toContain('no MCP client configured');
+  });
+
+  test('returns warn when config exists but has no mcpServers key', async () => {
+    const configDir = join(TEST_BASE_DIR, 'mcp-no-servers');
+    mkdirSync(configDir, { recursive: true });
+    const configPath = join(configDir, 'mcp.json');
+    await Bun.write(configPath, JSON.stringify({ something: 'else' }));
+
+    const result = await checkMcpClientConfig([{ name: 'Claude Code', path: configPath }]);
+    expect(result.ok).toBe(false);
+    expect(result.fatal).toBe(false);
+  });
+
+  test('skips invalid JSON files and checks the next client', async () => {
+    const badDir = join(TEST_BASE_DIR, 'mcp-bad-json');
+    mkdirSync(badDir, { recursive: true });
+    const badPath = join(badDir, 'mcp.json');
+    await Bun.write(badPath, 'not valid json');
+
+    const goodDir = join(TEST_BASE_DIR, 'mcp-good-json');
+    mkdirSync(goodDir, { recursive: true });
+    const goodPath = join(goodDir, 'mcp.json');
+    await Bun.write(goodPath, JSON.stringify({ mcpServers: { opentabs: {} } }));
+
+    const result = await checkMcpClientConfig([
+      { name: 'Bad Client', path: badPath },
+      { name: 'Good Client', path: goodPath },
+    ]);
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain('Good Client');
+  });
+
+  test('returns first matching client when multiple have opentabs', async () => {
+    const dir1 = join(TEST_BASE_DIR, 'mcp-first');
+    mkdirSync(dir1, { recursive: true });
+    const path1 = join(dir1, 'mcp.json');
+    await Bun.write(path1, JSON.stringify({ mcpServers: { opentabs: {} } }));
+
+    const dir2 = join(TEST_BASE_DIR, 'mcp-second');
+    mkdirSync(dir2, { recursive: true });
+    const path2 = join(dir2, 'mcp.json');
+    await Bun.write(path2, JSON.stringify({ mcpServers: { opentabs: {} } }));
+
+    const result = await checkMcpClientConfig([
+      { name: 'First', path: path1 },
+      { name: 'Second', path: path2 },
+    ]);
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain('First');
   });
 });

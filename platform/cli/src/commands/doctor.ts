@@ -208,6 +208,46 @@ const checkNpmPlugins = (data: Record<string, unknown> | null): CheckResult[] =>
   return results;
 };
 
+interface McpClientLocation {
+  name: string;
+  path: string;
+}
+
+const defaultMcpClientLocations = (): McpClientLocation[] => [
+  { name: 'Claude Code', path: join(homedir(), '.claude', 'settings', 'mcp.json') },
+  { name: 'Cursor', path: join(process.cwd(), '.cursor', 'mcp.json') },
+];
+
+const checkMcpClientConfig = async (
+  clients: McpClientLocation[] = defaultMcpClientLocations(),
+): Promise<CheckResult> => {
+  for (const client of clients) {
+    if (!existsSync(client.path)) continue;
+    try {
+      const content = await Bun.file(client.path).text();
+      const parsed: unknown = JSON.parse(content);
+      if (
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        'mcpServers' in parsed &&
+        parsed.mcpServers !== null &&
+        typeof parsed.mcpServers === 'object' &&
+        'opentabs' in parsed.mcpServers
+      ) {
+        return pass('MCP client config', `${client.name} (${client.path})`);
+      }
+    } catch {
+      // File exists but isn't valid JSON — skip to next client
+    }
+  }
+
+  return warn(
+    'MCP client config',
+    'no MCP client configured for OpenTabs',
+    'Add an "opentabs" entry to ~/.claude/settings/mcp.json (Claude Code) or .cursor/mcp.json (Cursor)',
+  );
+};
+
 const checkPlugins = async (config: Record<string, unknown> | null): Promise<CheckResult[]> => {
   if (!config) {
     return [warn('Plugins', 'no config to check', 'Create a config file first')];
@@ -287,11 +327,14 @@ const handleDoctor = async (options: DoctorOptions): Promise<void> => {
   // 6. Extension version matches CLI
   results.push(await checkExtensionVersion(versionFile));
 
-  // 7. Local plugin checks
+  // 7. MCP client config
+  results.push(await checkMcpClientConfig());
+
+  // 8. Local plugin checks
   const pluginResults = await checkPlugins(config);
   results.push(...pluginResults);
 
-  // 8. npm plugin health (from server /health data)
+  // 9. npm plugin health (from server /health data)
   results.push(...checkNpmPlugins(healthData));
 
   // Print results
@@ -344,6 +387,7 @@ export {
   checkBunVersion,
   checkConfigFile,
   checkExtensionConnected,
+  checkMcpClientConfig,
   checkNpmPlugins,
   checkPlugins,
   registerDoctorCommand,

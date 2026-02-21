@@ -301,6 +301,19 @@ describe('/health endpoint', () => {
     expect(body.mode).toBe('production');
   });
 
+  test('does not leak wsSecret in the response body', async () => {
+    const { handlers, state } = createTestHandlers();
+    const secret = 'super-secret-token-12345';
+    state.wsSecret = secret;
+
+    const req = new Request('http://localhost:9876/health');
+    const res = await handlers.fetch(req, mockBunServer);
+    expect(res).toBeInstanceOf(Response);
+    const text = await (res as Response).text();
+
+    expect(text).not.toContain(secret);
+  });
+
   test('includes browser tools in toolCount', async () => {
     const { handlers, state } = createTestHandlers();
 

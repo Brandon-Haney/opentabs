@@ -66,11 +66,22 @@ interface ServerModuleShape {
   ) => McpServerInstance;
 }
 
+/** Extra context passed to request handlers by the MCP SDK */
+interface RequestHandlerExtra {
+  signal: AbortSignal;
+  sessionId?: string;
+  _meta?: { progressToken?: string | number };
+  sendNotification: (notification: { method: string; params?: Record<string, unknown> }) => Promise<void>;
+}
+
 /** The instantiated MCP server with the methods we use */
 interface McpServerInstance {
   setRequestHandler: (
     schema: unknown,
-    handler: (request: { params: { name: string; arguments?: Record<string, unknown> } }) => unknown,
+    handler: (
+      request: { params: { name: string; arguments?: Record<string, unknown> } },
+      extra: RequestHandlerExtra,
+    ) => unknown,
   ) => void;
   connect: (transport: unknown) => Promise<void>;
   sendToolListChanged: () => Promise<void>;
@@ -172,7 +183,7 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
 
   // Handler: tools/call — dispatch to extension or handle browser tool locally.
   // Uses pre-built lookup maps for O(1) tool resolution.
-  server.setRequestHandler(CallToolRequestSchema, async request => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const toolName = request.params.name;
     const args = request.params.arguments ?? {};
 
@@ -313,11 +324,25 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
       }
 
       log.debug('tool.call: dispatching', foundPlugin + '/' + foundTool);
+
+      // Extract progressToken from MCP request _meta and build onProgress callback
+      const progressToken = extra._meta?.progressToken;
+      const onProgress =
+        progressToken !== undefined
+          ? (progress: number, total: number, message?: string) => {
+              const params: Record<string, unknown> = { progressToken, progress, total };
+              if (message !== undefined) params.message = message;
+              extra.sendNotification({ method: 'notifications/progress', params }).catch(() => {
+                // Fire-and-forget — errors in the progress chain must not affect tool execution
+              });
+            }
+          : undefined;
+
       const result = await dispatchToExtension(
         state,
         'tool.dispatch',
         { plugin: foundPlugin, tool: foundTool, input: args },
-        `${foundPlugin}/${foundTool}`,
+        { label: `${foundPlugin}/${foundTool}`, progressToken, onProgress },
       );
       const output = (result as Record<string, unknown>).output ?? result;
 
@@ -463,5 +488,5 @@ export const checkToolCallable = (state: ServerState, prefixedToolName: string):
   return { ok: true, pluginName: lookup.pluginName, toolName: lookup.toolName };
 };
 
-export type { McpServerInstance };
+export type { McpServerInstance, RequestHandlerExtra };
 export { createMcpServer, registerMcpHandlers, rebuildCachedBrowserTools, notifyToolListChanged, sanitizeOutput };

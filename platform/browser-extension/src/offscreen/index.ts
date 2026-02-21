@@ -438,6 +438,7 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, sender, sendResp
     case 'bg:send':
     case 'bg:getConnectionState':
     case 'plugin:logs':
+    case 'tool:progress':
     case 'sp:getState':
     case 'sp:connectionState':
     case 'sp:serverMessage':

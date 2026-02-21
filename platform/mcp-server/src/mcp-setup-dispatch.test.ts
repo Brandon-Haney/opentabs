@@ -17,7 +17,7 @@ import { createState } from './state.js';
 import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, test, beforeEach } from 'bun:test';
 import { z } from 'zod';
-import type { McpServerInstance } from './mcp-setup.js';
+import type { McpServerInstance, RequestHandlerExtra } from './mcp-setup.js';
 import type { RegisteredPlugin } from './state.js';
 import type { WsHandle } from '@opentabs-dev/shared';
 
@@ -90,10 +90,21 @@ const createPlugin = (name: string, toolNames: string[]): RegisteredPlugin => ({
   })),
 });
 
+/** Mock RequestHandlerExtra for testing */
+const mockExtra: RequestHandlerExtra = {
+  signal: new AbortController().signal,
+  sendNotification: () => Promise.resolve(),
+};
+
+/** Handler type matching the McpServerInstance.setRequestHandler callback */
+type RequestHandler = (
+  request: { params: { name: string; arguments?: Record<string, unknown> } },
+  extra: RequestHandlerExtra,
+) => unknown;
+
 /** Create a mock MCP server that captures the tools/call handler */
 const createMockServer = () => {
-  let callHandler: ((request: { params: { name: string; arguments?: Record<string, unknown> } }) => unknown) | null =
-    null;
+  let callHandler: RequestHandler | null = null;
   const server: McpServerInstance = {
     setRequestHandler: (schema: unknown, handler) => {
       if (schema === CallToolRequestSchema) {
@@ -130,7 +141,7 @@ describe('tools/call handler — browser tool path', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'browser_test', arguments: { url: 123 } } })) as {
+    const result = (await handler({ params: { name: 'browser_test', arguments: { url: 123 } } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -155,7 +166,7 @@ describe('tools/call handler — browser tool path', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'browser_test', arguments: {} } })) as {
+    const result = (await handler({ params: { name: 'browser_test', arguments: {} } }, mockExtra)) as {
       isError?: boolean;
       content: Array<{ text: string }>;
     };
@@ -181,7 +192,7 @@ describe('tools/call handler — browser tool path', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'browser_test', arguments: {} } })) as {
+    const result = (await handler({ params: { name: 'browser_test', arguments: {} } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -200,7 +211,7 @@ describe('tools/call handler — plugin tool not found / disabled', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'nonexistent_tool' } })) as {
+    const result = (await handler({ params: { name: 'nonexistent_tool' } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -218,7 +229,7 @@ describe('tools/call handler — plugin tool not found / disabled', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message' } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message' } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -240,7 +251,7 @@ describe('tools/call handler — schema validation path', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message' } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message' } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -262,7 +273,7 @@ describe('tools/call handler — schema validation path', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message' } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message' } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -295,7 +306,7 @@ describe('tools/call handler — schema validation path', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message', arguments: {} } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message', arguments: {} } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -315,7 +326,7 @@ describe('tools/call handler — concurrency and extension connection', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message' } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message' } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -333,7 +344,7 @@ describe('tools/call handler — concurrency and extension connection', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message' } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message' } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -355,7 +366,7 @@ describe('tools/call handler — concurrency and extension connection', () => {
     const handler = getCallHandler();
 
     expect(state.activeDispatches.get('slack')).toBeUndefined();
-    await handler({ params: { name: 'slack_send_message' } });
+    await handler({ params: { name: 'slack_send_message' } }, mockExtra);
     expect(state.activeDispatches.get('slack')).toBeUndefined();
   });
 
@@ -370,7 +381,7 @@ describe('tools/call handler — concurrency and extension connection', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    await handler({ params: { name: 'slack_send_message' } });
+    await handler({ params: { name: 'slack_send_message' } }, mockExtra);
     expect(state.activeDispatches.has('slack')).toBe(false);
   });
 });
@@ -392,7 +403,7 @@ describe('tools/call handler — dispatch success and error codes', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message' } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message' } }, mockExtra)) as {
       isError?: boolean;
       content: Array<{ text: string }>;
     };
@@ -412,7 +423,7 @@ describe('tools/call handler — dispatch success and error codes', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message' } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message' } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -431,7 +442,7 @@ describe('tools/call handler — dispatch success and error codes', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message' } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message' } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -451,7 +462,7 @@ describe('tools/call handler — dispatch success and error codes', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message' } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message' } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -471,7 +482,7 @@ describe('tools/call handler — dispatch success and error codes', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message' } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message' } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -507,7 +518,7 @@ describe('tools/call handler — dispatch success and error codes', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message' } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message' } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -539,7 +550,7 @@ describe('tools/call handler — dispatch success and error codes', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message' } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message' } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -568,7 +579,7 @@ describe('tools/call handler — dispatch success and error codes', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message' } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message' } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };
@@ -595,7 +606,7 @@ describe('tools/call handler — dispatch success and error codes', () => {
     registerMcpHandlers(server, state);
     const handler = getCallHandler();
 
-    const result = (await handler({ params: { name: 'slack_send_message' } })) as {
+    const result = (await handler({ params: { name: 'slack_send_message' } }, mockExtra)) as {
       isError: boolean;
       content: Array<{ text: string }>;
     };

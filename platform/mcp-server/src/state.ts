@@ -61,6 +61,10 @@ export interface PendingDispatch {
   startTs: number;
   /** Timer ID for the dispatch timeout — cleared when the dispatch settles */
   timerId: ReturnType<typeof setTimeout>;
+  /** MCP progressToken from the tools/call request's _meta — used to emit MCP ProgressNotifications */
+  progressToken?: string | number;
+  /** Callback to emit an MCP ProgressNotification for this dispatch */
+  onProgress?: (progress: number, total: number, message?: string) => void;
 }
 
 /** Resolved tool lookup entry for O(1) dispatch in tools/call */

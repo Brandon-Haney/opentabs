@@ -93,6 +93,15 @@ export interface SpRelayMessage {
   data: Record<string, unknown>;
 }
 
+/** Content script relay → Background: tool progress notification from adapter IIFE */
+export interface ToolProgressMessage {
+  type: 'tool:progress';
+  dispatchId: string;
+  progress: number;
+  total: number;
+  message?: string;
+}
+
 /** All internal message types flowing through chrome.runtime.sendMessage */
 export type InternalMessage =
   | OffscreenGetUrlMessage
@@ -106,6 +115,7 @@ export type InternalMessage =
   | BgGetLogsMessage
   | BgForceReconnectMessage
   | PluginLogsMessage
+  | ToolProgressMessage
   | SpGetStateMessage
   | SpConnectionStateMessage
   | SpRelayMessage;

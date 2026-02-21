@@ -190,20 +190,30 @@ const sendSyncFull = async (state: ServerState): Promise<void> => {
   if (!sent) log.warn('Failed to send sync.full — extension not connected');
 };
 
+/** Options for dispatchToExtension beyond the basic method + params */
+interface DispatchOptions {
+  /** Human-readable description for timeout error messages (e.g., "browser.openTab" or "slack/send_message") */
+  label?: string;
+  /** MCP progressToken from the tools/call request's _meta — stored on PendingDispatch for progress forwarding */
+  progressToken?: string | number;
+  /** Callback to emit an MCP ProgressNotification when tool.progress arrives for this dispatch */
+  onProgress?: (progress: number, total: number, message?: string) => void;
+}
+
 /**
  * Send a JSON-RPC request to the extension and return a promise for the response.
  * Unified dispatch for both browser commands (browser.*, extension.*) and
  * plugin tool dispatches (tool.dispatch).
- *
- * @param label - Human-readable description for timeout error messages
- *   (e.g., "browser.openTab" or "slack/send_message")
  */
 const dispatchToExtension = (
   state: ServerState,
   method: string,
   params: Record<string, unknown>,
-  label?: string,
+  options?: string | DispatchOptions,
 ): Promise<unknown> => {
+  // Backward-compatible: options can be a string (label) for existing callers
+  const opts: DispatchOptions = typeof options === 'string' ? { label: options } : (options ?? {});
+
   const ws = state.extensionWs;
   if (!ws) {
     return Promise.reject(new Error('Extension not connected'));
@@ -214,11 +224,11 @@ const dispatchToExtension = (
   const msg: JsonRpcRequest = {
     jsonrpc: '2.0',
     method,
-    params,
+    params: { ...params, dispatchId: id },
     id,
   };
 
-  const dispatchLabel = label ?? method;
+  const dispatchLabel = opts.label ?? method;
 
   return new Promise((resolve, reject) => {
     const timerId = setTimeout(() => {
@@ -234,6 +244,8 @@ const dispatchToExtension = (
       label: dispatchLabel,
       startTs: Date.now(),
       timerId,
+      progressToken: opts.progressToken,
+      onProgress: opts.onProgress,
     };
     state.pendingDispatches.set(id, pending);
 
@@ -412,6 +424,11 @@ const handleExtensionMessage = (
 
   if (method === 'config.setAllToolsEnabled' && id !== undefined) {
     handleConfigSetAllToolsEnabled(state, params, id, callbacks);
+    return;
+  }
+
+  if (method === 'tool.progress') {
+    handleToolProgress(state, params);
     return;
   }
 
@@ -692,6 +709,36 @@ const handleConfigSetAllToolsEnabled = (
     result: { ok: true },
     id,
   });
+};
+
+/**
+ * Handle tool.progress notification from the extension.
+ * Looks up the pending dispatch by dispatchId and invokes the onProgress callback
+ * to emit an MCP ProgressNotification to the client. Fire-and-forget: errors in
+ * the progress chain do not affect tool execution.
+ */
+const handleToolProgress = (state: ServerState, params: Record<string, unknown> | undefined): void => {
+  if (!params) return;
+
+  const dispatchId = params.dispatchId;
+  if (typeof dispatchId !== 'string') return;
+
+  const progress = params.progress;
+  const total = params.total;
+  if (typeof progress !== 'number' || typeof total !== 'number') return;
+
+  const message = typeof params.message === 'string' ? params.message : undefined;
+
+  const pending = state.pendingDispatches.get(dispatchId);
+  if (!pending) return;
+
+  if (pending.onProgress) {
+    try {
+      pending.onProgress(progress, total, message);
+    } catch {
+      // Fire-and-forget — errors in the progress chain must not affect tool execution
+    }
+  }
 };
 
 /** Valid plugin log levels (matches MCP LoggingLevel subset used by the SDK) */

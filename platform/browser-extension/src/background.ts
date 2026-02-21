@@ -213,6 +213,25 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, _sender, sendRes
       return true;
     }
 
+    case 'tool:progress': {
+      // Forward tool progress notifications from the content script relay to
+      // the MCP server. The server maps these to MCP ProgressNotifications.
+      if (wsConnected) {
+        sendToServer({
+          jsonrpc: '2.0',
+          method: 'tool.progress',
+          params: {
+            dispatchId: message.dispatchId,
+            progress: message.progress,
+            total: message.total,
+            message: message.message,
+          },
+        });
+      }
+      sendResponse({ ok: true });
+      return true;
+    }
+
     // Messages handled by other listeners (offscreen, side panel) — not
     // processed here, but included for exhaustiveness so TypeScript flags
     // any new InternalMessage variant that isn't routed somewhere.

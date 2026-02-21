@@ -51,28 +51,109 @@ type ToolResult =
   | { type: 'success'; output: unknown };
 
 /**
+ * Inject an ISOLATED world content script that listens for opentabs:progress
+ * CustomEvents from the MAIN world and relays them to the background service
+ * worker via chrome.runtime.sendMessage. Returns after the listener is installed.
+ *
+ * CustomEvents fired in MAIN world are visible in ISOLATED world because they
+ * share the same DOM — this is the correct, CSP-safe pattern for cross-world
+ * communication in Chrome extensions.
+ */
+const injectProgressListener = async (tabId: number, dispatchId: string): Promise<void> => {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: (dId: string) => {
+        const eventName = `opentabs:progress:${dId}`;
+        const handler = (e: Event) => {
+          const detail = (e as CustomEvent).detail as {
+            dispatchId: string;
+            progress: number;
+            total: number;
+            message?: string;
+          } | null;
+          if (!detail) return;
+          void chrome.runtime.sendMessage({
+            type: 'tool:progress',
+            dispatchId: detail.dispatchId,
+            progress: detail.progress,
+            total: detail.total,
+            message: detail.message,
+          });
+        };
+        document.addEventListener(eventName, handler);
+
+        // Store a cleanup function on the document so we can remove the listener later
+        const cleanupKey = `__opentabs_progress_cleanup_${dId}`;
+        const doc = document as unknown as Record<string, unknown>;
+        doc[cleanupKey] = () => {
+          document.removeEventListener(eventName, handler);
+          doc[cleanupKey] = undefined;
+        };
+      },
+      args: [dispatchId],
+    });
+  } catch {
+    // Tab may not be injectable — progress is best-effort
+  }
+};
+
+/**
+ * Remove the ISOLATED world progress listener installed by injectProgressListener.
+ * Fire-and-forget — errors are silently ignored since the dispatch is already complete.
+ */
+const removeProgressListener = (tabId: number, dispatchId: string): void => {
+  chrome.scripting
+    .executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: (dId: string) => {
+        const cleanupKey = `__opentabs_progress_cleanup_${dId}`;
+        const cleanup = (document as unknown as Record<string, unknown>)[cleanupKey] as (() => void) | undefined;
+        if (cleanup) cleanup();
+      },
+      args: [dispatchId],
+    })
+    .catch(() => {
+      // Best-effort cleanup
+    });
+};
+
+/**
  * Execute a tool on a specific tab. Returns the structured result from the
  * adapter script, or throws if the tab is inaccessible (e.g., closed).
+ *
+ * @param dispatchId - Correlation ID for progress reporting. The injected MAIN
+ *   world function creates a ToolHandlerContext with a reportProgress callback
+ *   that fires CustomEvents keyed by this ID.
  */
 const executeToolOnTab = async (
   tabId: number,
   pluginName: string,
   toolName: string,
   input: Record<string, unknown>,
+  dispatchId: string,
 ): Promise<ToolResult> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
   const scriptPromise = chrome.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
-    func: async (pName: string, tName: string, tInput: Record<string, unknown>) => {
+    func: async (pName: string, tName: string, tInput: Record<string, unknown>, dId: string) => {
       const ot = (globalThis as Record<string, unknown>).__openTabs as
         | {
             adapters?: Record<
               string,
               {
                 isReady(): Promise<boolean>;
-                tools: Array<{ name: string; handle(params: unknown): Promise<unknown> }>;
+                tools: Array<{
+                  name: string;
+                  handle(
+                    params: unknown,
+                    context?: { reportProgress(opts: { progress: number; total: number; message?: string }): void },
+                  ): Promise<unknown>;
+                }>;
               }
             >;
           }
@@ -110,8 +191,30 @@ const executeToolOnTab = async (
         return { type: 'error' as const, code: -32603, message: `Tool "${tName}" not found in adapter "${pName}"` };
       }
 
+      // Create ToolHandlerContext with reportProgress that fires a CustomEvent
+      // on the document. The ISOLATED world content script listens for this event
+      // and relays it to the background service worker.
+      const context = {
+        reportProgress(opts: { progress: number; total: number; message?: string }) {
+          try {
+            document.dispatchEvent(
+              new CustomEvent(`opentabs:progress:${dId}`, {
+                detail: {
+                  dispatchId: dId,
+                  progress: opts.progress,
+                  total: opts.total,
+                  message: opts.message,
+                },
+              }),
+            );
+          } catch {
+            // Fire-and-forget — progress reporting errors must not affect tool execution
+          }
+        },
+      };
+
       try {
-        const output = await tool.handle(tInput);
+        const output = await tool.handle(tInput, context);
         return { type: 'success' as const, output };
       } catch (err: unknown) {
         const e = err as {
@@ -145,7 +248,7 @@ const executeToolOnTab = async (
         };
       }
     },
-    args: [pluginName, toolName, input],
+    args: [pluginName, toolName, input, dispatchId],
   });
 
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
@@ -184,6 +287,9 @@ const isAdapterNotReady = (result: ToolResult): boolean => result.type === 'erro
  * and returns the result.
  */
 export const handleToolDispatch = async (params: Record<string, unknown>, id: string | number): Promise<void> => {
+  // dispatchId is the correlation key for progress reporting, injected by the MCP server
+  const dispatchId = typeof params.dispatchId === 'string' ? params.dispatchId : String(id);
+
   const pluginName = params.plugin;
   if (typeof pluginName !== 'string' || pluginName.length === 0) {
     sendToServer({
@@ -279,21 +385,30 @@ export const handleToolDispatch = async (params: Record<string, unknown>, id: st
 
     try {
       await injectToolInvocationLog(tab.id, pluginName, toolName, link);
-      const result = await executeToolOnTab(tab.id, pluginName, toolName, input);
+      await injectProgressListener(tab.id, dispatchId);
+      try {
+        const result = await executeToolOnTab(tab.id, pluginName, toolName, input, dispatchId);
 
-      if (result.type === 'success') {
-        sendToServer({ jsonrpc: '2.0', result: { output: result.output }, id });
+        if (result.type === 'success') {
+          sendToServer({ jsonrpc: '2.0', result: { output: result.output }, id });
+          return;
+        }
+
+        // Adapter-not-ready errors trigger fallback to the next matching tab
+        if (isAdapterNotReady(result) && matchingTabs.length > 1) {
+          firstError ??= { code: result.code, message: result.message };
+          continue;
+        }
+
+        sendToServer({
+          jsonrpc: '2.0',
+          error: { code: result.code, message: result.message, data: result.data },
+          id,
+        });
         return;
+      } finally {
+        removeProgressListener(tab.id, dispatchId);
       }
-
-      // Adapter-not-ready errors trigger fallback to the next matching tab
-      if (isAdapterNotReady(result) && matchingTabs.length > 1) {
-        firstError ??= { code: result.code, message: result.message };
-        continue;
-      }
-
-      sendToServer({ jsonrpc: '2.0', error: { code: result.code, message: result.message, data: result.data }, id });
-      return;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const isTabGone = msg.includes('No tab with id') || msg.includes('Cannot access');

@@ -10,7 +10,7 @@ import { createState } from './state.js';
 import { describe, expect, test } from 'bun:test';
 import { z } from 'zod';
 import type { BrowserToolDefinition } from './browser-tools/definition.js';
-import type { McpServerInstance } from './mcp-setup.js';
+import type { McpServerInstance, RequestHandlerExtra } from './mcp-setup.js';
 import type { RegisteredPlugin } from './state.js';
 
 /** Create a minimal RegisteredPlugin for testing */
@@ -278,15 +278,18 @@ describe('trustTierPrefix', () => {
   });
 });
 
+/** Handler type matching the McpServerInstance.setRequestHandler callback */
+type RequestHandler = (
+  request: { params: { name: string; arguments?: Record<string, unknown> } },
+  extra: RequestHandlerExtra,
+) => unknown;
+
 /** Create a mock McpServerInstance that captures registered handlers */
 const createMockServer = (): {
   server: McpServerInstance;
-  handlers: Map<unknown, (request: { params: { name: string; arguments?: Record<string, unknown> } }) => unknown>;
+  handlers: Map<unknown, RequestHandler>;
 } => {
-  const handlers = new Map<
-    unknown,
-    (request: { params: { name: string; arguments?: Record<string, unknown> } }) => unknown
-  >();
+  const handlers = new Map<unknown, RequestHandler>();
   const server: McpServerInstance = {
     setRequestHandler: (schema: unknown, handler) => {
       handlers.set(schema, handler);
@@ -298,15 +301,19 @@ const createMockServer = (): {
   return { server, handlers };
 };
 
+/** Mock RequestHandlerExtra for testing */
+const mockExtra: RequestHandlerExtra = {
+  signal: new AbortController().signal,
+  sendNotification: () => Promise.resolve(),
+};
+
 /** Retrieve the tools/list handler by finding the handler that returns a { tools } shape */
-const getListToolsHandler = (
-  handlers: Map<unknown, (request: { params: { name: string; arguments?: Record<string, unknown> } }) => unknown>,
-): ((request: { params: { name: string; arguments?: Record<string, unknown> } }) => unknown) => {
+const getListToolsHandler = (handlers: Map<unknown, RequestHandler>): RequestHandler => {
   // registerMcpHandlers registers exactly 2 handlers (tools/list and tools/call).
   // The tools/list handler is registered first. Iterate and return the one whose
   // result has a `tools` array property.
   for (const handler of handlers.values()) {
-    const result = handler({ params: { name: '' } }) as Record<string, unknown>;
+    const result = handler({ params: { name: '' } }, mockExtra) as Record<string, unknown>;
     if ('tools' in result) return handler;
   }
   throw new Error('tools/list handler not found');
@@ -324,7 +331,7 @@ describe('registerMcpHandlers — disabled tool filtering', () => {
     registerMcpHandlers(server, state);
 
     const listTools = getListToolsHandler(handlers);
-    const result = listTools({ params: { name: '' } }) as { tools: Array<{ name: string }> };
+    const result = listTools({ params: { name: '' } }, mockExtra) as { tools: Array<{ name: string }> };
 
     const toolNames = result.tools.map(t => t.name);
     expect(toolNames).toContain('slack_send_message');
@@ -346,7 +353,7 @@ describe('registerMcpHandlers — disabled tool filtering', () => {
     const listTools = getListToolsHandler(handlers);
 
     // Verify tool is absent when disabled
-    const resultBefore = listTools({ params: { name: '' } }) as { tools: Array<{ name: string }> };
+    const resultBefore = listTools({ params: { name: '' } }, mockExtra) as { tools: Array<{ name: string }> };
     const namesBefore = resultBefore.tools.map(t => t.name);
     expect(namesBefore).not.toContain('slack_send_message');
     expect(namesBefore).toContain('slack_read_messages');
@@ -355,7 +362,7 @@ describe('registerMcpHandlers — disabled tool filtering', () => {
     state.toolConfig = {};
 
     // Same handler, same state reference — tool should reappear
-    const resultAfter = listTools({ params: { name: '' } }) as { tools: Array<{ name: string }> };
+    const resultAfter = listTools({ params: { name: '' } }, mockExtra) as { tools: Array<{ name: string }> };
     const namesAfter = resultAfter.tools.map(t => t.name);
     expect(namesAfter).toContain('slack_send_message');
     expect(namesAfter).toContain('slack_read_messages');

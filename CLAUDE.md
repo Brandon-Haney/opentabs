@@ -116,6 +116,53 @@ opentabs/
 
 **Hot reload** (dev mode): In dev mode, the MCP server runs under `bun --hot`. On file changes, Bun re-evaluates the module while preserving `globalThis`. The server uses a `globalThis`-based cleanup pattern to tear down the previous instance (close WebSocket, stop file watchers, free the port) and reinitialize cleanly. In production mode, the server starts once and serves until manually restarted. In both modes, the `POST /reload` endpoint triggers plugin rediscovery without restarting the process.
 
+**SDK utilities**: The plugin SDK (`@opentabs-dev/plugin-sdk`) provides utility functions that run in the page context, reducing boilerplate for common plugin operations. All utilities are exported from the SDK's public API and organized into five categories:
+
+_DOM utilities_ (`platform/plugin-sdk/src/dom.ts`):
+
+- `waitForSelector(selector, opts?)` → `Promise<Element>` — waits for an element to appear using MutationObserver, configurable timeout (default 10s)
+- `waitForSelectorRemoval(selector, opts?)` → `Promise<void>` — waits for an element to be removed from the DOM, configurable timeout (default 10s)
+- `querySelectorAll<T>(selector)` → `T[]` — typed wrapper returning a real array instead of NodeList
+- `getTextContent(selector)` → `string | null` — returns trimmed textContent of the first match, or null
+- `observeDOM(selector, callback, options?)` → `() => void` — sets up a MutationObserver on the matching element, returns a cleanup function (defaults: childList+subtree true)
+
+_Fetch utilities_ (`platform/plugin-sdk/src/fetch.ts`):
+
+- `fetchFromPage(url, init?)` → `Promise<Response>` — fetch with credentials:'include' (page session cookies), configurable timeout via AbortSignal (default 30s), throws `ToolError` on non-ok status
+- `fetchJSON<T>(url, init?)` → `Promise<T>` — calls fetchFromPage and parses JSON, throws on parse failure
+- `postJSON<T>(url, body, init?)` → `Promise<T>` — POST with JSON body (sets Content-Type, stringifies), returns parsed JSON
+
+_Storage utilities_ (`platform/plugin-sdk/src/storage.ts`):
+
+- `getLocalStorage(key)` → `string | null` — wraps localStorage.getItem with try-catch (returns null on SecurityError)
+- `setLocalStorage(key, value)` → `void` — wraps localStorage.setItem with try-catch (silently fails on SecurityError)
+- `getSessionStorage(key)` → `string | null` — wraps sessionStorage.getItem with try-catch
+- `getCookie(name)` → `string | null` — parses document.cookie, handles URI-encoded values
+
+_Page state utilities_ (`platform/plugin-sdk/src/page-state.ts`):
+
+- `getPageGlobal(path)` → `unknown` — safe deep property access on globalThis using dot-notation (e.g., `getPageGlobal('TS.boot_data.api_token') as string | undefined`), returns undefined if any segment is missing
+- `getCurrentUrl()` → `string` — returns window.location.href
+- `getPageTitle()` → `string` — returns document.title
+
+_Timing utilities_ (`platform/plugin-sdk/src/timing.ts`):
+
+- `retry<T>(fn, opts?)` → `Promise<T>` — retries on failure with configurable maxAttempts (default 3), delay (default 1s), optional exponential backoff, optional AbortSignal cancellation
+- `sleep(ms)` → `Promise<void>` — promisified setTimeout
+- `waitUntil(predicate, opts?)` → `Promise<void>` — polls predicate at interval (default 200ms) until true, rejects on timeout (default 10s)
+
+Usage in a tool handler:
+
+```typescript
+import { waitForSelector, fetchJSON, getLocalStorage, getPageGlobal, retry } from '@opentabs-dev/plugin-sdk';
+
+// Wait for a DOM element, then fetch data using the page's session
+const el = await waitForSelector('.dashboard-loaded');
+const data = await retry(() => fetchJSON<ApiResponse>('/api/data'), { maxAttempts: 3, delay: 500 });
+const token = getLocalStorage('auth_token');
+const teamId = getPageGlobal('App.config.teamId') as string | undefined;
+```
+
 ### Commands
 
 ```bash

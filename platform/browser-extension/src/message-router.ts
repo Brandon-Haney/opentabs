@@ -41,7 +41,7 @@ import { forwardToSidePanel, sendToServer } from './messaging.js';
 import { getAllPluginMeta, removePlugin, removePluginsBatch, storePluginsBatch } from './plugin-storage.js';
 import { checkRateLimit } from './rate-limiter.js';
 import { handleResourceRead, handlePromptGet } from './resource-prompt-dispatch.js';
-import { clearPluginTabState, computePluginTabState, sendTabSyncAll } from './tab-state.js';
+import { clearPluginTabState, computePluginTabState, sendTabSyncAll, updateLastKnownState } from './tab-state.js';
 import { handleToolDispatch } from './tool-dispatch.js';
 import type { PluginMeta } from './types.js';
 import type { TrustTier, WireToolDef } from '@opentabs-dev/shared';
@@ -360,6 +360,7 @@ const handlePluginUpdate = async (params: Record<string, unknown>): Promise<void
   // Report updated tab state to the server after re-injection so the MCP
   // server's tabMapping reflects the new adapter's readiness immediately.
   const newState = await computePluginTabState(meta);
+  updateLastKnownState(meta.name, newState.state);
   sendToServer({
     jsonrpc: '2.0',
     method: 'tab.stateChanged',

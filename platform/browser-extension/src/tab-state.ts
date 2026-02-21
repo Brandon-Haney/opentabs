@@ -169,6 +169,16 @@ export const clearPluginTabState = (pluginName: string): void => {
   pluginLocks.delete(pluginName);
 };
 
+/**
+ * Update the last-known state for a single plugin. Called by handlePluginUpdate
+ * in message-router.ts after computing the new state via computePluginTabState,
+ * so the cache stays in sync when tab.stateChanged is sent directly (bypassing
+ * checkTabStateChanges).
+ */
+export const updateLastKnownState = (pluginName: string, state: TabState): void => {
+  lastKnownState.set(pluginName, state);
+};
+
 /** Return a snapshot of last-known tab states for all plugins. */
 export const getLastKnownStates = (): ReadonlyMap<string, TabState> => lastKnownState;
 

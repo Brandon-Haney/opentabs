@@ -16,6 +16,7 @@ import { sdkFetchJson } from './tools/sdk-fetch-json.js';
 import { sdkGetLocalStorage } from './tools/sdk-get-local-storage.js';
 import { sdkGetPageGlobal } from './tools/sdk-get-page-global.js';
 import { sdkRetry } from './tools/sdk-retry.js';
+import { slowWithProgress } from './tools/slow-with-progress.js';
 import { sdkWaitForSelector } from './tools/sdk-wait-for-selector.js';
 import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
@@ -45,6 +46,7 @@ class E2eTestPlugin extends OpenTabsPlugin {
     sdkGetLocalStorage,
     sdkGetPageGlobal,
     sdkRetry,
+    slowWithProgress,
   ];
 
   constructor() {

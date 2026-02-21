@@ -735,6 +735,13 @@ const getBackgroundPage = async (context: BrowserContext, timeoutMs = 15_000): P
 // MCP Client — calls tools through the MCP streamable HTTP API
 // ---------------------------------------------------------------------------
 
+/** A progress notification captured from the SSE stream */
+interface ProgressNotification {
+  progress: number;
+  total: number;
+  message?: string;
+}
+
 interface McpClient {
   initialize: () => Promise<void>;
   listTools: () => Promise<Array<{ name: string; description: string; inputSchema?: unknown }>>;
@@ -743,6 +750,12 @@ interface McpClient {
     args?: Record<string, unknown>,
     options?: { timeout?: number },
   ) => Promise<{ content: string; isError: boolean }>;
+  /** Call a tool with a progressToken and capture all progress notifications from the SSE stream. */
+  callToolWithProgress: (
+    name: string,
+    args?: Record<string, unknown>,
+    options?: { timeout?: number },
+  ) => Promise<{ content: string; isError: boolean; progressNotifications: ProgressNotification[] }>;
   close: () => Promise<void>;
   /** Reset the session so the next initialize() creates a fresh session. */
   resetSession: () => void;
@@ -896,6 +909,111 @@ const createMcpClient = (port: number, secret?: string): McpClient => {
       };
       const text = result.content.map(c => c.text).join('');
       return { content: text, isError: result.isError === true };
+    },
+
+    callToolWithProgress: async (name, args = {}, options) => {
+      const timeoutMs = options?.timeout ?? 60_000;
+      const progressToken = `progress-${nextId}`;
+      const reqId = nextId++;
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      };
+      if (secret) {
+        headers['Authorization'] = `Bearer ${secret}`;
+      }
+      if (sessionId) {
+        headers['mcp-session-id'] = sessionId;
+      }
+
+      const res = await fetch(mcpUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'tools/call',
+          params: { name, arguments: args, _meta: { progressToken } },
+          id: reqId,
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`MCP request failed (${res.status}): ${text}`);
+      }
+
+      const sid = res.headers.get('mcp-session-id');
+      if (sid) sessionId = sid;
+
+      const contentType = res.headers.get('content-type') ?? '';
+      const progressNotifications: ProgressNotification[] = [];
+
+      if (contentType.includes('application/json')) {
+        const json = (await res.json()) as Record<string, unknown>;
+        if (json.error) {
+          const err = json.error as { message: string };
+          return { content: err.message, isError: true, progressNotifications };
+        }
+        const result = json.result as {
+          content: Array<{ type: string; text: string }>;
+          isError?: boolean;
+        };
+        const text = result.content.map(c => c.text).join('');
+        return { content: text, isError: result.isError === true, progressNotifications };
+      }
+
+      // SSE response — parse all messages, extracting progress notifications
+      const rawText = await res.text();
+      const dataLines = rawText
+        .split('\n')
+        .filter(line => line.startsWith('data:'))
+        .map(line => line.slice('data:'.length).trim());
+
+      let toolResult: Record<string, unknown> | null = null;
+
+      for (const raw of dataLines) {
+        let msg: Record<string, unknown>;
+        try {
+          msg = JSON.parse(raw) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+
+        // Progress notification: { jsonrpc: '2.0', method: 'notifications/progress', params: { progressToken, progress, total, message? } }
+        if (msg.method === 'notifications/progress') {
+          const params = msg.params as Record<string, unknown>;
+          const notif: ProgressNotification = {
+            progress: params.progress as number,
+            total: params.total as number,
+          };
+          if (typeof params.message === 'string') notif.message = params.message;
+          progressNotifications.push(notif);
+          continue;
+        }
+
+        // Tool result: match by request ID
+        if (msg.id === reqId && ('result' in msg || 'error' in msg)) {
+          toolResult = msg;
+        }
+      }
+
+      if (!toolResult) {
+        throw new Error(`No tool result found in SSE stream.\nRaw:\n${rawText.slice(0, 2000)}`);
+      }
+
+      if (toolResult.error) {
+        const err = toolResult.error as { message: string };
+        return { content: err.message, isError: true, progressNotifications };
+      }
+
+      const result = toolResult.result as {
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      };
+      const text = result.content.map(c => c.text).join('');
+      return { content: text, isError: result.isError === true, progressNotifications };
     },
 
     close: async () => {
@@ -1098,4 +1216,4 @@ export {
   E2E_TEST_PLUGIN_DIR,
   ROOT,
 };
-export type { HealthResponse, McpServer, TestServer, McpClient, OpentabsConfig };
+export type { HealthResponse, McpServer, TestServer, McpClient, OpentabsConfig, ProgressNotification };

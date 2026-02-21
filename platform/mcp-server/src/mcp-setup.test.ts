@@ -293,6 +293,7 @@ const createMockServer = (): {
     },
     connect: () => Promise.resolve(),
     sendToolListChanged: () => Promise.resolve(),
+    sendLoggingMessage: () => Promise.resolve(),
   };
   return { server, handlers };
 };

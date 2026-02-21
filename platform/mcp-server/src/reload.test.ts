@@ -27,6 +27,7 @@ const createMockServer = () => ({
   setRequestHandler: () => {},
   connect: () => Promise.resolve(),
   sendToolListChanged: () => Promise.resolve(),
+  sendLoggingMessage: () => Promise.resolve(),
 });
 
 /** Typed empty transports map */

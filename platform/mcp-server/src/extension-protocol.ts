@@ -4,11 +4,13 @@
  */
 
 import { getAdaptersDir } from './config.js';
+import { appendLog } from './log-buffer.js';
 import { log } from './logger.js';
 import { prefixedToolName, isToolEnabled, getNextRequestId, DISPATCH_TIMEOUT_MS } from './state.js';
 import { SIDE_PANEL_PROTOCOL_VERSION } from '@opentabs-dev/shared';
 import { mkdir, readdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { PluginLogEntry } from './log-buffer.js';
 import type { ServerState, TabMapping, PendingDispatch } from './state.js';
 import type {
   ConfigSetAllToolsEnabledParams,
@@ -62,6 +64,7 @@ const sendToExtension = (
 interface McpCallbacks {
   onToolConfigChanged: () => void;
   onToolConfigPersist: () => void;
+  onPluginLog: (entry: PluginLogEntry) => void;
 }
 
 /**
@@ -412,6 +415,11 @@ const handleExtensionMessage = (
     return;
   }
 
+  if (method === 'plugin.log') {
+    handlePluginLog(params, callbacks);
+    return;
+  }
+
   // Unrecognized method with an id — send JSON-RPC -32601 'Method not found'
   if (id !== undefined && method) {
     sendToExtension(state, {
@@ -684,6 +692,34 @@ const handleConfigSetAllToolsEnabled = (
     result: { ok: true },
     id,
   });
+};
+
+/** Valid plugin log levels (matches MCP LoggingLevel subset used by the SDK) */
+const VALID_LOG_LEVELS = new Set(['debug', 'info', 'warning', 'error']);
+
+const handlePluginLog = (params: Record<string, unknown> | undefined, callbacks: McpCallbacks): void => {
+  if (!params) return;
+
+  const plugin = params.plugin;
+  const level = params.level;
+  const message = params.message;
+
+  if (typeof plugin !== 'string' || plugin.length === 0) return;
+  if (typeof level !== 'string' || !VALID_LOG_LEVELS.has(level)) return;
+  if (typeof message !== 'string') return;
+
+  const ts = typeof params.ts === 'string' ? params.ts : new Date().toISOString();
+
+  const entry: PluginLogEntry = {
+    level,
+    plugin,
+    message,
+    data: params.data,
+    ts,
+  };
+
+  appendLog(plugin, entry);
+  callbacks.onPluginLog(entry);
 };
 
 // ---------------------------------------------------------------------------

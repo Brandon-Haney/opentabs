@@ -15,6 +15,7 @@
 import { saveToolConfig } from './config.js';
 import { isDev } from './dev-mode.js';
 import { handleExtensionMessage, sendSyncFull } from './extension-protocol.js';
+import { getLogCount } from './log-buffer.js';
 import { log } from './logger.js';
 import { createMcpServer, notifyToolListChanged } from './mcp-setup.js';
 import { performConfigReload } from './reload.js';
@@ -50,6 +51,16 @@ const createMcpCallbacks = (state: ServerState, sessionServers: McpServerInstanc
     saveToolConfig(state, { ...state.toolConfig }).catch(() => {
       // Error already logged by saveToolConfig
     });
+  },
+  onPluginLog: entry => {
+    const mcpLevel = entry.level;
+    const logger = `plugin:${entry.plugin}`;
+    const data = entry.data !== undefined ? `${entry.message} ${JSON.stringify(entry.data)}` : entry.message;
+    for (const srv of sessionServers) {
+      srv.sendLoggingMessage({ level: mcpLevel, logger, data }).catch(() => {
+        // Best-effort — client may have disconnected
+      });
+    }
   },
 });
 
@@ -171,6 +182,7 @@ const createHandleFetch =
         toolCount: p.tools.length,
         tabState: state.tabMapping.get(p.name)?.state ?? 'closed',
         source: p.source,
+        logBufferSize: getLogCount(p.name),
       }));
 
       const toolCount = state.registry.toolLookup.size + state.cachedBrowserTools.length;

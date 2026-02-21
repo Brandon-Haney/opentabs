@@ -13,6 +13,7 @@ const createMockSession = (): McpServerInstance => ({
   setRequestHandler: () => {},
   connect: () => Promise.resolve(),
   sendToolListChanged: () => Promise.resolve(),
+  sendLoggingMessage: () => Promise.resolve(),
 });
 
 describe('checkBearerAuth', () => {

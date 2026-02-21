@@ -74,6 +74,7 @@ interface McpServerInstance {
   ) => void;
   connect: (transport: unknown) => Promise<void>;
   sendToolListChanged: () => Promise<void>;
+  sendLoggingMessage: (params: { level: string; logger?: string; data?: unknown }) => Promise<void>;
 }
 
 /**

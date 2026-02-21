@@ -22,7 +22,7 @@ import type { RegisteredPlugin } from './state.js';
 import type { WsHandle } from '@opentabs-dev/shared';
 
 /** No-op callbacks for handleExtensionMessage */
-const noopCallbacks = { onToolConfigChanged: () => {}, onToolConfigPersist: () => {} };
+const noopCallbacks = { onToolConfigChanged: () => {}, onToolConfigPersist: () => {}, onPluginLog: () => {} };
 
 /**
  * Create a mock WsHandle that automatically resolves any JSON-RPC request
@@ -102,6 +102,7 @@ const createMockServer = () => {
     },
     connect: () => Promise.resolve(),
     sendToolListChanged: () => Promise.resolve(),
+    sendLoggingMessage: () => Promise.resolve(),
   };
   return {
     server,

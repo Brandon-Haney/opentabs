@@ -65,11 +65,10 @@
         "opentabs": "./dist/cli.js",
       },
       "dependencies": {
-        "@opentabs-dev/plugin-sdk": "^0.0.2",
-        "@opentabs-dev/shared": "^0.0.2",
+        "@opentabs-dev/plugin-sdk": "^0.0.9",
+        "@opentabs-dev/shared": "^0.0.9",
         "commander": "^14.0.3",
         "picocolors": "^1.1.1",
-        "zod": "^4.3.6",
       },
       "devDependencies": {
         "bun-types": "^1.3.9",

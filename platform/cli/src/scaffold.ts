@@ -67,9 +67,9 @@ const generatePackageJson = async (args: ScaffoldArgs, urlPattern: string): Prom
   const displayName = args.display ?? toTitleCase(args.name);
   const desc = args.description ?? `OpenTabs plugin for ${displayName}`;
 
-  const [sdkVersion, cliVersion] = await Promise.all([
+  const [sdkVersion, pluginToolsVersion] = await Promise.all([
     resolvePackageVersion('@opentabs-dev/plugin-sdk'),
-    resolvePackageVersion('@opentabs-dev/cli'),
+    resolvePackageVersion('@opentabs-dev/plugin-tools'),
   ]);
 
   const pkg = {
@@ -92,8 +92,8 @@ const generatePackageJson = async (args: ScaffoldArgs, urlPattern: string): Prom
     types: './dist/index.d.ts',
     files: ['dist'],
     scripts: {
-      build: 'tsc && opentabs build',
-      dev: 'tsc --watch --preserveWatchOutput & opentabs build --watch',
+      build: 'tsc && opentabs-plugin build',
+      dev: 'tsc --watch --preserveWatchOutput & opentabs-plugin build --watch',
       'type-check': 'tsc --noEmit',
       lint: 'eslint src/',
       'lint:fix': 'eslint src/ --fix',
@@ -107,7 +107,7 @@ const generatePackageJson = async (args: ScaffoldArgs, urlPattern: string): Prom
       '@opentabs-dev/plugin-sdk': sdkVersion,
     },
     devDependencies: {
-      '@opentabs-dev/cli': cliVersion,
+      '@opentabs-dev/plugin-tools': pluginToolsVersion,
       eslint: '^9.39.2',
       'eslint-config-prettier': '^10.1.8',
       'eslint-plugin-prettier': '^5.5.5',
@@ -234,8 +234,8 @@ Plugin metadata is defined in \`package.json\` under the \`opentabs\` field:
 
 \`\`\`bash
 bun install
-bun run build       # tsc && opentabs build
-bun run dev         # watch mode (tsc --watch + opentabs build --watch)
+bun run build       # tsc && opentabs-plugin build
+bun run dev         # watch mode (tsc --watch + opentabs-plugin build --watch)
 bun run type-check  # tsc --noEmit
 bun run lint        # eslint
 \`\`\`

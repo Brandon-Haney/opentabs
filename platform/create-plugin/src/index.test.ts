@@ -66,7 +66,7 @@ describe('create-opentabs-plugin CLI', () => {
 
       expect(pkgJson.name).toBe('opentabs-plugin-my-plugin');
       expect(pkgJson.dependencies['@opentabs-dev/plugin-sdk']).toBeDefined();
-      expect(pkgJson.devDependencies['@opentabs-dev/cli']).toBeDefined();
+      expect(pkgJson.devDependencies['@opentabs-dev/plugin-tools']).toBeDefined();
     });
 
     test('src/index.ts contains correct class name and URL pattern', async () => {
@@ -199,7 +199,7 @@ describe('create-opentabs-plugin CLI', () => {
     const PLATFORM_DIR = resolve(import.meta.dirname, '..', '..', '..');
     const localShared = `file:${join(PLATFORM_DIR, 'platform', 'shared')}`;
     const localSdk = `file:${join(PLATFORM_DIR, 'platform', 'plugin-sdk')}`;
-    const localCli = `file:${join(PLATFORM_DIR, 'platform', 'cli')}`;
+    const localPluginTools = `file:${join(PLATFORM_DIR, 'platform', 'plugin-tools')}`;
 
     /**
      * Override the scaffolded plugin's package.json to use local file: references
@@ -216,15 +216,15 @@ describe('create-opentabs-plugin CLI', () => {
       if (deps?.['@opentabs-dev/plugin-sdk']) {
         deps['@opentabs-dev/plugin-sdk'] = localSdk;
       }
-      if (devDeps?.['@opentabs-dev/cli']) {
-        devDeps['@opentabs-dev/cli'] = localCli;
+      if (devDeps?.['@opentabs-dev/plugin-tools']) {
+        devDeps['@opentabs-dev/plugin-tools'] = localPluginTools;
       }
 
       // Bun overrides resolve transitive @opentabs-dev/* deps to local packages
       pkg.overrides = {
         '@opentabs-dev/shared': localShared,
         '@opentabs-dev/plugin-sdk': localSdk,
-        '@opentabs-dev/cli': localCli,
+        '@opentabs-dev/plugin-tools': localPluginTools,
       };
 
       await Bun.write(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
@@ -252,7 +252,7 @@ describe('create-opentabs-plugin CLI', () => {
         }
         expect(install.exitCode).toBe(0);
 
-        // bun run build (tsc && opentabs build)
+        // bun run build (tsc && opentabs-plugin build)
         const build = Bun.spawnSync(['bun', 'run', 'build'], { cwd: projectDir });
         if (build.exitCode !== 0) {
           console.error('build stdout:', build.stdout.toString());

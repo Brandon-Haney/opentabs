@@ -1,13 +1,10 @@
 #!/usr/bin/env bun
 
 import {
-  registerBuildCommand,
   registerConfigCommand,
-  registerDevCommand,
   registerDoctorCommand,
   registerLogsCommand,
   registerPluginCommand,
-  registerReloadCommand,
   registerSetupCommand,
   registerStatusCommand,
 } from './commands/index.js';
@@ -27,12 +24,9 @@ const program = new Command('opentabs')
     program.help();
   });
 
-registerBuildCommand(program);
 registerConfigCommand(program);
-registerDevCommand(program);
 registerDoctorCommand(program);
 registerLogsCommand(program);
-registerReloadCommand(program);
 registerStatusCommand(program);
 registerSetupCommand(program);
 registerPluginCommand(program);

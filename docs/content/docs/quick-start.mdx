@@ -1,0 +1,106 @@
+---
+title: Quick Start
+description: "5 minutes from install to your first tool call."
+lastUpdated: 2026-02-21
+---
+
+Get OpenTabs running and make your first tool call in under 5 minutes.
+
+## 1. Install the CLI
+
+```bash
+npm install -g @opentabs-dev/cli
+```
+
+## 2. Start the server
+
+```bash
+opentabs start
+```
+
+You'll see:
+
+```
+Starting OpenTabs MCP server on port 9515...
+
+  MCP endpoint:  http://localhost:9515/mcp
+  Health check:  http://localhost:9515/health
+  Log file:      ~/.opentabs/server.log
+```
+
+On first run, this creates the `~/.opentabs/` directory, generates an auth secret, and installs the Chrome extension files.
+
+## 3. Load the Chrome extension
+
+1. Open `chrome://extensions/` in Chrome
+2. Enable **Developer mode** (top-right toggle)
+3. Click **Load unpacked** and select `~/.opentabs/extension`
+
+The extension connects to the server automatically. You should see the OpenTabs icon in your toolbar.
+
+## 4. Configure your MCP client
+
+Get your auth secret:
+
+```bash
+opentabs config show --json | jq -r .secret
+```
+
+Add the server to your MCP client config. For Claude Code (`~/.claude/settings/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "opentabs": {
+      "type": "streamable-http",
+      "url": "http://localhost:9515/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_SECRET_HERE"
+      }
+    }
+  }
+}
+```
+
+Replace `YOUR_SECRET_HERE` with the secret from the previous command.
+
+## 5. Install a plugin
+
+Find available plugins:
+
+```bash
+opentabs plugin search
+```
+
+Install one globally:
+
+```bash
+npm install -g opentabs-plugin-slack
+```
+
+Restart the server to pick up the new plugin:
+
+```bash
+# Stop the running server (Ctrl+C), then:
+opentabs start
+```
+
+## 6. Make a tool call
+
+Ask your AI agent to use the plugin's tools. The agent will see all registered tools from your installed plugins, plus 36 built-in browser tools for tab management, screenshots, DOM interaction, and more.
+
+Verify everything is connected:
+
+```bash
+opentabs status
+```
+
+```bash
+opentabs doctor
+```
+
+## Next steps
+
+- [Installation](/docs/install) — detailed setup for users, plugin developers, and contributors
+- [Plugin Development](/docs/guides/plugin-development) — build your own plugin
+- [CLI Commands](/docs/reference/cli) — all available CLI commands

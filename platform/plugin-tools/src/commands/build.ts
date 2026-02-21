@@ -191,10 +191,12 @@ const validatePlugin = (plugin: OpenTabsPlugin): string[] => {
           `Tool name "${tool.name}" must be snake_case (lowercase alphanumeric with underscores, e.g., "send_message")`,
         );
       }
-      if (!tool.displayName || tool.displayName.length === 0)
-        errors.push(`Tool "${tool.name || '(unnamed)'}" is missing a displayName`);
+      if (tool.displayName !== undefined && tool.displayName.length === 0)
+        errors.push(
+          `Tool "${tool.name || '(unnamed)'}" has an empty displayName — either omit it for auto-derivation or provide a non-empty value`,
+        );
       if (tool.description.length === 0) errors.push(`Tool "${tool.name || '(unnamed)'}" is missing a description`);
-      if (!LUCIDE_ICON_NAMES.has(tool.icon)) {
+      if (tool.icon !== undefined && !LUCIDE_ICON_NAMES.has(tool.icon)) {
         errors.push(
           `Tool "${tool.name || '(unnamed)'}" has invalid icon "${tool.icon}" — must be a valid Lucide icon name (kebab-case). See https://lucide.dev/icons`,
         );
@@ -289,15 +291,28 @@ interface PluginManifestOutput {
   prompts: ManifestPrompt[];
 }
 
+/**
+ * Derive a display name from a snake_case tool name.
+ * 'send_message' → 'Send Message', 'get_user_profile' → 'Get User Profile'
+ */
+const deriveDisplayName = (name: string): string =>
+  name
+    .split('_')
+    .map(w => {
+      const first = w.charAt(0);
+      return first ? first.toUpperCase() + w.slice(1) : '';
+    })
+    .join(' ');
+
 /** Serialize plugin tools to ManifestTool[] */
 const generateToolsManifest = (plugin: OpenTabsPlugin): ManifestTool[] =>
   plugin.tools.map(tool => {
     const { inputSchema, outputSchema } = convertToolSchemas(tool);
     return {
       name: tool.name,
-      displayName: tool.displayName,
+      displayName: tool.displayName || deriveDisplayName(tool.name),
       description: tool.description,
-      icon: tool.icon,
+      icon: tool.icon || 'wrench',
       input_schema: inputSchema,
       output_schema: outputSchema,
     };
@@ -796,6 +811,7 @@ Examples:
 
 export {
   convertToolSchemas,
+  deriveDisplayName,
   formatBytes,
   formatTimestamp,
   generateManifest,

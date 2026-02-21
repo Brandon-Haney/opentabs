@@ -1,10 +1,12 @@
 import {
   convertToolSchemas,
+  deriveDisplayName,
   formatBytes,
   formatTimestamp,
   generateManifest,
   generatePromptsManifest,
   generateResourcesManifest,
+  generateToolsManifest,
   validatePlugin,
 } from './build.js';
 import { describe, expect, test } from 'bun:test';
@@ -231,16 +233,28 @@ describe('validatePlugin', () => {
     test('valid icon name passes validation', () => {
       expect(validatePlugin(makePlugin({ tools: [makeTool({ icon: 'wrench' })] }))).toEqual([]);
     });
+
+    test('omitted icon passes validation (defaults to wrench during build)', () => {
+      const tool = makeTool();
+      delete (tool as unknown as Record<string, unknown>).icon;
+      expect(validatePlugin(makePlugin({ tools: [tool] }))).toEqual([]);
+    });
   });
 
   describe('tools — displayName', () => {
-    test('tool with empty displayName produces a validation error', () => {
+    test('tool with empty displayName string produces a validation error', () => {
       const errors = validatePlugin(makePlugin({ tools: [makeTool({ displayName: '' })] }));
-      expect(errors.some(e => e.includes('missing a displayName'))).toBe(true);
+      expect(errors.some(e => e.includes('empty displayName'))).toBe(true);
     });
 
-    test('tool with valid displayName passes validation', () => {
+    test('tool with explicit displayName passes validation', () => {
       expect(validatePlugin(makePlugin({ tools: [makeTool({ displayName: 'Send Message' })] }))).toEqual([]);
+    });
+
+    test('tool with omitted displayName passes validation (auto-derived during build)', () => {
+      const tool = makeTool();
+      delete (tool as unknown as Record<string, unknown>).displayName;
+      expect(validatePlugin(makePlugin({ tools: [tool] }))).toEqual([]);
     });
   });
 
@@ -635,6 +649,76 @@ describe('generatePromptsManifest', () => {
     const result = generatePromptsManifest(prompts);
     expect(result).toEqual([{ name: 'no_desc', arguments: [{ name: 'value', required: true }] }]);
     expect(result[0]?.arguments?.[0]).not.toHaveProperty('description');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deriveDisplayName
+// ---------------------------------------------------------------------------
+
+describe('deriveDisplayName', () => {
+  test('converts snake_case to Title Case', () => {
+    expect(deriveDisplayName('send_message')).toBe('Send Message');
+  });
+
+  test('handles single word', () => {
+    expect(deriveDisplayName('list')).toBe('List');
+  });
+
+  test('handles multiple underscores', () => {
+    expect(deriveDisplayName('get_user_profile')).toBe('Get User Profile');
+  });
+
+  test('handles empty string', () => {
+    expect(deriveDisplayName('')).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// generateToolsManifest — displayName and icon defaults
+// ---------------------------------------------------------------------------
+
+describe('generateToolsManifest — displayName and icon defaults', () => {
+  test('uses explicit displayName and icon when provided', () => {
+    const plugin = makePlugin({
+      tools: [
+        {
+          ...makeRealTool({ name: 'send_message' }),
+          displayName: 'Custom Name',
+          icon: 'mail',
+        } as unknown as ToolDefinition,
+      ],
+    });
+    const manifest = generateToolsManifest(plugin);
+    expect(manifest).toHaveLength(1);
+    expect(manifest[0]?.displayName).toBe('Custom Name');
+    expect(manifest[0]?.icon).toBe('mail');
+  });
+
+  test('auto-derives displayName from name when omitted', () => {
+    const tool = makeRealTool({ name: 'send_message' });
+    delete (tool as unknown as Record<string, unknown>).displayName;
+    const plugin = makePlugin({ tools: [tool] });
+    const manifest = generateToolsManifest(plugin);
+    expect(manifest[0]?.displayName).toBe('Send Message');
+  });
+
+  test('defaults icon to wrench when omitted', () => {
+    const tool = makeRealTool({ name: 'send_message' });
+    delete (tool as unknown as Record<string, unknown>).icon;
+    const plugin = makePlugin({ tools: [tool] });
+    const manifest = generateToolsManifest(plugin);
+    expect(manifest[0]?.icon).toBe('wrench');
+  });
+
+  test('auto-derives both displayName and icon when both omitted', () => {
+    const tool = makeRealTool({ name: 'get_user_profile' });
+    delete (tool as unknown as Record<string, unknown>).displayName;
+    delete (tool as unknown as Record<string, unknown>).icon;
+    const plugin = makePlugin({ tools: [tool] });
+    const manifest = generateToolsManifest(plugin);
+    expect(manifest[0]?.displayName).toBe('Get User Profile');
+    expect(manifest[0]?.icon).toBe('wrench');
   });
 });
 

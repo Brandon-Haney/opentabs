@@ -135,12 +135,12 @@ export interface ToolDefinition<
 > {
   /** Tool name — auto-prefixed with plugin name (e.g., 'send_message' → 'slack_send_message') */
   name: string;
-  /** Human-readable display name shown in the side panel (e.g., 'Send Message') */
-  displayName: string;
+  /** Human-readable display name shown in the side panel (e.g., 'Send Message'). Auto-derived from name during build when omitted. */
+  displayName?: string;
   /** Human-readable description shown to MCP clients / AI agents */
   description: string;
-  /** Lucide icon name (kebab-case) displayed in the side panel. See https://lucide.dev/icons */
-  icon: LucideIconName;
+  /** Lucide icon name (kebab-case) displayed in the side panel. Defaults to 'wrench' during build when omitted. See https://lucide.dev/icons */
+  icon?: LucideIconName;
   /** Zod schema — used for MCP registration + server-side input validation */
   input: TInput;
   /** Zod schema describing the tool output shape. Used for manifest generation and MCP tool registration. */

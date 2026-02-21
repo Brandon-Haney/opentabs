@@ -33,6 +33,7 @@ const makePlugin = (name: string, overrides: Partial<RegisteredPlugin> = {}): Re
   displayName: name,
   urlPatterns: [`https://${name}.example.com/*`],
   trustTier: 'community',
+  source: 'local' as const,
   iife: `(function(){})()`,
   tools: [],
   adapterHash: 'abc123',

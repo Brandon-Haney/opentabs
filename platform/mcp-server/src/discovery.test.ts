@@ -1,4 +1,4 @@
-import { determineTrustTier } from './discovery.js';
+import { npmTrustTier } from './discovery.js';
 import { checkBrowserToolReferences, pluginNameFromPackage } from './loader.js';
 import { discoverGlobalNpmPlugins, isAllowedPluginPath, resetGlobalPathsCache } from './resolver.js';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -40,29 +40,17 @@ describe('pluginNameFromPackage', () => {
   });
 });
 
-describe('determineTrustTier', () => {
-  test('returns local for relative path specifier', () => {
-    expect(determineTrustTier('./my-plugin')).toBe('local');
+describe('npmTrustTier', () => {
+  test('returns official for @opentabs-dev scoped path', () => {
+    expect(npmTrustTier('/usr/lib/node_modules/@opentabs-dev/opentabs-plugin-slack')).toBe('official');
   });
 
-  test('returns local for absolute path specifier', () => {
-    expect(determineTrustTier('/home/user/plugins/my-plugin')).toBe('local');
+  test('returns community for unscoped plugin path', () => {
+    expect(npmTrustTier('/usr/lib/node_modules/opentabs-plugin-slack')).toBe('community');
   });
 
-  test('returns local for home-relative path specifier', () => {
-    expect(determineTrustTier('~/plugins/my-plugin')).toBe('local');
-  });
-
-  test('returns official for @opentabs-dev scoped package', () => {
-    expect(determineTrustTier('@opentabs-dev/opentabs-plugin-slack')).toBe('official');
-  });
-
-  test('returns community for unscoped npm package', () => {
-    expect(determineTrustTier('opentabs-plugin-slack')).toBe('community');
-  });
-
-  test('returns community for non-opentabs-dev scoped package', () => {
-    expect(determineTrustTier('@other-scope/opentabs-plugin-foo')).toBe('community');
+  test('returns community for non-opentabs-dev scoped path', () => {
+    expect(npmTrustTier('/usr/lib/node_modules/@other-scope/opentabs-plugin-foo')).toBe('community');
   });
 });
 

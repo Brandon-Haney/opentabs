@@ -287,4 +287,4 @@ const resetGlobalPathsCache = (): void => {
   cachedGlobalPaths = null;
 };
 
-export { discoverGlobalNpmPlugins, isAllowedPluginPath, isLocalPath, resetGlobalPathsCache, resolvePluginPath };
+export { discoverGlobalNpmPlugins, isAllowedPluginPath, resetGlobalPathsCache, resolvePluginPath };

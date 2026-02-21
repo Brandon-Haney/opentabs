@@ -326,7 +326,7 @@ const handlePendingPluginChange = async (
   pluginDir: string,
   callbacks: FileWatcherCallbacks,
 ): Promise<void> => {
-  const result = await loadPlugin(pluginDir, 'local');
+  const result = await loadPlugin(pluginDir, 'local', 'local');
   if (!isOk(result)) return; // Discovery still failing — keep watching silently
 
   const plugin = result.value;

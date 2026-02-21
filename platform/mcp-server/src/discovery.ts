@@ -3,7 +3,7 @@
 import { loadPlugin } from './loader.js';
 import { log } from './logger.js';
 import { buildRegistry } from './registry.js';
-import { isLocalPath, resolvePluginPath } from './resolver.js';
+import { discoverGlobalNpmPlugins, resolvePluginPath } from './resolver.js';
 import { isErr } from '@opentabs-dev/shared';
 import type { LoadedPlugin } from './loader.js';
 import type { FailedPlugin, PluginRegistry } from './state.js';
@@ -19,61 +19,103 @@ interface DiscoveryError {
   readonly error: string;
 }
 
-/** Local paths → 'local', @opentabs-dev/ → 'official', else → 'community'. */
-const determineTrustTier = (specifier: string): TrustTier => {
-  if (isLocalPath(specifier)) return 'local';
-  if (specifier.startsWith('@opentabs-dev/')) return 'official';
+/** Determine trust tier for an npm plugin directory path based on its package name. */
+const npmTrustTier = (dir: string): TrustTier => {
+  // Scoped @opentabs-dev packages are official
+  if (dir.includes('/@opentabs-dev/')) return 'official';
   return 'community';
 };
 
-/** Discover plugins from config specifiers (npm names or local paths). */
-const discoverPlugins = async (specifiers: string[], configDir: string): Promise<DiscoveryResult> => {
+/**
+ * Discover plugins from auto-discovered npm globals and explicit local paths.
+ *
+ * Phase 1: Discover npm plugins from global node_modules (auto-discovery).
+ * Phase 2: Resolve local plugin paths from config.localPlugins.
+ * Phase 3: Load all plugins in parallel.
+ * Phase 4: Merge — local plugins override npm plugins of the same name.
+ * Phase 5: Build immutable registry.
+ */
+const discoverPlugins = async (localPlugins: string[], configDir: string): Promise<DiscoveryResult> => {
   log.info('Starting plugin discovery...');
 
   const errors: DiscoveryError[] = [];
   const failures: FailedPlugin[] = [];
 
-  // Phase 1 + 2 + 3: Resolve, load, and tag each specifier in parallel
-  const settled = await Promise.allSettled(
-    specifiers.map(async (specifier): Promise<LoadedPlugin | null> => {
-      const resolveResult = await resolvePluginPath(specifier, configDir);
-      if (isErr(resolveResult)) {
-        errors.push({ specifier, error: resolveResult.error });
-        failures.push({ path: specifier, error: resolveResult.error });
-        return null;
-      }
-
-      const dir = resolveResult.value;
-      const trustTier = determineTrustTier(specifier);
-      const loadResult = await loadPlugin(dir, trustTier);
-      if (isErr(loadResult)) {
-        errors.push({ specifier, error: loadResult.error });
-        failures.push({ path: dir, error: loadResult.error });
-        return null;
-      }
-
-      return loadResult.value;
-    }),
-  );
-
-  // Collect successfully loaded plugins, skipping nulls and rejections
-  const loaded: LoadedPlugin[] = [];
-  for (const result of settled) {
-    if (result.status === 'fulfilled' && result.value !== null) {
-      loaded.push(result.value);
-    } else if (result.status === 'rejected') {
-      const errorMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
-      errors.push({ specifier: '(unknown)', error: errorMsg });
-    }
+  // Phase 1: Auto-discover npm plugins from global node_modules
+  const { dirs: npmDirs, errors: npmErrors } = await discoverGlobalNpmPlugins();
+  for (const npmErr of npmErrors) {
+    errors.push({ specifier: '(npm auto-discovery)', error: npmErr });
   }
 
-  // Phase 4: Build immutable registry
-  const registry = buildRegistry(loaded, failures);
+  // Phase 2 + 3: Resolve and load all plugins in parallel
+  const loadNpm = npmDirs.map(async (dir): Promise<LoadedPlugin | null> => {
+    const trustTier = npmTrustTier(dir);
+    const loadResult = await loadPlugin(dir, trustTier, 'npm');
+    if (isErr(loadResult)) {
+      errors.push({ specifier: dir, error: loadResult.error });
+      failures.push({ path: dir, error: loadResult.error });
+      return null;
+    }
+    return loadResult.value;
+  });
+
+  const loadLocal = localPlugins.map(async (specifier): Promise<LoadedPlugin | null> => {
+    const resolveResult = await resolvePluginPath(specifier, configDir);
+    if (isErr(resolveResult)) {
+      errors.push({ specifier, error: resolveResult.error });
+      failures.push({ path: specifier, error: resolveResult.error });
+      return null;
+    }
+
+    const dir = resolveResult.value;
+    const loadResult = await loadPlugin(dir, 'local', 'local');
+    if (isErr(loadResult)) {
+      errors.push({ specifier, error: loadResult.error });
+      failures.push({ path: dir, error: loadResult.error });
+      return null;
+    }
+
+    return loadResult.value;
+  });
+
+  const [npmSettled, localSettled] = await Promise.all([Promise.allSettled(loadNpm), Promise.allSettled(loadLocal)]);
+
+  // Collect results
+  const collectLoaded = (settled: PromiseSettledResult<LoadedPlugin | null>[]): LoadedPlugin[] => {
+    const loaded: LoadedPlugin[] = [];
+    for (const result of settled) {
+      if (result.status === 'fulfilled' && result.value !== null) {
+        loaded.push(result.value);
+      } else if (result.status === 'rejected') {
+        const errorMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        errors.push({ specifier: '(unknown)', error: errorMsg });
+      }
+    }
+    return loaded;
+  };
+
+  const npmLoaded = collectLoaded(npmSettled);
+  const localLoaded = collectLoaded(localSettled);
+
+  // Phase 4: Merge — local plugins override npm plugins of the same name
+  const merged = new Map<string, LoadedPlugin>();
+  for (const plugin of npmLoaded) {
+    merged.set(plugin.name, plugin);
+  }
+  for (const plugin of localLoaded) {
+    if (merged.has(plugin.name)) {
+      log.info(`Local plugin "${plugin.name}" overrides npm auto-discovered version`);
+    }
+    merged.set(plugin.name, plugin);
+  }
+
+  // Phase 5: Build immutable registry
+  const registry = buildRegistry(Array.from(merged.values()), failures);
 
   for (const plugin of registry.plugins.values()) {
     const toolNames = plugin.tools.map(t => t.name).join(', ');
     log.info(
-      `Discovered plugin: ${plugin.name} v${plugin.version} (${plugin.trustTier}) from ${plugin.sourcePath ?? '(npm)'} — tools: [${toolNames}]`,
+      `Discovered plugin: ${plugin.name} v${plugin.version} (${plugin.trustTier}, ${plugin.source}) from ${plugin.sourcePath ?? '(npm)'} — tools: [${toolNames}]`,
     );
   }
 
@@ -82,5 +124,5 @@ const discoverPlugins = async (specifiers: string[], configDir: string): Promise
   return { registry, errors };
 };
 
-export { determineTrustTier, discoverPlugins };
+export { discoverPlugins, npmTrustTier };
 export type { DiscoveryError, DiscoveryResult };

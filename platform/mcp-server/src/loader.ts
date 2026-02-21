@@ -13,6 +13,7 @@ import { browserTools } from './browser-tools/index.js';
 import { log } from './logger.js';
 import { err, ok, parsePluginPackageJson, validatePluginName, validateUrlPattern } from '@opentabs-dev/shared';
 import { join } from 'node:path';
+import type { PluginSource } from './state.js';
 import type { ManifestTool, Result, TrustTier } from '@opentabs-dev/shared';
 
 /** Maximum allowed size for the adapter IIFE (5 MB) */
@@ -28,6 +29,7 @@ interface LoadedPlugin {
   readonly trustTier: TrustTier;
   readonly iife: string;
   readonly tools: ManifestTool[];
+  readonly source: PluginSource;
   readonly sourcePath: string;
   readonly adapterHash: string | undefined;
   readonly npmPackageName: string | undefined;
@@ -159,8 +161,13 @@ const computeHash = async (content: string): Promise<string> => {
  *
  * @param dir - Absolute path to the plugin directory containing package.json
  * @param trustTier - Trust classification for this plugin
+ * @param source - How the plugin was discovered: 'npm' or 'local'
  */
-const loadPlugin = async (dir: string, trustTier: TrustTier): Promise<Result<LoadedPlugin, string>> => {
+const loadPlugin = async (
+  dir: string,
+  trustTier: TrustTier,
+  source: PluginSource,
+): Promise<Result<LoadedPlugin, string>> => {
   // Read and validate package.json
   const pkgJsonPath = join(dir, 'package.json');
   let pkgJsonRaw: unknown;
@@ -240,6 +247,7 @@ const loadPlugin = async (dir: string, trustTier: TrustTier): Promise<Result<Loa
     trustTier,
     iife,
     tools,
+    source,
     sourcePath: dir,
     adapterHash,
     npmPackageName: pkg.name,

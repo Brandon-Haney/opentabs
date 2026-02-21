@@ -249,6 +249,7 @@ describe('/health endpoint', () => {
           displayName: 'Test Plugin',
           urlPatterns: ['*://example.com/*'],
           trustTier: 'local',
+          source: 'local' as const,
           iife: '(function(){})()',
           tools: [
             {

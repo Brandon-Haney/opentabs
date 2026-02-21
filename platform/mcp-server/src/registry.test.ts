@@ -16,6 +16,7 @@ const makePlugin = (overrides: Partial<RegisteredPlugin> = {}): RegisteredPlugin
   displayName: 'Test Plugin',
   urlPatterns: ['http://localhost/*'],
   trustTier: 'local',
+  source: 'local' as const,
   iife: '(function(){})()',
   tools: [
     {

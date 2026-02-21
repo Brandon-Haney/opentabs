@@ -20,6 +20,7 @@ const createPlugin = (name: string, toolNames: string[]): RegisteredPlugin => ({
   displayName: name,
   urlPatterns: [`https://${name}.example.com/*`],
   trustTier: 'local',
+  source: 'local' as const,
   iife: `(function(){/* ${name} */})()`,
   tools: toolNames.map(t => ({
     name: t,

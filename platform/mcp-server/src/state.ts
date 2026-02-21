@@ -23,6 +23,9 @@ export interface FileWatcherEntry {
   lastSeenMtimes: Map<string, number>;
 }
 
+/** How a plugin was discovered: auto-discovered from global node_modules or explicitly listed in localPlugins */
+export type PluginSource = 'npm' | 'local';
+
 /** Plugin registered in the server */
 export interface RegisteredPlugin {
   name: string;
@@ -32,6 +35,8 @@ export interface RegisteredPlugin {
   trustTier: TrustTier;
   iife: string;
   tools: ManifestTool[];
+  /** How this plugin was discovered: 'npm' (global auto-discovery) or 'local' (config localPlugins) */
+  source: PluginSource;
   /** SHA-256 hex hash of the adapter IIFE content (from manifest, set by `opentabs-plugin build`) */
   adapterHash?: string;
   /** Filesystem path for local plugins (used for file watching) */

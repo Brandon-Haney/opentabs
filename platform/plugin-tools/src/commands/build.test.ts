@@ -580,6 +580,62 @@ describe('generatePromptsManifest', () => {
   test('returns empty array for empty input', () => {
     expect(generatePromptsManifest([])).toEqual([]);
   });
+
+  test('auto-generates arguments from Zod args schema', () => {
+    const prompts: PromptDefinition[] = [
+      {
+        name: 'typed',
+        description: 'Typed prompt',
+        args: z.object({
+          name: z.string().describe('The name'),
+          count: z.number().optional().describe('How many'),
+        }),
+        render: () => Promise.resolve([{ role: 'user', content: { type: 'text' as const, text: 'Hi' } }]),
+      } as PromptDefinition,
+    ];
+    const result = generatePromptsManifest(prompts);
+    expect(result).toEqual([
+      {
+        name: 'typed',
+        description: 'Typed prompt',
+        arguments: [
+          { name: 'name', description: 'The name', required: true },
+          { name: 'count', description: 'How many', required: false },
+        ],
+      },
+    ]);
+  });
+
+  test('explicit arguments take priority over args schema', () => {
+    const prompts: PromptDefinition[] = [
+      {
+        name: 'explicit',
+        args: z.object({ name: z.string() }),
+        arguments: [{ name: 'name', description: 'Custom', required: true }],
+        render: () => Promise.resolve([{ role: 'user', content: { type: 'text' as const, text: 'Hi' } }]),
+      } as PromptDefinition,
+    ];
+    const result = generatePromptsManifest(prompts);
+    expect(result).toEqual([
+      {
+        name: 'explicit',
+        arguments: [{ name: 'name', description: 'Custom', required: true }],
+      },
+    ]);
+  });
+
+  test('args schema without descriptions omits description field', () => {
+    const prompts: PromptDefinition[] = [
+      {
+        name: 'no_desc',
+        args: z.object({ value: z.string() }),
+        render: () => Promise.resolve([{ role: 'user', content: { type: 'text' as const, text: 'Hi' } }]),
+      } as PromptDefinition,
+    ];
+    const result = generatePromptsManifest(prompts);
+    expect(result).toEqual([{ name: 'no_desc', arguments: [{ name: 'value', required: true }] }]);
+    expect(result[0]?.arguments?.[0]).not.toHaveProperty('description');
+  });
 });
 
 // ---------------------------------------------------------------------------

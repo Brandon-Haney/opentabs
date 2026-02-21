@@ -491,6 +491,57 @@ describe('definePrompt', () => {
     expect(assistantMsg.role).toBe('assistant');
     expect(userMsg.content.type).toBe('text');
   });
+
+  test('definePrompt with args Zod schema provides typed render parameter', async () => {
+    const argsSchema = z.object({
+      name: z.string().describe('The name to greet'),
+      greeting: z.string().optional(),
+    });
+
+    const prompt = definePrompt({
+      name: 'typed_greet',
+      description: 'A typed greeting prompt',
+      args: argsSchema,
+      render(args) {
+        // args is typed as { name: string; greeting?: string }
+        const greeting = args.greeting ?? 'Hello';
+        return Promise.resolve([{ role: 'user', content: { type: 'text', text: `${greeting}, ${args.name}!` } }]);
+      },
+    });
+
+    expect(prompt.name).toBe('typed_greet');
+    expect(prompt.args).toBe(argsSchema);
+    const messages = await prompt.render({ name: 'World' });
+    expect(messages).toEqual([{ role: 'user', content: { type: 'text', text: 'Hello, World!' } }]);
+  });
+
+  test('definePrompt without args still works with Record<string, string>', async () => {
+    const prompt = definePrompt({
+      name: 'untyped',
+      arguments: [{ name: 'name', required: true }],
+      render(args) {
+        return Promise.resolve([{ role: 'user', content: { type: 'text', text: `Hi, ${String(args['name'])}!` } }]);
+      },
+    });
+
+    expect(prompt.args).toBeUndefined();
+    const messages = await prompt.render({ name: 'World' });
+    expect(messages).toEqual([{ role: 'user', content: { type: 'text', text: 'Hi, World!' } }]);
+  });
+
+  test('definePrompt with args and explicit arguments uses both', () => {
+    const argsSchema = z.object({ name: z.string() });
+    const prompt = definePrompt({
+      name: 'both',
+      args: argsSchema,
+      arguments: [{ name: 'name', description: 'Custom description', required: true }],
+      render(args) {
+        return Promise.resolve([{ role: 'user', content: { type: 'text', text: args.name } }]);
+      },
+    });
+    expect(prompt.args).toBe(argsSchema);
+    expect(prompt.arguments).toHaveLength(1);
+  });
 });
 
 describe('ResourceContent type', () => {

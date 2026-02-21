@@ -312,18 +312,38 @@ const generateResourcesManifest = (resources: ResourceDefinition[]): ManifestRes
     return entry;
   });
 
+/**
+ * Extract argument metadata from a Zod object schema. Each key becomes an
+ * argument entry. The description is taken from the field's `.description`
+ * metadata (set via `.describe()`). A field is required if it is not optional.
+ */
+const extractArgsFromSchema = (schema: z.ZodObject<z.ZodRawShape>): ManifestPromptArgument[] => {
+  const shape = schema.shape as Record<string, z.ZodType>;
+  return Object.entries(shape).map(([name, fieldSchema]) => {
+    const arg: ManifestPromptArgument = { name };
+    const desc = (fieldSchema as { description?: string }).description;
+    if (desc !== undefined) arg.description = desc;
+    arg.required = !(fieldSchema instanceof z.ZodOptional || fieldSchema instanceof z.ZodDefault);
+    return arg;
+  });
+};
+
 /** Extract serializable prompt metadata from plugin prompt definitions */
 const generatePromptsManifest = (prompts: PromptDefinition[]): ManifestPrompt[] =>
   prompts.map(p => {
     const entry: ManifestPrompt = { name: p.name };
     if (p.description !== undefined) entry.description = p.description;
     if (p.arguments !== undefined) {
+      // Explicit arguments take priority
       entry.arguments = p.arguments.map(a => {
         const arg: ManifestPromptArgument = { name: a.name };
         if (a.description !== undefined) arg.description = a.description;
         if (a.required !== undefined) arg.required = a.required;
         return arg;
       });
+    } else if (p.args !== undefined) {
+      // Auto-generate arguments metadata from the Zod schema
+      entry.arguments = extractArgsFromSchema(p.args);
     }
     return entry;
   });

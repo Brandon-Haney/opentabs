@@ -91,14 +91,39 @@ export interface PromptDefinition {
   name: string;
   /** Human-readable description of the prompt. */
   description?: string;
-  /** Arguments the prompt accepts. */
+  /**
+   * Optional Zod schema for prompt arguments. When provided and passed to
+   * `definePrompt`, the render() function receives a typed object inferred
+   * from the schema. Argument metadata is auto-generated during build when
+   * the explicit `arguments` array is not provided.
+   */
+  args?: z.ZodObject<z.ZodRawShape>;
+  /** Arguments the prompt accepts (metadata for MCP registration). Auto-generated from `args` schema during build when not provided. */
   arguments?: PromptArgument[];
   /** Render the prompt messages. Runs in the browser page context. */
   render(args: Record<string, string>): Promise<PromptMessage[]>;
 }
 
-/** Type-safe factory — identity function that provides type checking for prompt definitions. */
-export const definePrompt = (config: PromptDefinition): PromptDefinition => config;
+/**
+ * Config type for definePrompt when `args` Zod schema is provided. The render
+ * function parameter is typed from the schema.
+ */
+export interface TypedPromptConfig<TArgs extends z.ZodObject<z.ZodRawShape>> {
+  name: string;
+  description?: string;
+  args: TArgs;
+  arguments?: PromptArgument[];
+  render(args: z.infer<TArgs>): Promise<PromptMessage[]>;
+}
+
+/** Overloaded call signature for definePrompt — typed when `args` is present, plain otherwise. */
+export interface DefinePrompt {
+  <TArgs extends z.ZodObject<z.ZodRawShape>>(config: TypedPromptConfig<TArgs>): PromptDefinition;
+  (config: PromptDefinition): PromptDefinition;
+}
+
+/** Type-safe factory — provides generic inference when `args` schema is present, and plain type checking otherwise. */
+export const definePrompt: DefinePrompt = (config: PromptDefinition): PromptDefinition => config;
 
 // ---------------------------------------------------------------------------
 // Tool definitions

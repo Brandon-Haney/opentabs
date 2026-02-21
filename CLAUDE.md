@@ -50,6 +50,7 @@ opentabs/
 │   ├── mcp-server/                # MCP server — plugin discovery, tool dispatch
 │   │   └── src/
 │   │       ├── index.ts           # Entry point (HTTP + WebSocket server, hot reload)
+│   │       ├── dev-mode.ts        # Dev mode detection (--dev flag / OPENTABS_DEV env var)
 │   │       ├── config.ts          # ~/.opentabs/config.json management
 │   │       ├── discovery.ts       # Discovery orchestrator (resolve → load → register)
 │   │       ├── resolver.ts        # Plugin specifier resolution (npm + local paths)
@@ -58,7 +59,7 @@ opentabs/
 │   │       ├── extension-protocol.ts  # JSON-RPC protocol with Chrome extension
 │   │       ├── mcp-setup.ts       # MCP tool registration from discovered plugins
 │   │       ├── state.ts           # In-memory server state (PluginRegistry)
-│   │       ├── file-watcher.ts    # Watches local plugin dist/ directories for changes
+│   │       ├── file-watcher.ts    # Watches local plugin dist/ directories (dev mode only)
 │   │       └── version-check.ts   # npm update checks for installed plugins
 │   ├── browser-extension/         # Chrome extension (MV3)
 │   │   ├── src/
@@ -100,7 +101,9 @@ opentabs/
 
 **Tab state machine**: Each plugin has three tab states: `closed` (no matching tab), `unavailable` (tab exists but `isReady()` returns false), and `ready` (tab exists and authenticated). The extension reports state changes to the MCP server.
 
-**Hot reload**: The MCP server runs under `bun --hot`. On file changes, Bun re-evaluates the module while preserving `globalThis`. The server uses a `globalThis`-based cleanup pattern to tear down the previous instance (close WebSocket, stop file watchers, free the port) and reinitialize cleanly.
+**Dev vs production mode**: The MCP server operates in two modes, controlled by the `--dev` CLI flag or `OPENTABS_DEV=1` environment variable. **Production mode** (default) performs static plugin discovery at startup with no file watchers, no config watching, and no `POST /reload` endpoint — restart the server to pick up changes. **Dev mode** enables file watchers for local plugin `dist/` directories, config file watching, the `POST /reload` endpoint, and is intended to run with `bun --hot` for hot reload. The mode is determined once at startup in `dev-mode.ts` and accessible via `isDev()`.
+
+**Hot reload** (dev mode): In dev mode, the MCP server runs under `bun --hot`. On file changes, Bun re-evaluates the module while preserving `globalThis`. The server uses a `globalThis`-based cleanup pattern to tear down the previous instance (close WebSocket, stop file watchers, free the port) and reinitialize cleanly. In production mode, none of this applies — the server starts once and serves until manually restarted.
 
 ### Commands
 
@@ -133,13 +136,23 @@ The Chrome extension does NOT auto-reload. After building (`bun run build`), the
 4. Click the circular refresh/reload icon on the card
 5. Close and reopen the side panel if it was open (it reconnects automatically via the offscreen document's WebSocket)
 
-**Important**: The MCP server supports hot reload (`bun --hot`) so server-side changes take effect automatically after `bun run build`. But browser extension changes (background script, side panel, adapter injection logic) always require the manual reload step above. Plugin adapter changes are picked up via the file watcher — no extension reload needed for plugin-only changes.
+**Important**: In dev mode, the MCP server supports hot reload (`bun --hot`) so server-side changes take effect automatically after `bun run build`. But browser extension changes (background script, side panel, adapter injection logic) always require the manual reload step above. In dev mode, plugin adapter changes are picked up via the file watcher — no extension reload needed for plugin-only changes. In production mode, restart the server to pick up any changes.
 
 ### Starting the MCP Server
 
+**Production mode** (default) — static plugin discovery, restart to reload:
+
 ```bash
-bun --hot platform/mcp-server/dist/index.js
+bun platform/mcp-server/dist/index.js
 ```
+
+**Dev mode** — file watchers, config watching, hot reload, `POST /reload` endpoint:
+
+```bash
+bun --hot platform/mcp-server/dist/index.js --dev
+```
+
+Dev mode is enabled by the `--dev` CLI flag or `OPENTABS_DEV=1` environment variable. The dev mode state is exported from `platform/mcp-server/src/dev-mode.ts` as `isDev()`.
 
 ### Adding a New Plugin
 
@@ -195,9 +208,11 @@ chmod 600 ~/.npmrc.publish
 
 ## Development Workflow
 
+All development workflows below assume the MCP server is running in **dev mode** (`bun --hot platform/mcp-server/dist/index.js --dev`). In production mode, restart the server after any changes.
+
 ### MCP Server Changes (Hot Reload)
 
-The MCP server runs as `bun --hot dist/index.js`. When compiled files change, Bun re-evaluates all modules while keeping the process alive. The extension reconnects automatically.
+In dev mode, the MCP server runs as `bun --hot dist/index.js --dev`. When compiled files change, Bun re-evaluates all modules while keeping the process alive. The extension reconnects automatically.
 
 ```bash
 # 1. Edit source files in platform/mcp-server/src/
@@ -219,9 +234,9 @@ bun run build
 # 3. Reload extension from chrome://extensions/
 ```
 
-### Plugin Changes (File Watcher)
+### Plugin Changes (File Watcher — Dev Mode)
 
-The MCP server watches local plugin `dist/` directories for changes to `tools.json` and `adapter.iife.js`. On change, it re-reads the files and sends a `plugin.update` notification to the extension.
+In dev mode, the MCP server watches local plugin `dist/` directories for changes to `tools.json` and `adapter.iife.js`. On change, it re-reads the files and sends a `plugin.update` notification to the extension.
 
 ```bash
 # 1. Edit plugin source

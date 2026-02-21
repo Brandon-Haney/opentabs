@@ -747,6 +747,7 @@ describe('handleExtensionMessage — config.getState', () => {
           displayName: string;
           version: string;
           trustTier: string;
+          source: string;
           tabState: string;
           urlPatterns: string[];
           tools: { name: string; displayName: string; description: string; icon: string; enabled: boolean }[];
@@ -766,6 +767,7 @@ describe('handleExtensionMessage — config.getState', () => {
     expect(plugin.displayName).toBe('Test Plugin');
     expect(plugin.version).toBe('2.1.0');
     expect(plugin.trustTier).toBe('local');
+    expect(plugin.source).toBe('local');
     expect(plugin.tabState).toBe('ready');
     expect(plugin.urlPatterns).toEqual(['http://test.com/*']);
     expect(plugin.tools).toHaveLength(2);

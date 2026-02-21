@@ -119,7 +119,14 @@ const PluginCard = ({
               </Tooltip.Content>
             </Tooltip>
           </Tooltip.Provider>
-          <div className="font-head text-foreground min-w-0 flex-1 truncate text-sm">{plugin.displayName}</div>
+          <div className="font-head text-foreground min-w-0 flex-1 truncate text-sm">
+            {plugin.displayName}
+            {plugin.source === 'local' && (
+              <span className="text-muted-foreground bg-muted ml-1.5 inline-block rounded px-1 py-0.5 align-middle text-[9px] leading-none font-medium">
+                DEV
+              </span>
+            )}
+          </div>
           <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200" />
         </AccordionPrimitive.Trigger>
         <div

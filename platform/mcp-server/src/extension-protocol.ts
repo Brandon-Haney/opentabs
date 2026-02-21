@@ -557,6 +557,7 @@ const handleConfigGetState = (state: ServerState, id: string | number): void => 
         displayName: p.displayName,
         version: p.version,
         trustTier: p.trustTier,
+        source: p.source,
         tabState: tabInfo?.state ?? 'closed',
         urlPatterns: p.urlPatterns,
         tools: p.tools.map(t => ({

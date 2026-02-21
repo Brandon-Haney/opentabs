@@ -172,6 +172,7 @@ export interface ConfigStatePlugin {
   displayName: string;
   version: string;
   trustTier: TrustTier;
+  source: 'npm' | 'local';
   tabState: TabState;
   urlPatterns: string[];
   tools: WireToolDef[];

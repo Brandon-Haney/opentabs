@@ -36,57 +36,70 @@ describe('readConfig', () => {
     }
   });
 
-  test('returns null for missing file', async () => {
+  test('returns missing error for nonexistent file', async () => {
     const result = await readConfig(join(TEST_BASE_DIR, 'nonexistent.json'));
-    expect(result).toBeNull();
+    expect(result).toEqual({ config: null, error: 'missing' });
   });
 
   test('returns config object for valid JSON object', async () => {
     await Bun.write(configPath, JSON.stringify({ localPlugins: [], tools: {}, secret: 'test' }));
     const result = await readConfig(configPath);
-    expect(result).toEqual({ localPlugins: [], tools: {}, secret: 'test' });
+    expect(result.config).toEqual({ localPlugins: [], tools: {}, secret: 'test' });
+    expect(result.error).toBeUndefined();
   });
 
-  test('returns null for JSON array', async () => {
+  test('returns invalid error for JSON array', async () => {
     await Bun.write(configPath, JSON.stringify([1, 2, 3]));
     const result = await readConfig(configPath);
-    expect(result).toBeNull();
+    expect(result.config).toBeNull();
+    expect(result.error).toBe('invalid');
+    if (result.error === 'invalid') {
+      expect(result.message).toContain('array');
+    }
   });
 
-  test('returns null for JSON string', async () => {
+  test('returns invalid error for JSON string', async () => {
     await Bun.write(configPath, JSON.stringify('hello'));
     const result = await readConfig(configPath);
-    expect(result).toBeNull();
+    expect(result.config).toBeNull();
+    expect(result.error).toBe('invalid');
   });
 
-  test('returns null for JSON number', async () => {
+  test('returns invalid error for JSON number', async () => {
     await Bun.write(configPath, JSON.stringify(42));
     const result = await readConfig(configPath);
-    expect(result).toBeNull();
+    expect(result.config).toBeNull();
+    expect(result.error).toBe('invalid');
   });
 
-  test('returns null for JSON null', async () => {
+  test('returns invalid error for JSON null', async () => {
     await Bun.write(configPath, 'null');
     const result = await readConfig(configPath);
-    expect(result).toBeNull();
+    expect(result.config).toBeNull();
+    expect(result.error).toBe('invalid');
   });
 
-  test('returns null for invalid JSON', async () => {
+  test('returns invalid error for invalid JSON', async () => {
     await Bun.write(configPath, '{not valid json}');
     const result = await readConfig(configPath);
-    expect(result).toBeNull();
+    expect(result.config).toBeNull();
+    expect(result.error).toBe('invalid');
+    if (result.error === 'invalid') {
+      expect(result.message).toContain('Invalid JSON');
+    }
   });
 
-  test('returns null for truncated JSON', async () => {
+  test('returns invalid error for truncated JSON', async () => {
     await Bun.write(configPath, '{"localPlugins": [');
     const result = await readConfig(configPath);
-    expect(result).toBeNull();
+    expect(result.config).toBeNull();
+    expect(result.error).toBe('invalid');
   });
 
   test('returns config with extra fields preserved', async () => {
     await Bun.write(configPath, JSON.stringify({ localPlugins: [], custom: 'value' }));
     const result = await readConfig(configPath);
-    expect(result).toEqual({ localPlugins: [], custom: 'value' });
+    expect(result.config).toEqual({ localPlugins: [], custom: 'value' });
   });
 });
 

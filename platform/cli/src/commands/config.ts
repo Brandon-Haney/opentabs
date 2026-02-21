@@ -27,13 +27,19 @@ interface ConfigShowOptions {
 
 const handleConfigShow = async (options: ConfigShowOptions): Promise<void> => {
   const configPath = getConfigPath();
-  const config = await readConfig(configPath);
+  const result = await readConfig(configPath);
 
-  if (!config) {
-    console.error(pc.red(`No config found at ${configPath}`));
+  if (!result.config) {
+    if (result.error === 'invalid') {
+      console.error(pc.red(`Invalid config at ${configPath}: ${result.message}`));
+    } else {
+      console.error(pc.red(`No config found at ${configPath}`));
+    }
     console.error('Run opentabs start to auto-create config.');
     process.exit(1);
   }
+
+  const config = result.config;
 
   const redacted = redactSecret(config);
 
@@ -89,13 +95,17 @@ const SUPPORTED_KEYS = `Supported keys:
 
 const loadConfig = async (): Promise<{ config: Record<string, unknown>; configPath: string }> => {
   const configPath = getConfigPath();
-  const config = await readConfig(configPath);
-  if (!config) {
-    console.error(pc.red(`No config found at ${configPath}`));
+  const result = await readConfig(configPath);
+  if (!result.config) {
+    if (result.error === 'invalid') {
+      console.error(pc.red(`Invalid config at ${configPath}: ${result.message}`));
+    } else {
+      console.error(pc.red(`No config found at ${configPath}`));
+    }
     console.error('Run opentabs start to auto-create config.');
     process.exit(1);
   }
-  return { config, configPath };
+  return { config: result.config, configPath };
 };
 
 interface HealthPluginDetail {

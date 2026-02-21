@@ -12,26 +12,35 @@ export const getConfigPath = (): string => join(getConfigDir(), 'config.json');
 
 export const getLogFilePath = (): string => join(getConfigDir(), 'server.log');
 
-export const readConfig = async (configPath: string): Promise<Record<string, unknown> | null> => {
+export type ConfigResult =
+  | { config: Record<string, unknown>; error?: undefined }
+  | { config: null; error: 'missing' }
+  | { config: null; error: 'invalid'; message: string };
+
+export const readConfig = async (configPath: string): Promise<ConfigResult> => {
   const configFile = Bun.file(configPath);
   if (!(await configFile.exists())) {
-    return null;
+    return { config: null, error: 'missing' };
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(await configFile.text());
   } catch (err) {
-    console.error(`Invalid JSON in config: ${err instanceof Error ? err.message : String(err)}`);
-    console.error(`File: ${configPath}`);
-    return null;
+    return {
+      config: null,
+      error: 'invalid',
+      message: `Invalid JSON: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    console.error(
-      `Invalid config at ${configPath}: expected a JSON object, got ${Array.isArray(parsed) ? 'array' : String(parsed)}`,
-    );
-    return null;
+    const got = Array.isArray(parsed) ? 'array' : String(parsed);
+    return {
+      config: null,
+      error: 'invalid',
+      message: `Expected a JSON object, got ${got}`,
+    };
   }
-  return parsed as Record<string, unknown>;
+  return { config: parsed as Record<string, unknown> };
 };
 
 export const getLocalPluginsFromConfig = (config: Record<string, unknown>): string[] =>

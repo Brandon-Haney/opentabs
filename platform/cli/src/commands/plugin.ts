@@ -48,7 +48,7 @@ const normalizePluginName = (name: string): string => {
 const notifyServer = async (options: { port?: number }): Promise<void> => {
   const port = resolvePort(options);
   const configPath = getConfigPath();
-  const config = await readConfig(configPath);
+  const { config } = await readConfig(configPath);
   const secret = config && typeof config.secret === 'string' ? config.secret : null;
 
   try {
@@ -109,7 +109,7 @@ const handlePluginInstall = async (name: string, options: { port?: number }): Pr
  */
 const removeFromLocalPlugins = async (pkg: string): Promise<void> => {
   const configPath = getConfigPath();
-  const config = await readConfig(configPath);
+  const { config } = await readConfig(configPath);
   if (!config) return;
 
   const localPlugins = getLocalPluginsFromConfig(config);
@@ -367,7 +367,7 @@ const handlePluginList = async (options: PluginListOptions): Promise<void> => {
 
   // Offline mode — server is not running
   const configPath = getConfigPath();
-  const config = await readConfig(configPath);
+  const { config } = await readConfig(configPath);
   const localPlugins = config ? getLocalPluginsFromConfig(config) : [];
 
   const localEntries: ListPluginEntry[] = [];

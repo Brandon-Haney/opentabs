@@ -66,7 +66,7 @@ const handleAudit = async (options: AuditOptions): Promise<void> => {
 
   // Read secret from config
   const configPath = getConfigPath();
-  const config = await readConfig(configPath);
+  const { config } = await readConfig(configPath);
   const secret = config && typeof config.secret === 'string' ? config.secret : null;
 
   // Build URL

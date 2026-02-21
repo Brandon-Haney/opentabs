@@ -49,9 +49,19 @@ const checkBunVersion = (): CheckResult => {
 
 const checkConfigFile = async (): Promise<{ result: CheckResult; config: Record<string, unknown> | null }> => {
   const configPath = getConfigPath();
-  const config = await readConfig(configPath);
-  if (config) {
-    return { result: pass('Config file', configPath), config };
+  const readResult = await readConfig(configPath);
+  if (readResult.config) {
+    return { result: pass('Config file', configPath), config: readResult.config };
+  }
+  if (readResult.error === 'invalid') {
+    return {
+      result: fail(
+        'Config file',
+        `invalid at ${configPath}: ${readResult.message}`,
+        'Run opentabs config reset --confirm to delete and regenerate',
+      ),
+      config: null,
+    };
   }
   return {
     result: warn('Config file', `not found at ${configPath}`, 'Run opentabs start to auto-create config'),

@@ -14,7 +14,7 @@ export default function SideNav({ setIsOpen }: SideNavProps) {
   const pathname = usePathname();
 
   return (
-    <div className="sidebar-scroll border-border bg-background flex h-full w-full flex-col justify-start overflow-y-auto border-r-2 py-8">
+    <div className="sidebar-scroll border-border bg-background flex h-full w-full flex-col justify-start overflow-y-scroll overscroll-y-contain border-r-2 py-8">
       <nav className="flex flex-col items-start space-y-4 px-6" aria-label="Main navigation">
         {navConfig.sideNavItems.map(item => (
           <div key={item.title} className="w-full">

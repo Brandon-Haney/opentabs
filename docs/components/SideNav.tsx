@@ -27,8 +27,8 @@ export default function SideNav({ setIsOpen }: SideNavProps) {
                   onClick={() => setIsOpen && setIsOpen(false)}
                   target={child.href.startsWith('http') ? '_blank' : '_self'}
                   className={cn(
-                    'text-muted-foreground hover:text-foreground hover:bg-muted/50 flex w-full items-center justify-between rounded-(--radius) border-2 border-transparent px-2 py-1 transition-colors',
-                    pathname === child.href && 'bg-primary text-primary-foreground border-border',
+                    'text-muted-foreground hover:text-foreground hover:bg-muted/50 flex w-full items-center justify-between border border-transparent px-2 py-1 transition-colors',
+                    pathname === child.href && 'bg-primary text-primary-foreground',
                   )}>
                   {child.title}
                   {child.tag && (

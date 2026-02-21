@@ -10,13 +10,115 @@ import { parsePluginPackageJson } from '@opentabs-dev/shared';
 import pc from 'picocolors';
 import { z } from 'zod';
 import { mkdirSync, watch } from 'node:fs';
-import { resolve, join, relative } from 'node:path';
+import { chmod, rename, unlink } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { resolve, join, relative, dirname } from 'node:path';
 import type { ManifestTool, OpenTabsPlugin, ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import type { PluginPackageJson } from '@opentabs-dev/shared';
 import type { Command } from 'commander';
 import type { FSWatcher } from 'node:fs';
 
 const DEBOUNCE_MS = 100;
+const DEFAULT_PORT = 9515;
+
+// ---------------------------------------------------------------------------
+// Config helpers — lightweight versions for the build tool, which cannot
+// depend on the CLI or MCP server packages.
+// ---------------------------------------------------------------------------
+
+const getConfigDir = (): string => Bun.env.OPENTABS_CONFIG_DIR || join(homedir(), '.opentabs');
+const getConfigPath = (): string => join(getConfigDir(), 'config.json');
+
+/** Write config atomically via tmp-file + rename. */
+const atomicWriteConfig = async (configPath: string, content: string): Promise<void> => {
+  const tmpPath = configPath + '.tmp';
+  try {
+    await Bun.write(tmpPath, content);
+    await chmod(tmpPath, 0o600).catch(() => {});
+    await rename(tmpPath, configPath);
+  } catch (err) {
+    await unlink(tmpPath).catch(() => {});
+    throw err;
+  }
+};
+
+/**
+ * Add the plugin directory to localPlugins in ~/.opentabs/config.json.
+ * Uses a relative path from the config directory for portability.
+ * Returns true if newly registered, false if already present.
+ */
+const registerInConfig = async (projectDir: string): Promise<boolean> => {
+  const configPath = getConfigPath();
+  const configFile = Bun.file(configPath);
+  if (!(await configFile.exists())) {
+    console.warn(pc.yellow('Warning: Config file not found — skipping auto-registration.'));
+    console.warn(pc.yellow(`  Run ${pc.cyan('opentabs start')} to create ~/.opentabs/config.json`));
+    return false;
+  }
+
+  let config: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(await configFile.text());
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      console.warn(pc.yellow('Warning: Config file is not a JSON object — skipping auto-registration.'));
+      return false;
+    }
+    config = parsed as Record<string, unknown>;
+  } catch {
+    console.warn(pc.yellow('Warning: Config file has invalid JSON — skipping auto-registration.'));
+    return false;
+  }
+
+  if (!Array.isArray(config.localPlugins)) config.localPlugins = [];
+  const plugins = config.localPlugins as string[];
+
+  const configDir = dirname(configPath);
+  const pluginPath = relative(configDir, projectDir);
+
+  if (plugins.includes(pluginPath)) return false;
+
+  plugins.push(pluginPath);
+  await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
+  return true;
+};
+
+/**
+ * Notify the running MCP server to reload plugins by calling POST /reload.
+ * Fails silently — the build succeeds regardless of whether the server is running.
+ */
+const notifyServer = async (): Promise<void> => {
+  const configPath = getConfigPath();
+  const configFile = Bun.file(configPath);
+  if (!(await configFile.exists())) return;
+
+  let secret: string | undefined;
+  try {
+    const parsed: unknown = JSON.parse(await configFile.text());
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>;
+      if (typeof record.secret === 'string') secret = record.secret;
+    }
+  } catch {
+    return;
+  }
+
+  if (!secret) return;
+
+  const port = Bun.env.OPENTABS_PORT ? Number(Bun.env.OPENTABS_PORT) : DEFAULT_PORT;
+  if (!Number.isFinite(port) || port < 1 || port > 65535) return;
+
+  try {
+    const res = await fetch(`http://localhost:${port}/reload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+    if (res.ok) {
+      console.log(pc.dim('Notified MCP server to reload plugins.'));
+    }
+  } catch {
+    // Server not running — ignore
+  }
+};
 
 /**
  * Validate the plugin's package.json has the required `opentabs` field.
@@ -300,6 +402,23 @@ const handleBuild = async (options: { watch?: boolean }): Promise<void> => {
     process.exit(1);
   }
 
+  // Auto-register in config (first build only) and notify server
+  try {
+    const registered = await registerInConfig(projectDir);
+    if (registered) {
+      console.log(pc.green('Registered in ~/.opentabs/config.json'));
+    }
+  } catch (err: unknown) {
+    console.warn(
+      pc.yellow(`Warning: Could not auto-register plugin: ${err instanceof Error ? err.message : String(err)}`),
+    );
+  }
+  try {
+    await notifyServer();
+  } catch {
+    // Notification failures are non-fatal
+  }
+
   if (!options.watch) return;
 
   // Watch mode: watch dist/ for changes to .js files and rebuild
@@ -318,6 +437,12 @@ const handleBuild = async (options: { watch?: boolean }): Promise<void> => {
     console.log(pc.dim(`[${formatTimestamp()}] Change detected, rebuilding...`));
     try {
       await runBuild(projectDir);
+      // Notify server after each successful rebuild in watch mode
+      try {
+        await notifyServer();
+      } catch {
+        // Notification failures are non-fatal
+      }
     } catch (err: unknown) {
       console.error(
         pc.red(`[${formatTimestamp()}] Rebuild failed: ${err instanceof Error ? err.message : String(err)}`),
@@ -389,7 +514,9 @@ export {
   formatBytes,
   formatTimestamp,
   generateToolsJson,
+  notifyServer,
   registerBuildCommand,
+  registerInConfig,
   validatePackageJson,
   validatePlugin,
 };

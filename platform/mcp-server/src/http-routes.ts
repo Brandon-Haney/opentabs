@@ -25,6 +25,7 @@ import { getNextRequestId, STATE_SCHEMA_VERSION } from './state.js';
 import { version } from './version.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+import { timingSafeEqual } from 'node:crypto';
 import type { McpCallbacks } from './extension-protocol.js';
 import type { McpServerInstance } from './mcp-setup.js';
 import type { AuditEntry, ServerState } from './state.js';
@@ -72,15 +73,25 @@ const createMcpCallbacks = (state: ServerState, sessionServers: McpServerInstanc
 });
 
 /**
+ * Constant-time string comparison using crypto.timingSafeEqual.
+ * Rejects early on length mismatch (length is not secret — only content is).
+ */
+const constantTimeEqual = (a: string, b: string): boolean => {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+};
+
+/**
  * Check Bearer token in the Authorization header against the server's shared secret.
  * Returns a 401 Response if authentication fails, or null if authentication succeeds.
  * When no secret is configured (wsSecret is null), all requests are allowed through.
+ * Uses constant-time comparison to prevent timing side-channel attacks.
  */
 const checkBearerAuth = (req: Request, wsSecret: string | null): Response | null => {
   if (!wsSecret) return null;
   const authHeader = req.headers.get('Authorization');
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (token !== wsSecret) {
+  if (!token || !constantTimeEqual(token, wsSecret)) {
     return new Response('Unauthorized', { status: 401 });
   }
   return null;
@@ -177,10 +188,17 @@ const createHandleFetch =
       // into server logs, browser history, and proxy logs).
       // The client sends protocols: ['opentabs', '<secret>'] and the server
       // echoes 'opentabs' as the accepted subprotocol.
+      // Uses constant-time comparison to prevent timing side-channel attacks.
       if (state.wsSecret) {
         const protocols = req.headers.get('sec-websocket-protocol');
         const parts = protocols?.split(',').map(p => p.trim()) ?? [];
-        if (!parts.includes(state.wsSecret)) {
+        let secretMatched = false;
+        for (const part of parts) {
+          if (constantTimeEqual(part, state.wsSecret)) {
+            secretMatched = true;
+          }
+        }
+        if (!secretMatched) {
           return new Response('Unauthorized', { status: 401 });
         }
         const upgraded = bunServer.upgrade(req, {
@@ -562,4 +580,4 @@ const sweepStaleSessions = (
 };
 
 export type { HotHandlers };
-export { checkBearerAuth, createHandlers, sweepStaleSessions };
+export { checkBearerAuth, constantTimeEqual, createHandlers, sweepStaleSessions };

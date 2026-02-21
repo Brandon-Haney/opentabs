@@ -9,7 +9,7 @@
  */
 
 import { test, expect } from './fixtures.js';
-import { setupToolTest } from './helpers.js';
+import { openTestAppTab, setupToolTest, waitForToolResult } from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // US-003: Navigate away → closed transition
@@ -66,5 +66,83 @@ test.describe('Tab state sync — navigate away', () => {
     expect(result.isError).toBe(true);
 
     await page.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-004: Multi-tab resilience — plugin stays ready when one tab is closed
+// ---------------------------------------------------------------------------
+
+test.describe('Tab state sync — multi-tab resilience', () => {
+  test('plugin stays ready when one of multiple matching tabs is closed', async ({
+    mcpServer,
+    testServer,
+    extensionContext,
+    mcpClient,
+  }) => {
+    // 1. Open the first matching tab and wait for ready state
+    const page1 = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
+
+    // 2. Open a second matching tab to the same test server
+    const page2 = await openTestAppTab(extensionContext, testServer.url, mcpServer, testServer);
+
+    // Wait for the second tab's adapter to be fully ready (tool calls succeed)
+    await waitForToolResult(mcpClient, 'e2e-test_get_status', {}, { isError: false }, 15_000);
+
+    // 3. Verify the server reports 'ready' state
+    await expect
+      .poll(
+        async () => {
+          const res = await fetch(`http://localhost:${mcpServer.port}/health`);
+          const body = (await res.json()) as {
+            pluginDetails?: Array<{ name: string; tabState: string }>;
+          };
+          return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+        },
+        { timeout: 15_000, message: 'Server tab state for e2e-test should be ready with two tabs' },
+      )
+      .toBe('ready');
+
+    // 4. Close the first tab
+    await page1.close();
+
+    // 5. Verify state is still 'ready' — the second tab keeps the plugin alive.
+    // Give the extension time to process the onRemoved event and recompute state.
+    await expect
+      .poll(
+        async () => {
+          const res = await fetch(`http://localhost:${mcpServer.port}/health`);
+          const body = (await res.json()) as {
+            pluginDetails?: Array<{ name: string; tabState: string }>;
+          };
+          return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+        },
+        { timeout: 15_000, message: 'Server tab state for e2e-test should still be ready after closing one tab' },
+      )
+      .toBe('ready');
+
+    // 6. Verify tool dispatch still succeeds via the remaining tab
+    const result = await mcpClient.callTool('e2e-test_echo', { message: 'still alive' });
+    expect(result.isError).toBe(false);
+
+    // 7. Close the second (last) tab
+    await page2.close();
+
+    // 8. Verify state transitions to 'closed' — no matching tabs remain
+    await expect
+      .poll(
+        async () => {
+          const res = await fetch(`http://localhost:${mcpServer.port}/health`);
+          const body = (await res.json()) as {
+            pluginDetails?: Array<{ name: string; tabState: string }>;
+          };
+          return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+        },
+        {
+          timeout: 30_000,
+          message: 'Server tab state for e2e-test did not transition to closed after closing all tabs',
+        },
+      )
+      .toBe('closed');
   });
 });

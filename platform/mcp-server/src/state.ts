@@ -32,7 +32,7 @@ export interface RegisteredPlugin {
   trustTier: TrustTier;
   iife: string;
   tools: ManifestTool[];
-  /** SHA-256 hex hash of the adapter IIFE content (from manifest, set by `opentabs build`) */
+  /** SHA-256 hex hash of the adapter IIFE content (from manifest, set by `opentabs-plugin build`) */
   adapterHash?: string;
   /** Filesystem path for local plugins (used for file watching) */
   sourcePath?: string;

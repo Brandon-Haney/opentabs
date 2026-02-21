@@ -29,7 +29,7 @@ export type TabState = 'closed' | 'unavailable' | 'ready';
 /** Trust tier for a plugin */
 export type TrustTier = 'official' | 'community' | 'local';
 
-/** Manifest shape as written by `opentabs build` */
+/** Manifest shape as written by `opentabs-plugin build` */
 export interface PluginManifest {
   name: string;
   version: string;
@@ -37,7 +37,7 @@ export interface PluginManifest {
   description: string;
   url_patterns: string[];
   tools: ManifestTool[];
-  /** SHA-256 hex hash of the adapter IIFE content (set by `opentabs build`) */
+  /** SHA-256 hex hash of the adapter IIFE content (set by `opentabs-plugin build`) */
   adapterHash?: string;
 }
 

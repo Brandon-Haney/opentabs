@@ -9,7 +9,7 @@ These plugins are **not** covered by the root `bun run build`, `bun run lint`, `
 ```bash
 cd plugins/<name>
 bun install
-bun run build         # tsc + opentabs build
+bun run build         # tsc + opentabs-plugin build
 bun run type-check    # tsc --noEmit
 bun run lint          # eslint
 bun run format:check  # prettier

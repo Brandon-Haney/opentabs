@@ -8,7 +8,7 @@ const DisconnectedState = () => (
       <Empty.Separator className="bg-destructive" />
       <Empty.Description>Start the MCP server:</Empty.Description>
       <code className="border-destructive/40 bg-destructive/10 rounded border-2 px-3 py-2 font-mono text-sm">
-        opentabs dev
+        opentabs start
       </code>
     </Empty.Content>
   </Empty>

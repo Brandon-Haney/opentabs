@@ -135,7 +135,7 @@ const recordPollDetection = (state: ServerState): void => {
 /**
  * Extract the adapter hash embedded by the CLI's hash-setter snippet.
  *
- * The `opentabs build` CLI appends a self-contained hash-setter IIFE to every
+ * The `opentabs-plugin build` CLI appends a self-contained hash-setter IIFE to every
  * adapter bundle: `a.__adapterHash="<sha256-of-core-content>";`. The embedded
  * hash is computed from the core IIFE content BEFORE the hash-setter is
  * appended, so it matches what the injected adapter reports at runtime.

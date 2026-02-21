@@ -62,7 +62,7 @@ test.describe('IIFE injection — plugin.update re-injection', () => {
 
       // Modify the IIFE to set a global marker variable on re-injection.
       // The marker is a global (not a property on the adapter) because the
-      // adapter is frozen by the hash-setter snippet appended by opentabs build.
+      // adapter is frozen by the hash-setter snippet appended by opentabs-plugin build.
       // Setting a property on a frozen object fails silently; a global variable
       // is always writable and proves the NEW code ran after re-injection.
       const iifePath = path.join(ctx.pluginDir, 'dist', 'adapter.iife.js');

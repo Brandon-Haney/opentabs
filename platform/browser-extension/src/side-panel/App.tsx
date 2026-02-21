@@ -8,7 +8,7 @@ import { VALID_PLUGIN_NAME } from '../constants.js';
 import { SIDE_PANEL_PROTOCOL_VERSION } from '@opentabs-dev/shared';
 import { Search, X } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { PluginState } from './bridge.js';
+import type { FailedPluginState, PluginState } from './bridge.js';
 import type { InternalMessage } from '../types.js';
 import type { TabState } from '@opentabs-dev/shared';
 
@@ -17,6 +17,7 @@ const validTabStates: ReadonlySet<string> = new Set<TabState>(['closed', 'unavai
 const App = () => {
   const [connected, setConnected] = useState(false);
   const [plugins, setPlugins] = useState<PluginState[]>([]);
+  const [failedPlugins, setFailedPlugins] = useState<FailedPluginState[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTools, setActiveTools] = useState<Set<string>>(new Set());
   const [versionMismatch, setVersionMismatch] = useState(false);
@@ -50,6 +51,7 @@ const App = () => {
           pendingTabStates.current.clear();
         }
         setPlugins(updatedPlugins);
+        setFailedPlugins(result.failedPlugins);
         if (result.protocolVersion !== undefined && result.protocolVersion !== SIDE_PANEL_PROTOCOL_VERSION) {
           setVersionMismatch(true);
         } else if (result.protocolVersion !== undefined) {
@@ -148,6 +150,7 @@ const App = () => {
           loadPlugins();
         } else {
           setPlugins([]);
+          setFailedPlugins([]);
           setActiveTools(new Set());
           setVersionMismatch(false);
           rejectAllPending();
@@ -191,7 +194,8 @@ const App = () => {
   }, [loadPlugins]);
 
   const totalTools = plugins.reduce((sum, p) => sum + p.tools.length, 0);
-  const showPlugins = !loading && connected && plugins.length > 0;
+  const hasContent = plugins.length > 0 || failedPlugins.length > 0;
+  const showPlugins = !loading && connected && hasContent;
 
   return (
     <div className="text-foreground flex min-h-screen flex-col">
@@ -222,10 +226,16 @@ const App = () => {
           <LoadingState />
         ) : !connected ? (
           <DisconnectedState />
-        ) : plugins.length === 0 ? (
+        ) : !hasContent ? (
           <EmptyState />
         ) : (
-          <PluginList plugins={plugins} activeTools={activeTools} setPlugins={setPlugins} toolFilter={toolFilter} />
+          <PluginList
+            plugins={plugins}
+            failedPlugins={failedPlugins}
+            activeTools={activeTools}
+            setPlugins={setPlugins}
+            toolFilter={toolFilter}
+          />
         )}
       </main>
       <Footer />

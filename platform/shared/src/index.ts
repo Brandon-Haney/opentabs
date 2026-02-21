@@ -177,9 +177,16 @@ export interface ConfigStatePlugin {
   tools: WireToolDef[];
 }
 
+/** A plugin that failed discovery, sent to the side panel for display */
+export interface ConfigStateFailedPlugin {
+  specifier: string;
+  error: string;
+}
+
 /** config.getState result */
 export interface ConfigStateResult {
   plugins: ConfigStatePlugin[];
+  failedPlugins: ConfigStateFailedPlugin[];
   outdatedPlugins: Array<{
     name: string;
     currentVersion: string;

@@ -1,15 +1,18 @@
+import { FailedPluginCard } from './FailedPluginCard.js';
 import { PluginCard } from './PluginCard.js';
 import { Accordion } from './retro/Accordion.js';
-import type { PluginState } from '../bridge.js';
+import type { FailedPluginState, PluginState } from '../bridge.js';
 import type { Dispatch, SetStateAction } from 'react';
 
 const PluginList = ({
   plugins,
+  failedPlugins,
   activeTools,
   setPlugins,
   toolFilter,
 }: {
   plugins: PluginState[];
+  failedPlugins: FailedPluginState[];
   activeTools: Set<string>;
   setPlugins: Dispatch<SetStateAction<PluginState[]>>;
   toolFilter: string;
@@ -24,6 +27,9 @@ const PluginList = ({
       )
     : plugins;
 
+  // Hide failed plugins when filtering tools
+  const visibleFailed = filterLower ? [] : failedPlugins;
+
   if (filterLower && visiblePlugins.length === 0) {
     return (
       <div className="text-muted-foreground py-8 text-center text-sm">No tools matching &ldquo;{toolFilter}&rdquo;</div>
@@ -31,17 +37,26 @@ const PluginList = ({
   }
 
   return (
-    <Accordion type="multiple" className="space-y-2">
-      {visiblePlugins.map(plugin => (
-        <PluginCard
-          key={plugin.name}
-          plugin={plugin}
-          activeTools={activeTools}
-          setPlugins={setPlugins}
-          toolFilter={toolFilter}
-        />
-      ))}
-    </Accordion>
+    <>
+      {visibleFailed.length > 0 && (
+        <div className="mb-3 space-y-2">
+          {visibleFailed.map(fp => (
+            <FailedPluginCard key={fp.specifier} plugin={fp} />
+          ))}
+        </div>
+      )}
+      <Accordion type="multiple" className="space-y-2">
+        {visiblePlugins.map(plugin => (
+          <PluginCard
+            key={plugin.name}
+            plugin={plugin}
+            activeTools={activeTools}
+            setPlugins={setPlugins}
+            toolFilter={toolFilter}
+          />
+        ))}
+      </Accordion>
+    </>
   );
 };
 

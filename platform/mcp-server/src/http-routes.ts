@@ -185,6 +185,7 @@ const createHandleFetch =
         plugins: state.registry.plugins.size,
         pluginDetails,
         failedPlugins: [...state.registry.failures],
+        discoveryErrors: [...state.discoveryErrors],
         toolCount,
         uptime: uptimeSeconds,
         reloadCount: hs?.reloadCount ?? 0,

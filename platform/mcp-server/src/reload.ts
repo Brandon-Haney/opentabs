@@ -173,10 +173,12 @@ const reloadCore = async ({ state, sessionServers, transports }: ReloadCoreArgs)
     state.toolConfig = { ...config.tools };
     state.pluginPaths = [...config.plugins];
     state.wsSecret = config.secret ?? null;
+    state.discoveryErrors = errors;
 
     if (errors.length > 0) {
+      log.warn(`${errors.length} plugin(s) failed to load:`);
       for (const e of errors) {
-        log.warn(`Plugin discovery failed for "${e.specifier}": ${e.error}`);
+        log.warn(`  "${e.specifier}": ${e.error}`);
       }
     }
 

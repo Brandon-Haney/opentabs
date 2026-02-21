@@ -168,6 +168,8 @@ export interface ServerState {
   mtimePollDetections: number;
   /** Timestamps (ms since epoch) of recent mtime poll detections — used for stale watcher warning */
   mtimePollDetectionTimestamps: number[];
+  /** Discovery errors from the most recent reload — used by config.getState for the side panel */
+  discoveryErrors: ReadonlyArray<{ specifier: string; error: string }>;
 }
 
 /** Increment when changing the type of an existing ServerState field */
@@ -206,6 +208,7 @@ export const createState = (): ServerState => ({
   mtimeLastPollAt: null,
   mtimePollDetections: 0,
   mtimePollDetectionTimestamps: [],
+  discoveryErrors: [],
 });
 
 /** Generate a cryptographically random JSON-RPC request ID */

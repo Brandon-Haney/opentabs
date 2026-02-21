@@ -10,10 +10,13 @@
  * also rejected on WebSocket disconnect (sp:connectionState connected=false).
  */
 
-import type { ConfigStatePlugin, ConfigStateResult } from '@opentabs-dev/shared';
+import type { ConfigStateFailedPlugin, ConfigStatePlugin, ConfigStateResult } from '@opentabs-dev/shared';
 
 /** Plugin state as displayed in the side panel (matches config.getState response) */
 type PluginState = ConfigStatePlugin;
+
+/** Failed plugin state as displayed in the side panel */
+type FailedPluginState = ConfigStateFailedPlugin;
 
 /** Timeout for pending JSON-RPC requests relayed through the background script (ms) */
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -119,7 +122,7 @@ const setToolEnabled = (plugin: string, tool: string, enabled: boolean): Promise
 const setAllToolsEnabled = (plugin: string, enabled: boolean): Promise<unknown> =>
   sendRequest('config.setAllToolsEnabled', { plugin, enabled });
 
-export type { PluginState };
+export type { FailedPluginState, PluginState };
 export {
   getConnectionState,
   fetchConfigState,

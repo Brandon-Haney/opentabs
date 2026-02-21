@@ -573,6 +573,7 @@ const handleConfigGetState = (state: ServerState, id: string | number): void => 
     jsonrpc: '2.0',
     result: {
       plugins,
+      failedPlugins: state.discoveryErrors.map(e => ({ specifier: e.specifier, error: e.error })),
       outdatedPlugins: state.outdatedPlugins,
       protocolVersion: SIDE_PANEL_PROTOCOL_VERSION,
     },

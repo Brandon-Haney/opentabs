@@ -7,7 +7,7 @@
  */
 
 import { ok, err } from '@opentabs-dev/shared';
-import { realpath } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import type { Result } from '@opentabs-dev/shared';
@@ -102,6 +102,16 @@ const resolvePluginPath = async (specifier: string, configDir: string): Promise<
 
     if (!(await isAllowedPluginPath(resolvedPath))) {
       return err(`Path outside allowed directories: ${resolvedPath}`);
+    }
+
+    // Verify the directory exists before passing to the loader
+    try {
+      const stats = await stat(resolvedPath);
+      if (!stats.isDirectory()) {
+        return err(`Path is not a directory: ${resolvedPath}`);
+      }
+    } catch {
+      return err(`Path not found: ${resolvedPath} — check that the directory exists in your config`);
     }
 
     return ok(resolvedPath);

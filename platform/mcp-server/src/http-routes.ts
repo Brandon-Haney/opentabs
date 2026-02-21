@@ -225,6 +225,27 @@ const createHandleFetch =
       });
     }
 
+    // --- Audit log endpoint ---
+    if (url.pathname === '/audit' && req.method === 'GET') {
+      const authError = checkBearerAuth(req, state.wsSecret);
+      if (authError) return authError;
+
+      const limitParam = parseInt(url.searchParams.get('limit') ?? '50', 10);
+      const limit = Math.max(1, Math.min(500, Number.isNaN(limitParam) ? 50 : limitParam));
+      const pluginFilter = url.searchParams.get('plugin');
+      const toolFilter = url.searchParams.get('tool');
+      const successParam = url.searchParams.get('success');
+      const successFilter = successParam === 'true' ? true : successParam === 'false' ? false : undefined;
+
+      let entries = [...state.auditLog].reverse();
+      if (pluginFilter) entries = entries.filter(e => e.plugin === pluginFilter);
+      if (toolFilter) entries = entries.filter(e => e.tool === toolFilter);
+      if (successFilter !== undefined) entries = entries.filter(e => e.success === successFilter);
+      entries = entries.slice(0, limit);
+
+      return Response.json(entries);
+    }
+
     // --- Config/plugin rediscovery endpoint ---
     if (url.pathname === '/reload' && req.method === 'POST') {
       const authError = checkBearerAuth(req, state.wsSecret);

@@ -33,7 +33,7 @@
 
 **Plugin Tools** (`platform/plugin-tools`): Plugin developer CLI (`opentabs-plugin`). The `opentabs-plugin build` command bundles the plugin adapter into an IIFE, generates `dist/tools.json` (containing tool schemas, resource metadata, and prompt metadata), auto-registers the plugin in `~/.opentabs/config.json` (under `localPlugins`), and calls `POST /reload` to notify the running MCP server. Supports `--watch` mode for development.
 
-**CLI** (`platform/cli`): User-facing CLI (`opentabs`). Commands: `start`, `status`, `audit`, `doctor`, `logs`, `plugin create`, `config show/set/path`. The `opentabs start` command auto-initializes config and the Chrome extension on first run, then launches the MCP server. The `opentabs logs --plugin <name>` flag filters output to only show logs from a specific plugin. The `opentabs audit` command shows recent tool invocation history from the server's audit log.
+**CLI** (`platform/cli`): User-facing CLI (`opentabs`). Commands: `start`, `status`, `audit`, `doctor`, `logs`, `plugin create/search`, `config show/set/path`. The `opentabs start` command auto-initializes config and the Chrome extension on first run, then launches the MCP server. The `opentabs logs --plugin <name>` flag filters output to only show logs from a specific plugin. The `opentabs audit` command shows recent tool invocation history from the server's audit log. The `opentabs plugin search [query]` command searches the npm registry for available plugins.
 
 **create-plugin** (`platform/create-plugin`): Scaffolding CLI (`create-opentabs-plugin`) for new plugin projects.
 

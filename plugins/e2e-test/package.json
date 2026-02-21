@@ -2,9 +2,17 @@
   "name": "opentabs-plugin-e2e-test",
   "version": "0.0.1",
   "type": "module",
+  "main": "dist/adapter.iife.js",
   "keywords": [
     "opentabs-plugin"
   ],
+  "opentabs": {
+    "displayName": "E2E Test",
+    "description": "Dead-simple plugin for E2E testing — relays to a local test web server",
+    "urlPatterns": [
+      "http://localhost/*"
+    ]
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -13,8 +21,7 @@
   },
   "types": "./dist/index.d.ts",
   "files": [
-    "dist",
-    "opentabs-plugin.json"
+    "dist"
   ],
   "scripts": {
     "build": "tsc && opentabs build",

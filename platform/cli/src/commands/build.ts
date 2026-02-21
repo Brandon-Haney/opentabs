@@ -1,18 +1,41 @@
 /**
- * `opentabs build` command — generates the plugin manifest and bundles the adapter IIFE.
+ * `opentabs build` command — generates dist/tools.json and bundles the adapter IIFE.
+ * Plugin metadata (name, version, displayName, description, urlPatterns) is read from
+ * package.json's `opentabs` field; tool schemas are serialized from the plugin module.
  * With `--watch`, rebuilds automatically when tsc output in `dist/` changes.
  */
 
 import { validatePluginName, validateUrlPattern, LUCIDE_ICON_NAMES } from '@opentabs-dev/plugin-sdk';
+import { parsePluginPackageJson } from '@opentabs-dev/shared';
 import pc from 'picocolors';
 import { z } from 'zod';
 import { mkdirSync, watch } from 'node:fs';
 import { resolve, join, relative } from 'node:path';
-import type { Manifest, ManifestTool, OpenTabsPlugin, ToolDefinition } from '@opentabs-dev/plugin-sdk';
+import type { ManifestTool, OpenTabsPlugin, ToolDefinition } from '@opentabs-dev/plugin-sdk';
+import type { PluginPackageJson } from '@opentabs-dev/shared';
 import type { Command } from 'commander';
 import type { FSWatcher } from 'node:fs';
 
 const DEBOUNCE_MS = 100;
+
+/**
+ * Validate the plugin's package.json has the required `opentabs` field.
+ * Returns the parsed PluginPackageJson or throws with a descriptive error.
+ */
+const validatePackageJson = (pkgJson: unknown, projectDir: string): PluginPackageJson => {
+  const result = parsePluginPackageJson(pkgJson, projectDir);
+  if (!result.ok) {
+    throw new Error(result.error);
+  }
+
+  // Additional validation: URL patterns
+  for (const pattern of result.value.opentabs.urlPatterns) {
+    const patternError = validateUrlPattern(pattern);
+    if (patternError) throw new Error(patternError);
+  }
+
+  return result.value;
+};
 
 const validatePlugin = (plugin: OpenTabsPlugin): string[] => {
   const errors: string[] = [];
@@ -107,8 +130,9 @@ const convertToolSchemas = (tool: ToolDefinition) => {
   return { inputSchema, outputSchema };
 };
 
-const generateManifest = (plugin: OpenTabsPlugin): Manifest => {
-  const tools: ManifestTool[] = plugin.tools.map(tool => {
+/** Serialize plugin tools to ManifestTool[] for dist/tools.json */
+const generateToolsJson = (plugin: OpenTabsPlugin): ManifestTool[] =>
+  plugin.tools.map(tool => {
     const { inputSchema, outputSchema } = convertToolSchemas(tool);
     return {
       name: tool.name,
@@ -119,16 +143,6 @@ const generateManifest = (plugin: OpenTabsPlugin): Manifest => {
       output_schema: outputSchema,
     };
   });
-
-  return {
-    name: plugin.name,
-    version: plugin.version,
-    displayName: plugin.displayName,
-    description: plugin.description,
-    url_patterns: plugin.urlPatterns,
-    tools,
-  };
-};
 
 const bundleIIFE = async (sourceEntry: string, outDir: string, pluginName: string): Promise<void> => {
   // Create a temporary wrapper entry that imports the plugin and registers it
@@ -196,16 +210,20 @@ const formatTimestamp = (): string => {
 const runBuild = async (projectDir: string): Promise<void> => {
   const startTime = performance.now();
 
-  // Step 1: Verify plugin project has package.json
+  // Step 1: Read and validate package.json (must have opentabs field)
   const pkgJsonFile = Bun.file(join(projectDir, 'package.json'));
   if (!(await pkgJsonFile.exists())) {
     throw new Error('No valid package.json found in current directory. Run this command from a plugin directory.');
   }
+  let pkgJsonRaw: unknown;
   try {
-    JSON.parse(await pkgJsonFile.text());
+    pkgJsonRaw = JSON.parse(await pkgJsonFile.text());
   } catch {
     throw new Error('No valid package.json found in current directory. Run this command from a plugin directory.');
   }
+
+  console.log(pc.dim('Validating package.json opentabs field...'));
+  const pkgJson = validatePackageJson(pkgJsonRaw, projectDir);
 
   // Determine entry point — look for compiled output in dist/
   const entryPoint = resolve(projectDir, 'dist', 'index.js');
@@ -257,19 +275,16 @@ const runBuild = async (projectDir: string): Promise<void> => {
   const iifeSize = (await Bun.file(iifePath).stat()).size;
   console.log(`  Written: ${pc.bold('dist/adapter.iife.js')} (${formatBytes(iifeSize)})`);
 
-  // Step 5: Generate manifest (includes adapterHash from the IIFE)
-  console.log(pc.dim('Generating manifest...'));
-  const manifest = generateManifest(plugin);
-  manifest.adapterHash = adapterHash;
-  const manifestPath = join(projectDir, 'opentabs-plugin.json');
-  await Bun.write(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-  console.log(
-    `  Written: ${pc.bold('opentabs-plugin.json')} (${manifest.tools.length} tool${manifest.tools.length === 1 ? '' : 's'})`,
-  );
+  // Step 5: Generate dist/tools.json (tool schemas serialized from the plugin module)
+  console.log(pc.dim('Generating tools.json...'));
+  const tools = generateToolsJson(plugin);
+  const toolsJsonPath = join(distDir, 'tools.json');
+  await Bun.write(toolsJsonPath, JSON.stringify(tools, null, 2) + '\n');
+  console.log(`  Written: ${pc.bold('dist/tools.json')} (${tools.length} tool${tools.length === 1 ? '' : 's'})`);
 
   const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
   console.log('');
-  console.log(pc.green(`Build complete for plugin "${plugin.name}" v${plugin.version} in ${elapsed}s`));
+  console.log(pc.green(`Build complete for plugin "${pkgJson.name}" v${pkgJson.version} in ${elapsed}s`));
 };
 
 const handleBuild = async (options: { watch?: boolean }): Promise<void> => {
@@ -355,7 +370,7 @@ const handleBuild = async (options: { watch?: boolean }): Promise<void> => {
 const registerBuildCommand = (program: Command): void => {
   program
     .command('build')
-    .description('Build the current plugin directory (manifest + adapter IIFE)')
+    .description('Build the current plugin directory (dist/tools.json + adapter IIFE)')
     .option('-w, --watch', 'Watch dist/ for changes and rebuild automatically')
     .addHelpText(
       'after',
@@ -367,4 +382,12 @@ Examples:
     .action((options: { watch?: boolean }) => handleBuild(options));
 };
 
-export { convertToolSchemas, formatBytes, formatTimestamp, registerBuildCommand, validatePlugin };
+export {
+  convertToolSchemas,
+  formatBytes,
+  formatTimestamp,
+  generateToolsJson,
+  registerBuildCommand,
+  validatePackageJson,
+  validatePlugin,
+};

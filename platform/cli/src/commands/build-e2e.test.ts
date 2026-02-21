@@ -52,7 +52,7 @@ describe('opentabs build E2E', () => {
       copyPlugin(pluginDir);
 
       // Remove generated artifacts to ensure build creates them fresh
-      rmSync(join(pluginDir, 'opentabs-plugin.json'), { force: true });
+      rmSync(join(pluginDir, 'dist', 'tools.json'), { force: true });
       rmSync(join(pluginDir, 'dist', 'adapter.iife.js'), { force: true });
 
       const { exitCode, stdout, stderr } = runBuild(pluginDir);
@@ -61,37 +61,30 @@ describe('opentabs build E2E', () => {
       expect(exitCode).toBe(0);
       expect(stdout).toContain('Build complete');
 
-      // Verify opentabs-plugin.json was generated
-      const manifestFile = Bun.file(join(pluginDir, 'opentabs-plugin.json'));
-      expect(await manifestFile.exists()).toBe(true);
+      // Verify dist/tools.json was generated
+      const toolsFile = Bun.file(join(pluginDir, 'dist', 'tools.json'));
+      expect(await toolsFile.exists()).toBe(true);
 
-      const manifest = (await manifestFile.json()) as {
+      const tools = (await toolsFile.json()) as Array<{
         name: string;
-        version: string;
+        displayName: string;
         description: string;
-        url_patterns: string[];
-        adapterHash: string;
-        tools: Array<{
-          name: string;
-          description: string;
-          input_schema: Record<string, unknown>;
-          output_schema: Record<string, unknown>;
-        }>;
-      };
-
-      expect(manifest.name).toBe('e2e-test');
-      expect(manifest.version).toBe('0.0.1');
-      expect(manifest.url_patterns).toEqual(['http://localhost/*']);
-      expect(typeof manifest.adapterHash).toBe('string');
-      expect(manifest.adapterHash.length).toBeGreaterThan(0);
+        icon: string;
+        input_schema: Record<string, unknown>;
+        output_schema: Record<string, unknown>;
+      }>;
 
       // Verify tools array has expected structure
-      expect(manifest.tools.length).toBeGreaterThanOrEqual(1);
-      for (const tool of manifest.tools) {
+      expect(tools.length).toBeGreaterThanOrEqual(1);
+      for (const tool of tools) {
         expect(typeof tool.name).toBe('string');
         expect(tool.name.length).toBeGreaterThan(0);
+        expect(typeof tool.displayName).toBe('string');
+        expect(tool.displayName.length).toBeGreaterThan(0);
         expect(typeof tool.description).toBe('string');
         expect(tool.description.length).toBeGreaterThan(0);
+        expect(typeof tool.icon).toBe('string');
+        expect(tool.icon.length).toBeGreaterThan(0);
         expect(tool.input_schema).toBeDefined();
         expect(typeof tool.input_schema).toBe('object');
         expect(tool.output_schema).toBeDefined();

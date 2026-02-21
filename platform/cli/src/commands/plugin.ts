@@ -22,13 +22,16 @@ interface ManifestInfo {
 }
 
 const readManifest = async (resolvedPath: string): Promise<ManifestInfo | null> => {
-  const manifestPath = join(resolvedPath, 'opentabs-plugin.json');
-  if (!existsSync(manifestPath)) return null;
+  const pkgJsonPath = join(resolvedPath, 'package.json');
+  const toolsJsonPath = join(resolvedPath, 'dist', 'tools.json');
+  if (!existsSync(pkgJsonPath) || !existsSync(toolsJsonPath)) return null;
   try {
-    const data: unknown = await Bun.file(manifestPath).json();
-    if (data !== null && typeof data === 'object' && 'name' in data && 'version' in data && 'tools' in data) {
-      const d = data as { name: string; version: string; tools: unknown[] };
-      return { name: d.name, version: d.version, toolCount: Array.isArray(d.tools) ? d.tools.length : 0 };
+    const pkg: unknown = await Bun.file(pkgJsonPath).json();
+    const tools: unknown = await Bun.file(toolsJsonPath).json();
+    if (pkg !== null && typeof pkg === 'object' && 'name' in pkg && 'version' in pkg) {
+      const d = pkg as { name: string; version: string };
+      const toolCount = Array.isArray(tools) ? tools.length : 0;
+      return { name: d.name, version: d.version, toolCount };
     }
     return null;
   } catch {
@@ -130,8 +133,8 @@ const handlePluginAdd = async (pathArg: string): Promise<void> => {
   if (!existsSync(resolvedNew)) {
     console.warn(pc.yellow(`Warning: Path does not exist: ${normalizedNew}`));
   } else {
-    if (!existsSync(join(resolvedNew, 'opentabs-plugin.json'))) {
-      console.warn(pc.yellow('Warning: No opentabs-plugin.json found — run bun run build in the plugin directory.'));
+    if (!existsSync(join(resolvedNew, 'dist', 'tools.json'))) {
+      console.warn(pc.yellow('Warning: No dist/tools.json found — run bun run build in the plugin directory.'));
     }
     if (!existsSync(join(resolvedNew, 'dist', 'adapter.iife.js'))) {
       console.warn(pc.yellow('Warning: No dist/adapter.iife.js found — run bun run build in the plugin directory.'));

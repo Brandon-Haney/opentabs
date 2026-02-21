@@ -172,9 +172,11 @@ const checkPlugins = async (config: Record<string, unknown> | null): Promise<Che
       continue;
     }
 
-    const manifestPath = join(resolvedPath, 'opentabs-plugin.json');
-    if (!existsSync(manifestPath)) {
-      results.push(warn(`Plugin ${pluginPath}`, 'manifest not found', 'Run opentabs build in the plugin directory'));
+    const toolsJsonPath = join(resolvedPath, 'dist', 'tools.json');
+    if (!existsSync(toolsJsonPath)) {
+      results.push(
+        warn(`Plugin ${pluginPath}`, 'dist/tools.json not found', 'Run opentabs build in the plugin directory'),
+      );
       continue;
     }
 
@@ -186,17 +188,17 @@ const checkPlugins = async (config: Record<string, unknown> | null): Promise<Che
       continue;
     }
 
-    let manifestName = pluginPath;
+    let pluginName = pluginPath;
     try {
-      const data: unknown = await Bun.file(manifestPath).json();
-      if (data !== null && typeof data === 'object' && 'name' in data) {
-        const d = data as { name: string };
-        manifestName = d.name;
+      const pkgData: unknown = await Bun.file(join(resolvedPath, 'package.json')).json();
+      if (pkgData !== null && typeof pkgData === 'object' && 'name' in pkgData) {
+        const d = pkgData as { name: string };
+        pluginName = d.name;
       }
     } catch {
-      // Manifest unreadable — fall back to path
+      // package.json unreadable — fall back to path
     }
-    results.push(pass(`Plugin ${manifestName}`, 'manifest + IIFE present'));
+    results.push(pass(`Plugin ${pluginName}`, 'tools.json + IIFE present'));
   }
 
   return results;

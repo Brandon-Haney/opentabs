@@ -30,6 +30,22 @@ interface ScaffoldArgs {
   description?: string;
 }
 
+// --- Helpers ---
+
+/** Convert a hyphenated name to PascalCase: "my-plugin" → "MyPlugin" */
+const toPascalCase = (name: string): string =>
+  name
+    .split('-')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('');
+
+/** Convert a hyphenated name to title case: "my-cool-plugin" → "My Cool Plugin" */
+const toTitleCase = (name: string): string =>
+  name
+    .split('-')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+
 // --- Template generation ---
 
 /** Resolve the current version of an @opentabs-dev package from the installed CLI. */
@@ -47,7 +63,10 @@ const resolvePackageVersion = async (packageSpecifier: string): Promise<string> 
   }
 };
 
-const generatePackageJson = async (args: ScaffoldArgs): Promise<string> => {
+const generatePackageJson = async (args: ScaffoldArgs, urlPattern: string): Promise<string> => {
+  const displayName = args.display ?? toTitleCase(args.name);
+  const desc = args.description ?? `OpenTabs plugin for ${displayName}`;
+
   const [sdkVersion, cliVersion] = await Promise.all([
     resolvePackageVersion('@opentabs-dev/plugin-sdk'),
     resolvePackageVersion('@opentabs-dev/cli'),
@@ -57,7 +76,13 @@ const generatePackageJson = async (args: ScaffoldArgs): Promise<string> => {
     name: `opentabs-plugin-${args.name}`,
     version: '0.0.1',
     type: 'module',
+    main: 'dist/adapter.iife.js',
     keywords: ['opentabs-plugin'],
+    opentabs: {
+      displayName,
+      description: desc,
+      urlPatterns: [urlPattern],
+    },
     exports: {
       '.': {
         types: './dist/index.d.ts',
@@ -65,7 +90,7 @@ const generatePackageJson = async (args: ScaffoldArgs): Promise<string> => {
       },
     },
     types: './dist/index.d.ts',
-    files: ['dist', 'opentabs-plugin.json'],
+    files: ['dist'],
     scripts: {
       build: 'tsc && opentabs build',
       dev: 'tsc --watch --preserveWatchOutput & opentabs build --watch',
@@ -161,20 +186,6 @@ node_modules/
 *.tsbuildinfo
 bun.lock
 `;
-
-/** Convert a hyphenated name to PascalCase: "my-plugin" → "MyPlugin" */
-const toPascalCase = (name: string): string =>
-  name
-    .split('-')
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-    .join('');
-
-/** Convert a hyphenated name to title case: "my-cool-plugin" → "My Cool Plugin" */
-const toTitleCase = (name: string): string =>
-  name
-    .split('-')
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
 
 const generatePluginIndex = (args: ScaffoldArgs, urlPattern: string): string => {
   const displayName = args.display ?? toTitleCase(args.name);
@@ -293,7 +304,7 @@ const scaffoldPlugin = async (args: ScaffoldArgs): Promise<string> => {
   mkdirSync(projectDir, { recursive: true });
   mkdirSync(join(projectDir, 'src', 'tools'), { recursive: true });
 
-  await Bun.write(join(projectDir, 'package.json'), await generatePackageJson(args));
+  await Bun.write(join(projectDir, 'package.json'), await generatePackageJson(args, urlPattern));
   console.log(`  ${pc.dim('Created:')} ${pc.bold('package.json')}`);
 
   await Bun.write(join(projectDir, 'tsconfig.json'), TSCONFIG_CONTENT);

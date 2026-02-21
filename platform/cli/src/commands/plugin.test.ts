@@ -27,13 +27,17 @@ const readTestConfig = async (configDir: string): Promise<Record<string, unknown
   return (await Bun.file(configPath).json()) as Record<string, unknown>;
 };
 
-/** Create a minimal plugin directory with an opentabs-plugin.json manifest. */
+/** Create a minimal plugin directory with package.json and dist/tools.json. */
 const createMinimalPlugin = async (
   dir: string,
   manifest: { name: string; version: string; tools: Array<{ name: string }> },
 ): Promise<void> => {
-  mkdirSync(dir, { recursive: true });
-  await Bun.write(join(dir, 'opentabs-plugin.json'), JSON.stringify(manifest, null, 2) + '\n');
+  mkdirSync(join(dir, 'dist'), { recursive: true });
+  await Bun.write(
+    join(dir, 'package.json'),
+    JSON.stringify({ name: manifest.name, version: manifest.version }, null, 2) + '\n',
+  );
+  await Bun.write(join(dir, 'dist', 'tools.json'), JSON.stringify(manifest.tools, null, 2) + '\n');
 };
 
 describe('opentabs plugin commands', () => {

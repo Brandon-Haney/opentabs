@@ -247,39 +247,35 @@ describe('create-opentabs-plugin CLI', () => {
         }
         expect(build.exitCode).toBe(0);
 
-        // Verify opentabs-plugin.json exists and is valid JSON
-        const manifestPath = join(projectDir, 'opentabs-plugin.json');
-        expect(existsSync(manifestPath)).toBe(true);
+        // Verify dist/tools.json exists and is valid JSON
+        const toolsJsonPath = join(projectDir, 'dist', 'tools.json');
+        expect(existsSync(toolsJsonPath)).toBe(true);
 
-        const manifest = (await Bun.file(manifestPath).json()) as {
+        const tools = (await Bun.file(toolsJsonPath).json()) as Array<{
           name: string;
-          version: string;
-          tools: Array<{
-            name: string;
-            description: string;
-            input_schema: Record<string, unknown>;
-            output_schema: Record<string, unknown>;
-          }>;
-          adapterHash: string;
-          url_patterns: string[];
-        };
-
-        expect(manifest.name).toBe('build-test');
-        expect(manifest.version).toBe('0.0.1');
-        expect(typeof manifest.adapterHash).toBe('string');
-        expect(manifest.adapterHash.length).toBeGreaterThan(0);
-        expect(Array.isArray(manifest.url_patterns)).toBe(true);
-        expect(manifest.url_patterns).toContain('*://example.com/*');
+          description: string;
+          input_schema: Record<string, unknown>;
+          output_schema: Record<string, unknown>;
+        }>;
 
         // Verify tools array has at least one tool with required fields
-        expect(Array.isArray(manifest.tools)).toBe(true);
-        expect(manifest.tools.length).toBeGreaterThan(0);
-        const tool = manifest.tools[0];
+        expect(Array.isArray(tools)).toBe(true);
+        expect(tools.length).toBeGreaterThan(0);
+        const tool = tools[0];
         expect(tool).toBeDefined();
         expect(typeof tool?.name).toBe('string');
         expect(typeof tool?.description).toBe('string');
         expect(tool?.input_schema).toBeDefined();
         expect(tool?.output_schema).toBeDefined();
+
+        // Verify package.json has opentabs field with metadata
+        const pkgJson = (await Bun.file(join(projectDir, 'package.json')).json()) as Record<string, unknown>;
+        expect(pkgJson.name).toBe('opentabs-plugin-build-test');
+        expect(pkgJson.version).toBe('0.0.1');
+        expect(pkgJson.main).toBe('dist/adapter.iife.js');
+        const opentabs = pkgJson.opentabs as { urlPatterns: string[] };
+        expect(Array.isArray(opentabs.urlPatterns)).toBe(true);
+        expect(opentabs.urlPatterns).toContain('*://example.com/*');
 
         // Verify dist/adapter.iife.js exists and is non-empty
         const adapterPath = join(projectDir, 'dist', 'adapter.iife.js');

@@ -138,22 +138,22 @@ describe('checkPlugins', () => {
     expect(results[0]?.detail).toContain('directory not found');
   });
 
-  test('returns warn when manifest file is missing', async () => {
-    const pluginDir = join(TEST_BASE_DIR, 'plugin-no-manifest');
+  test('returns warn when tools.json is missing', async () => {
+    const pluginDir = join(TEST_BASE_DIR, 'plugin-no-tools');
     mkdirSync(pluginDir, { recursive: true });
     const config = { plugins: [pluginDir] };
     const results = await checkPlugins(config);
     expect(results).toHaveLength(1);
     expect(results[0]?.ok).toBe(false);
     expect(results[0]?.fatal).toBe(false);
-    expect(results[0]?.detail).toContain('manifest not found');
+    expect(results[0]?.detail).toContain('tools.json not found');
     expect(results[0]?.hint).toContain('opentabs build');
   });
 
   test('returns warn when IIFE file is missing', async () => {
     const pluginDir = join(TEST_BASE_DIR, 'plugin-no-iife');
-    mkdirSync(pluginDir, { recursive: true });
-    await Bun.write(join(pluginDir, 'opentabs-plugin.json'), JSON.stringify({ name: 'test' }));
+    mkdirSync(join(pluginDir, 'dist'), { recursive: true });
+    await Bun.write(join(pluginDir, 'dist', 'tools.json'), JSON.stringify([{ name: 'test' }]));
     const config = { plugins: [pluginDir] };
     const results = await checkPlugins(config);
     expect(results).toHaveLength(1);
@@ -163,23 +163,28 @@ describe('checkPlugins', () => {
     expect(results[0]?.hint).toContain('opentabs build');
   });
 
-  test('returns pass for valid plugin directory with manifest and IIFE', async () => {
+  test('returns pass for valid plugin directory with tools.json and IIFE', async () => {
     const pluginDir = join(TEST_BASE_DIR, 'plugin-valid');
     mkdirSync(join(pluginDir, 'dist'), { recursive: true });
-    await Bun.write(join(pluginDir, 'opentabs-plugin.json'), JSON.stringify({ name: 'my-plugin' }));
+    await Bun.write(
+      join(pluginDir, 'package.json'),
+      JSON.stringify({ name: 'opentabs-plugin-my-plugin', version: '1.0.0' }),
+    );
+    await Bun.write(join(pluginDir, 'dist', 'tools.json'), JSON.stringify([{ name: 'test' }]));
     await Bun.write(join(pluginDir, 'dist', 'adapter.iife.js'), '(function(){})()');
     const config = { plugins: [pluginDir] };
     const results = await checkPlugins(config);
     expect(results).toHaveLength(1);
     expect(results[0]?.ok).toBe(true);
-    expect(results[0]?.label).toContain('my-plugin');
-    expect(results[0]?.detail).toContain('manifest + IIFE present');
+    expect(results[0]?.label).toContain('opentabs-plugin-my-plugin');
+    expect(results[0]?.detail).toContain('tools.json + IIFE present');
   });
 
-  test('uses path as label when manifest name is unreadable', async () => {
-    const pluginDir = join(TEST_BASE_DIR, 'plugin-bad-manifest');
+  test('uses path as label when package.json name is unreadable', async () => {
+    const pluginDir = join(TEST_BASE_DIR, 'plugin-bad-package');
     mkdirSync(join(pluginDir, 'dist'), { recursive: true });
-    await Bun.write(join(pluginDir, 'opentabs-plugin.json'), 'not valid json');
+    await Bun.write(join(pluginDir, 'package.json'), 'not valid json');
+    await Bun.write(join(pluginDir, 'dist', 'tools.json'), JSON.stringify([{ name: 'test' }]));
     await Bun.write(join(pluginDir, 'dist', 'adapter.iife.js'), '(function(){})()');
     const config = { plugins: [pluginDir] };
     const results = await checkPlugins(config);

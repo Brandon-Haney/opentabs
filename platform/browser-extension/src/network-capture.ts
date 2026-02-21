@@ -13,6 +13,11 @@ const SENSITIVE_HEADERS = new Set([
   'x-csrf-token',
   'x-xsrf-token',
   'proxy-authorization',
+  'x-api-key',
+  'x-auth-token',
+  'x-access-token',
+  'x-api-token',
+  'www-authenticate',
 ]);
 
 /**
@@ -400,3 +405,5 @@ export const getActiveCapturesSummary = (): Array<{ tabId: number; requestCount:
     requestCount: state.requests.length,
     isCapturing: true,
   }));
+
+export { scrubHeaders };

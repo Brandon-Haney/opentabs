@@ -475,16 +475,39 @@ describe('handleExtensionMessage — unrecognized method', () => {
   });
 });
 
-describe('handleExtensionMessage — oversized message', () => {
-  test('oversized message is dropped without state changes', () => {
+describe('handleExtensionMessage — message size limit', () => {
+  test('message at exactly MAX_MESSAGE_SIZE (10MB) is processed normally', () => {
     const state = createState();
-    state.extensionWs = createMockWs();
+    const ws = createMockWs();
+    state.extensionWs = ws;
 
-    // Create a message larger than 10MB
+    // Build a valid JSON-RPC ping message, then pad it to exactly 10MB
+    const base = JSON.stringify({ jsonrpc: '2.0', method: 'ping' });
+    const maxSize = 10 * 1024 * 1024;
+    // Pad with spaces (valid JSON whitespace) to reach exactly the limit
+    const atLimit = base + ' '.repeat(maxSize - base.length);
+    expect(atLimit.length).toBe(maxSize);
+
+    handleExtensionMessage(state, atLimit, noopCallbacks, ws);
+
+    // The message was processed — ping handler sent a pong reply
+    expect(ws.sent).toHaveLength(1);
+    const response = parseJson(ws.sent[0] as string);
+    expect(response.method).toBe('pong');
+  });
+
+  test('message exceeding MAX_MESSAGE_SIZE (10MB) is dropped without processing', () => {
+    const state = createState();
+    const ws = createMockWs();
+    state.extensionWs = ws;
+
+    // Create a message one byte over the 10MB limit
     const oversized = 'x'.repeat(10 * 1024 * 1024 + 1);
 
     handleExtensionMessage(state, oversized, noopCallbacks);
 
+    // No messages sent (not parsed, not dispatched)
+    expect(ws.sent).toHaveLength(0);
     expect(state.tabMapping.size).toBe(0);
     expect(state.pendingDispatches.size).toBe(0);
   });

@@ -99,18 +99,11 @@ describe('create-opentabs-plugin CLI', () => {
       expect(toolContent).toContain('z.string()');
     });
 
-    test('plugin is auto-registered in isolated config.json', async () => {
+    test('scaffold does not auto-register in config (registration happens at build time)', () => {
       runCli(['my-plugin', '--domain', 'example.com'], { cwd: tmpDir, configDir });
 
       const configPath = join(configDir, 'config.json');
-      expect(existsSync(configPath)).toBe(true);
-
-      const config = (await Bun.file(configPath).json()) as { localPlugins: string[] };
-      expect(Array.isArray(config.localPlugins)).toBe(true);
-      expect(config.localPlugins.length).toBeGreaterThan(0);
-
-      const hasPluginPath = config.localPlugins.some((p: string) => p.includes('my-plugin'));
-      expect(hasPluginPath).toBe(true);
+      expect(existsSync(configPath)).toBe(false);
     });
   });
 

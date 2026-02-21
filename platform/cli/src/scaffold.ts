@@ -6,11 +6,10 @@
  * `@opentabs-dev/*` npm packages. There is no monorepo special-casing.
  */
 
-import { atomicWriteConfig, getConfigPath, readConfig } from './config.js';
 import { validatePluginName, validateUrlPattern } from '@opentabs-dev/plugin-sdk';
 import pc from 'picocolors';
 import { existsSync, mkdirSync } from 'node:fs';
-import { resolve, join, dirname, relative } from 'node:path';
+import { resolve, join, dirname } from 'node:path';
 
 // --- Errors ---
 
@@ -322,39 +321,6 @@ export const exampleTool = defineTool({
 `;
 };
 
-// --- Auto-registration ---
-
-/**
- * Add a plugin path to ~/.opentabs/config.json.
- * Uses a relative path from the config directory for portability.
- * Non-fatal: logs a warning on failure.
- */
-const autoRegisterPlugin = async (projectDir: string): Promise<boolean> => {
-  const configPath = getConfigPath();
-  let config: Record<string, unknown>;
-
-  const existing = await readConfig(configPath);
-  if (existing) {
-    config = existing;
-  } else {
-    const configDir = dirname(configPath);
-    mkdirSync(configDir, { recursive: true });
-    config = { localPlugins: [], tools: {}, secret: crypto.randomUUID() };
-  }
-
-  if (!Array.isArray(config.localPlugins)) config.localPlugins = [];
-  const plugins = config.localPlugins as string[];
-
-  const configDir = dirname(configPath);
-  const pluginPath = relative(configDir, projectDir);
-
-  if (plugins.includes(pluginPath)) return true;
-
-  plugins.push(pluginPath);
-  await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
-  return true;
-};
-
 // --- Scaffolding ---
 
 /**
@@ -409,16 +375,6 @@ const scaffoldPlugin = async (args: ScaffoldArgs): Promise<string> => {
 
   console.log('');
   console.log(pc.green(`Plugin scaffolded in ./${args.name}/`));
-
-  try {
-    await autoRegisterPlugin(projectDir);
-    console.log(pc.green('Registered in ~/.opentabs/config.json'));
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(pc.yellow(`Warning: Could not auto-register plugin: ${msg}`));
-    console.warn(`  Run ${pc.cyan('bun run build')} inside the plugin directory to register it.`);
-  }
-
   console.log('');
   console.log('Next steps:');
   console.log(`  ${pc.cyan(`cd ${args.name}`)}`);

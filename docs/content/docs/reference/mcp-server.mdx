@@ -368,6 +368,16 @@ Admin endpoints (`/ws-info`, `/reload`, `/extension/reload`) are rate-limited to
       <Table.Cell>Tool execution completed (side panel animation).</Table.Cell>
     </Table.Row>
     <Table.Row>
+      <Table.Cell className="font-medium">`confirmation.request`</Table.Cell>
+      <Table.Cell>Notification</Table.Cell>
+      <Table.Cell>Request user approval for a browser tool — includes id, tool name, domain, tabId, params preview, and timeout.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`extension.reload`</Table.Cell>
+      <Table.Cell>Request</Table.Cell>
+      <Table.Cell>Signal the extension to reload (triggered by `POST /extension/reload`).</Table.Cell>
+    </Table.Row>
+    <Table.Row>
       <Table.Cell className="font-medium">`pong`</Table.Cell>
       <Table.Cell>Notification</Table.Cell>
       <Table.Cell>Reply to keepalive ping.</Table.Cell>
@@ -415,6 +425,16 @@ Admin endpoints (`/ws-info`, `/reload`, `/extension/reload`) are rate-limited to
       <Table.Cell className="font-medium">`config.setToolEnabled`</Table.Cell>
       <Table.Cell>Request</Table.Cell>
       <Table.Cell>Enable or disable a single tool.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`config.setAllToolsEnabled`</Table.Cell>
+      <Table.Cell>Request</Table.Cell>
+      <Table.Cell>Enable or disable all tools in a plugin at once (plugin name + enabled boolean).</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`confirmation.response`</Table.Cell>
+      <Table.Cell>Notification</Table.Cell>
+      <Table.Cell>User's approval decision — includes confirmation id, decision (allow_once/allow_always/deny), and optional scope.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`ping`</Table.Cell>

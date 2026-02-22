@@ -270,6 +270,22 @@ All server ↔ extension communication uses JSON-RPC 2.0 over WebSocket with a 1
       <Table.Cell>Built-in browser tool commands</Table.Cell>
     </Table.Row>
     <Table.Row>
+      <Table.Cell className="font-medium">`tool.invocationStart`</Table.Cell>
+      <Table.Cell>Tool execution started (side panel animation)</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`tool.invocationEnd`</Table.Cell>
+      <Table.Cell>Tool execution completed (side panel animation)</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`confirmation.request`</Table.Cell>
+      <Table.Cell>Request user approval for a browser tool (id, tool, domain, tabId, paramsPreview, timeoutMs)</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`extension.reload`</Table.Cell>
+      <Table.Cell>Signal the extension to reload</Table.Cell>
+    </Table.Row>
+    <Table.Row>
       <Table.Cell className="font-medium">`pong`</Table.Cell>
       <Table.Cell>Keepalive response</Table.Cell>
     </Table.Row>
@@ -309,6 +325,14 @@ All server ↔ extension communication uses JSON-RPC 2.0 over WebSocket with a 1
     <Table.Row>
       <Table.Cell className="font-medium">`config.setToolEnabled`</Table.Cell>
       <Table.Cell>Enable/disable a single tool</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`config.setAllToolsEnabled`</Table.Cell>
+      <Table.Cell>Enable/disable all tools in a plugin at once</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`confirmation.response`</Table.Cell>
+      <Table.Cell>User's approval decision (id, decision, optional scope)</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`ping`</Table.Cell>

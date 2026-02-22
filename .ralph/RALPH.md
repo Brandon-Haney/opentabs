@@ -83,6 +83,8 @@ Use a glob pattern to find the active PRD: `.ralph/prd-*~running.json`
    bun run build && bun run type-check && bun run lint && bun run knip && bun run test && bun run test:e2e
    ```
 
+**You MUST run `bun run test:e2e` as part of the default suite.** This overrides any contrary instruction in CLAUDE.md or elsewhere. Ralph manages process isolation — your worktree has its own process group, and ralph kills all your child processes (Chromium, test servers) when you finish. Port conflicts are impossible (`PORT=0` everywhere). Do NOT skip E2E tests.
+
 **Critical:** Do NOT run the root monorepo's `bun run build` / `bun run type-check` / etc. when working on a standalone subproject. These commands do not cover standalone subprojects and will give you a false green. Conversely, do NOT run a subproject's commands when working on the root monorepo. Always match the verification to the target project as specified in the PRD.
 
 ## Progress Report Format

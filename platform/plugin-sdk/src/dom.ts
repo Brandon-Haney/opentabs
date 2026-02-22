@@ -105,7 +105,8 @@ export const querySelectorAll = <T extends Element = Element>(selector: string):
 export const getTextContent = (selector: string): string | null => {
   const el = document.querySelector(selector);
   if (!el) return null;
-  return el.textContent.trim();
+  const text = el.textContent as string | null;
+  return text === null ? null : text.trim();
 };
 
 /**

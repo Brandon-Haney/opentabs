@@ -592,6 +592,36 @@ const server = Bun.serve({
       return jsonResponse({ ok: true, data: 'sdk-fetch-works' });
     }
 
+    // --- Configurable HTTP status code endpoint ---
+    // Returns the requested status code with an appropriate body.
+    // Used by E2E tests for fetchFromPage error categorization.
+    const statusCodeMatch = path.match(/^\/api\/status-code\/(\d+)$/);
+    if (statusCodeMatch && req.method === 'GET') {
+      const code = Number(statusCodeMatch[1]);
+      recordInvocation(req, path, {});
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      };
+      if (code === 429) {
+        headers['Retry-After'] = '3';
+      }
+      return new Response(
+        JSON.stringify({ ok: false, error: `status_${code}`, error_message: `Returned status ${code}` }),
+        { status: code, headers },
+      );
+    }
+
+    // --- Slow-forever endpoint (never responds) ---
+    // Used by E2E tests to verify fetchFromPage timeout handling.
+    if (path === '/api/slow-forever' && req.method === 'GET') {
+      recordInvocation(req, path, {});
+      await new Promise(() => {
+        // Intentionally never resolves — the client's AbortSignal will abort
+      });
+      return new Response('unreachable', { status: 500 });
+    }
+
     // --- 404 ---
     return new Response('Not found', { status: 404 });
   },

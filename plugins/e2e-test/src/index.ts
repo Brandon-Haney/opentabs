@@ -18,6 +18,7 @@ import { sdkGetPageGlobal } from './tools/sdk-get-page-global.js';
 import { sdkRetry } from './tools/sdk-retry.js';
 import { slowWithProgress } from './tools/slow-with-progress.js';
 import { sdkWaitForSelector } from './tools/sdk-wait-for-selector.js';
+import { sdkFetchErrorCategories } from './tools/sdk-fetch-error-categories.js';
 import { OpenTabsPlugin, defineResource, definePrompt } from '@opentabs-dev/plugin-sdk';
 import type { ToolDefinition, ResourceDefinition, PromptDefinition } from '@opentabs-dev/plugin-sdk';
 
@@ -76,6 +77,7 @@ class E2eTestPlugin extends OpenTabsPlugin {
     sdkGetPageGlobal,
     sdkRetry,
     slowWithProgress,
+    sdkFetchErrorCategories,
   ];
   override readonly resources: ResourceDefinition[] = [testResource];
   override readonly prompts: PromptDefinition[] = [testPrompt];

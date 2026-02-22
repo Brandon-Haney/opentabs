@@ -469,7 +469,7 @@ opentabs plugin remove opentabs-plugin-slack
 
 ## opentabs config
 
-View and manage configuration. Has three subcommands: `show`, `set`, and `path`.
+View and manage configuration. Has five subcommands: `show`, `set`, `path`, `reset`, and `rotate-secret`.
 
 ### opentabs config show
 
@@ -510,17 +510,64 @@ Set a configuration value.
 opentabs config set <key> <value>
 ```
 
-Supports enabling and disabling individual tools:
+<Table>
+  <Table.Header>
+    <Table.Row>
+      <Table.Head>Key format</Table.Head>
+      <Table.Head>Value</Table.Head>
+      <Table.Head>Description</Table.Head>
+    </Table.Row>
+  </Table.Header>
+  <Table.Body>
+    <Table.Row>
+      <Table.Cell className="font-medium">`tool.<plugin>_<tool>`</Table.Cell>
+      <Table.Cell>`enabled` or `disabled`</Table.Cell>
+      <Table.Cell>Enable or disable a plugin tool.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`browser-tool.<name>`</Table.Cell>
+      <Table.Cell>`enabled` or `disabled`</Table.Cell>
+      <Table.Cell>Enable or disable a browser tool (names start with `browser_` or `extension_`).</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`port`</Table.Cell>
+      <Table.Cell>`1`–`65535`</Table.Cell>
+      <Table.Cell>Set the server port.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`localPlugins.add`</Table.Cell>
+      <Table.Cell>path</Table.Cell>
+      <Table.Cell>Add a local plugin path to the `localPlugins` array. Relative paths are resolved to absolute.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`localPlugins.remove`</Table.Cell>
+      <Table.Cell>path</Table.Cell>
+      <Table.Cell>Remove a local plugin path from the `localPlugins` array.</Table.Cell>
+    </Table.Row>
+  </Table.Body>
+</Table>
+
+Running `opentabs config set tool.` (with a trailing dot and no value) lists all available tool names from the running server.
 
 ```bash
-# Disable a tool
+# Disable a plugin tool
 opentabs config set tool.slack_send_message disabled
 
-# Re-enable a tool
+# Re-enable a plugin tool
 opentabs config set tool.slack_send_message enabled
-```
 
-The key format is `tool.<plugin>_<tool>` and value must be `enabled` or `disabled`.
+# Disable a browser tool
+opentabs config set browser-tool.browser_execute_script disabled
+
+# Change the server port
+opentabs config set port 3000
+
+# Register a local plugin
+opentabs config set localPlugins.add /path/to/my-plugin
+
+# Unregister a local plugin
+opentabs config set localPlugins.remove /path/to/my-plugin
+```
 
 ### opentabs config path
 
@@ -529,4 +576,48 @@ Print the config file path.
 ```bash
 opentabs config path
 # Output: /Users/you/.opentabs/config.json
+```
+
+### opentabs config reset
+
+Delete the config file. The server regenerates a fresh config (with a new secret) on the next `opentabs start`.
+
+```bash
+opentabs config reset --confirm
+```
+
+<Table>
+  <Table.Header>
+    <Table.Row>
+      <Table.Head>Option</Table.Head>
+      <Table.Head>Required</Table.Head>
+      <Table.Head>Description</Table.Head>
+    </Table.Row>
+  </Table.Header>
+  <Table.Body>
+    <Table.Row>
+      <Table.Cell className="font-medium">`--confirm`</Table.Cell>
+      <Table.Cell>Yes</Table.Cell>
+      <Table.Cell>Required safety flag — without it, the command prints a warning and exits.</Table.Cell>
+    </Table.Row>
+  </Table.Body>
+</Table>
+
+Since the server secret is stored in the config file, resetting config means your MCP client configuration will need to be updated with the new secret after the next `opentabs start`.
+
+### opentabs config rotate-secret
+
+Generate a new 256-bit random secret and write it to both `config.json` and `auth.json`.
+
+```bash
+opentabs config rotate-secret
+```
+
+If the MCP server is running, it is notified using the old secret so the transition is seamless on the server side. The Chrome extension must be reloaded to pick up the new secret from `auth.json`.
+
+```bash
+# Rotate the secret
+opentabs config rotate-secret
+
+# Then reload the Chrome extension from chrome://extensions/
 ```

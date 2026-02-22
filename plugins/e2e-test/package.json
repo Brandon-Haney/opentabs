@@ -36,10 +36,10 @@
     "zod": "^4.0.0"
   },
   "dependencies": {
-    "@opentabs-dev/plugin-sdk": "^0.0.16"
+    "@opentabs-dev/plugin-sdk": "file:../../platform/plugin-sdk"
   },
   "devDependencies": {
-    "@opentabs-dev/plugin-tools": "^0.0.16",
+    "@opentabs-dev/plugin-tools": "file:../../platform/plugin-tools",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",

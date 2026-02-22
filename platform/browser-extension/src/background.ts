@@ -1,4 +1,4 @@
-import { bgLogCollector } from './bg-log-state.js';
+import { bgLogCollector } from './background-log-state.js';
 import { KEEPALIVE_ALARM, KEEPALIVE_INTERVAL_MINUTES, PLUGINS_META_KEY, WS_CONNECTED_KEY } from './constants.js';
 import { injectPluginsIntoTab, reinjectStoredPlugins } from './iife-injection.js';
 import { handleServerMessage, clearConfirmationBadge, clearAllConfirmationBadges } from './message-router.js';
@@ -6,7 +6,7 @@ import { forwardToSidePanel, sendToServer } from './messaging.js';
 import { invalidatePluginCache } from './plugin-storage.js';
 import { checkTabStateChanges, clearTabStateCache, sendTabSyncAll } from './tab-state.js';
 import { notifyDispatchProgress } from './tool-dispatch.js';
-import type { InternalMessage } from './types.js';
+import type { InternalMessage } from './extension-messages.js';
 
 // --- Side panel toggle ---
 

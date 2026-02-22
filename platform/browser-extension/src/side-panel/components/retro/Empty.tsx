@@ -1,5 +1,5 @@
 import { Text } from './Text';
-import { cn } from '../../lib/utils';
+import { cn } from '../../lib/cn';
 import { Ghost } from 'lucide-react';
 import type { HTMLAttributes } from 'react';
 

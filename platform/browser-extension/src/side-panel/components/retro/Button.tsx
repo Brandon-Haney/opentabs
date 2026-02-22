@@ -1,4 +1,4 @@
-import { cn } from '../../lib/utils';
+import { cn } from '../../lib/cn';
 import { Slot } from '@radix-ui/react-slot';
 import { cva } from 'class-variance-authority';
 import { forwardRef } from 'react';

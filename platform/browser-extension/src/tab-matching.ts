@@ -1,4 +1,4 @@
-import type { PluginMeta } from './types.js';
+import type { PluginMeta } from './extension-messages.js';
 
 /**
  * Check if a URL matches any of the plugin's Chrome match patterns.

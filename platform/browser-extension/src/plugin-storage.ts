@@ -1,5 +1,5 @@
 import { PLUGINS_META_KEY } from './constants.js';
-import type { PluginMeta } from './types.js';
+import type { PluginMeta } from './extension-messages.js';
 
 /**
  * Write-through in-memory cache of plugin metadata.

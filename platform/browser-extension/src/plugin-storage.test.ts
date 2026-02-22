@@ -8,7 +8,7 @@ import {
   invalidatePluginCache,
 } from './plugin-storage.js';
 import { beforeEach, describe, expect, test } from 'bun:test';
-import type { PluginMeta } from './types.js';
+import type { PluginMeta } from './extension-messages.js';
 
 // ---------------------------------------------------------------------------
 // In-memory mock of chrome.storage.local

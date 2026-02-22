@@ -17,7 +17,7 @@ import { VALID_PLUGIN_NAME } from '../constants.js';
 import { Search, X } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { FailedPluginState, PluginState } from './bridge.js';
-import type { InternalMessage } from '../types.js';
+import type { InternalMessage } from '../extension-messages.js';
 import type { ConfirmationData } from './components/ConfirmationDialog.js';
 import type { OutdatedPlugin } from './components/OutdatedPluginsBadge.js';
 import type { TabState } from '@opentabs-dev/shared';

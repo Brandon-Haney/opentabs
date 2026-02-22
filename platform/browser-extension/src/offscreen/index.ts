@@ -15,7 +15,7 @@
 
 import { ALL_ALLOWED_METHODS } from '../known-methods.js';
 import { installLogCollector } from '../log-collector.js';
-import type { InternalMessage, WsStateMessage, WsDataMessage } from '../types.js';
+import type { InternalMessage, WsStateMessage, WsDataMessage } from '../extension-messages.js';
 
 /** Capture console output in a ring buffer for retrieval by debugging tools */
 const offscreenLogCollector = installLogCollector('offscreen');

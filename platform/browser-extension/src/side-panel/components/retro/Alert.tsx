@@ -1,5 +1,5 @@
 import { Text } from './Text';
-import { cn } from '../../lib/utils';
+import { cn } from '../../lib/cn';
 import { cva } from 'class-variance-authority';
 import type { VariantProps } from 'class-variance-authority';
 import type { HtmlHTMLAttributes } from 'react';

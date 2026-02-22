@@ -1,4 +1,4 @@
-import { bgLogCollector } from './bg-log-state.js';
+import { bgLogCollector } from './background-log-state.js';
 import { IS_READY_TIMEOUT_MS, SCRIPT_TIMEOUT_MS, WS_CONNECTED_KEY } from './constants.js';
 import { sendToServer } from './messaging.js';
 import {
@@ -15,8 +15,8 @@ import { sanitizeErrorMessage } from './sanitize-error.js';
 import { findAllMatchingTabs } from './tab-matching.js';
 import { getLastKnownStates } from './tab-state.js';
 import { isBlockedUrlScheme } from '@opentabs-dev/shared';
+import type { BgForceReconnectMessage, BgGetLogsMessage, SpGetStateMessage } from './extension-messages.js';
 import type { LogEntry, LogFilterOptions, LogStats } from './log-collector.js';
-import type { BgForceReconnectMessage, BgGetLogsMessage, SpGetStateMessage } from './types.js';
 
 interface CdpFrame {
   id: string;

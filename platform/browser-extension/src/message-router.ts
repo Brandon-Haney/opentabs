@@ -43,7 +43,7 @@ import { checkRateLimit } from './rate-limiter.js';
 import { handleResourceRead, handlePromptGet } from './resource-prompt-dispatch.js';
 import { clearPluginTabState, computePluginTabState, sendTabSyncAll, updateLastKnownState } from './tab-state.js';
 import { handleToolDispatch } from './tool-dispatch.js';
-import type { PluginMeta } from './types.js';
+import type { PluginMeta } from './extension-messages.js';
 import type { TrustTier, WireToolDef } from '@opentabs-dev/shared';
 
 type MessageHandler = (params: Record<string, unknown>, id?: string | number) => void;

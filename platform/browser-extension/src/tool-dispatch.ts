@@ -3,7 +3,7 @@ import { sendToServer } from './messaging.js';
 import { getPluginMeta } from './plugin-storage.js';
 import { sanitizeErrorMessage } from './sanitize-error.js';
 import { findAllMatchingTabs, urlMatchesPatterns } from './tab-matching.js';
-import type { PluginMeta } from './types.js';
+import type { PluginMeta } from './extension-messages.js';
 
 /**
  * Per-dispatch progress callbacks — keyed by dispatchId, called by background.ts

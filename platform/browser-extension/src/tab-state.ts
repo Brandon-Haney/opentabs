@@ -2,7 +2,7 @@ import { IS_READY_TIMEOUT_MS } from './constants.js';
 import { forwardToSidePanel, sendToServer } from './messaging.js';
 import { getAllPluginMeta } from './plugin-storage.js';
 import { findAllMatchingTabs, urlMatchesPatterns } from './tab-matching.js';
-import type { PluginMeta } from './types.js';
+import type { PluginMeta } from './extension-messages.js';
 import type { TabState } from '@opentabs-dev/shared';
 
 /**

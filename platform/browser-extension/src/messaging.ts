@@ -1,4 +1,4 @@
-import type { InternalMessage, SpConnectionStateMessage, SpRelayMessage } from './types.js';
+import type { InternalMessage, SpConnectionStateMessage, SpRelayMessage } from './extension-messages.js';
 
 /** Messages that can be forwarded to the side panel */
 type SidePanelMessage = SpConnectionStateMessage | SpRelayMessage;

@@ -1,9 +1,9 @@
 import { Button } from './retro/Button.js';
 import { Text } from './retro/Text.js';
-import { cn } from '../lib/utils.js';
+import { cn } from '../lib/cn.js';
 import { ShieldAlert, ChevronDown } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
-import type { SpConfirmationRequestMessage } from '../../types.js';
+import type { SpConfirmationRequestMessage } from '../../extension-messages.js';
 
 type ConfirmationData = SpConfirmationRequestMessage['data'] & {
   /** Timestamp when the confirmation was received in the side panel */

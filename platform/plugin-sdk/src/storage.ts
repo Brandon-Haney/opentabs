@@ -39,6 +39,18 @@ export const getSessionStorage = (key: string): string | null => {
 };
 
 /**
+ * Writes a value to sessionStorage. Silently fails if storage access throws
+ * (e.g., SecurityError in sandboxed iframes or when storage is full).
+ */
+export const setSessionStorage = (key: string, value: string): void => {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // Silently fail on SecurityError or QuotaExceededError
+  }
+};
+
+/**
  * Removes a key from localStorage. Silently fails if storage access throws
  * (e.g., SecurityError in sandboxed iframes).
  */

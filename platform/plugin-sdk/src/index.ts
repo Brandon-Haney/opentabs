@@ -58,8 +58,15 @@ export interface ResourceDefinition<TContent extends z.ZodType = z.ZodType> {
   mimeType?: string;
   /**
    * Optional Zod schema describing the shape of the resource content.
-   * Provides a typed contract for documentation and autocomplete — the
+   * Provides a type-level contract for documentation and autocomplete — the
    * runtime dispatch path does not validate against this schema.
+   *
+   * Use it for documentation and to derive content types:
+   * ```ts
+   * const schema = z.object({ channels: z.array(channelSchema) });
+   * const myResource = defineResource({ schema, ... });
+   * type Content = ResourceContentType<typeof myResource>; // { channels: Channel[] }
+   * ```
    */
   schema?: TContent;
   /** Read the resource content. Runs in the browser page context. */
@@ -70,6 +77,20 @@ export interface ResourceDefinition<TContent extends z.ZodType = z.ZodType> {
 export const defineResource = <TContent extends z.ZodType = z.ZodType>(
   config: ResourceDefinition<TContent>,
 ): ResourceDefinition<TContent> => config;
+
+/**
+ * Extracts the content type from a ResourceDefinition's schema.
+ * Useful for deriving typed content from resource definitions.
+ *
+ * @example
+ * const myResource = defineResource({
+ *   schema: z.object({ channels: z.array(z.string()) }),
+ *   // ...
+ * });
+ * type Content = ResourceContentType<typeof myResource>; // { channels: string[] }
+ */
+export type ResourceContentType<R extends ResourceDefinition> =
+  R extends ResourceDefinition<infer T> ? z.infer<T> : unknown;
 
 // ---------------------------------------------------------------------------
 // Prompt definitions
@@ -276,8 +297,11 @@ export {
   httpStatusToToolError,
   parseRetryAfterMs,
   postJSON,
+  putJSON,
+  patchJSON,
+  deleteJSON,
 } from './fetch.js';
-export type { FetchFromPageOptions, FetchJSON, PostJSON } from './fetch.js';
+export type { FetchFromPageOptions, FetchJSON, PostJSON, PutJSON, PatchJSON, DeleteJSON } from './fetch.js';
 
 // ---------------------------------------------------------------------------
 // SDK utilities — Timing
@@ -295,6 +319,7 @@ export {
   setLocalStorage,
   removeLocalStorage,
   getSessionStorage,
+  setSessionStorage,
   removeSessionStorage,
   getCookie,
 } from './storage.js';
@@ -304,7 +329,6 @@ export {
 // ---------------------------------------------------------------------------
 
 export { getPageGlobal, getCurrentUrl, getPageTitle } from './page-state.js';
-export type { GetPageGlobal } from './page-state.js';
 
 // ---------------------------------------------------------------------------
 // SDK utilities — Logging

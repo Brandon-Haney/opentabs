@@ -21,13 +21,16 @@ export interface ObserveDOMOptions {
  * Uses MutationObserver for efficient detection, falls back to an
  * initial querySelector check for elements already present.
  */
-export const waitForSelector = (selector: string, opts?: WaitForSelectorOptions): Promise<Element> => {
+export const waitForSelector = <T extends Element = Element>(
+  selector: string,
+  opts?: WaitForSelectorOptions,
+): Promise<T> => {
   const timeout = opts?.timeout ?? 10_000;
 
-  return new Promise<Element>((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     const existing = document.querySelector(selector);
     if (existing) {
-      resolve(existing);
+      resolve(existing as T);
       return;
     }
 
@@ -46,7 +49,7 @@ export const waitForSelector = (selector: string, opts?: WaitForSelectorOptions)
         settled = true;
         clearTimeout(timer);
         observer.disconnect();
-        resolve(el);
+        resolve(el as T);
       }
     });
 

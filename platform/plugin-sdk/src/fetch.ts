@@ -162,3 +162,105 @@ export const postJSON: PostJSON = (async (
     schema,
   );
 }) as PostJSON;
+
+/**
+ * Overloaded call signature for putJSON — validates against a Zod schema
+ * when provided, or returns an unchecked cast when omitted.
+ */
+export interface PutJSON {
+  /** PUT JSON and validate the response against a Zod schema. Returns the validated, typed result. */
+  <T extends z.ZodType>(
+    url: string,
+    body: unknown,
+    init: FetchFromPageOptions | undefined,
+    schema: T,
+  ): Promise<z.infer<T>>;
+  /** PUT JSON with an unchecked cast to T (backward compatible). */
+  <T>(url: string, body: unknown, init?: FetchFromPageOptions): Promise<T>;
+}
+
+/**
+ * Convenience wrapper for PUT requests with a JSON body. Sets Content-Type,
+ * stringifies the body, and parses the JSON response. When a Zod schema is
+ * provided as the fourth argument, the parsed JSON is validated against it.
+ */
+export const putJSON: PutJSON = (async (
+  url: string,
+  body: unknown,
+  init?: FetchFromPageOptions,
+  schema?: z.ZodType,
+): Promise<unknown> => {
+  const extraHeaders = init?.headers ? Object.fromEntries(new Headers(init.headers).entries()) : {};
+  return fetchJSONImpl(
+    url,
+    {
+      ...init,
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...extraHeaders },
+      body: JSON.stringify(body),
+    },
+    schema,
+  );
+}) as PutJSON;
+
+/**
+ * Overloaded call signature for patchJSON — validates against a Zod schema
+ * when provided, or returns an unchecked cast when omitted.
+ */
+export interface PatchJSON {
+  /** PATCH JSON and validate the response against a Zod schema. Returns the validated, typed result. */
+  <T extends z.ZodType>(
+    url: string,
+    body: unknown,
+    init: FetchFromPageOptions | undefined,
+    schema: T,
+  ): Promise<z.infer<T>>;
+  /** PATCH JSON with an unchecked cast to T (backward compatible). */
+  <T>(url: string, body: unknown, init?: FetchFromPageOptions): Promise<T>;
+}
+
+/**
+ * Convenience wrapper for PATCH requests with a JSON body. Sets Content-Type,
+ * stringifies the body, and parses the JSON response. When a Zod schema is
+ * provided as the fourth argument, the parsed JSON is validated against it.
+ */
+export const patchJSON: PatchJSON = (async (
+  url: string,
+  body: unknown,
+  init?: FetchFromPageOptions,
+  schema?: z.ZodType,
+): Promise<unknown> => {
+  const extraHeaders = init?.headers ? Object.fromEntries(new Headers(init.headers).entries()) : {};
+  return fetchJSONImpl(
+    url,
+    {
+      ...init,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...extraHeaders },
+      body: JSON.stringify(body),
+    },
+    schema,
+  );
+}) as PatchJSON;
+
+/**
+ * Overloaded call signature for deleteJSON — validates against a Zod schema
+ * when provided, or returns an unchecked cast when omitted.
+ */
+export interface DeleteJSON {
+  /** DELETE and validate the response against a Zod schema. Returns the validated, typed result. */
+  <T extends z.ZodType>(url: string, init: FetchFromPageOptions | undefined, schema: T): Promise<z.infer<T>>;
+  /** DELETE with an unchecked cast to T (backward compatible). */
+  <T>(url: string, init?: FetchFromPageOptions): Promise<T>;
+}
+
+/**
+ * Convenience wrapper for DELETE requests. Parses the JSON response.
+ * When a Zod schema is provided as the third argument, the parsed JSON
+ * is validated against it.
+ */
+export const deleteJSON: DeleteJSON = (async (
+  url: string,
+  init?: FetchFromPageOptions,
+  schema?: z.ZodType,
+): Promise<unknown> => fetchJSONImpl(url, { ...init, method: 'DELETE' }, schema)) as DeleteJSON;

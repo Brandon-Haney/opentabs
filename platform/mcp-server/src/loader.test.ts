@@ -1,4 +1,12 @@
-import { checkSdkCompatibility, loadPlugin, parseMajorMinor, pluginNameFromPackage, validateTools } from './loader.js';
+import {
+  checkSdkCompatibility,
+  loadPlugin,
+  parseMajorMinor,
+  pluginNameFromPackage,
+  validatePrompts,
+  validateResources,
+  validateTools,
+} from './loader.js';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -445,6 +453,169 @@ describe('loadPlugin — SVG icon extraction', () => {
     if (!result.ok) return;
     expect(result.value.iconSvg).toBeUndefined();
     expect(result.value.iconInactiveSvg).toBeUndefined();
+  });
+});
+
+describe('validateResources', () => {
+  test('validates valid resource entries', () => {
+    const resources = [
+      { uri: 'slack://channels', name: 'channels', description: 'List channels', mimeType: 'application/json' },
+      { uri: 'slack://users', name: 'users' },
+    ];
+    const result = validateResources(resources, 'test', '/test');
+    expect(result).toHaveLength(2);
+    expect(result[0]?.uri).toBe('slack://channels');
+    expect(result[0]?.mimeType).toBe('application/json');
+    expect(result[1]?.description).toBeUndefined();
+    expect(result[1]?.mimeType).toBeUndefined();
+  });
+
+  test('filters out entries with missing uri', () => {
+    const resources = [{ name: 'channels', description: 'List channels' }];
+    const result = validateResources(resources, 'test', '/test');
+    expect(result).toHaveLength(0);
+  });
+
+  test('filters out entries with missing name', () => {
+    const resources = [{ uri: 'slack://channels', description: 'List channels' }];
+    const result = validateResources(resources, 'test', '/test');
+    expect(result).toHaveLength(0);
+  });
+
+  test('filters out non-object entries', () => {
+    const resources = ['not-an-object', null, 42, { uri: 'ok://uri', name: 'valid' }];
+    const result = validateResources(resources, 'test', '/test');
+    expect(result).toHaveLength(1);
+    expect(result[0]?.name).toBe('valid');
+  });
+
+  test('filters out entries with non-string description', () => {
+    const resources = [{ uri: 'x://y', name: 'r', description: 42 }];
+    const result = validateResources(resources, 'test', '/test');
+    expect(result).toHaveLength(0);
+  });
+
+  test('filters out entries with non-string mimeType', () => {
+    const resources = [{ uri: 'x://y', name: 'r', mimeType: true }];
+    const result = validateResources(resources, 'test', '/test');
+    expect(result).toHaveLength(0);
+  });
+});
+
+describe('validatePrompts', () => {
+  test('validates valid prompt entries', () => {
+    const prompts = [
+      {
+        name: 'greet',
+        description: 'Greet user',
+        arguments: [{ name: 'name', description: 'User name', required: true }],
+      },
+      { name: 'help' },
+    ];
+    const result = validatePrompts(prompts, 'test', '/test');
+    expect(result).toHaveLength(2);
+    expect(result[0]?.name).toBe('greet');
+    expect(result[0]?.arguments).toHaveLength(1);
+    expect(result[0]?.arguments?.[0]?.name).toBe('name');
+    expect(result[0]?.arguments?.[0]?.required).toBe(true);
+    expect(result[1]?.description).toBeUndefined();
+    expect(result[1]?.arguments).toBeUndefined();
+  });
+
+  test('filters out entries with missing name', () => {
+    const prompts = [{ description: 'No name prompt' }];
+    const result = validatePrompts(prompts, 'test', '/test');
+    expect(result).toHaveLength(0);
+  });
+
+  test('filters out non-object entries', () => {
+    const prompts = ['string', 42, null, { name: 'valid' }];
+    const result = validatePrompts(prompts, 'test', '/test');
+    expect(result).toHaveLength(1);
+    expect(result[0]?.name).toBe('valid');
+  });
+
+  test('filters out entries with non-string description', () => {
+    const prompts = [{ name: 'p', description: 123 }];
+    const result = validatePrompts(prompts, 'test', '/test');
+    expect(result).toHaveLength(0);
+  });
+
+  test('filters out entries with non-array arguments', () => {
+    const prompts = [{ name: 'p', arguments: 'not-array' }];
+    const result = validatePrompts(prompts, 'test', '/test');
+    expect(result).toHaveLength(0);
+  });
+
+  test('filters out invalid arguments within a valid prompt', () => {
+    const prompts = [{ name: 'p', arguments: [{ name: 'valid' }, 'not-object', { description: 'no-name' }] }];
+    const result = validatePrompts(prompts, 'test', '/test');
+    expect(result).toHaveLength(1);
+    expect(result[0]?.arguments).toHaveLength(1);
+    expect(result[0]?.arguments?.[0]?.name).toBe('valid');
+  });
+});
+
+describe('loadPlugin — resource and prompt validation', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'opentabs-loader-validate-test-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const writePluginWithManifest = (dir: string, manifest: Record<string, unknown>) => {
+    mkdirSync(join(dir, 'dist'), { recursive: true });
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({
+        name: 'opentabs-plugin-test',
+        version: '1.0.0',
+        main: 'dist/adapter.iife.js',
+        opentabs: { displayName: 'Test', description: 'Test', urlPatterns: ['http://localhost/*'] },
+      }),
+    );
+    writeFileSync(join(dir, 'dist', 'tools.json'), JSON.stringify(manifest));
+    writeFileSync(join(dir, 'dist', 'adapter.iife.js'), '(function(){})()');
+  };
+
+  test('filters out invalid resources while loading valid ones', async () => {
+    const pluginDir = join(tmpDir, 'mixed-resources');
+    writePluginWithManifest(pluginDir, {
+      sdkVersion: '0.0.16',
+      tools: [{ name: 't', displayName: 'T', description: 'T', icon: 'wrench', input_schema: {}, output_schema: {} }],
+      resources: [
+        { uri: 'x://valid', name: 'valid', description: 'Valid resource' },
+        { name: 'missing-uri' },
+        'not-an-object',
+      ],
+      prompts: [],
+    });
+
+    const result = await loadPlugin(pluginDir, 'local', 'local');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.resources).toHaveLength(1);
+    expect(result.value.resources[0]?.uri).toBe('x://valid');
+  });
+
+  test('filters out invalid prompts while loading valid ones', async () => {
+    const pluginDir = join(tmpDir, 'mixed-prompts');
+    writePluginWithManifest(pluginDir, {
+      sdkVersion: '0.0.16',
+      tools: [{ name: 't', displayName: 'T', description: 'T', icon: 'wrench', input_schema: {}, output_schema: {} }],
+      resources: [],
+      prompts: [{ name: 'valid-prompt', description: 'A valid prompt' }, { description: 'missing-name' }, 42],
+    });
+
+    const result = await loadPlugin(pluginDir, 'local', 'local');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.prompts).toHaveLength(1);
+    expect(result.value.prompts[0]?.name).toBe('valid-prompt');
   });
 });
 

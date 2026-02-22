@@ -15,7 +15,14 @@ import { sdkVersion as serverSdkVersion } from './sdk-version.js';
 import { err, ok, parsePluginPackageJson, validatePluginName, validateUrlPattern } from '@opentabs-dev/shared';
 import { join } from 'node:path';
 import type { PluginSource } from './state.js';
-import type { ManifestPrompt, ManifestResource, ManifestTool, Result, TrustTier } from '@opentabs-dev/shared';
+import type {
+  ManifestPrompt,
+  ManifestPromptArgument,
+  ManifestResource,
+  ManifestTool,
+  Result,
+  TrustTier,
+} from '@opentabs-dev/shared';
 
 /** Maximum allowed size for the adapter IIFE (5 MB) */
 const MAX_IIFE_SIZE = 5 * 1024 * 1024;
@@ -156,6 +163,120 @@ const validateTools = (tools: unknown, sourcePath: string): Result<ManifestTool[
   }
 
   return ok(validated);
+};
+
+/**
+ * Validate an array of resource definitions from dist/tools.json.
+ * Invalid entries are filtered out with a warning, not a hard failure.
+ */
+const validateResources = (resources: unknown[], pluginName: string, sourcePath: string): ManifestResource[] => {
+  const validated: ManifestResource[] = [];
+  for (let i = 0; i < resources.length; i++) {
+    const raw: unknown = resources[i];
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      log.warn(`Plugin "${pluginName}" resources[${i}] at ${sourcePath} is not an object — skipping`);
+      continue;
+    }
+    const r = raw as Record<string, unknown>;
+
+    if (typeof r.uri !== 'string' || r.uri.length === 0) {
+      log.warn(`Plugin "${pluginName}" resources[${i}] at ${sourcePath} has invalid uri — skipping`);
+      continue;
+    }
+    if (typeof r.name !== 'string' || r.name.length === 0) {
+      log.warn(`Plugin "${pluginName}" resources[${i}] at ${sourcePath} has invalid name — skipping`);
+      continue;
+    }
+    if (r.description !== undefined && typeof r.description !== 'string') {
+      log.warn(`Plugin "${pluginName}" resources[${i}] at ${sourcePath} has invalid description — skipping`);
+      continue;
+    }
+    if (r.mimeType !== undefined && typeof r.mimeType !== 'string') {
+      log.warn(`Plugin "${pluginName}" resources[${i}] at ${sourcePath} has invalid mimeType — skipping`);
+      continue;
+    }
+
+    validated.push({
+      uri: r.uri,
+      name: r.name,
+      description: typeof r.description === 'string' ? r.description : undefined,
+      mimeType: typeof r.mimeType === 'string' ? r.mimeType : undefined,
+    });
+  }
+  return validated;
+};
+
+/**
+ * Validate an array of prompt definitions from dist/tools.json.
+ * Invalid entries are filtered out with a warning, not a hard failure.
+ */
+const validatePrompts = (prompts: unknown[], pluginName: string, sourcePath: string): ManifestPrompt[] => {
+  const validated: ManifestPrompt[] = [];
+  for (let i = 0; i < prompts.length; i++) {
+    const raw: unknown = prompts[i];
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      log.warn(`Plugin "${pluginName}" prompts[${i}] at ${sourcePath} is not an object — skipping`);
+      continue;
+    }
+    const p = raw as Record<string, unknown>;
+
+    if (typeof p.name !== 'string' || p.name.length === 0) {
+      log.warn(`Plugin "${pluginName}" prompts[${i}] at ${sourcePath} has invalid name — skipping`);
+      continue;
+    }
+    if (p.description !== undefined && typeof p.description !== 'string') {
+      log.warn(`Plugin "${pluginName}" prompts[${i}] at ${sourcePath} has invalid description — skipping`);
+      continue;
+    }
+    if (p.arguments !== undefined && !Array.isArray(p.arguments)) {
+      log.warn(`Plugin "${pluginName}" prompts[${i}] at ${sourcePath} has invalid arguments — skipping`);
+      continue;
+    }
+
+    validated.push({
+      name: p.name,
+      description: typeof p.description === 'string' ? p.description : undefined,
+      arguments: Array.isArray(p.arguments)
+        ? validatePromptArguments(p.arguments, pluginName, i, sourcePath)
+        : undefined,
+    });
+  }
+  return validated;
+};
+
+/**
+ * Validate prompt arguments within a prompt entry.
+ * Invalid arguments are filtered out with a warning.
+ */
+const validatePromptArguments = (
+  args: unknown[],
+  pluginName: string,
+  promptIndex: number,
+  sourcePath: string,
+): ManifestPromptArgument[] => {
+  const validated: ManifestPromptArgument[] = [];
+  for (let j = 0; j < args.length; j++) {
+    const raw: unknown = args[j];
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      log.warn(
+        `Plugin "${pluginName}" prompts[${promptIndex}].arguments[${j}] at ${sourcePath} is not an object — skipping`,
+      );
+      continue;
+    }
+    const a = raw as Record<string, unknown>;
+    if (typeof a.name !== 'string' || a.name.length === 0) {
+      log.warn(
+        `Plugin "${pluginName}" prompts[${promptIndex}].arguments[${j}] at ${sourcePath} has invalid name — skipping`,
+      );
+      continue;
+    }
+    validated.push({
+      name: a.name,
+      description: typeof a.description === 'string' ? a.description : undefined,
+      required: typeof a.required === 'boolean' ? a.required : undefined,
+    });
+  }
+  return validated;
 };
 
 /**
@@ -308,11 +429,15 @@ const loadPlugin = async (
   }
   const tools = toolsResult.value;
 
-  // Extract resources and prompts (default to [] for legacy format)
+  // Extract and validate resources and prompts (default to [] for legacy format)
   const resources: ManifestResource[] =
-    manifestObj && Array.isArray(manifestObj.resources) ? (manifestObj.resources as ManifestResource[]) : [];
+    manifestObj && Array.isArray(manifestObj.resources)
+      ? validateResources(manifestObj.resources as unknown[], pluginName, dir)
+      : [];
   const prompts: ManifestPrompt[] =
-    manifestObj && Array.isArray(manifestObj.prompts) ? (manifestObj.prompts as ManifestPrompt[]) : [];
+    manifestObj && Array.isArray(manifestObj.prompts)
+      ? validatePrompts(manifestObj.prompts as unknown[], pluginName, dir)
+      : [];
 
   // Extract sdkVersion and check compatibility
   const pluginSdkVersion =
@@ -382,6 +507,8 @@ export {
   loadPlugin,
   parseMajorMinor,
   pluginNameFromPackage,
+  validatePrompts,
+  validateResources,
   validateTools,
 };
 export type { LoadedPlugin };

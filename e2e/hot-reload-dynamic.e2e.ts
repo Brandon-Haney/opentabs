@@ -725,15 +725,14 @@ test.describe.serial('Hot reload — empty to populated', () => {
         expect(toolsBefore.map(t => t.name)).toContain(bt);
       }
 
-      // Add e2e-test plugin via config (preserve the secret for MCP auth)
-      const currentConfig = readTestConfig(configDir);
+      // Add e2e-test plugin via config
       const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
       const prefixedToolNames = readPluginToolNames();
       const tools: Record<string, boolean> = {};
       for (const t of prefixedToolNames) {
         tools[t] = true;
       }
-      writeTestConfig(configDir, { localPlugins: [absPluginPath], tools, secret: currentConfig.secret });
+      writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
 
       server.logs.length = 0;
       server.triggerHotReload();
@@ -956,8 +955,10 @@ test.describe('Hot reload — corrupted config', () => {
     mcpServer.triggerHotReload();
     await waitForLog(mcpServer, 'Hot reload complete', 20_000);
 
-    // Create a new client with the restored secret
-    const newClient = createMcpClient(mcpServer.port, originalConfig.secret);
+    // Read the secret from auth.json (single source of truth for auth)
+    const authPath = path.join(mcpServer.configDir, 'extension', 'auth.json');
+    const authData = JSON.parse(fs.readFileSync(authPath, 'utf-8')) as { secret?: string };
+    const newClient = createMcpClient(mcpServer.port, authData.secret);
     await newClient.initialize();
     try {
       const toolsAfter = await newClient.listTools();

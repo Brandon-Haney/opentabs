@@ -19,7 +19,6 @@ import {
   startMcpServer,
   createMcpClient,
   cleanupTestConfigDir,
-  readTestConfig,
   writeTestConfig,
   createMinimalPlugin,
   readPluginToolNames,
@@ -60,15 +59,13 @@ test.describe('Config watcher — auto-discovery', () => {
       }
 
       // Write new config.json with the e2e-test plugin path.
-      // Preserve the secret so the config watcher reload doesn't invalidate the MCP client's auth token.
-      const currentConfig = readTestConfig(configDir);
       const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
       const prefixedToolNames = readPluginToolNames();
       const tools: Record<string, boolean> = {};
       for (const t of prefixedToolNames) {
         tools[t] = true;
       }
-      writeTestConfig(configDir, { localPlugins: [absPluginPath], tools, secret: currentConfig.secret });
+      writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
 
       // Poll until plugin tools appear — the config watcher should auto-detect
       // the change without any manual reload
@@ -121,9 +118,8 @@ test.describe('Config watcher — auto-discovery', () => {
       const e2eToolsBefore = toolsBefore.filter(t => t.name.startsWith('e2e-test_'));
       expect(e2eToolsBefore.length).toBe(prefixedToolNames.length);
 
-      // Remove the plugin from config.json (preserve the secret)
-      const currentConfig = readTestConfig(configDir);
-      writeTestConfig(configDir, { localPlugins: [], tools: {}, secret: currentConfig.secret });
+      // Remove the plugin from config.json
+      writeTestConfig(configDir, { localPlugins: [], tools: {} });
 
       // Poll until plugin tools disappear
       const toolsAfter = await waitForToolList(
@@ -178,15 +174,13 @@ test.describe('Config watcher — auto-discovery', () => {
       expect(toolsBefore.some(t => t.name.startsWith('e2e-test_'))).toBe(true);
       expect(toolsBefore.some(t => t.name.startsWith('cw-extra_'))).toBe(false);
 
-      // Add the second plugin to config.json (keeping the first, preserving the secret)
-      const currentConfig = readTestConfig(configDir);
+      // Add the second plugin to config.json (keeping the first)
       const updatedTools: Record<string, boolean> = { ...tools };
       updatedTools['cw-extra_ping'] = true;
       updatedTools['cw-extra_pong'] = true;
       writeTestConfig(configDir, {
         localPlugins: [absPluginPath, newPluginDir],
         tools: updatedTools,
-        secret: currentConfig.secret,
       });
 
       // Poll until the new plugin's tools appear
@@ -235,14 +229,13 @@ test.describe('Config watcher — auto-discovery', () => {
 
       // Now write a config.json change — the restarted config watcher should detect it
       server.logs.length = 0;
-      const currentConfig = readTestConfig(configDir);
       const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
       const prefixedToolNames = readPluginToolNames();
       const tools: Record<string, boolean> = {};
       for (const t of prefixedToolNames) {
         tools[t] = true;
       }
-      writeTestConfig(configDir, { localPlugins: [absPluginPath], tools, secret: currentConfig.secret });
+      writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
 
       // Poll until plugin tools appear via the config watcher (not hot reload)
       const toolsAfter = await waitForToolList(

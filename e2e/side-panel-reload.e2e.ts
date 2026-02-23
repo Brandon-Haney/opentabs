@@ -19,7 +19,6 @@ import {
   startMcpServer,
   cleanupTestConfigDir,
   writeTestConfig,
-  readTestConfig,
   readPluginToolNames,
   launchExtensionContext,
   E2E_TEST_PLUGIN_DIR,
@@ -38,10 +37,11 @@ const buildToolsMap = (): Record<string, boolean> => {
   return tools;
 };
 
-/** POST /reload with Bearer auth. Reads secret from the server's config. */
+/** POST /reload with Bearer auth. Reads secret from auth.json in the extension directory. */
 const postReload = async (port: number, configDir: string): Promise<Response> => {
-  const config = readTestConfig(configDir);
-  const secret = config.secret ?? '';
+  const authPath = path.join(configDir, 'extension', 'auth.json');
+  const authData = JSON.parse(fs.readFileSync(authPath, 'utf-8')) as { secret?: string };
+  const secret = authData.secret ?? '';
   return fetch(`http://localhost:${String(port)}/reload`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${secret}` },
@@ -73,9 +73,8 @@ test.describe('Side panel auto-refresh — POST /reload', () => {
       const sidePanelPage = await openSidePanel(context);
       await expect(sidePanelPage.locator('text=E2E Test')).toBeVisible({ timeout: 30_000 });
 
-      // Remove the plugin from config, preserving the server's auto-generated secret
-      const currentConfig = readTestConfig(configDir);
-      writeTestConfig(configDir, { localPlugins: [], tools: {}, secret: currentConfig.secret });
+      // Remove the plugin from config
+      writeTestConfig(configDir, { localPlugins: [], tools: {} });
 
       // Wait for the config watcher to process the change before calling POST /reload.
       // This avoids a race between the two reload paths (config watcher vs HTTP endpoint).
@@ -114,13 +113,12 @@ test.describe('Side panel auto-refresh — POST /reload', () => {
 
       // Open side panel and verify onboarding state
       const sidePanelPage = await openSidePanel(context);
-      await expect(sidePanelPage.locator('text=Welcome to OpenTabs')).toBeVisible({ timeout: 10_000 });
+      await expect(sidePanelPage.locator('text=No Plugins Installed')).toBeVisible({ timeout: 10_000 });
 
-      // Add plugin to config, preserving the server's auto-generated secret
+      // Add plugin to config
       const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
       const tools = buildToolsMap();
-      const currentConfig = readTestConfig(configDir);
-      writeTestConfig(configDir, { localPlugins: [absPluginPath], tools, secret: currentConfig.secret });
+      writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
 
       // Wait for the config watcher to process the change before calling POST /reload
       await waitForLog(server, 'Config reload complete: 1 plugin', 10_000);
@@ -132,7 +130,7 @@ test.describe('Side panel auto-refresh — POST /reload', () => {
       expect(body.plugins).toBeGreaterThan(0);
 
       // Verify the side panel shows the plugin (from the sync.full pipeline)
-      await expect(sidePanelPage.locator('text=Welcome to OpenTabs')).toBeHidden({ timeout: 30_000 });
+      await expect(sidePanelPage.locator('text=No Plugins Installed')).toBeHidden({ timeout: 30_000 });
       await expect(sidePanelPage.locator('text=E2E Test')).toBeVisible({ timeout: 10_000 });
 
       await sidePanelPage.close();

@@ -26,8 +26,6 @@ import {
   expect,
   startMcpServer,
   fetchWsInfo,
-  readTestConfig,
-  writeTestConfig,
   launchExtensionContext,
   createTestConfigDir,
   cleanupTestConfigDir,
@@ -468,28 +466,30 @@ test.describe('Secret rotation during hot reload', () => {
     const preResult = await mcpClient.callTool('browser_list_tabs');
     expect(preResult.isError).toBe(false);
 
-    // Rotate the secret in config.json
-    const config = readTestConfig(mcpServer.configDir);
-    const oldSecret = config.secret;
-    config.secret = `rotated-${crypto.randomUUID()}`;
-    expect(config.secret).not.toBe(oldSecret);
-    writeTestConfig(mcpServer.configDir, config);
+    // Rotate the secret in auth.json (single source of truth for auth)
+    const authPath = path.join(mcpServer.configDir, 'extension', 'auth.json');
+    const authData = JSON.parse(fs.readFileSync(authPath, 'utf-8')) as { secret?: string; port?: number };
+    const oldSecret = authData.secret;
+    const newSecret = `rotated-${crypto.randomUUID()}`;
+    expect(newSecret).not.toBe(oldSecret);
+    authData.secret = newSecret;
+    fs.writeFileSync(authPath, JSON.stringify(authData) + '\n', 'utf-8');
 
-    // Trigger hot reload — server picks up the new secret
+    // Trigger hot reload — server picks up the new secret from auth.json
     mcpServer.logs.length = 0;
     mcpServer.triggerHotReload();
 
     // Wait for hot reload to complete (updates state.wsSecret)
     await waitForLog(mcpServer, 'Hot reload complete', 15_000);
-    mcpServer.secret = config.secret;
+    mcpServer.secret = newSecret;
 
     // The extension's existing connection is still alive (hot reload preserves
     // the TCP socket). Force a disconnect by stealing the WS slot using the
     // new secret's token, so the extension has to reconnect.
     mcpServer.logs.length = 0;
-    const { wsUrl: newWsUrl, wsSecret: newSecret } = await fetchWsInfo(mcpServer.port, config.secret);
+    const { wsUrl: newWsUrl, wsSecret: rotatedWsSecret } = await fetchWsInfo(mcpServer.port, newSecret);
     const rotateProtocols = ['opentabs'];
-    if (newSecret) rotateProtocols.push(newSecret);
+    if (rotatedWsSecret) rotateProtocols.push(rotatedWsSecret);
     const fakeWs = rotateProtocols.length > 1 ? new WebSocket(newWsUrl, rotateProtocols) : new WebSocket(newWsUrl);
     await new Promise<void>((resolve, reject) => {
       fakeWs.onopen = () => resolve();
@@ -506,11 +506,7 @@ test.describe('Secret rotation during hot reload', () => {
     // when /ws-info returns 401 (stale secret). The extension's offscreen
     // document falls back to auth.json on 401.
     const extensionAuthJson = path.join(mcpServer.configDir, 'extension', 'auth.json');
-    fs.writeFileSync(
-      extensionAuthJson,
-      JSON.stringify({ secret: config.secret, port: mcpServer.port }) + '\n',
-      'utf-8',
-    );
+    fs.writeFileSync(extensionAuthJson, JSON.stringify({ secret: newSecret, port: mcpServer.port }) + '\n', 'utf-8');
 
     // Wait for the extension to reconnect — it must re-fetch /ws-info
     // to get a token signed with the new secret
@@ -520,7 +516,7 @@ test.describe('Secret rotation during hot reload', () => {
     // Tool dispatch works through the new authenticated connection.
     // The original mcpClient was created with the old secret, so create a
     // new client with the rotated secret to verify the new auth works.
-    const newClient = createMcpClient(mcpServer.port, config.secret);
+    const newClient = createMcpClient(mcpServer.port, newSecret);
     await newClient.initialize();
     try {
       const postResult = await newClient.callTool('browser_list_tabs');

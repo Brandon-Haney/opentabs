@@ -48,8 +48,6 @@ describe('loadConfig / saveConfig round-trip', () => {
 
     expect(config.localPlugins).toEqual([]);
     expect(config.tools).toEqual({});
-    expect(typeof config.secret).toBe('string');
-    expect(config.secret).toBeDefined();
 
     // File was created on disk
     expect(await Bun.file(configPath).exists()).toBe(true);
@@ -68,14 +66,12 @@ describe('loadConfig / saveConfig round-trip', () => {
         toolPolicy: {},
         domainToolPolicy: {},
       },
-      secret: 'test-secret-123',
     };
     await saveConfigWrapped(custom);
 
     const loaded = await loadConfig();
     expect(loaded.localPlugins).toEqual(custom.localPlugins);
     expect(loaded.tools).toEqual(custom.tools);
-    expect(loaded.secret).toBe('test-secret-123');
   });
 
   test('filters non-string elements from localPlugins array', async () => {
@@ -84,7 +80,6 @@ describe('loadConfig / saveConfig round-trip', () => {
       JSON.stringify({
         localPlugins: ['/valid/path', 123, null, true, '/another/path'],
         tools: {},
-        secret: 'test-secret',
       }),
     );
 
@@ -98,26 +93,11 @@ describe('loadConfig / saveConfig round-trip', () => {
       JSON.stringify({
         localPlugins: [],
         tools: { valid_tool: false, bad_tool: 'yes', another_valid: true, numeric: 1 },
-        secret: 'test-secret',
       }),
     );
 
     const config = await loadConfig();
     expect(config.tools).toEqual({ valid_tool: false, another_valid: true });
-  });
-
-  test('generates secret if missing from existing config', async () => {
-    await Bun.write(
-      configPath,
-      JSON.stringify({
-        localPlugins: [],
-        tools: {},
-      }),
-    );
-
-    const config = await loadConfig();
-    expect(typeof config.secret).toBe('string');
-    expect(config.secret).toBeDefined();
   });
 
   test('migrates local paths from legacy plugins array into localPlugins', async () => {
@@ -126,7 +106,6 @@ describe('loadConfig / saveConfig round-trip', () => {
       JSON.stringify({
         plugins: ['/local/plugin', './relative/plugin', 'opentabs-plugin-jira', '@myorg/opentabs-plugin-github'],
         tools: {},
-        secret: 'test-secret-migrate',
       }),
     );
 
@@ -148,7 +127,6 @@ describe('loadConfig / saveConfig round-trip', () => {
           'opentabs-plugin-npm',
         ],
         tools: {},
-        secret: 'test-secret-win',
       }),
     );
 
@@ -168,7 +146,6 @@ describe('loadConfig / saveConfig round-trip', () => {
       JSON.stringify({
         localPlugins: ['/existing/plugin'],
         tools: {},
-        secret: 'test-secret',
         npmPlugins: ['opentabs-plugin-jira', '@myorg/opentabs-plugin-github'],
       }),
     );
@@ -185,7 +162,6 @@ describe('loadConfig / saveConfig round-trip', () => {
         localPlugins: ['/already/here'],
         plugins: ['/already/here', '/new/plugin'],
         tools: {},
-        secret: 'test-secret',
       }),
     );
 
@@ -199,7 +175,6 @@ describe('loadConfig / saveConfig round-trip', () => {
       JSON.stringify({
         localPlugins: ['/some/plugin'],
         tools: {},
-        secret: 'test-secret',
       }),
     );
 
@@ -234,7 +209,6 @@ describe('tool config round-trip with isToolEnabled', () => {
         toolPolicy: {},
         domainToolPolicy: {},
       },
-      secret: 'test-secret-roundtrip',
     };
     await saveConfigWrapped(config);
 
@@ -261,7 +235,6 @@ describe('tool config round-trip with isToolEnabled', () => {
         toolPolicy: {},
         domainToolPolicy: {},
       },
-      secret: 'test-secret-absent',
     };
     await saveConfigWrapped(config);
 

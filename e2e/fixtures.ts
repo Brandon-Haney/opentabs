@@ -151,7 +151,6 @@ const parsePortFromLogs = (logs: string[]): number | null => {
 interface OpentabsConfig {
   localPlugins: string[];
   tools: Record<string, boolean>;
-  secret?: string;
 }
 
 /**
@@ -192,12 +191,20 @@ const createTestConfigDir = (): string => {
   const config: OpentabsConfig = {
     localPlugins: [absPluginPath],
     tools,
-    secret: crypto.randomUUID(),
   };
 
   const configPath = path.join(configDir, 'config.json');
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
   if (process.platform !== 'win32') fs.chmodSync(configPath, 0o600);
+
+  // Write auth.json to the extension subdirectory — the server reads the
+  // WebSocket secret from auth.json (single source of truth).
+  const extensionDir = path.join(configDir, 'extension');
+  fs.mkdirSync(extensionDir, { recursive: true });
+  const secret = crypto.randomUUID();
+  const authPath = path.join(extensionDir, 'auth.json');
+  fs.writeFileSync(authPath, JSON.stringify({ secret }) + '\n', 'utf-8');
+  if (process.platform !== 'win32') fs.chmodSync(authPath, 0o600);
 
   return configDir;
 };
@@ -220,12 +227,9 @@ const readTestConfig = (configDir: string): OpentabsConfig => {
 
 /**
  * Write a new config.json to an isolated test config directory.
- * Auto-generates a secret if one isn't provided, ensuring the MCP server
- * and extension can authenticate via auth.json in every test.
  */
 const writeTestConfig = (configDir: string, config: OpentabsConfig): void => {
-  const withSecret: OpentabsConfig = config.secret ? config : { ...config, secret: crypto.randomUUID() };
-  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify(withSecret, null, 2) + '\n', 'utf-8');
+  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify(config, null, 2) + '\n', 'utf-8');
 };
 
 /** Minimal plugin manifest tool definition */
@@ -484,12 +488,13 @@ const startMcpServer = (configDir: string, hot: boolean = true, explicitPort?: n
         resolved = true;
         // Now that we know the port, wire up the server object
         server.port = actualPort;
-        // Read the secret from config (the server auto-generates one if absent)
+        // Read the secret from auth.json (single source of truth)
         try {
-          const cfg = readTestConfig(configDir);
-          server.secret = cfg.secret;
+          const authPath = path.join(configDir, 'extension', 'auth.json');
+          const authData = JSON.parse(fs.readFileSync(authPath, 'utf-8')) as { secret?: string };
+          server.secret = authData.secret;
         } catch {
-          // Config may not be readable yet — auth will be skipped
+          // auth.json may not be readable yet — auth will be skipped
         }
         server.health = () => fetchHealth(actualPort, server.secret);
         server.waitForHealth = (predicate, timeoutMs) =>

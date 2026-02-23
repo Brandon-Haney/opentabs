@@ -42,9 +42,9 @@ describe('readConfig', () => {
   });
 
   test('returns config object for valid JSON object', async () => {
-    await Bun.write(configPath, JSON.stringify({ localPlugins: [], tools: {}, secret: 'test' }));
+    await Bun.write(configPath, JSON.stringify({ localPlugins: [], tools: {} }));
     const result = await readConfig(configPath);
-    expect(result.config).toEqual({ localPlugins: [], tools: {}, secret: 'test' });
+    expect(result.config).toEqual({ localPlugins: [], tools: {} });
     expect(result.error).toBeUndefined();
   });
 

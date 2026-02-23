@@ -41,68 +41,6 @@ const createPlugin = (name: string, toolNames: string[]): RegisteredPlugin => ({
   prompts: [],
 });
 
-describe('buildRegistry — plugin tool lookup', () => {
-  test('populates toolLookup with correct prefixed names', () => {
-    const state = createState();
-    state.registry = buildRegistry([createPlugin('slack', ['send_message', 'read_messages'])], []);
-
-    expect(state.registry.toolLookup.size).toBe(2);
-    expect(state.registry.toolLookup.get('slack_send_message')).toMatchObject({
-      pluginName: 'slack',
-      toolName: 'send_message',
-    });
-    expect(state.registry.toolLookup.get('slack_read_messages')).toMatchObject({
-      pluginName: 'slack',
-      toolName: 'read_messages',
-    });
-  });
-
-  test('empty plugins produces empty toolLookup', () => {
-    const state = createState();
-    state.registry = buildRegistry([], []);
-
-    expect(state.registry.toolLookup.size).toBe(0);
-  });
-
-  test('multiple plugins produces correct entries for all tools', () => {
-    const state = createState();
-    state.registry = buildRegistry(
-      [createPlugin('slack', ['send_message']), createPlugin('github', ['create_issue', 'list_prs'])],
-      [],
-    );
-
-    expect(state.registry.toolLookup.size).toBe(3);
-    expect(state.registry.toolLookup.get('slack_send_message')).toMatchObject({
-      pluginName: 'slack',
-      toolName: 'send_message',
-    });
-    expect(state.registry.toolLookup.get('github_create_issue')).toMatchObject({
-      pluginName: 'github',
-      toolName: 'create_issue',
-    });
-    expect(state.registry.toolLookup.get('github_list_prs')).toMatchObject({
-      pluginName: 'github',
-      toolName: 'list_prs',
-    });
-  });
-
-  test('replaces previous toolLookup entries on rebuild', () => {
-    const state = createState();
-    state.registry = buildRegistry([createPlugin('slack', ['send_message'])], []);
-    expect(state.registry.toolLookup.size).toBe(1);
-
-    // Change plugins and rebuild
-    state.registry = buildRegistry([createPlugin('github', ['create_issue'])], []);
-
-    expect(state.registry.toolLookup.size).toBe(1);
-    expect(state.registry.toolLookup.has('slack_send_message')).toBe(false);
-    expect(state.registry.toolLookup.get('github_create_issue')).toMatchObject({
-      pluginName: 'github',
-      toolName: 'create_issue',
-    });
-  });
-});
-
 describe('rebuildCachedBrowserTools — cached browser tools', () => {
   test('populates cachedBrowserTools with pre-computed JSON schemas', () => {
     const state = createState();

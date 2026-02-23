@@ -135,6 +135,38 @@ describe('buildRegistry', () => {
     expect(Object.isFrozen(registry)).toBe(true);
   });
 
+  test('replaces previous tool lookup entries on rebuild', () => {
+    const registryV1 = buildRegistry([makePlugin({ name: 'slack' })], []);
+    expect(registryV1.toolLookup.size).toBe(1);
+    expect(registryV1.toolLookup.has('slack_my_tool')).toBe(true);
+
+    const registryV2 = buildRegistry(
+      [
+        makePlugin({
+          name: 'github',
+          tools: [
+            {
+              name: 'create_issue',
+              displayName: 'Create Issue',
+              description: 'Creates an issue',
+              icon: 'star',
+              input_schema: { type: 'object' },
+              output_schema: {},
+            },
+          ],
+        }),
+      ],
+      [],
+    );
+
+    expect(registryV2.toolLookup.size).toBe(1);
+    expect(registryV2.toolLookup.has('slack_my_tool')).toBe(false);
+    expect(registryV2.toolLookup.get('github_create_issue')).toMatchObject({
+      pluginName: 'github',
+      toolName: 'create_issue',
+    });
+  });
+
   test('handles tool with invalid schema gracefully (validate is null)', () => {
     const plugin = makePlugin({
       tools: [

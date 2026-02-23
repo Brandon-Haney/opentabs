@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path';
  *
  * Tests resolvePluginPath() for local path resolution (absolute, relative, ~/),
  * npm package resolution, and security validation. Also tests isAllowedPluginPath()
- * and discoverGlobalNpmPlugins() for completeness alongside discovery.test.ts.
+ * and discoverGlobalNpmPlugins() as the canonical test file for resolver.ts exports.
  */
 
 /** Helper to create a valid plugin directory structure */
@@ -376,6 +376,11 @@ describe('isAllowedPluginPath', () => {
     const home = homedir();
     expect(await isAllowedPluginPath(home + 'bar')).toBe(false);
   });
+
+  test('rejects path with .. traversal that escapes home', async () => {
+    // resolve() normalizes .., but the resulting path must still be under an allowed root
+    expect(await isAllowedPluginPath('/var/data/../../../etc/passwd')).toBe(false);
+  });
 });
 
 describe('discoverGlobalNpmPlugins', () => {
@@ -472,6 +477,22 @@ describe('discoverGlobalNpmPlugins', () => {
 
     expect(dirs).toHaveLength(1);
     expect(dirs[0]).toBe(join(globalDir, 'opentabs-plugin-valid'));
+  });
+
+  test('ignores non-plugin packages', async () => {
+    const globalDir = join(tempDir, 'node_modules');
+    writeNonPluginPkgJson(join(globalDir, 'express'), 'express');
+    writeNonPluginPkgJson(join(globalDir, 'lodash'), 'lodash');
+    writePluginPkgJson(join(globalDir, 'opentabs-plugin-only'), 'opentabs-plugin-only');
+
+    mockSpawnSync(cmd => {
+      if (cmd[0] === 'npm' && cmd[1] === 'root') return spawnResult(0, globalDir);
+      return spawnResult(1, '');
+    });
+
+    const { dirs } = await discoverGlobalNpmPlugins();
+    expect(dirs).toHaveLength(1);
+    expect(dirs[0]).toBe(join(globalDir, 'opentabs-plugin-only'));
   });
 
   test('returns empty when no global paths are available', async () => {

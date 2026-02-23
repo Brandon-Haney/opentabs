@@ -64,8 +64,13 @@ const discoverPlugins = async (localPlugins: string[], configDir: string): Promi
   const loadLocal = localPlugins.map(async (specifier): Promise<LoadedPlugin | null> => {
     const resolveResult = await resolvePluginPath(specifier, configDir);
     if (isErr(resolveResult)) {
+      // "Path not found" means the directory no longer exists — treat as a stale config
+      // entry and skip silently (only log, don't add to failedPlugins).
+      const isStale = resolveResult.error.startsWith('Path not found:');
       errors.push({ specifier, error: resolveResult.error });
-      failures.push({ path: specifier, error: resolveResult.error });
+      if (!isStale) {
+        failures.push({ path: specifier, error: resolveResult.error });
+      }
       return null;
     }
 

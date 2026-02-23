@@ -6,7 +6,7 @@
  * for post-restart forensics.
  */
 
-import { getConfigDir, getConfigPath, isConnectionRefused, readConfig } from '../config.js';
+import { getConfigDir, isConnectionRefused, readAuthSecret } from '../config.js';
 import { resolvePort } from '../parse-port.js';
 import { toErrorMessage } from '@opentabs-dev/shared';
 import { InvalidArgumentError } from 'commander';
@@ -196,10 +196,7 @@ const handleAudit = async (options: AuditOptions): Promise<void> => {
     sinceMs = parseDuration(options.since);
   }
 
-  // Read secret from config
-  const configPath = getConfigPath();
-  const { config } = await readConfig(configPath);
-  const secret = config && typeof config.secret === 'string' ? config.secret : null;
+  const secret = await readAuthSecret();
 
   // Build URL — request more entries from the server when --since is used
   // so we have enough to filter from
@@ -219,7 +216,7 @@ const handleAudit = async (options: AuditOptions): Promise<void> => {
 
     if (res.status === 401) {
       console.error(pc.red('Authentication failed.'));
-      console.error(pc.dim('Is the server secret correct? Check ~/.opentabs/config.json'));
+      console.error(pc.dim('Is the server secret correct? Check ~/.opentabs/extension/auth.json'));
       process.exit(1);
     }
 

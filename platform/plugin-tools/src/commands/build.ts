@@ -13,6 +13,7 @@ import {
   TOOLS_FILENAME,
   atomicWrite,
   DEFAULT_PORT,
+  getConfigDir,
   getConfigPath,
   parsePluginPackageJson,
   toErrorMessage,
@@ -163,13 +164,13 @@ const registerInConfig = async (projectDir: string): Promise<boolean> => {
  * Fails silently — the build succeeds regardless of whether the server is running.
  */
 const notifyServer = async (): Promise<void> => {
-  const configPath = getConfigPath();
-  const configFile = Bun.file(configPath);
-  if (!(await configFile.exists())) return;
+  const authJsonPath = join(getConfigDir(), 'extension', 'auth.json');
+  const authFile = Bun.file(authJsonPath);
+  if (!(await authFile.exists())) return;
 
   let secret: string | undefined;
   try {
-    const parsed: unknown = JSON.parse(await configFile.text());
+    const parsed: unknown = JSON.parse(await authFile.text());
     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
       const record = parsed as Record<string, unknown>;
       if (typeof record.secret === 'string') secret = record.secret;

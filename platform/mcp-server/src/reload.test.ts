@@ -37,7 +37,7 @@ const emptyTransports = (): Map<string, WebStandardStreamableHTTPServerTransport
 
 /** Write a config.json to the given directory */
 const writeConfig = (configDir: string, localPlugins: string[] = [], tools: Record<string, boolean> = {}): void => {
-  writeFileSync(join(configDir, 'config.json'), JSON.stringify({ localPlugins, tools, secret: 'test-secret' }));
+  writeFileSync(join(configDir, 'config.json'), JSON.stringify({ localPlugins, tools }));
 };
 
 /** Create a minimal valid plugin directory with package.json, tools.json, and adapter */
@@ -109,12 +109,11 @@ describe('performReload', () => {
     expect(result.lastReloadDurationMs).toBeGreaterThanOrEqual(0);
   });
 
-  test('loads plugin paths and secret from config into state', async () => {
+  test('loads plugin paths from config into state', async () => {
     writeConfig(configDir, ['/path/to/alpha', '/path/to/beta']);
     await performReload(state, [], emptyTransports(), false);
 
     expect(state.pluginPaths).toEqual(['/path/to/alpha', '/path/to/beta']);
-    expect(state.wsSecret).toBe('test-secret');
   });
 
   test('discovers plugins from local paths', async () => {

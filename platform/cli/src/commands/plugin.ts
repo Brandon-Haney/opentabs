@@ -8,6 +8,7 @@ import {
   getConfigPath,
   getLocalPluginsFromConfig,
   isConnectionRefused,
+  readAuthSecret,
   readConfig,
   resolvePluginPath,
 } from '../config.js';
@@ -48,9 +49,7 @@ const normalizePluginName = (name: string): string => {
  */
 const notifyServer = async (options: { port?: number }): Promise<void> => {
   const port = resolvePort(options);
-  const configPath = getConfigPath();
-  const { config } = await readConfig(configPath);
-  const secret = config && typeof config.secret === 'string' ? config.secret : null;
+  const secret = await readAuthSecret();
 
   try {
     const healthRes = await fetch(`http://localhost:${port}/health`, {

@@ -14,7 +14,7 @@ import { VALID_PLUGIN_NAME } from '../constants.js';
 import { Search, X } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { FailedPluginState, PluginState } from './bridge.js';
-import type { InternalMessage } from '../extension-messages.js';
+import type { DisconnectReason, InternalMessage } from '../extension-messages.js';
 import type { ConfirmationData } from './components/ConfirmationDialog.js';
 import type { TabState } from '@opentabs-dev/shared';
 
@@ -22,6 +22,7 @@ const validTabStates: ReadonlySet<string> = new Set<TabState>(['closed', 'unavai
 
 const App = () => {
   const [connected, setConnected] = useState(false);
+  const [disconnectReason, setDisconnectReason] = useState<DisconnectReason | undefined>();
   const [plugins, setPlugins] = useState<PluginState[]>([]);
   const [failedPlugins, setFailedPlugins] = useState<FailedPluginState[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,9 +66,10 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    void getConnectionState().then(isConnected => {
-      setConnected(isConnected);
-      if (isConnected) {
+    void getConnectionState().then(result => {
+      setConnected(result.connected);
+      setDisconnectReason(result.disconnectReason);
+      if (result.connected) {
         loadPlugins();
       }
       setLoading(false);
@@ -168,6 +170,7 @@ const App = () => {
       if (message.type === 'sp:connectionState') {
         const isConnected = message.data.connected;
         setConnected(isConnected);
+        setDisconnectReason(isConnected ? undefined : message.data.disconnectReason);
         if (isConnected) {
           loadPlugins();
         } else {
@@ -274,7 +277,7 @@ const App = () => {
         {loading ? (
           <LoadingState />
         ) : !connected ? (
-          <DisconnectedState />
+          <DisconnectedState reason={disconnectReason} />
         ) : !hasContent ? (
           <NoPluginsState />
         ) : (

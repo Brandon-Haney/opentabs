@@ -177,7 +177,6 @@ const reloadCore = async ({ state, sessionServers, transports }: ReloadCoreArgs)
     state.toolConfig = { ...config.tools };
     state.browserToolPolicy = { ...config.browserToolPolicy };
     state.pluginPaths = [...config.localPlugins];
-    state.wsSecret = config.secret ?? null;
     state.discoveryErrors = errors;
     state.permissions = config.permissions;
     state.skipConfirmation = isCliSkipConfirmation() || config.skipConfirmation === true;

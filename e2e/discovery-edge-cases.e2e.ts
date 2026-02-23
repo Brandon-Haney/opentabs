@@ -33,7 +33,7 @@ import path from 'node:path';
 const configWithPlugins = (
   extraLocalPlugins: string[],
   extraTools: Record<string, boolean> = {},
-): { localPlugins: string[]; tools: Record<string, boolean>; secret: string } => {
+): { localPlugins: string[]; tools: Record<string, boolean> } => {
   const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
   const prefixedToolNames = readPluginToolNames();
   const tools: Record<string, boolean> = {};
@@ -43,7 +43,6 @@ const configWithPlugins = (
   return {
     localPlugins: [absPluginPath, ...extraLocalPlugins],
     tools: { ...tools, ...extraTools },
-    secret: crypto.randomUUID(),
   };
 };
 
@@ -52,7 +51,7 @@ const configWithPlugins = (
 // ---------------------------------------------------------------------------
 
 test.describe('Discovery edge cases — broken plugins', () => {
-  test('non-existent local plugin path is silently skipped as stale config entry', async () => {
+  test('non-existent local plugin path appears in failedPlugins with a clear error', async () => {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-disc-nodir-'));
     const bogusPath = path.join(os.tmpdir(), `nonexistent-plugin-${String(Date.now())}`);
     const config = configWithPlugins([bogusPath]);
@@ -71,10 +70,11 @@ test.describe('Discovery edge cases — broken plugins', () => {
         pluginDetails?: Array<{ name: string }>;
       };
 
-      // Nonexistent paths are treated as stale config entries and silently
-      // skipped — they do not appear in failedPlugins.
+      // Nonexistent paths are reported as failed plugins with a clear error
+      // message so the user knows the config entry is stale.
       const failure = body.failedPlugins.find(f => f.path.includes('nonexistent-plugin'));
-      expect(failure).toBeUndefined();
+      expect(failure).toBeDefined();
+      expect(failure?.error).toContain('Path not found');
 
       // The valid e2e-test plugin should still load
       expect(health.pluginDetails).toBeDefined();

@@ -1869,11 +1869,12 @@ export const handleExtensionGetState = async (id: string | number): Promise<void
       .catch(() => ({}) as Record<string, unknown>);
     const wsConnected = typeof sessionData[WS_CONNECTED_KEY] === 'boolean' ? sessionData[WS_CONNECTED_KEY] : false;
 
-    // MCP server URL from chrome.storage.local
+    // MCP server URL derived from port in chrome.storage.local
     const localData: Record<string, unknown> = await chrome.storage.local
-      .get('mcpServerUrl')
+      .get('serverPort')
       .catch(() => ({}) as Record<string, unknown>);
-    const mcpServerUrl = typeof localData.mcpServerUrl === 'string' ? localData.mcpServerUrl : 'ws://localhost:9515/ws';
+    const port = typeof localData.serverPort === 'number' && localData.serverPort > 0 ? localData.serverPort : 9515;
+    const mcpServerUrl = `ws://localhost:${port}/ws`;
 
     // Plugin metadata with tab states
     const pluginIndex = await getAllPluginMeta();

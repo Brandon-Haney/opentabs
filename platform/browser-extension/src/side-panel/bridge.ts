@@ -10,6 +10,7 @@
  * also rejected on WebSocket disconnect (sp:connectionState connected=false).
  */
 
+import type { DisconnectReason } from '../extension-messages.js';
 import type { ConfigStateFailedPlugin, ConfigStatePlugin, ConfigStateResult } from '@opentabs-dev/shared';
 
 /** Plugin state as displayed in the side panel (matches config.getState response) */
@@ -99,16 +100,28 @@ const handleServerResponse = (data: Record<string, unknown>): boolean => {
   return true;
 };
 
+/** Result from querying the background script for WebSocket connection state */
+interface ConnectionStateResult {
+  connected: boolean;
+  disconnectReason?: DisconnectReason;
+}
+
 /** Query the background script for WebSocket connection state */
-const getConnectionState = (): Promise<boolean> =>
+const getConnectionState = (): Promise<ConnectionStateResult> =>
   new Promise(resolve => {
-    chrome.runtime.sendMessage({ type: 'bg:getConnectionState' }, (response: { connected?: boolean } | undefined) => {
-      if (chrome.runtime.lastError) {
-        resolve(false);
-      } else {
-        resolve(response?.connected === true);
-      }
-    });
+    chrome.runtime.sendMessage(
+      { type: 'bg:getConnectionState' },
+      (response: { connected?: boolean; disconnectReason?: DisconnectReason } | undefined) => {
+        if (chrome.runtime.lastError) {
+          resolve({ connected: false });
+        } else {
+          resolve({
+            connected: response?.connected === true,
+            disconnectReason: response?.disconnectReason,
+          });
+        }
+      },
+    );
   });
 
 /** Request full state from MCP server via config.getState */

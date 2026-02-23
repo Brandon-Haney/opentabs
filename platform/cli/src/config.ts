@@ -10,7 +10,7 @@ import {
   getLogFilePath,
   toErrorMessage,
 } from '@opentabs-dev/shared';
-import { dirname, resolve, isAbsolute } from 'node:path';
+import { dirname, join, resolve, isAbsolute } from 'node:path';
 
 export { getConfigDir, getConfigPath, getExtensionDir, getLogFilePath };
 
@@ -56,6 +56,26 @@ export const resolvePluginPath = (pluginPath: string, configPath: string): strin
 /** Write config atomically with restrictive permissions via the shared helper. */
 export const atomicWriteConfig = (configPath: string, content: string): Promise<void> =>
   atomicWrite(configPath, content, 0o600);
+
+/**
+ * Read the WebSocket authentication secret from ~/.opentabs/extension/auth.json.
+ * Returns null if auth.json does not exist or has no valid secret.
+ */
+export const readAuthSecret = async (): Promise<string | null> => {
+  const authPath = join(getExtensionDir(), 'auth.json');
+  const authFile = Bun.file(authPath);
+  if (!(await authFile.exists())) return null;
+  try {
+    const parsed: unknown = JSON.parse(await authFile.text());
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const secret = (parsed as Record<string, unknown>).secret;
+      if (typeof secret === 'string' && secret.length > 0) return secret;
+    }
+  } catch {
+    // Malformed auth.json — treat as missing
+  }
+  return null;
+};
 
 export const isConnectionRefused = (err: unknown): boolean => {
   if (!(err instanceof TypeError)) return false;

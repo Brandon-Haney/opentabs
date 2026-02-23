@@ -26,8 +26,6 @@ import {
   expect,
   startMcpServer,
   fetchWsInfo,
-  readTestConfig,
-  writeTestConfig,
   launchExtensionContext,
   createTestConfigDir,
   cleanupTestConfigDir,
@@ -468,28 +466,29 @@ test.describe('Secret rotation during hot reload', () => {
     const preResult = await mcpClient.callTool('browser_list_tabs');
     expect(preResult.isError).toBe(false);
 
-    // Rotate the secret in config.json
-    const config = readTestConfig(mcpServer.configDir);
-    const oldSecret = config.secret;
-    config.secret = `rotated-${crypto.randomUUID()}`;
-    expect(config.secret).not.toBe(oldSecret);
-    writeTestConfig(mcpServer.configDir, config);
+    // Rotate the secret in auth.json (single source of truth for auth)
+    const authPath = path.join(mcpServer.configDir, 'extension', 'auth.json');
+    const authData = JSON.parse(fs.readFileSync(authPath, 'utf-8')) as { secret?: string };
+    const oldSecret = authData.secret;
+    const newSecret = `rotated-${crypto.randomUUID()}`;
+    expect(newSecret).not.toBe(oldSecret);
+    fs.writeFileSync(authPath, JSON.stringify({ secret: newSecret }) + '\n', 'utf-8');
 
-    // Trigger hot reload — server picks up the new secret
+    // Trigger hot reload — server picks up the new secret from auth.json
     mcpServer.logs.length = 0;
     mcpServer.triggerHotReload();
 
     // Wait for hot reload to complete (updates state.wsSecret)
     await waitForLog(mcpServer, 'Hot reload complete', 15_000);
-    mcpServer.secret = config.secret;
+    mcpServer.secret = newSecret;
 
     // The extension's existing connection is still alive (hot reload preserves
     // the TCP socket). Force a disconnect by stealing the WS slot using the
     // new secret's token, so the extension has to reconnect.
     mcpServer.logs.length = 0;
-    const { wsUrl: newWsUrl, wsSecret: newSecret } = await fetchWsInfo(mcpServer.port, config.secret);
+    const { wsUrl: newWsUrl, wsSecret: rotatedWsSecret } = await fetchWsInfo(mcpServer.port, newSecret);
     const rotateProtocols = ['opentabs'];
-    if (newSecret) rotateProtocols.push(newSecret);
+    if (rotatedWsSecret) rotateProtocols.push(rotatedWsSecret);
     const fakeWs = rotateProtocols.length > 1 ? new WebSocket(newWsUrl, rotateProtocols) : new WebSocket(newWsUrl);
     await new Promise<void>((resolve, reject) => {
       fakeWs.onopen = () => resolve();
@@ -506,11 +505,7 @@ test.describe('Secret rotation during hot reload', () => {
     // when /ws-info returns 401 (stale secret). The extension's offscreen
     // document falls back to auth.json on 401.
     const extensionAuthJson = path.join(mcpServer.configDir, 'extension', 'auth.json');
-    fs.writeFileSync(
-      extensionAuthJson,
-      JSON.stringify({ secret: config.secret, port: mcpServer.port }) + '\n',
-      'utf-8',
-    );
+    fs.writeFileSync(extensionAuthJson, JSON.stringify({ secret: newSecret }) + '\n', 'utf-8');
 
     // Wait for the extension to reconnect — it must re-fetch /ws-info
     // to get a token signed with the new secret
@@ -520,7 +515,7 @@ test.describe('Secret rotation during hot reload', () => {
     // Tool dispatch works through the new authenticated connection.
     // The original mcpClient was created with the old secret, so create a
     // new client with the rotated secret to verify the new auth works.
-    const newClient = createMcpClient(mcpServer.port, config.secret);
+    const newClient = createMcpClient(mcpServer.port, newSecret);
     await newClient.initialize();
     try {
       const postResult = await newClient.callTool('browser_list_tabs');
@@ -719,28 +714,28 @@ test.describe('extension_reload', () => {
 // ---------------------------------------------------------------------------
 
 /**
- * Set mcpServerUrl in chrome.storage.local via an extension page.
+ * Set serverPort in chrome.storage.local via an extension page.
  * This triggers the background script's chrome.storage.onChanged listener,
- * which relays ws:setUrl to the offscreen document.
+ * which constructs a ws:// URL and relays ws:setUrl to the offscreen document.
  */
-const setMcpServerUrl = async (context: BrowserContext, wsUrl: string): Promise<void> => {
+const setServerPort = async (context: BrowserContext, port: number): Promise<void> => {
   const extId = await getExtensionId(context);
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extId}/side-panel/side-panel.html`, {
     waitUntil: 'load',
     timeout: 10_000,
   });
-  await page.evaluate(async (url: string) => {
+  await page.evaluate(async (p: number) => {
     const chromeApi = (globalThis as Record<string, unknown>).chrome as {
       storage: { local: { set: (items: Record<string, unknown>) => Promise<void> } };
     };
-    await chromeApi.storage.local.set({ mcpServerUrl: url });
-  }, wsUrl);
+    await chromeApi.storage.local.set({ serverPort: p });
+  }, port);
   await page.close();
 };
 
 test.describe('URL change reconnection', () => {
-  test('changing mcpServerUrl while disconnected triggers reconnection to new server', async ({
+  test('changing serverPort while disconnected triggers reconnection to new server', async ({
     mcpServer,
     extensionContext,
     mcpClient,
@@ -798,22 +793,17 @@ test.describe('URL change reconnection', () => {
       const realExtensionAdaptersDir = fs.readlinkSync(extensionAdaptersSymlink);
       const extensionRootDir = path.dirname(realExtensionAdaptersDir);
       const extensionAuthPath = path.join(extensionRootDir, 'auth.json');
-      fs.writeFileSync(
-        extensionAuthPath,
-        JSON.stringify({ secret: serverB.secret, port: serverBPort }) + '\n',
-        'utf-8',
-      );
+      fs.writeFileSync(extensionAuthPath, JSON.stringify({ secret: serverB.secret }) + '\n', 'utf-8');
 
       // Wait briefly for the file write to be visible to the extension's
       // fetch of chrome.runtime.getURL('auth.json').
       await new Promise(r => setTimeout(r, 500));
 
-      // 5. Change mcpServerUrl in chrome.storage.local to point to server B.
-      //    The background script's chrome.storage.onChanged listener relays
-      //    ws:setUrl to the offscreen document, which (per US-002) calls
-      //    connect() even when ws is null and no reconnect timer is pending.
-      const newWsUrl = `ws://localhost:${serverBPort}/ws`;
-      await setMcpServerUrl(extensionContext, newWsUrl);
+      // 5. Change serverPort in chrome.storage.local to point to server B.
+      //    The background script's chrome.storage.onChanged listener constructs
+      //    a ws:// URL and relays ws:setUrl to the offscreen document, which
+      //    calls connect() even when ws is null and no reconnect timer is pending.
+      await setServerPort(extensionContext, serverBPort);
 
       // 6. Wait for extension to connect to server B
       await waitForExtensionConnected(serverB, 45_000);

@@ -213,8 +213,6 @@ interface OpentabsConfig {
   localPlugins: string[];
   /** Map of prefixed tool names to enabled/disabled state. */
   tools: Record<string, boolean>;
-  /** Bearer auth secret for the MCP server (auto-generated if omitted). */
-  secret?: string;
 }
 
 /**
@@ -259,12 +257,20 @@ const createTestConfigDir = (): string => {
   const config: OpentabsConfig = {
     localPlugins: [absPluginPath],
     tools,
-    secret: crypto.randomUUID(),
   };
 
   const configPath = path.join(configDir, 'config.json');
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
   if (process.platform !== 'win32') fs.chmodSync(configPath, 0o600);
+
+  // Write auth.json to the extension subdirectory — the server reads the
+  // WebSocket secret from auth.json (single source of truth).
+  const extensionDir = path.join(configDir, 'extension');
+  fs.mkdirSync(extensionDir, { recursive: true });
+  const secret = crypto.randomUUID();
+  const authPath = path.join(extensionDir, 'auth.json');
+  fs.writeFileSync(authPath, JSON.stringify({ secret }) + '\n', 'utf-8');
+  if (process.platform !== 'win32') fs.chmodSync(authPath, 0o600);
 
   return configDir;
 };
@@ -288,12 +294,9 @@ const readTestConfig = (configDir: string): OpentabsConfig => {
 
 /**
  * Write a new config.json to an isolated test config directory.
- * Auto-generates a secret if one isn't provided, ensuring the MCP server
- * and extension can authenticate via auth.json in every test.
  */
 const writeTestConfig = (configDir: string, config: OpentabsConfig): void => {
-  const withSecret: OpentabsConfig = config.secret ? config : { ...config, secret: crypto.randomUUID() };
-  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify(withSecret, null, 2) + '\n', 'utf-8');
+  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify(config, null, 2) + '\n', 'utf-8');
 };
 
 /** Minimal plugin manifest tool definition */
@@ -565,12 +568,13 @@ const startMcpServer = (configDir: string, hot: boolean = true, explicitPort?: n
         resolved = true;
         // Now that we know the port, wire up the server object
         server.port = actualPort;
-        // Read the secret from config (the server auto-generates one if absent)
+        // Read the secret from auth.json (single source of truth)
         try {
-          const cfg = readTestConfig(configDir);
-          server.secret = cfg.secret;
+          const authPath = path.join(configDir, 'extension', 'auth.json');
+          const authData = JSON.parse(fs.readFileSync(authPath, 'utf-8')) as { secret?: string };
+          server.secret = authData.secret;
         } catch {
-          // Config may not be readable yet — auth will be skipped
+          // auth.json may not be readable yet — auth will be skipped
         }
         server.health = () => fetchHealth(actualPort, server.secret);
         server.waitForHealth = (predicate, timeoutMs) =>
@@ -829,10 +833,11 @@ const createExtensionCopy = (
       filter: (source: string) => !/[\\/](node_modules|src|\.tsbuildinfo)[\\/]?$/.test(source),
     });
 
-    // Replace the default MCP server URL in BOTH the offscreen document and
-    // the background script. The offscreen.js has DEFAULT_MCP_SERVER_URL and
-    // background.js has the fallback URL in the offscreen:getUrl handler.
-    // Both must be patched so the extension connects to this test's port.
+    // Patch the default MCP server URL in the offscreen document so it
+    // connects to this test's port. The offscreen.js has DEFAULT_MCP_SERVER_URL
+    // as a hardcoded fallback. Port configuration from chrome.storage.local
+    // (via the background's offscreen:getUrl handler) takes precedence when set,
+    // but the fallback must also point to the right port for initial connection.
     const testUrl = `ws://localhost:${mcpPort}/ws`;
 
     const offscreenPath = path.join(extensionDir, 'dist/offscreen/index.js');
@@ -843,23 +848,16 @@ const createExtensionCopy = (
     }
     fs.writeFileSync(offscreenPath, patchedOffscreen, 'utf-8');
 
-    const backgroundPath = path.join(extensionDir, 'dist/background.js');
-    const backgroundCode = fs.readFileSync(backgroundPath, 'utf-8');
-    const patchedBackground = backgroundCode.replace(/ws:\/\/localhost:9515\/ws/g, testUrl);
-    if (patchedBackground === backgroundCode) {
-      throw new Error(`Failed to patch background.js — could not find "ws://localhost:9515/ws" in ${backgroundPath}`);
-    }
-    fs.writeFileSync(backgroundPath, patchedBackground, 'utf-8');
-
     // Create adapters/ directory for plugin adapter IIFEs
     fs.mkdirSync(path.join(extensionDir, 'adapters'), { recursive: true });
 
     // Write auth.json so the offscreen document can bootstrap the shared
-    // secret and port. The MCP server writes this to ~/.opentabs/extension/,
-    // but E2E tests use an isolated extension copy, so auth.json must be
-    // placed directly in the test's extension directory.
+    // secret. The MCP server writes this to ~/.opentabs/extension/, but
+    // E2E tests use an isolated extension copy, so auth.json must be
+    // placed directly in the test's extension directory. Port configuration
+    // lives in chrome.storage.local, not auth.json.
     if (secret) {
-      fs.writeFileSync(path.join(extensionDir, 'auth.json'), JSON.stringify({ secret, port: mcpPort }) + '\n', 'utf-8');
+      fs.writeFileSync(path.join(extensionDir, 'auth.json'), JSON.stringify({ secret }) + '\n', 'utf-8');
     }
 
     fs.mkdirSync(userDataDir, { recursive: true });
@@ -1461,11 +1459,10 @@ const test = base.extend<TestFixtures>({
     fs.rmSync(serverAdaptersDir, { recursive: true, force: true });
     symlinkCrossPlatform(extensionAdaptersDir, serverAdaptersDir, 'dir');
 
-    // Symlink auth.json so the extension copy always sees the latest secret
-    // and port. The MCP server writes auth.json to <configDir>/extension/
-    // on every reload (including after secret rotation), and the offscreen
-    // document re-reads it via chrome.runtime.getURL('auth.json') when
-    // /ws-info returns 401 (stale secret).
+    // Symlink auth.json so the extension copy always sees the latest secret.
+    // The MCP server writes auth.json to <configDir>/extension/ on startup,
+    // and the offscreen document re-reads it via chrome.runtime.getURL('auth.json')
+    // when /ws-info returns 401 (stale secret).
     const serverAuthJson = path.join(serverAdaptersParent, 'auth.json');
     const extensionAuthJson = path.join(extensionDir, 'auth.json');
     fs.rmSync(extensionAuthJson, { force: true });

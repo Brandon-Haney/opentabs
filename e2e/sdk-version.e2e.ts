@@ -41,8 +41,16 @@ const createConfigForPlugin = (pluginDir: string): string => {
   writeTestConfig(configDir, {
     localPlugins: [pluginDir],
     tools,
-    secret: crypto.randomUUID(),
   });
+
+  // Write auth.json to the extension subdirectory (single source of truth for auth)
+  const extensionDir = path.join(configDir, 'extension');
+  fs.mkdirSync(extensionDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(extensionDir, 'auth.json'),
+    JSON.stringify({ secret: crypto.randomUUID() }) + '\n',
+    'utf-8',
+  );
 
   return configDir;
 };

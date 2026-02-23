@@ -55,7 +55,7 @@ opentabs/
 │   │   └── src/
 │   │       ├── index.ts           # Entry point (HTTP + WebSocket server, hot reload)
 │   │       ├── dev-mode.ts        # Dev mode detection (--dev flag / OPENTABS_DEV env var)
-│   │       ├── config.ts          # ~/.opentabs/config.json management
+│   │       ├── config.ts          # ~/.opentabs/config.json management + auth.json secret handling
 │   │       ├── discovery.ts       # Discovery orchestrator (resolve → load → register)
 │   │       ├── resolver.ts        # Plugin specifier resolution (npm + local paths)
 │   │       ├── loader.ts          # Plugin artifact loading (package.json, IIFE, tools.json)
@@ -120,7 +120,11 @@ opentabs/
 
 **Tab state machine**: Each plugin has three tab states: `closed` (no matching tab), `unavailable` (tab exists but `isReady()` returns false), and `ready` (tab exists and authenticated). The extension reports state changes to the MCP server.
 
-**Side panel empty states**: When the side panel has 0 plugins, it shows a simple "No Plugins Installed" card directing users to `opentabs plugin`. Connection state takes priority — if the WebSocket is disconnected, the "Cannot Reach MCP Server" card is shown regardless of plugin count.
+**Authentication and secrets**: The WebSocket secret is stored exclusively in `~/.opentabs/extension/auth.json` as `{ "secret": "<hex>" }`. This file is the single source of truth — `config.json` does not store the secret. On startup, the MCP server calls `loadSecret()` which reads the secret from `auth.json`, or generates a new one and writes `auth.json` if it doesn't exist. The secret is immutable for the lifetime of the server process — it does not change on plugin reload or config changes. CLI commands (`status`, `audit`, `plugin reload`) and `opentabs-plugin build` read the secret from `auth.json` via their own helper functions. Secret rotation is done via `opentabs config rotate-secret`, which generates a new secret, writes it to `auth.json`, notifies the running server, and instructs the user to reload the extension from `chrome://extensions/`.
+
+**Extension port configuration**: The MCP server port is configured in the Chrome extension's side panel footer, stored in `chrome.storage.local` under the `serverPort` key (number, default 9515). The side panel footer displays the current port on the right side and supports inline editing — click to edit, Enter to save, Escape to cancel. When the port changes, the side panel sends a `port-changed` message through the background script to the offscreen document, which closes the current WebSocket and reconnects to the new port. The port is not stored in `auth.json` — auth.json contains only the secret.
+
+**Side panel empty states**: When the side panel has 0 plugins, it shows a simple "No Plugins Installed" card directing users to `opentabs plugin`. Connection state takes priority over plugin count. The side panel distinguishes two disconnect states: (1) **Connection refused** (server unreachable) — shows "Cannot Reach MCP Server" with `opentabs start --port <N>` where N is the configured port, and (2) **Authentication failed** (HTTP 401 from secret mismatch) — shows "Authentication Failed" with instructions to reload the extension from `chrome://extensions/`. The disconnect reason flows from the offscreen document through the background script to the side panel via `disconnectReason` fields on connection state messages.
 
 **Lifecycle hooks**: Plugins can optionally implement lifecycle hooks on the `OpenTabsPlugin` base class. All hooks are wired automatically by the `opentabs-plugin build` command in the generated IIFE wrapper — plugin authors only need to implement the methods.
 

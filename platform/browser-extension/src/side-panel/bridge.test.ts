@@ -292,25 +292,25 @@ describe('getConnectionState', () => {
 
     const { getConnectionState } = await import('./bridge.js');
     const result = await getConnectionState();
-    expect(result).toBe(true);
+    expect(result).toEqual({ connected: true, disconnectReason: undefined });
   });
 
-  test('resolves false when background reports disconnected', async () => {
+  test('resolves disconnected when background reports disconnected', async () => {
     (chrome.runtime as Record<string, unknown>).sendMessage = (
       message: unknown,
       callback: (response: unknown) => void,
     ) => {
       sendMessageCalls.push({ message });
       (chrome.runtime as Record<string, unknown>).lastError = undefined;
-      callback({ connected: false });
+      callback({ connected: false, disconnectReason: 'connection_refused' });
     };
 
     const { getConnectionState } = await import('./bridge.js');
     const result = await getConnectionState();
-    expect(result).toBe(false);
+    expect(result).toEqual({ connected: false, disconnectReason: 'connection_refused' });
   });
 
-  test('resolves false when chrome.runtime.lastError is set', async () => {
+  test('resolves disconnected when chrome.runtime.lastError is set', async () => {
     (chrome.runtime as Record<string, unknown>).sendMessage = (
       message: unknown,
       callback: (response: unknown) => void,
@@ -322,6 +322,6 @@ describe('getConnectionState', () => {
 
     const { getConnectionState } = await import('./bridge.js');
     const result = await getConnectionState();
-    expect(result).toBe(false);
+    expect(result).toEqual({ connected: false, disconnectReason: undefined });
   });
 });

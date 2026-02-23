@@ -5,7 +5,7 @@ import { forwardToSidePanel, sendToServer } from './messaging.js';
 import { invalidatePluginCache } from './plugin-storage.js';
 import { checkTabStateChanges, clearTabStateCache, sendTabSyncAll } from './tab-state.js';
 import { notifyDispatchProgress } from './tool-dispatch.js';
-import type { InternalMessage } from './extension-messages.js';
+import type { DisconnectReason, InternalMessage } from './extension-messages.js';
 
 // --- Side panel toggle ---
 
@@ -38,6 +38,8 @@ chrome.action.onClicked.addListener(({ windowId }) => {
  * on every message handler invocation.
  */
 let wsConnected = false;
+/** Tracks the reason for the last WebSocket disconnection */
+let lastDisconnectReason: DisconnectReason | undefined;
 
 /** Restore wsConnected from chrome.storage.session on service worker wake */
 chrome.storage.session
@@ -166,15 +168,16 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, sender, sendResp
 
   switch (message.type) {
     case 'offscreen:getUrl': {
-      // Return the user-configured server URL (or default). The offscreen
-      // document uses this only as an override — it reads auth.json directly
-      // for the secret and port, so no /ws-info fetch is needed here.
+      // Return the WebSocket URL derived from the user-configured port
+      // in chrome.storage.local (default 9515). The offscreen document
+      // reads auth.json for the secret separately.
       (async () => {
         const stored: Record<string, unknown> = await chrome.storage.local
-          .get('mcpServerUrl')
+          .get('serverPort')
           .catch(() => ({}) as Record<string, unknown>);
-        const baseWsUrl = typeof stored.mcpServerUrl === 'string' ? stored.mcpServerUrl : undefined;
-        sendResponse({ url: baseWsUrl });
+        const port = typeof stored.serverPort === 'number' && stored.serverPort > 0 ? stored.serverPort : undefined;
+        const url = port ? `ws://localhost:${port}/ws` : undefined;
+        sendResponse({ url });
       })().catch(() => {
         sendResponse({ url: undefined });
       });
@@ -185,7 +188,14 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, sender, sendResp
       const wasConnected = wsConnected;
       const nowConnected = message.connected;
       persistWsConnected(nowConnected);
-      forwardToSidePanel({ type: 'sp:connectionState', data: { connected: nowConnected } });
+      lastDisconnectReason = nowConnected ? undefined : message.disconnectReason;
+      forwardToSidePanel({
+        type: 'sp:connectionState',
+        data: {
+          connected: nowConnected,
+          disconnectReason: lastDisconnectReason,
+        },
+      });
       if (nowConnected && !wasConnected) {
         sendTabSyncAll().catch((err: unknown) => console.warn('[opentabs] tab sync failed:', err));
       }
@@ -210,7 +220,10 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, sender, sendResp
     }
 
     case 'bg:getConnectionState': {
-      sendResponse({ connected: wsConnected });
+      sendResponse({
+        connected: wsConnected,
+        disconnectReason: wsConnected ? undefined : lastDisconnectReason,
+      });
       return true;
     }
 
@@ -273,6 +286,15 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, sender, sendResp
       return true;
     }
 
+    case 'port-changed': {
+      // Relay port change from side panel to offscreen document for reconnect
+      chrome.runtime.sendMessage(message).catch(() => {
+        // Offscreen may not be ready yet
+      });
+      sendResponse({ ok: true });
+      return true;
+    }
+
     // Messages handled by other listeners (offscreen, side panel) — not
     // processed here, but included for exhaustiveness so TypeScript flags
     // any new InternalMessage variant that isn't routed somewhere.
@@ -285,7 +307,6 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, sender, sendResp
     case 'sp:connectionState':
     case 'sp:serverMessage':
     case 'sp:confirmationRequest':
-    case 'port-changed':
       return false;
   }
 });
@@ -324,8 +345,8 @@ reinjectStoredPlugins().catch((err: unknown) => console.warn('[opentabs] plugin 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
 
-  if (typeof changes.mcpServerUrl?.newValue === 'string') {
-    const newUrl = changes.mcpServerUrl.newValue;
+  if (typeof changes.serverPort?.newValue === 'number' && changes.serverPort.newValue > 0) {
+    const newUrl = `ws://localhost:${changes.serverPort.newValue}/ws`;
     chrome.runtime.sendMessage({ type: 'ws:setUrl', url: newUrl } satisfies InternalMessage).catch(() => {
       // Offscreen may not be ready yet
     });

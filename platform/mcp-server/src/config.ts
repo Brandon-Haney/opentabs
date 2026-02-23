@@ -48,9 +48,6 @@ interface OpentabsConfig {
   permissions: PermissionsConfig;
   /** Whether to skip all confirmation prompts (dangerous — disables human-in-the-loop) */
   skipConfirmation?: boolean;
-
-  /** Shared secret for WebSocket authentication between MCP server and Chrome extension */
-  secret?: string;
 }
 
 /** Version marker file for the managed extension install */
@@ -179,7 +176,7 @@ const parsePermissionsConfig = (raw: unknown): PermissionsConfig => {
  * Parse a raw config record into an OpentabsConfig.
  * Validates and normalizes field types to prevent downstream errors.
  */
-const parseConfigRecord = (record: Record<string, unknown>): Omit<OpentabsConfig, 'secret'> & { secret?: string } => {
+const parseConfigRecord = (record: Record<string, unknown>): OpentabsConfig => {
   const localPlugins = Array.isArray(record.localPlugins)
     ? (record.localPlugins as unknown[]).filter((p): p is string => typeof p === 'string')
     : [];
@@ -250,9 +247,8 @@ const parseConfigRecord = (record: Record<string, unknown>): Omit<OpentabsConfig
   const permissions = parsePermissionsConfig(record.permissions);
 
   const skipConfirmation = typeof record.skipConfirmation === 'boolean' ? record.skipConfirmation : undefined;
-  const secret = typeof record.secret === 'string' ? record.secret : undefined;
 
-  return { localPlugins, tools, browserToolPolicy, permissions, skipConfirmation, secret };
+  return { localPlugins, tools, browserToolPolicy, permissions, skipConfirmation };
 };
 
 /**
@@ -272,13 +268,11 @@ const loadConfig = async (): Promise<OpentabsConfig> => {
 
   const configFile = Bun.file(configPath);
   if (!(await configFile.exists())) {
-    // First run — create default config with a fresh shared secret
     const config: OpentabsConfig = {
       localPlugins: [],
       tools: {},
       browserToolPolicy: {},
       permissions: defaultPermissions(),
-      secret: generateSecret(),
     };
     await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
     log.info(`Created default config at ${configPath}`);
@@ -293,18 +287,7 @@ const loadConfig = async (): Promise<OpentabsConfig> => {
     throw new Error(`Config at ${configPath} is unreadable after retries`);
   }
 
-  const config = parseConfigRecord(record);
-  let { secret } = config;
-
-  // Generate secret if missing (upgrade from older config)
-  if (!secret) {
-    secret = generateSecret();
-    const updated: OpentabsConfig = { ...config, secret };
-    await atomicWriteConfig(configPath, JSON.stringify(updated, null, 2) + '\n');
-    log.info(`Generated WebSocket authentication secret in ${configPath}`);
-  }
-
-  return { ...config, secret } as OpentabsConfig;
+  return parseConfigRecord(record);
 };
 
 /**
@@ -351,7 +334,7 @@ const saveToolConfig = async (
     await prev;
     await mkdir(configDir, { recursive: true, mode: 0o700 });
 
-    // Read current config from disk to preserve localPlugins and secret
+    // Read current config from disk to preserve localPlugins
     const record = await readConfigWithRetry(configPath, 2, 50);
     if (!record) {
       log.warn('Cannot persist tool config — config file unreadable');
@@ -365,7 +348,6 @@ const saveToolConfig = async (
       browserToolPolicy: current.browserToolPolicy,
       permissions: current.permissions,
       skipConfirmation: current.skipConfirmation,
-      secret: current.secret,
     };
     await atomicWriteConfig(configPath, JSON.stringify(updated, null, 2) + '\n');
   })().catch((err: unknown) => {
@@ -379,21 +361,56 @@ const saveToolConfig = async (
 /**
  * Write auth.json to the managed extension directory so the Chrome extension
  * can bootstrap the shared secret without an unauthenticated HTTP request.
- * Called on every reload so the port and secret stay in sync with the running server.
+ * auth.json contains only the secret — port configuration lives in chrome.storage.local.
  */
-const writeAuthFile = async (secret: string, port: number): Promise<void> => {
+const writeAuthFile = async (secret: string): Promise<void> => {
   const extensionDir = getExtensionDir();
   await mkdir(extensionDir, { recursive: true });
   const authPath = join(extensionDir, 'auth.json');
-  await atomicWrite(authPath, JSON.stringify({ secret, port }) + '\n', 0o600);
+  await atomicWrite(authPath, JSON.stringify({ secret }) + '\n', 0o600);
+};
+
+/**
+ * Load the WebSocket authentication secret from auth.json.
+ * auth.json is the single source of truth for the secret.
+ * If auth.json doesn't exist, generates a new secret and writes it.
+ * If auth.json exists with a valid secret, returns it without overwriting.
+ */
+const loadSecret = async (): Promise<string> => {
+  const extensionDir = getExtensionDir();
+  const authPath = join(extensionDir, 'auth.json');
+  const authFile = Bun.file(authPath);
+
+  if (await authFile.exists()) {
+    try {
+      const parsed: unknown = JSON.parse(await authFile.text());
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const secret = (parsed as Record<string, unknown>).secret;
+        if (typeof secret === 'string' && secret.length > 0) {
+          return secret;
+        }
+      }
+    } catch {
+      log.warn(`Failed to parse auth.json at ${authPath} — generating new secret`);
+    }
+  }
+
+  // auth.json doesn't exist or has no valid secret — generate and write one
+  const secret = generateSecret();
+  await mkdir(extensionDir, { recursive: true });
+  await atomicWrite(authPath, JSON.stringify({ secret }) + '\n', 0o600);
+  log.info(`Generated WebSocket authentication secret in ${authPath}`);
+  return secret;
 };
 
 export type { OpentabsConfig, PermissionsConfig, ToolPermission };
 export {
   loadConfig,
+  loadSecret,
   saveConfig,
   saveToolConfig,
   writeAuthFile,
+  generateSecret,
   getConfigDir,
   getExtensionDir,
   getExtensionVersionFile,

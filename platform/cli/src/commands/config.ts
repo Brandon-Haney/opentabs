@@ -2,7 +2,14 @@
  * `opentabs config` command — view and manage configuration.
  */
 
-import { atomicWriteConfig, getConfigPath, getExtensionDir, isConnectionRefused, readConfig } from '../config.js';
+import {
+  atomicWriteConfig,
+  getConfigPath,
+  getExtensionDir,
+  isConnectionRefused,
+  readAuthSecret,
+  readConfig,
+} from '../config.js';
 import { resolvePort } from '../parse-port.js';
 import { atomicWrite, generateSecret, toErrorMessage } from '@opentabs-dev/shared';
 import pc from 'picocolors';
@@ -10,15 +17,6 @@ import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import type { Command } from 'commander';
-
-const REDACTED = '***';
-
-const redactSecret = (config: Record<string, unknown>): Record<string, unknown> => {
-  if (typeof config.secret === 'string') {
-    return { ...config, secret: REDACTED };
-  }
-  return config;
-};
 
 const handleConfigPath = (): void => {
   console.log(getConfigPath());
@@ -44,16 +42,14 @@ const handleConfigShow = async (options: ConfigShowOptions): Promise<void> => {
 
   const config = result.config;
 
-  const redacted = redactSecret(config);
-
   if (options.json) {
-    console.log(JSON.stringify(redacted, null, 2));
+    console.log(JSON.stringify(config, null, 2));
   } else {
     console.log(pc.bold('OpenTabs Config'));
     console.log(pc.dim(configPath));
     console.log('');
 
-    for (const [key, value] of Object.entries(redacted)) {
+    for (const [key, value] of Object.entries(config)) {
       if (key === 'localPlugins' && Array.isArray(value)) {
         console.log(`  ${pc.cyan('localPlugins')}`);
         if (value.length === 0) {
@@ -354,7 +350,7 @@ const handleConfigReset = async (options: ConfigResetOptions): Promise<void> => 
 
   if (!options.confirm) {
     console.error(pc.yellow(`This will delete your config at ${configPath}.`));
-    console.error(pc.yellow('Your server secret will change on next start.'));
+    console.error(pc.yellow('Local plugins and tool overrides will be lost.'));
     console.error('');
     console.error(`Run with ${pc.bold('--confirm')} to proceed:`);
     console.error(`  opentabs config reset --confirm`);
@@ -369,34 +365,26 @@ const handleConfigReset = async (options: ConfigResetOptions): Promise<void> => 
  * Write auth.json to the managed extension directory so the Chrome extension
  * can bootstrap the shared secret without an unauthenticated HTTP request.
  */
-const writeAuthFile = async (secret: string, port: number): Promise<void> => {
+const writeAuthFile = async (secret: string): Promise<void> => {
   const extensionDir = getExtensionDir();
   await mkdir(extensionDir, { recursive: true });
   const authPath = join(extensionDir, 'auth.json');
-  await atomicWrite(authPath, JSON.stringify({ secret, port }) + '\n', 0o600);
+  await atomicWrite(authPath, JSON.stringify({ secret }) + '\n', 0o600);
 };
 
 const handleRotateSecret = async (options: { port?: number }): Promise<void> => {
-  const { config, configPath } = await loadConfig();
-
-  const oldSecret = typeof config.secret === 'string' ? config.secret : null;
+  const oldSecret = await readAuthSecret();
   const newSecret = generateSecret();
-
-  // Update the secret in config
-  config.secret = newSecret;
-  await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
-
-  // Determine port from config or default
   const port = resolvePort(options);
 
-  // Write auth.json with the new secret
+  // Write new secret to auth.json (the single source of truth)
   try {
-    await writeAuthFile(newSecret, port);
+    await writeAuthFile(newSecret);
   } catch (err) {
     console.warn(pc.yellow(`Warning: Could not write auth.json: ${toErrorMessage(err)}`));
   }
 
-  // Notify the running server using the OLD secret
+  // Notify the running server using the OLD secret so it reloads with the new one
   if (oldSecret) {
     try {
       const res = await fetch(`http://localhost:${port}/reload`, {
@@ -406,24 +394,24 @@ const handleRotateSecret = async (options: { port?: number }): Promise<void> => 
       });
       if (res.ok) {
         console.log(pc.green('Secret rotated successfully.'));
-        console.log('Restart the Chrome extension to reconnect.');
+        console.log('Reload the Chrome extension from chrome://extensions/ to reconnect.');
         return;
       }
-      console.log(pc.green('Secret rotated in config and auth.json.'));
+      console.log(pc.green('Secret rotated in auth.json.'));
       console.log(pc.yellow(`Could not notify running server (HTTP ${res.status}).`));
-      console.log('Restart the MCP server and Chrome extension for changes to take effect.');
+      console.log('Restart the MCP server and reload the Chrome extension from chrome://extensions/.');
     } catch (err: unknown) {
-      console.log(pc.green('Secret rotated in config and auth.json.'));
+      console.log(pc.green('Secret rotated in auth.json.'));
       if (isConnectionRefused(err)) {
         console.log(pc.dim('MCP server is not running. Changes will take effect on next start.'));
       } else {
         console.log(pc.yellow('Could not reach MCP server. Restart it for changes to take effect.'));
       }
-      console.log('Restart the Chrome extension to reconnect.');
+      console.log('Reload the Chrome extension from chrome://extensions/ to reconnect.');
     }
   } else {
-    console.log(pc.green('Secret rotated in config and auth.json.'));
-    console.log('Restart the MCP server and Chrome extension for changes to take effect.');
+    console.log(pc.green('Secret rotated in auth.json.'));
+    console.log('Restart the MCP server and reload the Chrome extension from chrome://extensions/.');
   }
 };
 
@@ -466,7 +454,7 @@ Examples:
 
   configCmd
     .command('show')
-    .description('Show config contents (secret redacted)')
+    .description('Show config contents')
     .option('--json', 'Output config as JSON')
     .addHelpText(
       'after',
@@ -495,8 +483,8 @@ Examples:
     .addHelpText(
       'after',
       `
-Generates a new 256-bit random secret and writes it to config.json and auth.json.
-If the MCP server is running, notifies it to reload the config.
+Generates a new 256-bit random secret and writes it to auth.json.
+If the MCP server is running, notifies it to reload.
 
 Examples:
   $ opentabs config rotate-secret`,

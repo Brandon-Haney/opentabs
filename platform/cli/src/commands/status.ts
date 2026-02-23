@@ -2,7 +2,7 @@
  * `opentabs status` command — shows server status and connected plugins.
  */
 
-import { getConfigPath, isConnectionRefused, readConfig } from '../config.js';
+import { isConnectionRefused, readAuthSecret } from '../config.js';
 import { parsePort, resolvePort } from '../parse-port.js';
 import { toErrorMessage } from '@opentabs-dev/shared';
 import pc from 'picocolors';
@@ -54,9 +54,7 @@ const handleStatus = async (options: StatusOptions): Promise<void> => {
   const port = resolvePort(options);
   const url = `http://localhost:${port}/health`;
 
-  const configPath = getConfigPath();
-  const { config } = await readConfig(configPath);
-  const secret = config && typeof config.secret === 'string' ? config.secret : null;
+  const secret = await readAuthSecret();
 
   try {
     const headers: Record<string, string> = {};

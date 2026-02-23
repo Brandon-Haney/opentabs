@@ -204,11 +204,11 @@ cleanup() {
     local pid="${WORKER_PIDS[$s]}"
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
       echo -e "$(ts) ${DIM}Killing worker $s (PID $pid) and child processes...${RESET}"
-      # Kill the entire process group rooted at the worker subshell.
-      # This ensures claude, stream_filter, and any other child processes
-      # (Chromium, MCP servers, test servers from e2e) spawned by the worker
-      # are terminated — not just the subshell itself.
-      kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+      # Two-phase kill for complete cleanup:
+      # 1. PGID kill — catches everything in the same process group (fast)
+      # 2. Tree kill — catches processes that escaped via setsid() (e.g., Chromium)
+      kill -- -"$pid" 2>/dev/null || true
+      kill_tree "$pid"
       wait "$pid" 2>/dev/null || true
     fi
 
@@ -255,6 +255,27 @@ ts_prefix() {
 }
 
 # --- Helper Functions ---
+
+# Recursively kill an entire process tree rooted at a given PID.
+# Walks the tree bottom-up (children before parent) so orphans don't
+# re-parent to init before we reach them. This catches processes that
+# escaped the PGID via setsid() (e.g., Chromium) — pgrep -P follows
+# the parent-child relationship regardless of process group or session.
+kill_tree() {
+  local pid="$1"
+  local sig="${2:-TERM}"
+  [ -z "$pid" ] && return
+
+  # Collect children BEFORE killing the parent (dead parent = no children to find).
+  local children
+  children=$(pgrep -P "$pid" 2>/dev/null) || true
+
+  for child in $children; do
+    kill_tree "$child" "$sig"
+  done
+
+  kill -"$sig" "$pid" 2>/dev/null || true
+}
 
 # Robustly remove a git worktree directory.
 # git worktree remove can fail when node_modules or other large trees have
@@ -749,13 +770,15 @@ reap_workers() {
     # Worker finished — collect results
     wait "$pid" 2>/dev/null || true
 
-    # Kill any orphaned child processes (Chromium browsers, MCP servers, test
-    # servers) that the worker's e2e tests may have spawned. With set -m, each
-    # worker subshell gets its own process group (PGID == PID). Killing the
-    # negative PID targets the entire group — only THIS worker's descendants,
-    # not other workers' processes.
+    # Two-phase kill for complete cleanup of orphaned child processes:
+    # Phase 1: PGID kill — catches everything sharing the worker's process group.
+    # Phase 2: Recursive tree kill — walks the parent-child tree to catch processes
+    #   that escaped the PGID via setsid() (Chromium does this for isolation).
+    # Together these ensure no orphaned Chromium browsers, MCP servers, or test
+    # servers survive — only THIS worker's descendants are affected.
     kill -- -"$pid" 2>/dev/null || true
-    sleep 1  # Let orphaned processes (Chromium, test servers) exit before worktree removal
+    kill_tree "$pid"
+    sleep 1  # Let dying processes (Chromium, test servers) exit before worktree removal
 
     local prd_file="${WORKER_PRDS[$s]}"
     local worktree_dir="${WORKER_WORKTREES[$s]}"

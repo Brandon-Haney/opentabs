@@ -33,6 +33,8 @@ const config: KnipConfig = {
     'platform/cli': {
       entry: ['src/**/*.test.ts'],
       ignoreDependencies: [
+        // Resolved at runtime via import.meta.resolve() in start.ts to locate the server entry point
+        '@opentabs-dev/mcp-server',
         // Resolved at runtime via import.meta.resolve() in scaffold.ts to read its version
         '@opentabs-dev/plugin-tools',
         // knip cannot trace imports from workspace-linked @opentabs-dev packages

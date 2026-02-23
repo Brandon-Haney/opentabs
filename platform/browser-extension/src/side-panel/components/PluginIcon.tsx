@@ -1,4 +1,5 @@
 import { sanitizeSvg } from '../../sanitize-svg.js';
+import { ArrowUp } from 'lucide-react';
 import type { TabState } from '@opentabs-dev/shared';
 
 const AVATAR_PALETTE_SIZE = 10;
@@ -24,18 +25,45 @@ interface PluginIconProps {
   pluginName: string;
   displayName: string;
   tabState?: TabState;
+  hasUpdate?: boolean;
   size?: number;
   className?: string;
   iconSvg?: string;
   iconInactiveSvg?: string;
 }
 
-const StatusDot = ({ tabState, size }: { tabState: TabState; size: number }) => {
+/**
+ * Priority-based status indicator positioned at the bottom-right of the icon.
+ * Priority: closed = nothing, unavailable = yellow dot, ready+update = ArrowUp icon, ready = green dot.
+ */
+const StatusIndicator = ({ tabState, hasUpdate, size }: { tabState: TabState; hasUpdate: boolean; size: number }) => {
   if (tabState === 'closed') return null;
+
   const dotSize = Math.max(8, Math.round(size * 0.3));
+
+  if (tabState === 'unavailable') {
+    return (
+      <div
+        className="bg-primary border-card absolute rounded-full border-2"
+        style={{ width: dotSize, height: dotSize, bottom: -2, right: -2 }}
+      />
+    );
+  }
+
+  if (hasUpdate) {
+    const iconSize = Math.max(6, Math.round(dotSize * 0.6));
+    return (
+      <div
+        className="bg-accent border-card absolute flex items-center justify-center rounded-full border-2"
+        style={{ width: dotSize, height: dotSize, bottom: -2, right: -2 }}>
+        <ArrowUp className="text-accent-foreground" style={{ width: iconSize, height: iconSize }} strokeWidth={3} />
+      </div>
+    );
+  }
+
   return (
     <div
-      className={`border-card absolute rounded-full border-2 ${tabState === 'ready' ? 'bg-success' : 'bg-primary'}`}
+      className="bg-success border-card absolute rounded-full border-2"
       style={{ width: dotSize, height: dotSize, bottom: -2, right: -2 }}
     />
   );
@@ -45,6 +73,7 @@ const PluginIcon = ({
   pluginName,
   displayName,
   tabState = 'closed',
+  hasUpdate = false,
   size = 32,
   className = '',
   iconSvg,
@@ -68,7 +97,7 @@ const PluginIcon = ({
             dangerouslySetInnerHTML={{ __html: svgToRender }}
           />
         </div>
-        <StatusDot tabState={tabState} size={size} />
+        <StatusIndicator tabState={tabState} hasUpdate={hasUpdate} size={size} />
       </div>
     );
   }
@@ -85,7 +114,7 @@ const PluginIcon = ({
           {letter}
         </span>
       </div>
-      <StatusDot tabState={tabState} size={size} />
+      <StatusIndicator tabState={tabState} hasUpdate={hasUpdate} size={size} />
     </div>
   );
 };

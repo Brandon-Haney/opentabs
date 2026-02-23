@@ -6,6 +6,7 @@ const meta: Meta<typeof PluginIcon> = {
   component: PluginIcon,
   argTypes: {
     tabState: { control: 'select', options: ['ready', 'unavailable', 'closed'] },
+    hasUpdate: { control: 'boolean' },
     size: { control: { type: 'range', min: 16, max: 64 } },
   },
 };
@@ -21,6 +22,9 @@ const SAMPLE_INACTIVE_SVG =
 const Ready: Story = { args: { pluginName: 'slack', displayName: 'Slack', tabState: 'ready', size: 32 } };
 const Unavailable: Story = { args: { pluginName: 'slack', displayName: 'Slack', tabState: 'unavailable', size: 32 } };
 const Closed: Story = { args: { pluginName: 'slack', displayName: 'Slack', tabState: 'closed', size: 32 } };
+const ReadyWithUpdate: Story = {
+  args: { pluginName: 'slack', displayName: 'Slack', tabState: 'ready', hasUpdate: true, size: 32 },
+};
 
 const Palette: Story = {
   name: 'Color Palette',
@@ -44,6 +48,7 @@ const Palette: Story = {
         {plugins.map(p => (
           <div key={p.name} className="flex items-center gap-3">
             <PluginIcon pluginName={p.name} displayName={p.displayName} tabState="ready" size={32} />
+            <PluginIcon pluginName={p.name} displayName={p.displayName} tabState="ready" hasUpdate size={32} />
             <PluginIcon pluginName={p.name} displayName={p.displayName} tabState="unavailable" size={32} />
             <PluginIcon pluginName={p.name} displayName={p.displayName} tabState="closed" size={32} />
             <span className="text-foreground font-sans text-sm">{p.displayName}</span>
@@ -90,4 +95,4 @@ const WithIconInactive: Story = {
 };
 
 export default meta;
-export { Ready, Unavailable, Closed, Palette, Sizes, WithIcon, WithIconInactive };
+export { Ready, Unavailable, Closed, ReadyWithUpdate, Palette, Sizes, WithIcon, WithIconInactive };

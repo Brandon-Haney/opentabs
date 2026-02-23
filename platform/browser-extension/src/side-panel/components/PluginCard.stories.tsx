@@ -59,6 +59,30 @@ const TabClosed: Story = {
   render: () => <TabClosedDemo />,
 };
 
+const TabUnavailableDemo = () => {
+  const [plugins, setPlugins] = useState([mockPlugin({ tabState: 'unavailable' })]);
+  const plugin = plugins[0];
+  if (!plugin) return null;
+  return <PluginCard plugin={plugin} activeTools={new Set()} setPlugins={setPlugins} />;
+};
+
+const TabUnavailable: Story = {
+  render: () => <TabUnavailableDemo />,
+};
+
+const ReadyWithUpdateDemo = () => {
+  const [plugins, setPlugins] = useState([
+    mockPlugin({ update: { latestVersion: '0.2.0', updateCommand: 'npm update -g opentabs-plugin-slack@latest' } }),
+  ]);
+  const plugin = plugins[0];
+  if (!plugin) return null;
+  return <PluginCard plugin={plugin} activeTools={new Set()} setPlugins={setPlugins} />;
+};
+
+const ReadyWithUpdate: Story = {
+  render: () => <ReadyWithUpdateDemo />,
+};
+
 const WithActiveToolDemo = () => {
   const [plugins, setPlugins] = useState([mockPlugin()]);
   const plugin = plugins[0];
@@ -119,4 +143,4 @@ const MultiplePlugins: Story = {
 };
 
 export default meta;
-export { Ready, TabClosed, WithActiveTool, MultiplePlugins };
+export { Ready, TabClosed, TabUnavailable, ReadyWithUpdate, WithActiveTool, MultiplePlugins };

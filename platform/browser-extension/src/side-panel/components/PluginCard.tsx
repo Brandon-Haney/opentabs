@@ -102,6 +102,7 @@ const PluginCard = ({
                     pluginName={plugin.name}
                     displayName={plugin.displayName}
                     tabState={plugin.tabState}
+                    hasUpdate={!!plugin.update}
                     size={32}
                     iconSvg={plugin.iconSvg}
                     iconInactiveSvg={plugin.iconInactiveSvg}
@@ -110,6 +111,7 @@ const PluginCard = ({
               </Tooltip.Trigger>
               <Tooltip.Content>
                 v{plugin.version} &middot; {plugin.trustTier}
+                {plugin.update && <> &middot; Update: {plugin.update.latestVersion}</>}
               </Tooltip.Content>
             </Tooltip>
           </Tooltip.Provider>

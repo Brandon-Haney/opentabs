@@ -13,6 +13,28 @@
 export { atomicWrite, isWindows, platformExec, safeChmod } from './cross-platform.js';
 
 // ---------------------------------------------------------------------------
+// Error utilities
+// ---------------------------------------------------------------------------
+
+export { toErrorMessage } from './error.js';
+
+// ---------------------------------------------------------------------------
+// Shared constants — port, filenames, config paths, crypto
+// ---------------------------------------------------------------------------
+
+export {
+  DEFAULT_PORT,
+  ADAPTER_FILENAME,
+  ADAPTER_SOURCE_MAP_FILENAME,
+  TOOLS_FILENAME,
+  getConfigDir,
+  getConfigPath,
+  getExtensionDir,
+  getLogFilePath,
+  generateSecret,
+} from './constants.js';
+
+// ---------------------------------------------------------------------------
 // Result type — structured error handling
 // ---------------------------------------------------------------------------
 

@@ -8,6 +8,7 @@
 
 import { getConfigDir, getConfigPath, isConnectionRefused, readConfig } from '../config.js';
 import { resolvePort } from '../parse-port.js';
+import { toErrorMessage } from '@opentabs-dev/shared';
 import { InvalidArgumentError } from 'commander';
 import pc from 'picocolors';
 import { join } from 'node:path';
@@ -253,7 +254,7 @@ const handleAudit = async (options: AuditOptions): Promise<void> => {
       console.error(pc.red('MCP server is not running.'));
       console.error(pc.dim(startHint));
     } else {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = toErrorMessage(err);
       console.error(pc.red(`Error: ${message}`));
       console.error(pc.dim(startHint));
     }

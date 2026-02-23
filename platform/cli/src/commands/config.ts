@@ -4,7 +4,7 @@
 
 import { atomicWriteConfig, getConfigPath, getExtensionDir, isConnectionRefused, readConfig } from '../config.js';
 import { resolvePort } from '../parse-port.js';
-import { atomicWrite } from '@opentabs-dev/shared';
+import { atomicWrite, generateSecret, toErrorMessage } from '@opentabs-dev/shared';
 import pc from 'picocolors';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -365,13 +365,6 @@ const handleConfigReset = async (options: ConfigResetOptions): Promise<void> => 
   console.log('Config reset. Run opentabs start to regenerate.');
 };
 
-/** Generate a 256-bit cryptographic random secret as a 64-character hex string. */
-const generateSecret = (): string => {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-};
-
 /**
  * Write auth.json to the managed extension directory so the Chrome extension
  * can bootstrap the shared secret without an unauthenticated HTTP request.
@@ -400,7 +393,7 @@ const handleRotateSecret = async (options: { port?: number }): Promise<void> => 
   try {
     await writeAuthFile(newSecret, port);
   } catch (err) {
-    console.warn(pc.yellow(`Warning: Could not write auth.json: ${err instanceof Error ? err.message : String(err)}`));
+    console.warn(pc.yellow(`Warning: Could not write auth.json: ${toErrorMessage(err)}`));
   }
 
   // Notify the running server using the OLD secret

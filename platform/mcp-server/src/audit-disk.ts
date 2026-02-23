@@ -10,7 +10,7 @@
 
 import { getConfigDir } from './config.js';
 import { log } from './logger.js';
-import { safeChmod } from '@opentabs-dev/shared';
+import { safeChmod, toErrorMessage } from '@opentabs-dev/shared';
 import { appendFile, rename, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AuditEntry } from './state.js';
@@ -42,7 +42,7 @@ const rotateIfNeeded = async (auditPath: string): Promise<void> => {
   } catch (err) {
     // File doesn't exist yet or stat failed — no rotation needed
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
-    log.warn(`Audit log rotation failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.warn(`Audit log rotation failed: ${toErrorMessage(err)}`);
   }
 };
 
@@ -72,7 +72,7 @@ const appendAuditEntryToDisk = async (entry: AuditEntry): Promise<void> => {
       initialized = true;
     }
   } catch (err) {
-    log.warn(`Failed to write audit entry to disk: ${err instanceof Error ? err.message : String(err)}`);
+    log.warn(`Failed to write audit entry to disk: ${toErrorMessage(err)}`);
   }
 };
 

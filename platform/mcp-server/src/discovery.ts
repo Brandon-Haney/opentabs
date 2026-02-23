@@ -4,7 +4,7 @@ import { loadPlugin } from './loader.js';
 import { log } from './logger.js';
 import { buildRegistry } from './registry.js';
 import { discoverGlobalNpmPlugins, resolvePluginPath } from './resolver.js';
-import { isErr } from '@opentabs-dev/shared';
+import { isErr, toErrorMessage } from '@opentabs-dev/shared';
 import type { LoadedPlugin } from './loader.js';
 import type { FailedPlugin, PluginRegistry } from './state.js';
 import type { TrustTier } from '@opentabs-dev/shared';
@@ -94,7 +94,7 @@ const discoverPlugins = async (localPlugins: string[], configDir: string): Promi
       if (result.status === 'fulfilled' && result.value !== null) {
         loaded.push(result.value);
       } else if (result.status === 'rejected') {
-        const errorMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        const errorMsg = toErrorMessage(result.reason);
         errors.push({ specifier: '(unknown)', error: errorMsg });
       }
     }

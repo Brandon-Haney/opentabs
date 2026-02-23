@@ -14,7 +14,7 @@ import {
   MAX_DISPATCH_TIMEOUT_MS,
   CONFIRMATION_TIMEOUT_MS,
 } from './state.js';
-import { atomicWrite } from '@opentabs-dev/shared';
+import { atomicWrite, toErrorMessage } from '@opentabs-dev/shared';
 import { mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { PluginLogEntry } from './log-buffer.js';
@@ -302,7 +302,7 @@ const dispatchToExtension = (
     } catch (err) {
       clearTimeout(timerId);
       state.pendingDispatches.delete(id);
-      reject(new Error(`WebSocket send failed: ${err instanceof Error ? err.message : String(err)}`));
+      reject(new Error(`WebSocket send failed: ${toErrorMessage(err)}`));
     }
   });
 };

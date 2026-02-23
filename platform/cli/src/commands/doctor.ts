@@ -4,6 +4,7 @@
 
 import { getConfigPath, getExtensionDir, getLocalPluginsFromConfig, readConfig, resolvePluginPath } from '../config.js';
 import { parsePort, resolvePort } from '../parse-port.js';
+import { ADAPTER_FILENAME, TOOLS_FILENAME } from '@opentabs-dev/shared';
 import pc from 'picocolors';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -273,15 +274,19 @@ const checkPlugins = async (config: Record<string, unknown> | null): Promise<Che
       continue;
     }
 
-    const toolsJsonPath = join(resolvedPath, 'dist', 'tools.json');
+    const toolsJsonPath = join(resolvedPath, 'dist', TOOLS_FILENAME);
     if (!existsSync(toolsJsonPath)) {
       results.push(
-        warn(`Plugin ${pluginPath}`, 'dist/tools.json not found', 'Run opentabs-plugin build in the plugin directory'),
+        warn(
+          `Plugin ${pluginPath}`,
+          `dist/${TOOLS_FILENAME} not found`,
+          'Run opentabs-plugin build in the plugin directory',
+        ),
       );
       continue;
     }
 
-    const iifePath = join(resolvedPath, 'dist', 'adapter.iife.js');
+    const iifePath = join(resolvedPath, 'dist', ADAPTER_FILENAME);
     if (!existsSync(iifePath)) {
       results.push(
         warn(`Plugin ${pluginPath}`, 'adapter IIFE not found', 'Run opentabs-plugin build in the plugin directory'),
@@ -299,7 +304,7 @@ const checkPlugins = async (config: Record<string, unknown> | null): Promise<Che
     } catch {
       // package.json unreadable — fall back to path
     }
-    results.push(pass(`Plugin ${pluginName}`, 'tools.json + IIFE present'));
+    results.push(pass(`Plugin ${pluginName}`, `${TOOLS_FILENAME} + IIFE present`));
   }
 
   return results;

@@ -1,3 +1,5 @@
+import { toErrorMessage } from '@opentabs-dev/shared';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -294,7 +296,7 @@ export const startCapture = async (
     await chrome.debugger.attach({ tabId }, '1.3');
   } catch (err) {
     throw new Error(
-      `Failed to attach debugger to tab ${tabId}: ${err instanceof Error ? err.message : String(err)}. ` +
+      `Failed to attach debugger to tab ${tabId}: ${toErrorMessage(err)}. ` +
         'Another debugger (e.g., DevTools) may already be attached.',
     );
   }

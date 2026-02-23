@@ -1,6 +1,7 @@
 import { INJECTION_RETRY_DELAY_MS, isValidPluginName } from './constants.js';
 import { getAllPluginMeta } from './plugin-storage.js';
 import { urlMatchesPatterns } from './tab-matching.js';
+import { toErrorMessage } from '@opentabs-dev/shared';
 
 /** Names reserved for platform use — rejected at the injection layer as defense-in-depth */
 const RESERVED_NAMES = new Set(['system', 'browser', 'opentabs', 'extension', 'config', 'plugin', 'tool', 'mcp']);
@@ -187,9 +188,7 @@ const injectAdapterFile = async (
       files: [adapterFile],
     });
   } catch (err) {
-    throw new Error(
-      `Failed to inject adapter file '${adapterFile}' into tab ${String(tabId)}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    throw new Error(`Failed to inject adapter file '${adapterFile}' into tab ${String(tabId)}: ${toErrorMessage(err)}`);
   }
 
   if (version) {
@@ -209,7 +208,7 @@ const injectAdapterFile = async (
         });
       } catch (err) {
         throw new Error(
-          `Failed to re-inject adapter file '${adapterFile}' into tab ${String(tabId)}: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to re-inject adapter file '${adapterFile}' into tab ${String(tabId)}: ${toErrorMessage(err)}`,
         );
       }
       if (version) {

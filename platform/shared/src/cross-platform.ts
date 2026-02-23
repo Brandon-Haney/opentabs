@@ -5,6 +5,7 @@
  * and platform detection that work correctly on macOS, Linux, and Windows.
  */
 
+import { toErrorMessage } from './error.js';
 import { chmod, rename, unlink } from 'node:fs/promises';
 
 // ---------------------------------------------------------------------------
@@ -101,7 +102,7 @@ export const safeChmod = async (filePath: string, mode: number): Promise<void> =
 
   await chmod(filePath, mode).catch((err: unknown) => {
     console.warn(
-      `Warning: Could not set file permissions on ${filePath}: ${err instanceof Error ? err.message : String(err)}. The file may be readable by other users.`,
+      `Warning: Could not set file permissions on ${filePath}: ${toErrorMessage(err)}. The file may be readable by other users.`,
     );
   });
 };

@@ -11,9 +11,8 @@
  */
 
 import { log } from './logger.js';
-import { atomicWrite } from '@opentabs-dev/shared';
+import { atomicWrite, generateSecret, getConfigDir, getConfigPath, getExtensionDir } from '@opentabs-dev/shared';
 import { mkdir } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 /**
@@ -54,31 +53,15 @@ interface OpentabsConfig {
   secret?: string;
 }
 
-/** Read the config directory, checking the environment variable on each call
- *  so that test overrides via OPENTABS_CONFIG_DIR take effect even after
- *  the module has been cached. */
-const getConfigDir = (): string => Bun.env.OPENTABS_CONFIG_DIR || join(homedir(), '.opentabs');
-const getConfigPath = (): string => join(getConfigDir(), 'config.json');
-
-/** Managed extension install directory (~/.opentabs/extension/) */
-const getExtensionDir = (): string => join(getConfigDir(), 'extension');
-
-/** @public Version marker file for the managed extension install */
+/** Version marker file for the managed extension install */
 const getExtensionVersionFile = (): string => join(getExtensionDir(), '.opentabs-version');
 
-/** @public Directory for plugin adapter IIFEs inside the managed extension */
+/** Directory for plugin adapter IIFEs inside the managed extension */
 const getAdaptersDir = (): string => join(getExtensionDir(), 'adapters');
 
 /** Write config atomically with restrictive permissions via the shared helper. */
 const atomicWriteConfig = (configPath: string, content: string): Promise<void> =>
   atomicWrite(configPath, content, 0o600);
-
-/** Generate a 256-bit cryptographic random secret as a 64-character hex string. */
-const generateSecret = (): string => {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-};
 
 /**
  * Read and parse config.json with retry and exponential backoff.

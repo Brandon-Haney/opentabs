@@ -24,7 +24,7 @@ import { getConfigDir } from './config.js';
 import { loadPlugin } from './loader.js';
 import { log } from './logger.js';
 import { buildRegistry } from './registry.js';
-import { isOk } from '@opentabs-dev/shared';
+import { ADAPTER_FILENAME, ADAPTER_SOURCE_MAP_FILENAME, TOOLS_FILENAME, isOk } from '@opentabs-dev/shared';
 import { statSync, watch } from 'node:fs';
 import { join } from 'node:path';
 import type { ServerState, FileWatcherEntry, RegisteredPlugin } from './state.js';
@@ -160,7 +160,7 @@ const handleIifeChange = async (
   pluginDir: string,
   callbacks: FileWatcherCallbacks,
 ): Promise<void> => {
-  const iifePath = join(pluginDir, 'dist', 'adapter.iife.js');
+  const iifePath = join(pluginDir, 'dist', ADAPTER_FILENAME);
 
   if (!(await fileExists(iifePath))) {
     log.warn(`File watcher: IIFE not found at ${iifePath} — skipping`);
@@ -189,7 +189,7 @@ const handleIifeChange = async (
     }
 
     // Read source map if available
-    const sourceMapPath = join(pluginDir, 'dist', 'adapter.iife.js.map');
+    const sourceMapPath = join(pluginDir, 'dist', ADAPTER_SOURCE_MAP_FILENAME);
     let sourceMap: string | undefined;
     try {
       if (await fileExists(sourceMapPath)) {
@@ -291,10 +291,10 @@ const handleToolsJsonChange = async (
   pluginDir: string,
   callbacks: FileWatcherCallbacks,
 ): Promise<void> => {
-  const toolsJsonPath = join(pluginDir, 'dist', 'tools.json');
+  const toolsJsonPath = join(pluginDir, 'dist', TOOLS_FILENAME);
 
   if (!(await fileExists(toolsJsonPath))) {
-    log.warn(`File watcher: tools.json not found at ${toolsJsonPath} — skipping`);
+    log.warn(`File watcher: ${TOOLS_FILENAME} not found at ${toolsJsonPath} — skipping`);
     return;
   }
 
@@ -305,7 +305,7 @@ const handleToolsJsonChange = async (
 
     const plugin = state.registry.plugins.get(pluginName);
     if (!plugin) {
-      log.warn(`File watcher: Plugin "${pluginName}" not found in state — skipping tools.json update`);
+      log.warn(`File watcher: Plugin "${pluginName}" not found in state — skipping ${TOOLS_FILENAME} update`);
       return;
     }
 
@@ -317,7 +317,7 @@ const handleToolsJsonChange = async (
     // file. The full file includes the hash-setter snippet, so SHA-256(full
     // file) differs from SHA-256(core content) = the value the runtime adapter
     // reports. The embedded hash is always authoritative.
-    const iifePath = join(pluginDir, 'dist', 'adapter.iife.js');
+    const iifePath = join(pluginDir, 'dist', ADAPTER_FILENAME);
     if (await fileExists(iifePath)) {
       try {
         const iife = await readFileWithRetry(iifePath);
@@ -331,7 +331,7 @@ const handleToolsJsonChange = async (
       }
 
       // Read source map if available
-      const sourceMapPath = join(pluginDir, 'dist', 'adapter.iife.js.map');
+      const sourceMapPath = join(pluginDir, 'dist', ADAPTER_SOURCE_MAP_FILENAME);
       try {
         if (await fileExists(sourceMapPath)) {
           updatedFields.iifeSourceMap = await readFileWithRetry(sourceMapPath);
@@ -355,11 +355,11 @@ const handleToolsJsonChange = async (
       recordMtime(entry, iifePath);
     }
 
-    log.info(`File watcher: tools.json updated for "${pluginName}" — re-registering MCP tools`);
+    log.info(`File watcher: ${TOOLS_FILENAME} updated for "${pluginName}" — re-registering MCP tools`);
 
     callbacks.onManifestChanged(pluginName);
   } catch (err) {
-    log.error(`File watcher: Failed to read tools.json for "${pluginName}":`, err);
+    log.error(`File watcher: Failed to read ${TOOLS_FILENAME} for "${pluginName}":`, err);
   }
 };
 
@@ -392,8 +392,8 @@ const handlePendingPluginChange = async (
   // Update mtimes for polling fallback
   const entry = findEntry(state, pluginDir);
   if (entry) {
-    recordMtime(entry, join(pluginDir, 'dist', 'tools.json'));
-    recordMtime(entry, join(pluginDir, 'dist', 'adapter.iife.js'));
+    recordMtime(entry, join(pluginDir, 'dist', TOOLS_FILENAME));
+    recordMtime(entry, join(pluginDir, 'dist', ADAPTER_FILENAME));
   }
 
   log.info(`File watcher: Discovered pending plugin "${plugin.name}" at ${pluginDir}`);
@@ -418,7 +418,7 @@ const watchPendingPlugin = (
   // Watch dist directory for tools.json and IIFE creation/changes
   try {
     const distWatcher = watch(distDir, (_eventType, filename) => {
-      if (filename !== 'tools.json' && filename !== 'adapter.iife.js') return;
+      if (filename !== TOOLS_FILENAME && filename !== ADAPTER_FILENAME) return;
 
       const key = `${pluginDir}:pending`;
       const existing = state.fileWatcherTimers.get(key);
@@ -463,7 +463,7 @@ const watchPlugin = (
   // Watch dist directory for tools.json and IIFE changes
   try {
     const distWatcher = watch(distDir, (_eventType, filename) => {
-      if (filename === 'tools.json') {
+      if (filename === TOOLS_FILENAME) {
         const key = `${pluginDir}:tools`;
         const existing = state.fileWatcherTimers.get(key);
         if (existing) clearTimeout(existing);
@@ -476,7 +476,7 @@ const watchPlugin = (
             void handleToolsJsonChange(state, pluginName, pluginDir, callbacks);
           }, 200),
         );
-      } else if (filename === 'adapter.iife.js') {
+      } else if (filename === ADAPTER_FILENAME) {
         const key = `${pluginDir}:iife`;
         const existing = state.fileWatcherTimers.get(key);
         if (existing) clearTimeout(existing);
@@ -581,8 +581,8 @@ const startMtimePolling = (state: ServerState, callbacks: FileWatcherCallbacks):
 
     // Poll plugin files (tools.json + IIFE)
     for (const entry of state.fileWatcherEntries) {
-      const toolsJsonPath = join(entry.pluginDir, 'dist', 'tools.json');
-      const iifePath = join(entry.pluginDir, 'dist', 'adapter.iife.js');
+      const toolsJsonPath = join(entry.pluginDir, 'dist', TOOLS_FILENAME);
+      const iifePath = join(entry.pluginDir, 'dist', ADAPTER_FILENAME);
 
       const isPending = entry.pluginName.startsWith('(pending:');
 
@@ -671,8 +671,8 @@ const startFileWatching = (
     state.fileWatcherEntries.push(entry);
 
     // Record initial mtimes for mtime polling fallback
-    recordMtime(entry, join(srcPath, 'dist', 'tools.json'));
-    recordMtime(entry, join(srcPath, 'dist', 'adapter.iife.js'));
+    recordMtime(entry, join(srcPath, 'dist', TOOLS_FILENAME));
+    recordMtime(entry, join(srcPath, 'dist', ADAPTER_FILENAME));
 
     log.info(`File watcher: Watching "${plugin.name}" at ${srcPath}`);
   }
@@ -693,8 +693,8 @@ const startFileWatching = (
     state.fileWatcherEntries.push(entry);
 
     // Record initial mtimes for mtime polling fallback
-    recordMtime(entry, join(pluginPath, 'dist', 'tools.json'));
-    recordMtime(entry, join(pluginPath, 'dist', 'adapter.iife.js'));
+    recordMtime(entry, join(pluginPath, 'dist', TOOLS_FILENAME));
+    recordMtime(entry, join(pluginPath, 'dist', ADAPTER_FILENAME));
 
     pendingCount++;
 

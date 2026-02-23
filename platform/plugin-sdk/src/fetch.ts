@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { ToolError } from './errors.js';
+import { toErrorMessage } from '@opentabs-dev/shared';
 import type { z } from 'zod';
 
 export interface FetchFromPageOptions extends RequestInit {
@@ -71,11 +72,10 @@ export const fetchFromPage = async (url: string, init?: FetchFromPageOptions): P
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new ToolError(`fetchFromPage: request aborted for ${url}`, 'aborted');
     }
-    throw new ToolError(
-      `fetchFromPage: network error for ${url}: ${error instanceof Error ? error.message : String(error)}`,
-      'network_error',
-      { category: 'internal', retryable: true },
-    );
+    throw new ToolError(`fetchFromPage: network error for ${url}: ${toErrorMessage(error)}`, 'network_error', {
+      category: 'internal',
+      retryable: true,
+    });
   }
 
   if (!response.ok) {

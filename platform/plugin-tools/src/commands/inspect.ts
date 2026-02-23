@@ -4,7 +4,7 @@
  * a human-readable summary of tools, resources, and prompts.
  */
 
-import { parsePluginPackageJson } from '@opentabs-dev/shared';
+import { TOOLS_FILENAME, parsePluginPackageJson } from '@opentabs-dev/shared';
 import pc from 'picocolors';
 import { join } from 'node:path';
 import type { ManifestPrompt, ManifestResource, ManifestTool } from '@opentabs-dev/shared';
@@ -44,7 +44,7 @@ const truncate = (s: string, maxLen: number): string => (s.length > maxLen ? s.s
 
 const handleInspect = async (options: { json?: boolean }, projectDir: string = process.cwd()): Promise<void> => {
   // Read dist/tools.json
-  const toolsJsonPath = join(projectDir, 'dist', 'tools.json');
+  const toolsJsonPath = join(projectDir, 'dist', TOOLS_FILENAME);
   const toolsJsonFile = Bun.file(toolsJsonPath);
   if (!(await toolsJsonFile.exists())) {
     console.error(pc.red('No manifest found. Run opentabs-plugin build first.'));
@@ -66,7 +66,7 @@ const handleInspect = async (options: { json?: boolean }, projectDir: string = p
     }
   } catch {
     console.error(
-      pc.red('Failed to parse dist/tools.json. The file may be corrupted — rebuild with opentabs-plugin build.'),
+      pc.red(`Failed to parse dist/${TOOLS_FILENAME}. The file may be corrupted — rebuild with opentabs-plugin build.`),
     );
     process.exit(1);
   }

@@ -13,7 +13,7 @@
 import { installExtension } from './setup.js';
 import { getConfigDir, getLogFilePath } from '../config.js';
 import { parsePort, resolvePort } from '../parse-port.js';
-import { isWindows, platformExec } from '@opentabs-dev/shared';
+import { isWindows, platformExec, toErrorMessage } from '@opentabs-dev/shared';
 import pc from 'picocolors';
 import { mkdirSync, createWriteStream } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -82,9 +82,7 @@ const autoInitialize = async (configDir: string): Promise<boolean> => {
     }
   } catch (err) {
     // Extension install is non-fatal — the server can still start without it.
-    console.warn(
-      pc.yellow(`Warning: Could not install extension: ${err instanceof Error ? err.message : String(err)}`),
-    );
+    console.warn(pc.yellow(`Warning: Could not install extension: ${toErrorMessage(err)}`));
     console.warn(pc.dim('Restart opentabs start to retry extension installation.'));
   }
 

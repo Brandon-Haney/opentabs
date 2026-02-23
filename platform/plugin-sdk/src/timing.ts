@@ -9,6 +9,8 @@ export interface RetryOptions {
   delay?: number;
   /** Use exponential backoff — doubles the delay after each attempt (default: false) */
   backoff?: boolean;
+  /** Maximum delay in milliseconds when using backoff, preventing unreasonable wait times (default: 30000) */
+  maxDelay?: number;
   /** AbortSignal to cancel retries early */
   signal?: AbortSignal;
 }
@@ -34,6 +36,7 @@ export const retry = async <T>(fn: () => Promise<T>, opts?: RetryOptions): Promi
   const maxAttempts = opts?.maxAttempts ?? 3;
   const baseDelay = opts?.delay ?? 1_000;
   const backoff = opts?.backoff ?? false;
+  const maxDelay = opts?.maxDelay ?? 30_000;
   const signal = opts?.signal;
 
   const abortReason = () => (signal?.reason instanceof Error ? signal.reason : new Error('retry: aborted'));
@@ -70,7 +73,7 @@ export const retry = async <T>(fn: () => Promise<T>, opts?: RetryOptions): Promi
 
     if (attempt < maxAttempts) {
       if (signal?.aborted) throw abortReason();
-      const currentDelay = backoff ? baseDelay * 2 ** (attempt - 1) : baseDelay;
+      const currentDelay = Math.min(backoff ? baseDelay * 2 ** (attempt - 1) : baseDelay, maxDelay);
       await abortableSleep(currentDelay);
     }
   }

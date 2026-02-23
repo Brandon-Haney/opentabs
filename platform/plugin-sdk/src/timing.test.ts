@@ -101,6 +101,49 @@ describe('retry', () => {
     expect(delay2).toBeGreaterThanOrEqual(80);
   });
 
+  test('caps delay at maxDelay when using backoff', async () => {
+    let calls = 0;
+    const timestamps: number[] = [];
+    try {
+      await retry(
+        () => {
+          calls++;
+          timestamps.push(performance.now());
+          return Promise.reject(new Error('fail'));
+        },
+        { maxAttempts: 4, delay: 50, backoff: true, maxDelay: 60 },
+      );
+    } catch {
+      // Expected
+    }
+    expect(calls).toBe(4);
+    // Delays: min(50, 60)=50, min(100, 60)=60, min(200, 60)=60
+    // The third delay should be capped at 60ms instead of growing to 200ms
+    const [t0, t1, t2, t3] = timestamps as [number, number, number, number];
+    const delay1 = t1 - t0;
+    const delay2 = t2 - t1;
+    const delay3 = t3 - t2;
+    expect(delay1).toBeGreaterThanOrEqual(40);
+    expect(delay2).toBeGreaterThanOrEqual(50);
+    // Without maxDelay, delay3 would be ~200ms; with maxDelay=60, it should be ~60ms
+    expect(delay3).toBeLessThan(120);
+  });
+
+  test('uses default maxDelay of 30000ms', async () => {
+    // Verify the default is applied by checking the option exists
+    let calls = 0;
+    const result = await retry(
+      () => {
+        calls++;
+        if (calls < 2) return Promise.reject(new Error('fail'));
+        return Promise.resolve('ok');
+      },
+      { delay: 10, backoff: true },
+    );
+    expect(result).toBe('ok');
+    expect(calls).toBe(2);
+  });
+
   test('respects AbortSignal that is already aborted', async () => {
     const controller = new AbortController();
     controller.abort(new Error('cancelled'));

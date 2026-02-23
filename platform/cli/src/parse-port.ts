@@ -2,10 +2,9 @@
  * Shared port parser and resolver for Commander options.
  */
 
+import { DEFAULT_PORT } from '@opentabs-dev/shared';
 import { InvalidArgumentError } from 'commander';
 import pc from 'picocolors';
-
-const DEFAULT_PORT = 9515;
 
 const parsePort = (value: string): number => {
   const port = Number(value);

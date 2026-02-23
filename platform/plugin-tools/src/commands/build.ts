@@ -7,10 +7,19 @@
 
 import { generateInactiveIcon, validateIconSvg, validateInactiveIconColors } from '../validate-icon.js';
 import { validatePluginName, validateUrlPattern, LUCIDE_ICON_NAMES } from '@opentabs-dev/plugin-sdk';
-import { atomicWrite, parsePluginPackageJson } from '@opentabs-dev/shared';
+import {
+  ADAPTER_FILENAME,
+  ADAPTER_SOURCE_MAP_FILENAME,
+  TOOLS_FILENAME,
+  atomicWrite,
+  DEFAULT_PORT,
+  getConfigPath,
+  parsePluginPackageJson,
+  toErrorMessage,
+} from '@opentabs-dev/shared';
 import pc from 'picocolors';
 import { z } from 'zod';
-import { mkdirSync, rmSync, watch } from 'node:fs';
+import { mkdirSync, rmSync, statSync, watch } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve, join, relative, dirname } from 'node:path';
 import type {
@@ -25,15 +34,6 @@ import type { Command } from 'commander';
 import type { FSWatcher } from 'node:fs';
 
 const DEBOUNCE_MS = 100;
-const DEFAULT_PORT = 9515;
-
-// ---------------------------------------------------------------------------
-// Config helpers — lightweight versions for the build tool, which cannot
-// depend on the CLI or MCP server packages.
-// ---------------------------------------------------------------------------
-
-const getConfigDir = (): string => Bun.env.OPENTABS_CONFIG_DIR || join(homedir(), '.opentabs');
-const getConfigPath = (): string => join(getConfigDir(), 'config.json');
 
 /** Write config atomically with restrictive permissions via the shared helper. */
 const atomicWriteConfig = (configPath: string, content: string): Promise<void> =>
@@ -41,13 +41,17 @@ const atomicWriteConfig = (configPath: string, content: string): Promise<void> =
 
 const CONFIG_LOCK_RETRY_DELAY_MS = 50;
 const CONFIG_LOCK_MAX_RETRIES = 20;
+/** Lock directories older than this threshold are considered stale (5 minutes). */
+const STALE_LOCK_THRESHOLD_MS = 5 * 60 * 1_000;
 
 /**
  * Acquire an advisory lock for the config file by atomically creating a lock
  * directory. `mkdir` is atomic on POSIX — it fails with EEXIST if the
  * directory already exists, providing safe mutual exclusion without race
- * conditions. Retries with a short delay if the lock is held. Returns a
- * release function that removes the lock directory.
+ * conditions. Retries with a short delay if the lock is held. If the lock
+ * directory is older than STALE_LOCK_THRESHOLD_MS, it is removed automatically
+ * (the owning process likely crashed). Returns a release function that removes
+ * the lock directory.
  */
 const acquireConfigLock = async (configPath: string): Promise<() => void> => {
   const lockDir = configPath + '.lock';
@@ -63,6 +67,23 @@ const acquireConfigLock = async (configPath: string): Promise<() => void> => {
       };
     } catch (err: unknown) {
       if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'EEXIST') {
+        // Check for stale lock — if the lock directory is older than the
+        // threshold, the owning process likely crashed without releasing it.
+        try {
+          const lockStat = statSync(lockDir);
+          const ageMs = Date.now() - lockStat.mtimeMs;
+          if (ageMs > STALE_LOCK_THRESHOLD_MS) {
+            console.warn(
+              pc.yellow(
+                `Warning: Stale config lock detected (${Math.round(ageMs / 1_000)}s old). Removing and retrying.`,
+              ),
+            );
+            rmSync(lockDir, { recursive: true });
+            continue;
+          }
+        } catch {
+          // stat or rmSync failed — lock may have been released concurrently
+        }
         // Lock held by another process — retry
         await new Promise<void>(r => setTimeout(r, CONFIG_LOCK_RETRY_DELAY_MS));
         continue;
@@ -349,7 +370,7 @@ const convertToolSchemas = (tool: ToolDefinition) => {
     throw new Error(
       `Tool "${tool.name}" input schema failed to serialize to JSON Schema. ` +
         `Schemas cannot use .transform(), .pipe(), or .preprocess() — these produce runtime-only behavior ` +
-        `that cannot be represented in JSON Schema. ${err instanceof Error ? err.message : String(err)}`,
+        `that cannot be represented in JSON Schema. ${toErrorMessage(err)}`,
     );
   }
 
@@ -360,7 +381,7 @@ const convertToolSchemas = (tool: ToolDefinition) => {
     throw new Error(
       `Tool "${tool.name}" output schema failed to serialize to JSON Schema. ` +
         `Schemas cannot use .transform(), .pipe(), or .preprocess() — these produce runtime-only behavior ` +
-        `that cannot be represented in JSON Schema. ${err instanceof Error ? err.message : String(err)}`,
+        `that cannot be represented in JSON Schema. ${toErrorMessage(err)}`,
     );
   }
 
@@ -753,7 +774,7 @@ if (typeof plugin.onNavigate === 'function') {
       target: 'browser',
       minify: false,
       sourcemap: 'external',
-      naming: 'adapter.iife.js',
+      naming: ADAPTER_FILENAME,
       external: [],
     });
 
@@ -874,7 +895,7 @@ const runBuild = async (projectDir: string): Promise<void> => {
   await bundleIIFE(sourceEntry, distDir, plugin.name);
   // Read the bundled IIFE and compute its SHA-256 hash. The hash is computed
   // from the core IIFE content (before the __adapterHash setter is appended).
-  const iifePath = join(distDir, 'adapter.iife.js');
+  const iifePath = join(distDir, ADAPTER_FILENAME);
   const iifeContent = await Bun.file(iifePath).text();
   const adapterHash = new Bun.CryptoHasher('sha256').update(iifeContent).digest('hex');
 
@@ -895,16 +916,16 @@ const runBuild = async (projectDir: string): Promise<void> => {
   const iifeFile = Bun.file(iifePath);
   if (await iifeFile.exists()) {
     const iifeSize = (await iifeFile.stat()).size;
-    console.log(`  Written: ${pc.bold('dist/adapter.iife.js')} (${formatBytes(iifeSize)})`);
+    console.log(`  Written: ${pc.bold(`dist/${ADAPTER_FILENAME}`)} (${formatBytes(iifeSize)})`);
   } else {
-    console.log(pc.dim('  dist/adapter.iife.js not generated'));
+    console.log(pc.dim(`  dist/${ADAPTER_FILENAME} not generated`));
   }
 
-  const sourceMapPath = join(distDir, 'adapter.iife.js.map');
+  const sourceMapPath = join(distDir, ADAPTER_SOURCE_MAP_FILENAME);
   const sourceMapFile = Bun.file(sourceMapPath);
   if (await sourceMapFile.exists()) {
     const sourceMapSize = (await sourceMapFile.stat()).size;
-    console.log(`  Written: ${pc.bold('dist/adapter.iife.js.map')} (${formatBytes(sourceMapSize)})`);
+    console.log(`  Written: ${pc.bold(`dist/${ADAPTER_SOURCE_MAP_FILENAME}`)} (${formatBytes(sourceMapSize)})`);
   } else {
     console.log(pc.dim('  Source map not generated'));
   }
@@ -914,9 +935,9 @@ const runBuild = async (projectDir: string): Promise<void> => {
   const sdkVersion = await resolveSdkVersion(projectDir);
 
   // Step 6: Generate dist/tools.json (tool schemas + resource/prompt metadata + icons)
-  console.log(pc.dim('Generating tools.json...'));
+  console.log(pc.dim(`Generating ${TOOLS_FILENAME}...`));
   const manifest = generateManifest(plugin, sdkVersion, icons);
-  const toolsJsonPath = join(distDir, 'tools.json');
+  const toolsJsonPath = join(distDir, TOOLS_FILENAME);
   await Bun.write(toolsJsonPath, JSON.stringify(manifest, null, 2) + '\n');
   const toolCount = manifest.tools.length;
   const resourceCount = manifest.resources.length;
@@ -924,7 +945,7 @@ const runBuild = async (projectDir: string): Promise<void> => {
   const parts = [`${toolCount} tool${toolCount === 1 ? '' : 's'}`];
   if (resourceCount > 0) parts.push(`${resourceCount} resource${resourceCount === 1 ? '' : 's'}`);
   if (promptCount > 0) parts.push(`${promptCount} prompt${promptCount === 1 ? '' : 's'}`);
-  console.log(`  Written: ${pc.bold('dist/tools.json')} (${parts.join(', ')})`);
+  console.log(`  Written: ${pc.bold(`dist/${TOOLS_FILENAME}`)} (${parts.join(', ')})`);
 
   const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
   console.log('');
@@ -939,7 +960,7 @@ const handleBuild = async (options: { watch?: boolean }): Promise<void> => {
   try {
     await runBuild(projectDir);
   } catch (err: unknown) {
-    console.error(pc.red(`Error: ${err instanceof Error ? err.message : String(err)}`));
+    console.error(pc.red(`Error: ${toErrorMessage(err)}`));
     process.exit(1);
   }
 
@@ -950,9 +971,7 @@ const handleBuild = async (options: { watch?: boolean }): Promise<void> => {
       console.log(pc.green('Registered in ~/.opentabs/config.json'));
     }
   } catch (err: unknown) {
-    console.warn(
-      pc.yellow(`Warning: Could not auto-register plugin: ${err instanceof Error ? err.message : String(err)}`),
-    );
+    console.warn(pc.yellow(`Warning: Could not auto-register plugin: ${toErrorMessage(err)}`));
   }
   try {
     await notifyServer();
@@ -985,9 +1004,7 @@ const handleBuild = async (options: { watch?: boolean }): Promise<void> => {
         // Notification failures are non-fatal
       }
     } catch (err: unknown) {
-      console.error(
-        pc.red(`[${formatTimestamp()}] Rebuild failed: ${err instanceof Error ? err.message : String(err)}`),
-      );
+      console.error(pc.red(`[${formatTimestamp()}] Rebuild failed: ${toErrorMessage(err)}`));
     } finally {
       building = false;
       if (pendingRebuild) {
@@ -1005,7 +1022,7 @@ const handleBuild = async (options: { watch?: boolean }): Promise<void> => {
       if (
         !filename ||
         !filename.endsWith('.js') ||
-        filename === 'adapter.iife.js' ||
+        filename === ADAPTER_FILENAME ||
         filename.startsWith('_adapter_entry_')
       )
         return;

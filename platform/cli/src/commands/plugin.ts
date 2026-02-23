@@ -13,7 +13,7 @@ import {
 } from '../config.js';
 import { parsePort, resolvePort } from '../parse-port.js';
 import { scaffoldPlugin, promptForMissingArgs, ScaffoldError } from '../scaffold.js';
-import { platformExec } from '@opentabs-dev/shared';
+import { TOOLS_FILENAME, platformExec } from '@opentabs-dev/shared';
 import pc from 'picocolors';
 import { join } from 'node:path';
 import type { Command } from 'commander';
@@ -263,7 +263,7 @@ const readLocalPluginInfo = async (
 
     let toolCount = 0;
     try {
-      const toolsJsonText = await Bun.file(join(pluginDir, 'dist', 'tools.json')).text();
+      const toolsJsonText = await Bun.file(join(pluginDir, 'dist', TOOLS_FILENAME)).text();
       const toolsJson = JSON.parse(toolsJsonText) as Record<string, unknown>;
       const tools = Array.isArray(toolsJson.tools) ? toolsJson.tools : [];
       toolCount = tools.length;

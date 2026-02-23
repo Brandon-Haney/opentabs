@@ -7,6 +7,7 @@
  */
 
 import { log } from './logger.js';
+import { toErrorMessage } from '@opentabs-dev/shared';
 import type { ServerState, OutdatedPlugin } from './state.js';
 
 /** npm registry response shape (minimal) */
@@ -47,7 +48,7 @@ export const fetchLatestVersion = async (packageName: string): Promise<string | 
     const registryResponse = (await response.json()) as NpmRegistryResponse;
     return registryResponse['dist-tags']?.latest ?? null;
   } catch (e: unknown) {
-    log.debug(`Failed to fetch latest version for ${packageName}: ${e instanceof Error ? e.message : String(e)}`);
+    log.debug(`Failed to fetch latest version for ${packageName}: ${toErrorMessage(e)}`);
     return null;
   }
 };

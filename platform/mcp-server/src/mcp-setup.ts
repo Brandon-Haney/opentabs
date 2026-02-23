@@ -44,6 +44,7 @@ import {
   McpError as SdkMcpError,
   ErrorCode,
 } from '@modelcontextprotocol/sdk/types.js';
+import { toErrorMessage } from '@opentabs-dev/shared';
 import { z } from 'zod';
 import type { ServerState, CachedBrowserTool, ToolLookupEntry, AuditEntry, ConfirmationDecision } from './state.js';
 import type { ZodError } from 'zod';
@@ -312,7 +313,7 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
       if (isDispatchError(err)) {
         throw new SdkMcpError(err.code, err.message);
       }
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = toErrorMessage(err);
       throw new SdkMcpError(ErrorCode.InternalError, `Resource read error: ${msg}`);
     }
   });
@@ -362,7 +363,7 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
       if (isDispatchError(err)) {
         throw new SdkMcpError(err.code, err.message);
       }
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = toErrorMessage(err);
       throw new SdkMcpError(ErrorCode.InternalError, `Prompt get error: ${msg}`);
     }
   });
@@ -463,7 +464,7 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
           // decision is 'allow_once' or 'allow_always' — proceed with dispatch
           // (allow_always session rules are handled by handleConfirmationResponse in extension-protocol)
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = toErrorMessage(err);
           if (msg === 'CONFIRMATION_TIMEOUT') {
             return {
               content: [
@@ -498,7 +499,7 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
         };
       } catch (err) {
         btSuccess = false;
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = toErrorMessage(err);
         btErrorInfo = { code: 'UNKNOWN', message: msg };
         return {
           content: [
@@ -675,7 +676,7 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
         };
       }
 
-      const msg = sanitizeErrorMessage(err instanceof Error ? err.message : String(err));
+      const msg = sanitizeErrorMessage(toErrorMessage(err));
       errorInfo = { code: 'UNKNOWN', message: msg };
       return {
         content: [

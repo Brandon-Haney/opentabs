@@ -11,7 +11,7 @@
  */
 
 import { log } from './logger.js';
-import { ok, err, platformExec } from '@opentabs-dev/shared';
+import { ok, err, platformExec, toErrorMessage } from '@opentabs-dev/shared';
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
@@ -163,7 +163,7 @@ const getGlobalNodeModulesPaths = (): string[] => {
       if (npmPath.length > 0) paths.push(npmPath);
     }
   } catch (e) {
-    log.debug(`npm root -g failed: ${e instanceof Error ? e.message : String(e)}`);
+    log.debug(`npm root -g failed: ${toErrorMessage(e)}`);
   }
 
   // bun global node_modules (derive from bin path: .../bin → .../node_modules)
@@ -178,7 +178,7 @@ const getGlobalNodeModulesPaths = (): string[] => {
       }
     }
   } catch (e) {
-    log.debug(`bun pm -g bin failed: ${e instanceof Error ? e.message : String(e)}`);
+    log.debug(`bun pm -g bin failed: ${toErrorMessage(e)}`);
   }
 
   setCachedGlobalPaths(paths);
@@ -194,9 +194,7 @@ const hasOpentabsField = async (dir: string): Promise<boolean> => {
     const raw = (await Bun.file(join(dir, 'package.json')).json()) as Record<string, unknown>;
     return typeof raw.opentabs === 'object' && raw.opentabs !== null && !Array.isArray(raw.opentabs);
   } catch (e) {
-    log.debug(
-      `Failed to read package.json at ${join(dir, 'package.json')}: ${e instanceof Error ? e.message : String(e)}`,
-    );
+    log.debug(`Failed to read package.json at ${join(dir, 'package.json')}: ${toErrorMessage(e)}`);
     return false;
   }
 };
@@ -213,9 +211,7 @@ const scanGlobalDir = async (globalDir: string): Promise<string[]> => {
   try {
     entries = await readdir(globalDir);
   } catch (e) {
-    log.debug(
-      `Could not read global node_modules directory ${globalDir}: ${e instanceof Error ? e.message : String(e)}`,
-    );
+    log.debug(`Could not read global node_modules directory ${globalDir}: ${toErrorMessage(e)}`);
     return found;
   }
 
@@ -251,7 +247,7 @@ const scanGlobalDir = async (globalDir: string): Promise<string[]> => {
             await Promise.all(scopeChecks);
           })
           .catch((e: unknown) => {
-            log.debug(`Could not read scoped directory ${scopeDir}: ${e instanceof Error ? e.message : String(e)}`);
+            log.debug(`Could not read scoped directory ${scopeDir}: ${toErrorMessage(e)}`);
           }),
       );
     }
@@ -296,7 +292,7 @@ const discoverGlobalNpmPlugins = async (): Promise<{ dirs: string[]; errors: str
         }
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = toErrorMessage(e);
       errors.push(`Error scanning ${globalDir}: ${msg}`);
     }
   }

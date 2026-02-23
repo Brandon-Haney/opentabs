@@ -3,6 +3,7 @@ import { sendToServer } from './messaging.js';
 import { getPluginMeta } from './plugin-storage.js';
 import { sanitizeErrorMessage } from './sanitize-error.js';
 import { findAllMatchingTabs, urlMatchesPatterns } from './tab-matching.js';
+import { toErrorMessage } from '@opentabs-dev/shared';
 
 type DispatchResult =
   | {
@@ -325,7 +326,7 @@ const handleResourceRead = async (params: Record<string, unknown>, id: string | 
       });
       return;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = toErrorMessage(err);
       const isTabGone = msg.includes('No tab with id') || msg.includes('Cannot access');
       if (isTabGone && matchingTabs.length > 1) {
         firstError ??= { code: -32001, message: 'Tab closed before resource read' };
@@ -457,7 +458,7 @@ const handlePromptGet = async (params: Record<string, unknown>, id: string | num
       });
       return;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = toErrorMessage(err);
       const isTabGone = msg.includes('No tab with id') || msg.includes('Cannot access');
       if (isTabGone && matchingTabs.length > 1) {
         firstError ??= { code: -32001, message: 'Tab closed before prompt get' };

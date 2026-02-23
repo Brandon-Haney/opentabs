@@ -52,7 +52,9 @@ const formatArgs = (args: unknown[], includeStack: boolean): unknown[] => {
 };
 
 const parseLevel = (raw: string | undefined): LogLevel => {
-  if (raw && raw in LEVELS) return raw as LogLevel;
+  if (!raw) return 'info';
+  const normalized = raw.toLowerCase();
+  if (normalized in LEVELS) return normalized as LogLevel;
   return 'info';
 };
 

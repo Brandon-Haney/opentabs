@@ -12,7 +12,16 @@
 import { browserTools } from './browser-tools/index.js';
 import { log } from './logger.js';
 import { sdkVersion as serverSdkVersion } from './sdk-version.js';
-import { err, ok, parsePluginPackageJson, validatePluginName, validateUrlPattern } from '@opentabs-dev/shared';
+import {
+  ADAPTER_FILENAME,
+  ADAPTER_SOURCE_MAP_FILENAME,
+  TOOLS_FILENAME,
+  err,
+  ok,
+  parsePluginPackageJson,
+  validatePluginName,
+  validateUrlPattern,
+} from '@opentabs-dev/shared';
 import { join } from 'node:path';
 import type { PluginSource } from './state.js';
 import type {
@@ -386,7 +395,7 @@ const loadPlugin = async (
   }
 
   // Read adapter IIFE
-  const iifePath = join(dir, 'dist', 'adapter.iife.js');
+  const iifePath = join(dir, 'dist', ADAPTER_FILENAME);
   const iifeFile = Bun.file(iifePath);
   if (!(await iifeFile.exists())) {
     return err(`Adapter IIFE not found at ${iifePath}`);
@@ -404,12 +413,12 @@ const loadPlugin = async (
   // Supports two formats:
   //   - Legacy: a plain array of tool definitions (pre-resources/prompts)
   //   - Current: { tools: [...], resources: [...], prompts: [...] }
-  const toolsJsonPath = join(dir, 'dist', 'tools.json');
+  const toolsJsonPath = join(dir, 'dist', TOOLS_FILENAME);
   let manifestRaw: unknown;
   try {
     manifestRaw = await Bun.file(toolsJsonPath).json();
   } catch {
-    return err(`Failed to read dist/tools.json at ${dir}: file missing or invalid JSON`);
+    return err(`Failed to read dist/${TOOLS_FILENAME} at ${dir}: file missing or invalid JSON`);
   }
 
   // Extract the tools array from either format
@@ -463,7 +472,7 @@ const loadPlugin = async (
   const adapterHash = await computeHash(iife);
 
   // Read source map if available (optional — older plugins won't have one)
-  const sourceMapPath = join(dir, 'dist', 'adapter.iife.js.map');
+  const sourceMapPath = join(dir, 'dist', ADAPTER_SOURCE_MAP_FILENAME);
   let iifeSourceMap: string | undefined;
   try {
     const sourceMapFile = Bun.file(sourceMapPath);

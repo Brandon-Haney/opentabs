@@ -30,6 +30,7 @@ import { getNextRequestId, prefixedToolName, STATE_SCHEMA_VERSION } from './stat
 import { version } from './version.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+import { toErrorMessage } from '@opentabs-dev/shared';
 import { timingSafeEqual } from 'node:crypto';
 import type { McpCallbacks } from './extension-protocol.js';
 import type { McpServerInstance } from './mcp-setup.js';
@@ -376,7 +377,7 @@ const createHandleFetch =
         });
       } catch (err) {
         log.error('Config reload failed:', err);
-        const rawMsg = err instanceof Error ? err.message : String(err);
+        const rawMsg = toErrorMessage(err);
         return Response.json({ ok: false, error: sanitizeErrorMessage(rawMsg) }, { status: 500 });
       }
     }

@@ -4,6 +4,7 @@
 
 import { getConfigPath, isConnectionRefused, readConfig } from '../config.js';
 import { parsePort, resolvePort } from '../parse-port.js';
+import { toErrorMessage } from '@opentabs-dev/shared';
 import pc from 'picocolors';
 import type { Command } from 'commander';
 
@@ -140,7 +141,7 @@ const handleStatus = async (options: StatusOptions): Promise<void> => {
       console.error(pc.red('Server returned invalid response'));
       console.error(pc.dim('The health endpoint did not return valid JSON.'));
     } else {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = toErrorMessage(err);
       console.error(pc.red(`Error: ${message}`));
       console.error(pc.dim(startHint));
     }

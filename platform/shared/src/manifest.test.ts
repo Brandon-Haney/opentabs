@@ -1,6 +1,8 @@
 import { parsePluginPackageJson } from './manifest.js';
 import { isErr, isOk, unwrap } from './result.js';
 import { describe, expect, test } from 'bun:test';
+import os from 'node:os';
+import path from 'node:path';
 import type { Result } from './result.js';
 
 const validPackageJson = {
@@ -14,7 +16,7 @@ const validPackageJson = {
   },
 };
 
-const sourcePath = '/tmp/test-plugin/package.json';
+const sourcePath = path.join(os.tmpdir(), 'test-plugin', 'package.json');
 
 /** Extract the error from a Result that is expected to be Err, failing the test if it's Ok */
 const expectErr = <T, E>(result: Result<T, E>): E => {

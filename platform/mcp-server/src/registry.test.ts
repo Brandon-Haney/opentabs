@@ -10,6 +10,8 @@ import {
   listEnabledTools,
 } from './registry.js';
 import { describe, expect, test } from 'bun:test';
+import os from 'node:os';
+import path from 'node:path';
 import type { FailedPlugin, RegisteredPlugin, ServerState } from './state.js';
 
 /**
@@ -40,7 +42,7 @@ const makePlugin = (overrides: Partial<RegisteredPlugin> = {}): RegisteredPlugin
   ],
   resources: [],
   prompts: [],
-  sourcePath: '/tmp/test-plugin',
+  sourcePath: path.join(os.tmpdir(), 'test-plugin'),
   adapterHash: 'abc123',
   npmPackageName: 'opentabs-plugin-test',
   ...overrides,

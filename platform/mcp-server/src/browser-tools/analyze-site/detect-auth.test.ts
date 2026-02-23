@@ -49,7 +49,7 @@ describe('detectAuth', () => {
       expect(result.authenticated).toBe(true);
       const method = findMethod(result.methods, 'cookie-session');
       expect(method.details).toContain('connect.sid');
-      expect(method.extractionHint).toContain('connect.sid');
+      expect(method.extractionHint).toContain('connect\\.sid');
     });
 
     test('detects d= cookie (Slack-style)', () => {
@@ -141,7 +141,7 @@ describe('detectAuth', () => {
       });
       const hint = firstMethod(result.methods).extractionHint;
       expect(hint).toMatch(/document\.cookie\.match/);
-      expect(hint).toContain('connect.sid');
+      expect(hint).toContain('connect\\.sid');
     });
   });
 

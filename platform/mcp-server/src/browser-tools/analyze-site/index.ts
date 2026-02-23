@@ -418,7 +418,7 @@ const GLOBALS_SCAN_SCRIPT = `
   const keys = Object.keys(window);
   for (const key of keys) {
     if (BROWSER_BUILTINS.has(key)) continue;
-    if (key.startsWith('_') && key.startsWith('__zone') ) continue;
+    if (key.startsWith('__zone') || (key.startsWith('_') && !key.startsWith('__'))) continue;
     try {
       const val = window[key];
       const type = typeof val;
@@ -676,7 +676,7 @@ const graphqlQuerySuggestions = (endpoint: ApiEndpoint): ToolSuggestion[] => {
     const match = /(?:query|mutation)\s+(\w+)/.exec(query);
     if (match?.[1]) {
       const opName = match[1];
-      const isMutation = query.trimStart().startsWith('mutation');
+      const isMutation = match[0].startsWith('mutation');
       return [
         {
           toolName: `gql_${toSnakeCase(opName)}`,

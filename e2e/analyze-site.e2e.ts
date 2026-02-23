@@ -135,7 +135,7 @@ test.describe('plugin_analyze_site — cookie session auth', () => {
     // The connect.sid cookie should be specifically identified
     const connectSidMethod = cookieMethods.find(m => m.details.includes('connect.sid'));
     expect(connectSidMethod).toBeDefined();
-    expect(connectSidMethod?.extractionHint).toContain('connect.sid');
+    expect(connectSidMethod?.extractionHint).toContain('connect\\.sid');
 
     // --- CSRF detection ---
     const csrfMethods = analysis.auth.methods.filter(m => m.type === 'csrf-token');

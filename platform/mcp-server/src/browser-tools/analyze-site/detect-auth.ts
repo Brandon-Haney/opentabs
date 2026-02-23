@@ -141,10 +141,11 @@ const detectCookieSessions = (cookies: CookieEntry[]): AuthMethod[] => {
   const methods: AuthMethod[] = [];
   for (const cookie of cookies) {
     if (SESSION_COOKIE_PATTERNS.some(p => p.test(cookie.name))) {
+      const escapedName = cookie.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       methods.push({
         type: 'cookie-session',
         details: `Session cookie "${cookie.name}" found`,
-        extractionHint: `document.cookie.match(/${cookie.name}=([^;]+)/)?.[1]`,
+        extractionHint: `document.cookie.match(/${escapedName}=([^;]+)/)?.[1]`,
       });
     }
   }

@@ -114,7 +114,7 @@ test.describe('Side panel auto-refresh — POST /reload', () => {
 
       // Open side panel and verify onboarding state
       const sidePanelPage = await openSidePanel(context);
-      await expect(sidePanelPage.locator('text=Welcome to OpenTabs')).toBeVisible({ timeout: 10_000 });
+      await expect(sidePanelPage.locator('text=No Plugins Installed')).toBeVisible({ timeout: 10_000 });
 
       // Add plugin to config, preserving the server's auto-generated secret
       const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
@@ -132,7 +132,7 @@ test.describe('Side panel auto-refresh — POST /reload', () => {
       expect(body.plugins).toBeGreaterThan(0);
 
       // Verify the side panel shows the plugin (from the sync.full pipeline)
-      await expect(sidePanelPage.locator('text=Welcome to OpenTabs')).toBeHidden({ timeout: 30_000 });
+      await expect(sidePanelPage.locator('text=No Plugins Installed')).toBeHidden({ timeout: 30_000 });
       await expect(sidePanelPage.locator('text=E2E Test')).toBeVisible({ timeout: 10_000 });
 
       await sidePanelPage.close();

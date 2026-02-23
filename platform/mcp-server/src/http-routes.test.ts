@@ -473,7 +473,7 @@ describe('/ws-info endpoint', () => {
     expect(body.wsSecret).toBeUndefined();
   });
 
-  test('returns wsUrl without leaking wsSecret when auth is configured and Bearer token matches', async () => {
+  test('returns wsUrl and wsSecret when auth is configured and Bearer token matches', async () => {
     const { handlers, state } = createTestHandlers();
     state.wsSecret = 'my-test-secret';
 
@@ -485,7 +485,7 @@ describe('/ws-info endpoint', () => {
     const body = (await (res as Response).json()) as WsInfoResponse;
 
     expect(body.wsUrl).toBe('ws://localhost:9876/ws');
-    expect(body.wsSecret).toBeUndefined();
+    expect(body.wsSecret).toBe('my-test-secret');
   });
 
   test('returns 401 for unauthenticated requests when auth is configured', async () => {

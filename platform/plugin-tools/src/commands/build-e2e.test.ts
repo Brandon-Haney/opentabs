@@ -1,15 +1,20 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { cpSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const CLI_PATH = resolve(import.meta.dirname, '..', '..', 'dist', 'cli.js');
 const E2E_PLUGIN_DIR = resolve(import.meta.dirname, '..', '..', '..', '..', 'plugins', 'e2e-test');
 
-/** Run `opentabs-plugin build` in the given plugin directory. */
-const runBuild = (pluginDir: string): { exitCode: number; stdout: string; stderr: string } => {
+/**
+ * Run `opentabs-plugin build` in the given plugin directory.
+ * Uses an isolated config directory so the build doesn't register
+ * in the user's real ~/.opentabs/config.json or notify a running server.
+ */
+const runBuild = (pluginDir: string, configDir: string): { exitCode: number; stdout: string; stderr: string } => {
   const result = Bun.spawnSync(['bun', CLI_PATH, 'build'], {
     cwd: pluginDir,
+    env: { ...Bun.env, OPENTABS_CONFIG_DIR: configDir },
   });
   return {
     exitCode: result.exitCode,
@@ -33,9 +38,12 @@ const copyPlugin = (destDir: string): void => {
 
 describe('opentabs-plugin build E2E', () => {
   let tmpDir: string;
+  let configDir: string;
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'opentabs-build-e2e-'));
+    configDir = join(tmpDir, '.opentabs');
+    mkdirSync(configDir, { recursive: true });
   });
 
   afterEach(() => {
@@ -55,7 +63,7 @@ describe('opentabs-plugin build E2E', () => {
       rmSync(join(pluginDir, 'dist', 'tools.json'), { force: true });
       rmSync(join(pluginDir, 'dist', 'adapter.iife.js'), { force: true });
 
-      const { exitCode, stdout, stderr } = runBuild(pluginDir);
+      const { exitCode, stdout, stderr } = runBuild(pluginDir, configDir);
 
       // stderr may contain the isReady() warning when the plugin is built outside a browser
       if (stderr.length > 0) {
@@ -113,7 +121,7 @@ describe('opentabs-plugin build E2E', () => {
 
       rmSync(join(pluginDir, 'dist', 'adapter.iife.js'), { force: true });
 
-      const { exitCode } = runBuild(pluginDir);
+      const { exitCode } = runBuild(pluginDir, configDir);
       expect(exitCode).toBe(0);
 
       const iifePath = join(pluginDir, 'dist', 'adapter.iife.js');
@@ -133,7 +141,7 @@ describe('opentabs-plugin build E2E', () => {
 
       rmSync(join(pluginDir, 'dist', 'adapter.iife.js'), { force: true });
 
-      const { exitCode } = runBuild(pluginDir);
+      const { exitCode } = runBuild(pluginDir, configDir);
       expect(exitCode).toBe(0);
 
       const iifeContent = await Bun.file(join(pluginDir, 'dist', 'adapter.iife.js')).text();
@@ -146,7 +154,7 @@ describe('opentabs-plugin build E2E', () => {
 
       rmSync(join(pluginDir, 'dist', 'adapter.iife.js'), { force: true });
 
-      const { exitCode } = runBuild(pluginDir);
+      const { exitCode } = runBuild(pluginDir, configDir);
       expect(exitCode).toBe(0);
 
       const iifeContent = await Bun.file(join(pluginDir, 'dist', 'adapter.iife.js')).text();
@@ -169,7 +177,7 @@ describe('opentabs-plugin build E2E', () => {
       const modified = content.replace(/name\s*=\s*["']e2e-test["']/, 'name = "INVALID"');
       await Bun.write(distIndex, modified);
 
-      const { exitCode, stderr } = runBuild(pluginDir);
+      const { exitCode, stderr } = runBuild(pluginDir, configDir);
 
       expect(exitCode).toBe(1);
       expect(stderr).toContain('Validation failed');
@@ -186,7 +194,7 @@ describe('opentabs-plugin build E2E', () => {
       const modified = content.replace(/tools\s*=\s*\[\s*echo[\s\S]*?\];/, 'tools = [];');
       await Bun.write(distIndex, modified);
 
-      const { exitCode, stderr } = runBuild(pluginDir);
+      const { exitCode, stderr } = runBuild(pluginDir, configDir);
 
       expect(exitCode).toBe(1);
       expect(stderr).toContain('Validation failed');

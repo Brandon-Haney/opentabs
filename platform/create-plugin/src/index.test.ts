@@ -237,8 +237,12 @@ describe('create-opentabs-plugin CLI', () => {
         // Override deps to use local platform packages (avoids npm auth requirement)
         await overrideToLocalPackages(projectDir);
 
+        // Use isolated config so the build doesn't register in the user's
+        // real ~/.opentabs/config.json or notify a running MCP server.
+        const buildEnv = { ...Bun.env, OPENTABS_CONFIG_DIR: configDir };
+
         // bun install
-        const install = Bun.spawnSync(['bun', 'install'], { cwd: projectDir });
+        const install = Bun.spawnSync(['bun', 'install'], { cwd: projectDir, env: buildEnv });
         if (install.exitCode !== 0) {
           console.error('install stdout:', install.stdout.toString());
           console.error('install stderr:', install.stderr.toString());
@@ -246,7 +250,7 @@ describe('create-opentabs-plugin CLI', () => {
         expect(install.exitCode).toBe(0);
 
         // bun run build (tsc && opentabs-plugin build)
-        const build = Bun.spawnSync(['bun', 'run', 'build'], { cwd: projectDir });
+        const build = Bun.spawnSync(['bun', 'run', 'build'], { cwd: projectDir, env: buildEnv });
         if (build.exitCode !== 0) {
           console.error('build stdout:', build.stdout.toString());
           console.error('build stderr:', build.stderr.toString());

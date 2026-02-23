@@ -32,9 +32,9 @@ interface ToolDefinition<
   TOutput extends z.ZodType,
 > {
   name: string;
-  displayName: string;
+  displayName?: string;
   description: string;
-  icon: LucideIconName;
+  icon?: LucideIconName;
   input: TInput;
   output: TOutput;
   handle(params: z.infer<TInput>, context?: ToolHandlerContext): Promise<z.infer<TOutput>>;
@@ -60,7 +60,7 @@ interface ToolDefinition<
     <Table.Row>
       <Table.Cell className="font-medium">`displayName`</Table.Cell>
       <Table.Cell>`string`</Table.Cell>
-      <Table.Cell>Human-readable name shown in the side panel (e.g., `'Send Message'`).</Table.Cell>
+      <Table.Cell>Human-readable name shown in the side panel (e.g., `'Send Message'`). Optional — auto-derived from `name` during build when omitted.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`description`</Table.Cell>
@@ -70,7 +70,7 @@ interface ToolDefinition<
     <Table.Row>
       <Table.Cell className="font-medium">`icon`</Table.Cell>
       <Table.Cell>`LucideIconName`</Table.Cell>
-      <Table.Cell>Lucide icon in kebab-case (e.g., `'message-square'`). Displayed in the side panel. See [lucide.dev/icons](https://lucide.dev/icons).</Table.Cell>
+      <Table.Cell>Lucide icon in kebab-case (e.g., `'message-square'`). Displayed in the side panel. Optional — defaults to `'wrench'` during build when omitted. See [lucide.dev/icons](https://lucide.dev/icons).</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`input`</Table.Cell>
@@ -100,9 +100,9 @@ interface ToolHandlerContext {
 }
 
 interface ProgressOptions {
-  progress: number;  // Current value (e.g., 3 of 10)
-  total: number;     // Total expected value (e.g., 10)
-  message?: string;  // Human-readable status (e.g., 'Processing page 3')
+  progress?: number;  // Current value (e.g., 3 of 10). Omit for indeterminate progress.
+  total?: number;     // Total expected value (e.g., 10). Omit for indeterminate progress.
+  message?: string;   // Human-readable status (e.g., 'Processing page 3')
 }
 ```
 

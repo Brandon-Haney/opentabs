@@ -73,10 +73,10 @@ interface ToolHandlerContext {
 }
 
 interface ProgressOptions {
-  /** Current progress value (e.g., 3 of 10 items processed). */
-  progress: number;
-  /** Total expected value (e.g., 10 items total). */
-  total: number;
+  /** Current progress value (e.g., 3 of 10 items processed). Omit for indeterminate progress. */
+  progress?: number;
+  /** Total expected value (e.g., 10 items total). Omit for indeterminate progress. */
+  total?: number;
   /** Optional human-readable message describing the current step. */
   message?: string;
 }
@@ -95,14 +95,14 @@ interface ProgressOptions {
     <Table.Row>
       <Table.Cell>`progress`</Table.Cell>
       <Table.Cell>`number`</Table.Cell>
-      <Table.Cell>Yes</Table.Cell>
-      <Table.Cell>Current step (e.g., 3 of 10)</Table.Cell>
+      <Table.Cell>No</Table.Cell>
+      <Table.Cell>Current step (e.g., 3 of 10). Omit for indeterminate progress.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell>`total`</Table.Cell>
       <Table.Cell>`number`</Table.Cell>
-      <Table.Cell>Yes</Table.Cell>
-      <Table.Cell>Total steps expected (e.g., 10)</Table.Cell>
+      <Table.Cell>No</Table.Cell>
+      <Table.Cell>Total steps expected (e.g., 10). Omit for indeterminate progress.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell>`message`</Table.Cell>

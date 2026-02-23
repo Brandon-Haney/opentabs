@@ -51,7 +51,7 @@ This tells the agent exactly what happened and what to do next.
 
 Instead of constructing `ToolError` directly, use the static factory methods. They set the right category, code, and retryable flag automatically.
 
-### `ToolError.auth(message)`
+### `ToolError.auth(message, code?)`
 
 The user isn't authenticated, or the session expired. Not retryable — the user needs to log in.
 
@@ -132,7 +132,7 @@ async function handle({ channelName }: { channelName: string }) {
   </Table.Body>
 </Table>
 
-### `ToolError.rateLimited(message, retryAfterMs?)`
+### `ToolError.rateLimited(message, retryAfterMs?, code?)`
 
 The API is rate limiting requests. Retryable — the agent should wait and try again.
 
@@ -177,7 +177,7 @@ async function handle() {
   </Table.Body>
 </Table>
 
-### `ToolError.validation(message)`
+### `ToolError.validation(message, code?)`
 
 The input is invalid. Not retryable with the same input — the agent needs to fix the parameters.
 
@@ -215,7 +215,7 @@ async function handle({ emoji }: { emoji: string }) {
   </Table.Body>
 </Table>
 
-### `ToolError.timeout(message)`
+### `ToolError.timeout(message, code?)`
 
 The operation took too long. Retryable — transient network or server slowness.
 
@@ -260,7 +260,7 @@ async function handle() {
   </Table.Body>
 </Table>
 
-### `ToolError.internal(message)`
+### `ToolError.internal(message, code?)`
 
 Something unexpected broke. Not retryable — this is a bug in the plugin.
 

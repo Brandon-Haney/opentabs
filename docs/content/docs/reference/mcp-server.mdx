@@ -163,6 +163,16 @@ Pass `Authorization: Bearer <secret>` to get the full payload:
   "confirmationBypassed": false,
   "uptime": 3600,
   "reloadCount": 2,
+  "lastReloadTimestamp": "2026-02-21T10:15:00.000Z",
+  "lastReloadDurationMs": 45,
+  "stateSchemaVersion": 1,
+  "discoveryErrors": [],
+  "fileWatcher": {
+    "watchedPlugins": ["slack"],
+    "pendingPlugins": [],
+    "lastPollAt": "2026-02-21T10:30:00.000Z",
+    "pollDetections": 0
+  },
   "auditSummary": {
     "totalInvocations": 150,
     "successCount": 142,
@@ -182,7 +192,33 @@ Key fields:
 - `failedPlugins` — plugins that failed to load (path + error message)
 - `disabledBrowserTools` — browser tool names that have been disabled via config
 - `confirmationBypassed` — whether the confirmation prompt system is skipped (via `skipConfirmation` config or `OPENTABS_SKIP_CONFIRMATION` env var)
+- `lastReloadTimestamp` — ISO 8601 timestamp of the last plugin reload (0 if never reloaded)
+- `lastReloadDurationMs` — how long the last reload took in milliseconds
+- `stateSchemaVersion` — internal state schema version number
+- `discoveryErrors` — array of non-fatal errors encountered during plugin discovery
+- `fileWatcher` — file watcher status (dev mode only): `watchedPlugins` (actively watched), `pendingPlugins` (not yet watched), `lastPollAt` (last mtime poll timestamp), `pollDetections` (changes detected via polling)
 - `auditSummary` — aggregate stats from the in-memory audit log, including `last24h` breakdown and `avgDurationMs`
+
+---
+
+## /ws-info — WebSocket bootstrap
+
+Returns the WebSocket URL for the Chrome extension to connect. Requires Bearer token authentication (rate-limited to 10 requests/minute).
+
+```bash
+curl -s http://localhost:9515/ws-info \
+  -H "Authorization: Bearer <secret>"
+```
+
+Response:
+
+```json
+{
+  "wsUrl": "ws://localhost:9515/ws"
+}
+```
+
+The extension reads this URL to establish the WebSocket connection. The `wsUrl` is derived from the server's host and always points to the `/ws` endpoint.
 
 ---
 

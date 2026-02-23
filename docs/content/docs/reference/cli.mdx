@@ -231,7 +231,9 @@ Performs the following checks:
 4. **Extension connection** — checks if the Chrome extension is connected via WebSocket
 5. **Extension installed** — verifies `~/.opentabs/extension/manifest.json` exists
 6. **Extension version** — compares installed extension version to CLI version
-7. **Local plugins** — for each local plugin, checks that `dist/tools.json` and `dist/adapter.iife.js` exist
+7. **MCP client config** — checks Claude Code and Cursor MCP configuration files for correct server entries
+8. **Local plugins** — for each local plugin, checks that `dist/tools.json` and `dist/adapter.iife.js` exist
+9. **npm plugin health** — verifies npm-discovered plugins reported by the server are loading correctly
 
 Results are shown as a checklist with pass (✓), warning (!), and error (✗) indicators. Exits with code 1 if any fatal check fails.
 
@@ -265,9 +267,9 @@ opentabs logs [options]
       <Table.Cell>Number of lines to display.</Table.Cell>
     </Table.Row>
     <Table.Row>
-      <Table.Cell className="font-medium">`--no-follow`</Table.Cell>
+      <Table.Cell className="font-medium">`-f, --follow`</Table.Cell>
       <Table.Cell>—</Table.Cell>
-      <Table.Cell>Print recent lines and exit instead of following new output.</Table.Cell>
+      <Table.Cell>Follow new output in real time (like `tail -f`).</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`--plugin <name>`</Table.Cell>
@@ -277,14 +279,17 @@ opentabs logs [options]
   </Table.Body>
 </Table>
 
-Reads from `~/.opentabs/server.log`. By default, follows the file for new output (like `tail -f`). The `--plugin` flag filters to lines containing `[plugin:<name>]`, showing only log entries from that plugin.
+Reads from `~/.opentabs/server.log`. By default, prints recent lines and exits. Use `-f` or `--follow` to tail the file for new output in real time. The `--plugin` flag filters to lines containing `[plugin:<name>]`, showing only log entries from that plugin.
 
 ```bash
-# Follow logs in real time
+# Show recent log lines and exit
 opentabs logs
 
-# Show last 100 lines and exit
-opentabs logs --lines 100 --no-follow
+# Follow logs in real time
+opentabs logs --follow
+
+# Show last 100 lines and follow
+opentabs logs --lines 100 -f
 
 # Show only Slack plugin logs
 opentabs logs --plugin slack
@@ -339,7 +344,7 @@ npm install -g opentabs-plugin-slack
 Scaffold a new plugin project.
 
 ```bash
-opentabs plugin create <name> --domain <domain> [options]
+opentabs plugin create [name] [options]
 ```
 
 <Table>
@@ -352,14 +357,14 @@ opentabs plugin create <name> --domain <domain> [options]
   </Table.Header>
   <Table.Body>
     <Table.Row>
-      <Table.Cell className="font-medium">`<name>`</Table.Cell>
-      <Table.Cell>Yes</Table.Cell>
-      <Table.Cell>Plugin name (lowercase alphanumeric + hyphens).</Table.Cell>
+      <Table.Cell className="font-medium">`[name]`</Table.Cell>
+      <Table.Cell>No</Table.Cell>
+      <Table.Cell>Plugin name (lowercase alphanumeric + hyphens). Prompted interactively if omitted.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`--domain <domain>`</Table.Cell>
-      <Table.Cell>Yes</Table.Cell>
-      <Table.Cell>Target domain (e.g., `.slack.com`, `github.com`).</Table.Cell>
+      <Table.Cell>No</Table.Cell>
+      <Table.Cell>Target domain (e.g., `.slack.com`, `github.com`). Prompted interactively if omitted.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`--display <name>`</Table.Cell>
@@ -374,7 +379,7 @@ opentabs plugin create <name> --domain <domain> [options]
   </Table.Body>
 </Table>
 
-Generates a standalone npm package with TypeScript config, a scaffolded plugin class, and an example tool. The plugin is auto-registered in `~/.opentabs/config.json` on first build.
+When run without arguments, enters interactive mode and prompts for the plugin name, domain, display name, and description. Generates a standalone npm package with TypeScript config, a scaffolded plugin class, and an example tool. The plugin is auto-registered in `~/.opentabs/config.json` on first build.
 
 The standalone `create-opentabs-plugin` package provides the same functionality:
 
@@ -516,7 +521,7 @@ opentabs config show [options]
   <Table.Body>
     <Table.Row>
       <Table.Cell className="font-medium">`--json`</Table.Cell>
-      <Table.Cell>Output config as JSON (includes the actual secret value).</Table.Cell>
+      <Table.Cell>Output config as JSON (secret is redacted).</Table.Cell>
     </Table.Row>
   </Table.Body>
 </Table>
@@ -524,9 +529,6 @@ opentabs config show [options]
 ```bash
 opentabs config show
 opentabs config show --json
-
-# Retrieve the secret for MCP client configuration
-opentabs config show --json | jq -r .secret
 ```
 
 ### opentabs config set

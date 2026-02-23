@@ -28,7 +28,7 @@ If the server isn't running, start it with `opentabs start`.
 2. **Correct port?** — Default is 9515. If using a custom port, make sure the extension is configured for the same one.
 3. **Extension loaded?** — Open `chrome://extensions` and verify OpenTabs is loaded and enabled. Click any error link for details.
 4. **Version mismatch?** — Run `opentabs doctor`. A mismatch between the installed extension and CLI version can cause failures. Restart `opentabs start` to auto-update the extension files, then reload the extension from `chrome://extensions`.
-5. **Stale secret?** — The extension fetches the auth secret via `/ws-info` on first connect. If the secret changed, close and reopen the side panel to reconnect.
+5. **Stale secret?** — The extension reads the auth secret from `~/.opentabs/extension/auth.json` (written by the server on startup). If the secret changed (e.g., after deleting `config.json`), restart the server with `opentabs start` to regenerate the file, then reload the extension from `chrome://extensions`.
 
 ## Extension reconnection delays
 
@@ -221,7 +221,7 @@ The Chrome extension does not auto-reload. After `bun run build`:
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`curl http://localhost:9515/health`</Table.Cell>
-      <Table.Cell>Direct health check (no CLI needed).</Table.Cell>
+      <Table.Cell>Direct health check (no CLI needed). Without a Bearer token, returns only `status`, `version`, and `extensionConnected`. Pass `-H "Authorization: Bearer <secret>"` for the full payload.</Table.Cell>
     </Table.Row>
   </Table.Body>
 </Table>

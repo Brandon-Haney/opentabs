@@ -137,12 +137,11 @@ See what the AI agent has been calling and whether calls succeeded:
 opentabs audit
 ```
 
-```
-Time       Tool                           OK   Duration
-─────────────────────────────────────────────────────────
-10:15:30   slack_list_channels             ✓    120ms
-10:15:45   slack_send_message              ✗    30.0s
-10:16:02   slack_list_channels             ✓    95ms
+```bash
+Time       Tool                      OK   Duration
+10:15:30   slack_list_channels        ✓    120ms
+10:15:45   slack_send_message         ✗    30.0s
+10:16:02   slack_list_channels        ✓    95ms
 ```
 
 A red `✗` means the tool call failed. Filter by plugin to focus on what matters:

@@ -33,11 +33,23 @@ const createRingBuffer = (): RingBuffer => ({
   size: 0,
 });
 
-/** Per-plugin ring buffers */
-const buffers = new Map<string, RingBuffer>();
+/** globalThis key for persisting log buffers across bun --hot reloads */
+const BUFFERS_KEY = '__opentabs_log_buffers__' as const;
+
+/** Per-plugin ring buffers — stored on globalThis so they survive bun --hot module re-evaluation */
+const getBuffers = (): Map<string, RingBuffer> => {
+  const g = globalThis as Record<string, unknown>;
+  let map = g[BUFFERS_KEY] as Map<string, RingBuffer> | undefined;
+  if (!map) {
+    map = new Map<string, RingBuffer>();
+    g[BUFFERS_KEY] = map;
+  }
+  return map;
+};
 
 /** Append a log entry to a plugin's ring buffer */
 const appendLog = (plugin: string, entry: PluginLogEntry): void => {
+  const buffers = getBuffers();
   let ring = buffers.get(plugin);
   if (!ring) {
     ring = createRingBuffer();
@@ -56,7 +68,7 @@ const appendLog = (plugin: string, entry: PluginLogEntry): void => {
  * Returns at most `limit` entries (defaults to all buffered entries).
  */
 const getLogs = (plugin: string, limit?: number): PluginLogEntry[] => {
-  const ring = buffers.get(plugin);
+  const ring = getBuffers().get(plugin);
   if (!ring || ring.size === 0) return [];
 
   const cap = limit !== undefined && limit < ring.size ? limit : ring.size;
@@ -77,14 +89,14 @@ const getLogs = (plugin: string, limit?: number): PluginLogEntry[] => {
 };
 
 /** Get the number of buffered entries for a plugin */
-const getLogCount = (plugin: string): number => buffers.get(plugin)?.size ?? 0;
+const getLogCount = (plugin: string): number => getBuffers().get(plugin)?.size ?? 0;
 
 /** Get all plugin names that have buffered entries */
-const getBufferedPlugins = (): string[] => Array.from(buffers.keys());
+const getBufferedPlugins = (): string[] => Array.from(getBuffers().keys());
 
 /** Clear all buffered entries (used during testing or state reset) */
 const clearAllLogs = (): void => {
-  buffers.clear();
+  getBuffers().clear();
 };
 
 export { appendLog, clearAllLogs, getBufferedPlugins, getLogCount, getLogs };

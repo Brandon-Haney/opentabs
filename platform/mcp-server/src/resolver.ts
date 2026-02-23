@@ -125,16 +125,25 @@ const resolvePluginPath = async (specifier: string, configDir: string): Promise<
   return resolveNpmPackage(specifier);
 };
 
-/** Cached global node_modules paths (computed once at startup). */
-let cachedGlobalPaths: string[] | null = null;
+/** globalThis key for persisting cached global paths across bun --hot reloads */
+const GLOBAL_PATHS_KEY = '__opentabs_global_paths__' as const;
+
+/** Access the cached global paths from globalThis so the value survives bun --hot module re-evaluation */
+const getCachedGlobalPaths = (): string[] | null =>
+  ((globalThis as Record<string, unknown>)[GLOBAL_PATHS_KEY] as string[] | null | undefined) ?? null;
+
+const setCachedGlobalPaths = (paths: string[] | null): void => {
+  (globalThis as Record<string, unknown>)[GLOBAL_PATHS_KEY] = paths;
+};
 
 /**
  * Get global node_modules directories from both npm and bun.
- * Results are cached in a module-level variable so the shell commands
- * run at most once per process lifetime.
+ * Results are cached on globalThis so the shell commands run at most once
+ * per process lifetime, surviving bun --hot module re-evaluations.
  */
 const getGlobalNodeModulesPaths = (): string[] => {
-  if (cachedGlobalPaths !== null) return cachedGlobalPaths;
+  const cached = getCachedGlobalPaths();
+  if (cached !== null) return cached;
 
   const paths: string[] = [];
 
@@ -164,7 +173,7 @@ const getGlobalNodeModulesPaths = (): string[] => {
     // bun not installed or not in PATH
   }
 
-  cachedGlobalPaths = paths;
+  setCachedGlobalPaths(paths);
   return paths;
 };
 
@@ -284,7 +293,7 @@ const discoverGlobalNpmPlugins = async (): Promise<{ dirs: string[]; errors: str
 
 /** Reset the cached global paths (for testing). */
 const resetGlobalPathsCache = (): void => {
-  cachedGlobalPaths = null;
+  setCachedGlobalPaths(null);
 };
 
 export { discoverGlobalNpmPlugins, isAllowedPluginPath, resetGlobalPathsCache, resolvePluginPath };

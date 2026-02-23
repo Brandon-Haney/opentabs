@@ -164,6 +164,47 @@ export const postJSON: PostJSON = (async (
 }) as PostJSON;
 
 /**
+ * Overloaded call signature for postForm — validates against a Zod schema
+ * when provided, or returns an unchecked cast when omitted.
+ */
+export interface PostForm {
+  /** POST URL-encoded form and validate the response against a Zod schema. Returns the validated, typed result. */
+  <T extends z.ZodType>(
+    url: string,
+    body: Record<string, string>,
+    init: FetchFromPageOptions | undefined,
+    schema: T,
+  ): Promise<z.infer<T>>;
+  /** POST URL-encoded form with an unchecked cast to T (backward compatible). */
+  <T>(url: string, body: Record<string, string>, init?: FetchFromPageOptions): Promise<T>;
+}
+
+/**
+ * Convenience wrapper for POST requests with a URL-encoded form body. Sets
+ * Content-Type to application/x-www-form-urlencoded, serializes the body using
+ * URLSearchParams, and parses the JSON response. When a Zod schema is provided
+ * as the fourth argument, the parsed JSON is validated against it.
+ */
+export const postForm: PostForm = (async (
+  url: string,
+  body: Record<string, string>,
+  init?: FetchFromPageOptions,
+  schema?: z.ZodType,
+): Promise<unknown> => {
+  const extraHeaders = init?.headers ? Object.fromEntries(new Headers(init.headers).entries()) : {};
+  return fetchJSONImpl(
+    url,
+    {
+      ...init,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...extraHeaders },
+      body: new URLSearchParams(body).toString(),
+    },
+    schema,
+  );
+}) as PostForm;
+
+/**
  * Overloaded call signature for putJSON — validates against a Zod schema
  * when provided, or returns an unchecked cast when omitted.
  */

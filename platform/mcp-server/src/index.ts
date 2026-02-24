@@ -42,7 +42,6 @@
  * └──────────────────────────────────────────────────────────────────────┘
  */
 
-import { loadSecret } from './config.js';
 import { isDev } from './dev-mode.js';
 import { createHandlers } from './http-routes.js';
 import { log } from './logger.js';
@@ -142,10 +141,6 @@ const sessionServers: McpServerInstance[] = hotState?.sessionServers ?? [];
 // ---------------------------------------------------------------------------
 
 const reloadResult: ReloadResult = await performReload(state, sessionServers, transports, isHotReload);
-
-// Load the WebSocket secret from auth.json (single source of truth).
-// Also re-read on every reload (reloadCore) so secret rotation takes effect.
-state.wsSecret = await loadSecret();
 
 // ---------------------------------------------------------------------------
 // Handler functions — created fresh on every module evaluation

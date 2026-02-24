@@ -5,6 +5,7 @@ import {
   requireTabId,
   sendErrorResult,
   sendSuccessResult,
+  sendValidationError,
 } from './helpers.js';
 import { withDebugger } from './resource-commands.js';
 import {
@@ -13,9 +14,6 @@ import {
   POLL_INTERVAL_MS,
   TEXT_PREVIEW_MAX_LENGTH,
 } from '../constants.js';
-import { JSONRPC_INTERNAL_ERROR, JSONRPC_INVALID_PARAMS } from '../json-rpc-errors.js';
-import { sendToServer } from '../messaging.js';
-import { sanitizeErrorMessage } from '../sanitize-error.js';
 import { toErrorMessage } from '@opentabs-dev/shared';
 
 /**
@@ -136,11 +134,7 @@ export const handleBrowserSelectOption = async (
     const label = typeof params.label === 'string' ? params.label : undefined;
 
     if (value === undefined && label === undefined) {
-      sendToServer({
-        jsonrpc: '2.0',
-        error: { code: JSONRPC_INVALID_PARAMS, message: 'At least one of value or label must be provided' },
-        id,
-      });
+      sendValidationError(id, 'At least one of value or label must be provided');
       return;
     }
 
@@ -353,11 +347,7 @@ export const handleBrowserHandleDialog = async (
     const action = requireStringParam(params, 'action', id);
     if (action === null) return;
     if (action !== 'accept' && action !== 'dismiss') {
-      sendToServer({
-        jsonrpc: '2.0',
-        error: { code: JSONRPC_INVALID_PARAMS, message: "action must be 'accept' or 'dismiss'" },
-        id,
-      });
+      sendValidationError(id, "action must be 'accept' or 'dismiss'");
       return;
     }
     const accept = action === 'accept';
@@ -374,14 +364,7 @@ export const handleBrowserHandleDialog = async (
       } catch (err) {
         const msg = toErrorMessage(err);
         const isNoDialog = msg.includes('No dialog is showing') || msg.includes('no dialog');
-        sendToServer({
-          jsonrpc: '2.0',
-          error: {
-            code: JSONRPC_INTERNAL_ERROR,
-            message: isNoDialog ? 'No JavaScript dialog is currently open on this tab' : sanitizeErrorMessage(msg),
-          },
-          id,
-        });
+        sendErrorResult(id, isNoDialog ? new Error('No JavaScript dialog is currently open on this tab') : err);
       }
     });
   } catch (err) {

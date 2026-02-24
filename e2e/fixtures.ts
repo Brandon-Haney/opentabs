@@ -808,8 +808,8 @@ const startAnalyzeSiteServer = (): Promise<TestServer> =>
  *
  * This is the most reliable approach — no async chrome.storage races,
  * no timing issues between background and offscreen startup. The
- * default URL `ws://localhost:9515/ws` is simply replaced with the
- * test's actual MCP server port.
+ * default port constant (DEFAULT_SERVER_PORT = 9515) is patched so
+ * buildWsUrl produces the test's actual MCP server URL.
  */
 const createExtensionCopy = (
   mcpPort: number,
@@ -836,18 +836,20 @@ const createExtensionCopy = (
       },
     });
 
-    // Patch the default MCP server URL in the offscreen document so it
-    // connects to this test's port. The offscreen.js has DEFAULT_MCP_SERVER_URL
-    // as a hardcoded fallback. Port configuration from chrome.storage.local
-    // (via the background's offscreen:getUrl handler) takes precedence when set,
-    // but the fallback must also point to the right port for initial connection.
-    const testUrl = `ws://localhost:${mcpPort}/ws`;
-
+    // Patch the default server port in the offscreen document so it
+    // connects to this test's port. The bundled code has:
+    //   var DEFAULT_SERVER_PORT = 9515;
+    //   var buildWsUrl = (port) => `ws://localhost:${port}/ws`;
+    //   var DEFAULT_MCP_SERVER_URL = buildWsUrl(DEFAULT_SERVER_PORT);
+    // Replacing the port constant makes buildWsUrl produce the test URL.
     const offscreenPath = path.join(extensionDir, 'dist/offscreen/index.js');
     const offscreenCode = fs.readFileSync(offscreenPath, 'utf-8');
-    const patchedOffscreen = offscreenCode.replace(/ws:\/\/localhost:9515\/ws/g, testUrl);
+    const portPattern = /var DEFAULT_SERVER_PORT\s*=\s*9515\b/;
+    const patchedOffscreen = offscreenCode.replace(portPattern, `var DEFAULT_SERVER_PORT = ${mcpPort}`);
     if (patchedOffscreen === offscreenCode) {
-      throw new Error(`Failed to patch offscreen.js — could not find "ws://localhost:9515/ws" in ${offscreenPath}`);
+      throw new Error(
+        `Failed to patch offscreen.js — could not find "var DEFAULT_SERVER_PORT = 9515" in ${offscreenPath}`,
+      );
     }
     fs.writeFileSync(offscreenPath, patchedOffscreen, 'utf-8');
 

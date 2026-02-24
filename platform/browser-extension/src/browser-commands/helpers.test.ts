@@ -24,6 +24,7 @@ const {
   requireUrl,
   extractScriptResult,
   sendErrorResult,
+  sendValidationError,
   sendSuccessResult,
 } = await import('./helpers.js');
 
@@ -358,6 +359,35 @@ describe('sendErrorResult', () => {
       jsonrpc: '2.0',
       id: 99,
       error: { code: -32603 },
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sendValidationError
+// ---------------------------------------------------------------------------
+
+describe('sendValidationError', () => {
+  beforeEach(() => {
+    mockSendToServer.mockReset();
+  });
+
+  test('sends -32602 error with provided message', () => {
+    sendValidationError('req-45', 'Missing required field');
+    expect(mockSendToServer).toHaveBeenCalledTimes(1);
+    expect(firstSentMessage()).toMatchObject({
+      jsonrpc: '2.0',
+      id: 'req-45',
+      error: { code: -32602, message: 'Missing required field' },
+    });
+  });
+
+  test('works with numeric id', () => {
+    sendValidationError(77, 'Invalid parameter');
+    expect(firstSentMessage()).toMatchObject({
+      jsonrpc: '2.0',
+      id: 77,
+      error: { code: -32602, message: 'Invalid parameter' },
     });
   });
 });

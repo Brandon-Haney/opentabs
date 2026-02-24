@@ -1,7 +1,11 @@
-import { requireStringParam, requireTabId, sendErrorResult, sendSuccessResult } from './helpers.js';
+import {
+  requireStringParam,
+  requireTabId,
+  sendErrorResult,
+  sendSuccessResult,
+  sendValidationError,
+} from './helpers.js';
 import { CDP_VERSION } from '../constants.js';
-import { JSONRPC_INVALID_PARAMS } from '../json-rpc-errors.js';
-import { sendToServer } from '../messaging.js';
 import { isCapturing } from '../network-capture.js';
 import { sanitizeErrorMessage } from '../sanitize-error.js';
 import { toErrorMessage } from '@opentabs-dev/shared';
@@ -159,14 +163,10 @@ export const handleBrowserGetResourceContent = async (
 
       const match = findFrameForResource(treeResult.frameTree, url);
       if (!match) {
-        sendToServer({
-          jsonrpc: '2.0',
-          error: {
-            code: JSONRPC_INVALID_PARAMS,
-            message: `Resource not found in page: ${url}. Use browser_list_resources to find valid resource URLs.`,
-          },
+        sendValidationError(
           id,
-        });
+          `Resource not found in page: ${url}. Use browser_list_resources to find valid resource URLs.`,
+        );
         return;
       }
 

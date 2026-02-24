@@ -117,6 +117,15 @@ export const sendErrorResult = (id: string | number, err: unknown): void => {
   });
 };
 
+/** Sends a JSONRPC_INVALID_PARAMS error with the given message. */
+export const sendValidationError = (id: string | number, message: string): void => {
+  sendToServer({
+    jsonrpc: '2.0',
+    error: { code: JSONRPC_INVALID_PARAMS, message },
+    id,
+  });
+};
+
 /** Sends a JSON-RPC 2.0 success response. */
 export const sendSuccessResult = (id: string | number, result: unknown): void => {
   sendToServer({ jsonrpc: '2.0', result, id });

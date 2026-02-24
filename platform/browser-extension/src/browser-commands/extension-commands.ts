@@ -1,4 +1,10 @@
-import { requireStringParam, requireTabId, sendErrorResult, sendSuccessResult } from './helpers.js';
+import {
+  requireStringParam,
+  requireTabId,
+  sendErrorResult,
+  sendSuccessResult,
+  sendValidationError,
+} from './helpers.js';
 import { bgLogCollector } from '../background-log-state.js';
 import {
   buildWsUrl,
@@ -14,8 +20,6 @@ import {
   WS_CONNECTED_KEY,
   WS_FLUSH_DELAY_MS,
 } from '../constants.js';
-import { JSONRPC_INVALID_PARAMS } from '../json-rpc-errors.js';
-import { sendToServer } from '../messaging.js';
 import { getActiveCapturesSummary } from '../network-capture.js';
 import { getAllPluginMeta, getPluginMeta } from '../plugin-storage.js';
 import { findAllMatchingTabs } from '../tab-matching.js';
@@ -150,19 +154,15 @@ export const handleExtensionGetSidePanel = async (id: string | number): Promise<
     ]);
 
     if (!sidePanelResult || typeof sidePanelResult !== 'object') {
-      sendToServer({ jsonrpc: '2.0', result: { open: false }, id });
+      sendSuccessResult(id, { open: false });
       return;
     }
 
     const response = sidePanelResult as { state?: unknown; html?: string };
-    sendToServer({
-      jsonrpc: '2.0',
-      result: { open: true, state: response.state, html: response.html },
-      id,
-    });
+    sendSuccessResult(id, { open: true, state: response.state, html: response.html });
   } catch {
     // Side panel not open or message failed — return { open: false }
-    sendToServer({ jsonrpc: '2.0', result: { open: false }, id });
+    sendSuccessResult(id, { open: false });
   }
 };
 
@@ -176,11 +176,7 @@ export const handleExtensionCheckAdapter = async (
 
     const meta = await getPluginMeta(pluginName);
     if (!meta) {
-      sendToServer({
-        jsonrpc: '2.0',
-        error: { code: JSONRPC_INVALID_PARAMS, message: `Plugin not found: "${pluginName}"` },
-        id,
-      });
+      sendValidationError(id, `Plugin not found: "${pluginName}"`);
       return;
     }
 
@@ -318,7 +314,7 @@ export const handleExtensionForceReconnect = async (id: string | number): Promis
     // Send the success response FIRST, before the WebSocket is torn down.
     // The response travels over the current WebSocket connection; if we
     // close it first, the response would never reach the MCP server.
-    sendToServer({ jsonrpc: '2.0', result: { reconnecting: true }, id });
+    sendSuccessResult(id, { reconnecting: true });
 
     await new Promise(resolve => setTimeout(resolve, WS_FLUSH_DELAY_MS));
 
@@ -347,7 +343,7 @@ export const handleBrowserExecuteScript = async (
     const execFile = requireStringParam(params, 'execFile', id);
     if (execFile === null) return;
     if (!/^__exec-[a-f0-9-]+\.js$/.test(execFile)) {
-      sendToServer({ jsonrpc: '2.0', error: { code: JSONRPC_INVALID_PARAMS, message: 'Invalid execFile format' }, id });
+      sendValidationError(id, 'Invalid execFile format');
       return;
     }
 

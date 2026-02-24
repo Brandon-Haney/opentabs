@@ -1,7 +1,11 @@
-import { extractScriptResult, requireTabId, sendErrorResult, sendSuccessResult } from './helpers.js';
+import {
+  extractScriptResult,
+  requireTabId,
+  sendErrorResult,
+  sendSuccessResult,
+  sendValidationError,
+} from './helpers.js';
 import { TEXT_PREVIEW_MAX_LENGTH } from '../constants.js';
-import { JSONRPC_INVALID_PARAMS } from '../json-rpc-errors.js';
-import { sendToServer } from '../messaging.js';
 
 export const handleBrowserScroll = async (params: Record<string, unknown>, id: string | number): Promise<void> => {
   try {
@@ -16,14 +20,7 @@ export const handleBrowserScroll = async (params: Record<string, unknown>, id: s
       direction !== 'left' &&
       direction !== 'right'
     ) {
-      sendToServer({
-        jsonrpc: '2.0',
-        error: {
-          code: JSONRPC_INVALID_PARAMS,
-          message: `Invalid direction: "${direction}". Must be one of: up, down, left, right`,
-        },
-        id,
-      });
+      sendValidationError(id, `Invalid direction: "${direction}". Must be one of: up, down, left, right`);
       return;
     }
     const distance = typeof params.distance === 'number' ? params.distance : null;
@@ -139,7 +136,12 @@ export const handleBrowserScroll = async (params: Record<string, unknown>, id: s
 
     const result = extractScriptResult(results, id);
     if (!result) return;
-    sendSuccessResult(id, result);
+    sendSuccessResult(id, {
+      ...(result.scrolledTo !== undefined ? { scrolledTo: result.scrolledTo } : {}),
+      scrollPosition: result.scrollPosition,
+      scrollSize: result.scrollSize,
+      viewportSize: result.viewportSize,
+    });
   } catch (err) {
     sendErrorResult(id, err);
   }

@@ -1,6 +1,4 @@
-import { requireStringParam, requireUrl, sendErrorResult, sendSuccessResult } from './helpers.js';
-import { JSONRPC_INTERNAL_ERROR, JSONRPC_INVALID_PARAMS } from '../json-rpc-errors.js';
-import { sendToServer } from '../messaging.js';
+import { requireStringParam, requireUrl, sendErrorResult, sendSuccessResult, sendValidationError } from './helpers.js';
 
 /**
  * Retrieves cookies for a URL, optionally filtered by cookie name.
@@ -47,11 +45,7 @@ export const handleBrowserSetCookie = async (params: Record<string, unknown>, id
     if (name === null) return;
     const value = params.value;
     if (typeof value !== 'string') {
-      sendToServer({
-        jsonrpc: '2.0',
-        error: { code: JSONRPC_INVALID_PARAMS, message: 'Missing or invalid value parameter' },
-        id,
-      });
+      sendValidationError(id, 'Missing or invalid value parameter');
       return;
     }
     const details: chrome.cookies.SetDetails = { url, name, value };
@@ -62,7 +56,7 @@ export const handleBrowserSetCookie = async (params: Record<string, unknown>, id
     if (typeof params.expirationDate === 'number') details.expirationDate = params.expirationDate;
     const cookie = await chrome.cookies.set(details);
     if (!cookie) {
-      sendToServer({ jsonrpc: '2.0', error: { code: JSONRPC_INTERNAL_ERROR, message: 'Failed to set cookie' }, id });
+      sendErrorResult(id, new Error('Failed to set cookie'));
       return;
     }
     sendSuccessResult(id, {

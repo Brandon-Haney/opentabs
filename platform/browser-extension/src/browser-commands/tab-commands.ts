@@ -1,6 +1,4 @@
-import { requireTabId, requireUrl, sendErrorResult, sendSuccessResult } from './helpers.js';
-import { JSONRPC_INVALID_PARAMS } from '../json-rpc-errors.js';
-import { sendToServer } from '../messaging.js';
+import { requireTabId, requireUrl, sendErrorResult, sendSuccessResult, sendValidationError } from './helpers.js';
 
 /** Lists all open Chrome tabs with their IDs, URLs, titles, active state, and window IDs. */
 export const handleBrowserListTabs = async (id: string | number): Promise<void> => {
@@ -80,7 +78,7 @@ export const handleBrowserFocusTab = async (params: Record<string, unknown>, id:
     if (tabId === null) return;
     const tab = await chrome.tabs.update(tabId, { active: true });
     if (!tab) {
-      sendToServer({ jsonrpc: '2.0', error: { code: JSONRPC_INVALID_PARAMS, message: `Tab ${tabId} not found` }, id });
+      sendValidationError(id, `Tab ${tabId} not found`);
       return;
     }
     await chrome.windows.update(tab.windowId, { focused: true });

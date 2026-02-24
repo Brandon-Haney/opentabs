@@ -25,9 +25,9 @@ describe('createState', () => {
     expect(state.extensionWs).toBeNull();
     expect(state.outdatedPlugins).toEqual([]);
     expect(state.browserTools).toEqual([]);
-    expect(state.fileWatcherEntries).toEqual([]);
-    expect(state.fileWatcherTimers).toBeInstanceOf(Map);
-    expect(state.fileWatcherTimers.size).toBe(0);
+    expect(state.fileWatching.entries).toEqual([]);
+    expect(state.fileWatching.timers).toBeInstanceOf(Map);
+    expect(state.fileWatching.timers.size).toBe(0);
     expect(state.wsSecret).toBeNull();
     expect(state.registry.toolLookup).toBeInstanceOf(Map);
     expect(state.registry.toolLookup.size).toBe(0);

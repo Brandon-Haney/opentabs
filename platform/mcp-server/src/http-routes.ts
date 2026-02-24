@@ -189,15 +189,312 @@ const computeAuditSummary = (auditLog: AuditEntry[]) => {
   };
 };
 
+/** Bun server subset needed by route handlers */
+interface BunServer {
+  upgrade: (req: Request, opts: { data: unknown; headers?: HeadersInit }) => boolean;
+  timeout: (req: Request, seconds: number) => void;
+}
+
+// --- Extracted route handlers ---
+// Each handles a single route (or route group) and receives only the
+// dependencies it needs. The router in createHandleFetch delegates to these.
+
+/** WebSocket upgrade for extension connections (/ws) */
+const handleWsUpgrade = (req: Request, bunServer: BunServer, state: ServerState): Response | undefined => {
+  // Authenticate WebSocket connections using a shared secret sent via
+  // the Sec-WebSocket-Protocol header (not URL query params, which leak
+  // into server logs, browser history, and proxy logs).
+  // The client sends protocols: ['opentabs', '<secret>'] and the server
+  // echoes 'opentabs' as the accepted subprotocol.
+  // Uses constant-time comparison to prevent timing side-channel attacks.
+  if (state.wsSecret) {
+    const protocols = req.headers.get('sec-websocket-protocol');
+    const parts = protocols?.split(',').map(p => p.trim()) ?? [];
+    let secretMatched = false;
+    for (const part of parts) {
+      if (constantTimeEqual(part, state.wsSecret)) {
+        secretMatched = true;
+      }
+    }
+    if (!secretMatched) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const upgraded = bunServer.upgrade(req, {
+      data: undefined,
+      headers: { 'sec-websocket-protocol': 'opentabs' },
+    });
+    if (!upgraded) {
+      return new Response('WebSocket upgrade failed', { status: 400 });
+    }
+    return undefined;
+  }
+  const upgraded = bunServer.upgrade(req, { data: undefined });
+  if (!upgraded) {
+    return new Response('WebSocket upgrade failed', { status: 400 });
+  }
+  return undefined;
+};
+
+/** WebSocket info endpoint for extension authentication (GET /ws-info) */
+const handleWsInfo = (req: Request, url: URL, state: ServerState): Response => {
+  const authError = checkBearerAuth(req, state.wsSecret);
+  if (authError) return authError;
+  const wsUrl = `ws://${url.host}/ws`;
+  return Response.json({ wsUrl, ...(state.wsSecret ? { wsSecret: state.wsSecret } : {}) });
+};
+
+/** Health endpoint (GET /health) */
+const handleHealth = (
+  req: Request,
+  state: ServerState,
+  transports: Map<string, WebStandardStreamableHTTPServerTransport>,
+  getHotState: GetHotState,
+): Response => {
+  const authenticated = checkBearerAuth(req, state.wsSecret) === null;
+
+  if (!authenticated) {
+    return Response.json({
+      status: 'ok',
+      version,
+      extensionConnected: state.extensionWs !== null,
+    });
+  }
+
+  const hs = getHotState();
+
+  const pluginDetails = [...state.registry.plugins.values()].map(p => ({
+    name: p.name,
+    displayName: p.displayName,
+    toolCount: p.tools.length,
+    tools: p.tools.map(t => prefixedToolName(p.name, t.name)),
+    tabState: state.tabMapping.get(p.name)?.state ?? 'closed',
+    source: p.source,
+    sdkVersion: p.sdkVersion ?? null,
+    logBufferSize: getLogCount(p.name),
+    ...(p.iconSvg ? { iconSvg: p.iconSvg } : {}),
+  }));
+
+  const toolCount = state.registry.toolLookup.size + state.cachedBrowserTools.length;
+  const uptimeSeconds = Math.floor((Date.now() - state.startedAt) / 1000);
+
+  const pendingPlugins = state.fileWatching.entries.filter(e => e.pluginName.startsWith('(pending:')).length;
+  const watchedPlugins = state.fileWatching.entries.length - pendingPlugins;
+
+  const auditSummary = computeAuditSummary(state.auditLog);
+
+  const disabledBrowserTools = state.cachedBrowserTools
+    .filter(c => state.browserToolPolicy[c.name] === false)
+    .map(c => c.name);
+
+  return Response.json({
+    status: 'ok',
+    version,
+    sdkVersion,
+    mode: isDev() ? 'dev' : 'production',
+    extensionConnected: state.extensionWs !== null,
+    mcpClients: transports.size,
+    plugins: state.registry.plugins.size,
+    pluginDetails,
+    failedPlugins: [...state.registry.failures],
+    discoveryErrors: [...state.discoveryErrors],
+    toolCount,
+    disabledBrowserTools,
+    confirmationBypassed: state.skipConfirmation,
+    uptime: uptimeSeconds,
+    reloadCount: hs?.reloadCount ?? 0,
+    lastReloadTimestamp: hs?.lastReloadTimestamp ?? 0,
+    lastReloadDurationMs: hs?.lastReloadDurationMs ?? 0,
+    stateSchemaVersion: STATE_SCHEMA_VERSION,
+    fileWatcher: {
+      watchedPlugins,
+      pendingPlugins,
+      lastPollAt: state.fileWatching.mtimeLastPollAt,
+      pollDetections: state.fileWatching.mtimePollDetections,
+    },
+    auditSummary,
+  });
+};
+
+/** Audit log endpoint (GET /audit) */
+const handleAudit = (url: URL, state: ServerState, req: Request): Response => {
+  const authError = checkBearerAuth(req, state.wsSecret);
+  if (authError) return authError;
+
+  const limitParam = parseInt(url.searchParams.get('limit') ?? '50', 10);
+  const limit = Math.max(1, Math.min(500, Number.isNaN(limitParam) ? 50 : limitParam));
+  const pluginFilter = url.searchParams.get('plugin');
+  const toolFilter = url.searchParams.get('tool');
+  const successParam = url.searchParams.get('success');
+  const successFilter = successParam === 'true' ? true : successParam === 'false' ? false : undefined;
+
+  let entries = [...state.auditLog].reverse();
+  if (pluginFilter) entries = entries.filter(e => e.plugin === pluginFilter);
+  if (toolFilter) entries = entries.filter(e => e.tool === toolFilter);
+  if (successFilter !== undefined) entries = entries.filter(e => e.success === successFilter);
+  entries = entries.slice(0, limit);
+
+  return Response.json(entries);
+};
+
+/** Config/plugin rediscovery endpoint (POST /reload) */
+const handleReload = async (
+  req: Request,
+  state: ServerState,
+  sessionServers: McpServerInstance[],
+  transports: Map<string, WebStandardStreamableHTTPServerTransport>,
+): Promise<Response> => {
+  const authError = checkBearerAuth(req, state.wsSecret);
+  if (authError) return authError;
+  if (!checkEndpointRateLimit(state, '/reload', 10)) {
+    return new Response('Too Many Requests', { status: 429, headers: { 'Retry-After': '60' } });
+  }
+  try {
+    const result = await performConfigReload(state, sessionServers, transports);
+    return Response.json({
+      ok: true,
+      plugins: result.plugins,
+      durationMs: result.durationMs,
+    });
+  } catch (err) {
+    log.error('Config reload failed:', err);
+    const rawMsg = toErrorMessage(err);
+    return Response.json({ ok: false, error: sanitizeErrorMessage(rawMsg) }, { status: 500 });
+  }
+};
+
+/** Extension reload endpoint (POST /extension/reload) */
+const handleExtensionReload = (req: Request, state: ServerState): Response => {
+  const authError = checkBearerAuth(req, state.wsSecret);
+  if (authError) return authError;
+  if (!checkEndpointRateLimit(state, '/extension/reload', 10)) {
+    return new Response('Too Many Requests', { status: 429, headers: { 'Retry-After': '60' } });
+  }
+  if (!state.extensionWs) {
+    return Response.json({ ok: false, error: 'Extension not connected' }, { status: 503 });
+  }
+  const id = getNextRequestId();
+  state.extensionWs.send(JSON.stringify({ jsonrpc: '2.0', method: 'extension.reload', id }));
+  return Response.json({ ok: true, message: 'Reload signal sent to extension' });
+};
+
+/** MCP Streamable HTTP transport (/mcp — POST/GET/DELETE) */
+const handleMcp = async (
+  req: Request,
+  bunServer: BunServer,
+  state: ServerState,
+  transports: Map<string, WebStandardStreamableHTTPServerTransport>,
+  sessionServers: McpServerInstance[],
+): Promise<Response> => {
+  const authError = checkBearerAuth(req, state.wsSecret);
+  if (authError) return authError;
+  // Disable Bun's per-connection idle timeout for MCP requests.
+  // Tool dispatches can take up to DISPATCH_TIMEOUT_MS (30s) and the
+  // Streamable HTTP transport holds the response open until the tool
+  // result arrives. The default idle timeout (10s) would close the
+  // connection before long-running dispatches complete.
+  bunServer.timeout(req, 0);
+
+  const sessionId = req.headers.get('mcp-session-id');
+
+  if (req.method === 'POST') {
+    // Existing session
+    if (sessionId) {
+      const existingTransport = transports.get(sessionId);
+      if (existingTransport) {
+        return existingTransport.handleRequest(req);
+      }
+    }
+
+    // New session — rate-limit session creation to prevent resource exhaustion
+    if (!checkEndpointRateLimit(state, '/mcp-session-create', 5)) {
+      return new Response('Too Many Requests', { status: 429, headers: { 'Retry-After': '60' } });
+    }
+
+    // Check if it's an initialize request
+    const body: unknown = await req.json().catch(() => null);
+    if (body && isInitializeRequest(body)) {
+      let sessionServer: McpServerInstance | null = null;
+
+      const removeSession = (): void => {
+        if (sessionServer) {
+          const idx = sessionServers.indexOf(sessionServer);
+          if (idx !== -1) sessionServers.splice(idx, 1);
+          sessionServer = null;
+        }
+      };
+
+      const transport = new WebStandardStreamableHTTPServerTransport({
+        sessionIdGenerator: () => crypto.randomUUID(),
+        onsessioninitialized: (sid: string) => {
+          transports.set(sid, transport);
+          // Track which transport this session is connected to for stale sweep
+          if (sessionServer) {
+            state.sessionTransportIds.set(sessionServer, sid);
+          }
+          log.info(`MCP client connected (session: ${sid})`);
+        },
+        onsessionclosed: (sid: string) => {
+          transports.delete(sid);
+          removeSession();
+          log.info(`MCP client disconnected (session: ${sid})`);
+        },
+      });
+
+      transport.onclose = () => {
+        if (transport.sessionId) {
+          transports.delete(transport.sessionId);
+        }
+        removeSession();
+      };
+
+      try {
+        sessionServer = await createMcpServer(state);
+        sessionServers.push(sessionServer);
+        await sessionServer.connect(transport);
+        return await transport.handleRequest(req, { parsedBody: body });
+      } catch (err) {
+        removeSession();
+        throw err;
+      }
+    }
+
+    return Response.json(
+      {
+        jsonrpc: '2.0',
+        error: {
+          code: -32600,
+          message: 'Bad Request: missing session or not an initialize request',
+        },
+        id: null,
+      },
+      { status: 400 },
+    );
+  }
+
+  if (req.method === 'GET') {
+    const getTransport = sessionId ? transports.get(sessionId) : undefined;
+    if (getTransport) {
+      return getTransport.handleRequest(req);
+    }
+    return new Response('Missing or invalid session', { status: 400 });
+  }
+
+  if (req.method === 'DELETE') {
+    const delTransport = sessionId ? transports.get(sessionId) : undefined;
+    if (delTransport) {
+      return delTransport.handleRequest(req);
+    }
+    return new Response('Missing or invalid session', { status: 400 });
+  }
+
+  return new Response('Method not allowed', { status: 405 });
+};
+
+// --- Main router ---
+
 const createHandleFetch =
   ({ state, transports, sessionServers, getHotState }: RouteDeps) =>
-  async (
-    req: Request,
-    bunServer: {
-      upgrade: (req: Request, opts: { data: unknown; headers?: HeadersInit }) => boolean;
-      timeout: (req: Request, seconds: number) => void;
-    },
-  ): Promise<Response | undefined> => {
+  async (req: Request, bunServer: BunServer): Promise<Response | undefined> => {
     const url = new URL(req.url);
 
     // --- Host header validation (DNS rebinding protection) ---
@@ -223,289 +520,14 @@ const createHandleFetch =
       return new Response('Forbidden: browser requests are not allowed', { status: 403 });
     }
 
-    // --- WebSocket upgrade for extension ---
-    if (url.pathname === '/ws') {
-      // Authenticate WebSocket connections using a shared secret sent via
-      // the Sec-WebSocket-Protocol header (not URL query params, which leak
-      // into server logs, browser history, and proxy logs).
-      // The client sends protocols: ['opentabs', '<secret>'] and the server
-      // echoes 'opentabs' as the accepted subprotocol.
-      // Uses constant-time comparison to prevent timing side-channel attacks.
-      if (state.wsSecret) {
-        const protocols = req.headers.get('sec-websocket-protocol');
-        const parts = protocols?.split(',').map(p => p.trim()) ?? [];
-        let secretMatched = false;
-        for (const part of parts) {
-          if (constantTimeEqual(part, state.wsSecret)) {
-            secretMatched = true;
-          }
-        }
-        if (!secretMatched) {
-          return new Response('Unauthorized', { status: 401 });
-        }
-        const upgraded = bunServer.upgrade(req, {
-          data: undefined,
-          headers: { 'sec-websocket-protocol': 'opentabs' },
-        });
-        if (!upgraded) {
-          return new Response('WebSocket upgrade failed', { status: 400 });
-        }
-        return undefined;
-      }
-      const upgraded = bunServer.upgrade(req, { data: undefined });
-      if (!upgraded) {
-        return new Response('WebSocket upgrade failed', { status: 400 });
-      }
-      return undefined;
-    }
-
-    // --- WebSocket info endpoint (for extension authentication) ---
-    // Returns the WebSocket URL and secret as separate fields. The secret
-    // is sent via the Sec-WebSocket-Protocol header during the upgrade,
-    // keeping it out of URLs, logs, and browser history.
-    //
-    // Requires Bearer auth. The extension bootstraps the secret from
-    // auth.json (bundled in the extension directory at install time)
-    // and uses it for all /ws-info requests.
-    if (url.pathname === '/ws-info' && req.method === 'GET') {
-      const authError = checkBearerAuth(req, state.wsSecret);
-      if (authError) return authError;
-      const wsUrl = `ws://${url.host}/ws`;
-      return Response.json({ wsUrl, ...(state.wsSecret ? { wsSecret: state.wsSecret } : {}) });
-    }
-
-    // --- Health endpoint ---
-    // Unauthenticated requests get a minimal status response (alive check only).
-    // Authenticated requests get the full response with plugin details, paths, etc.
-    if (url.pathname === '/health' && req.method === 'GET') {
-      const authenticated = checkBearerAuth(req, state.wsSecret) === null;
-
-      if (!authenticated) {
-        return Response.json({
-          status: 'ok',
-          version,
-          extensionConnected: state.extensionWs !== null,
-        });
-      }
-
-      const hs = getHotState();
-
-      const pluginDetails = [...state.registry.plugins.values()].map(p => ({
-        name: p.name,
-        displayName: p.displayName,
-        toolCount: p.tools.length,
-        tools: p.tools.map(t => prefixedToolName(p.name, t.name)),
-        tabState: state.tabMapping.get(p.name)?.state ?? 'closed',
-        source: p.source,
-        sdkVersion: p.sdkVersion ?? null,
-        logBufferSize: getLogCount(p.name),
-        ...(p.iconSvg ? { iconSvg: p.iconSvg } : {}),
-      }));
-
-      const toolCount = state.registry.toolLookup.size + state.cachedBrowserTools.length;
-      const uptimeSeconds = Math.floor((Date.now() - state.startedAt) / 1000);
-
-      const pendingPlugins = state.fileWatcherEntries.filter(e => e.pluginName.startsWith('(pending:')).length;
-      const watchedPlugins = state.fileWatcherEntries.length - pendingPlugins;
-
-      const auditSummary = computeAuditSummary(state.auditLog);
-
-      const disabledBrowserTools = state.cachedBrowserTools
-        .filter(c => state.browserToolPolicy[c.name] === false)
-        .map(c => c.name);
-
-      return Response.json({
-        status: 'ok',
-        version,
-        sdkVersion,
-        mode: isDev() ? 'dev' : 'production',
-        extensionConnected: state.extensionWs !== null,
-        mcpClients: transports.size,
-        plugins: state.registry.plugins.size,
-        pluginDetails,
-        failedPlugins: [...state.registry.failures],
-        discoveryErrors: [...state.discoveryErrors],
-        toolCount,
-        disabledBrowserTools,
-        confirmationBypassed: state.skipConfirmation,
-        uptime: uptimeSeconds,
-        reloadCount: hs?.reloadCount ?? 0,
-        lastReloadTimestamp: hs?.lastReloadTimestamp ?? 0,
-        lastReloadDurationMs: hs?.lastReloadDurationMs ?? 0,
-        stateSchemaVersion: STATE_SCHEMA_VERSION,
-        fileWatcher: {
-          watchedPlugins,
-          pendingPlugins,
-          lastPollAt: state.mtimeLastPollAt,
-          pollDetections: state.mtimePollDetections,
-        },
-        auditSummary,
-      });
-    }
-
-    // --- Audit log endpoint ---
-    if (url.pathname === '/audit' && req.method === 'GET') {
-      const authError = checkBearerAuth(req, state.wsSecret);
-      if (authError) return authError;
-
-      const limitParam = parseInt(url.searchParams.get('limit') ?? '50', 10);
-      const limit = Math.max(1, Math.min(500, Number.isNaN(limitParam) ? 50 : limitParam));
-      const pluginFilter = url.searchParams.get('plugin');
-      const toolFilter = url.searchParams.get('tool');
-      const successParam = url.searchParams.get('success');
-      const successFilter = successParam === 'true' ? true : successParam === 'false' ? false : undefined;
-
-      let entries = [...state.auditLog].reverse();
-      if (pluginFilter) entries = entries.filter(e => e.plugin === pluginFilter);
-      if (toolFilter) entries = entries.filter(e => e.tool === toolFilter);
-      if (successFilter !== undefined) entries = entries.filter(e => e.success === successFilter);
-      entries = entries.slice(0, limit);
-
-      return Response.json(entries);
-    }
-
-    // --- Config/plugin rediscovery endpoint ---
-    if (url.pathname === '/reload' && req.method === 'POST') {
-      const authError = checkBearerAuth(req, state.wsSecret);
-      if (authError) return authError;
-      if (!checkEndpointRateLimit(state, '/reload', 10)) {
-        return new Response('Too Many Requests', { status: 429, headers: { 'Retry-After': '60' } });
-      }
-      try {
-        const result = await performConfigReload(state, sessionServers, transports);
-        return Response.json({
-          ok: true,
-          plugins: result.plugins,
-          durationMs: result.durationMs,
-        });
-      } catch (err) {
-        log.error('Config reload failed:', err);
-        const rawMsg = toErrorMessage(err);
-        return Response.json({ ok: false, error: sanitizeErrorMessage(rawMsg) }, { status: 500 });
-      }
-    }
-
-    // --- Extension reload endpoint ---
-    if (url.pathname === '/extension/reload' && req.method === 'POST') {
-      const authError = checkBearerAuth(req, state.wsSecret);
-      if (authError) return authError;
-      if (!checkEndpointRateLimit(state, '/extension/reload', 10)) {
-        return new Response('Too Many Requests', { status: 429, headers: { 'Retry-After': '60' } });
-      }
-      if (!state.extensionWs) {
-        return Response.json({ ok: false, error: 'Extension not connected' }, { status: 503 });
-      }
-      const id = getNextRequestId();
-      state.extensionWs.send(JSON.stringify({ jsonrpc: '2.0', method: 'extension.reload', id }));
-      return Response.json({ ok: true, message: 'Reload signal sent to extension' });
-    }
-
-    // --- MCP Streamable HTTP transport ---
-    if (url.pathname === '/mcp') {
-      const authError = checkBearerAuth(req, state.wsSecret);
-      if (authError) return authError;
-      // Disable Bun's per-connection idle timeout for MCP requests.
-      // Tool dispatches can take up to DISPATCH_TIMEOUT_MS (30s) and the
-      // Streamable HTTP transport holds the response open until the tool
-      // result arrives. The default idle timeout (10s) would close the
-      // connection before long-running dispatches complete.
-      bunServer.timeout(req, 0);
-
-      const sessionId = req.headers.get('mcp-session-id');
-
-      if (req.method === 'POST') {
-        // Existing session
-        if (sessionId) {
-          const existingTransport = transports.get(sessionId);
-          if (existingTransport) {
-            return existingTransport.handleRequest(req);
-          }
-        }
-
-        // New session — rate-limit session creation to prevent resource exhaustion
-        if (!checkEndpointRateLimit(state, '/mcp-session-create', 5)) {
-          return new Response('Too Many Requests', { status: 429, headers: { 'Retry-After': '60' } });
-        }
-
-        // Check if it's an initialize request
-        const body: unknown = await req.json().catch(() => null);
-        if (body && isInitializeRequest(body)) {
-          let sessionServer: McpServerInstance | null = null;
-
-          const removeSession = (): void => {
-            if (sessionServer) {
-              const idx = sessionServers.indexOf(sessionServer);
-              if (idx !== -1) sessionServers.splice(idx, 1);
-              sessionServer = null;
-            }
-          };
-
-          const transport = new WebStandardStreamableHTTPServerTransport({
-            sessionIdGenerator: () => crypto.randomUUID(),
-            onsessioninitialized: (sid: string) => {
-              transports.set(sid, transport);
-              // Track which transport this session is connected to for stale sweep
-              if (sessionServer) {
-                state.sessionTransportIds.set(sessionServer, sid);
-              }
-              log.info(`MCP client connected (session: ${sid})`);
-            },
-            onsessionclosed: (sid: string) => {
-              transports.delete(sid);
-              removeSession();
-              log.info(`MCP client disconnected (session: ${sid})`);
-            },
-          });
-
-          transport.onclose = () => {
-            if (transport.sessionId) {
-              transports.delete(transport.sessionId);
-            }
-            removeSession();
-          };
-
-          try {
-            sessionServer = await createMcpServer(state);
-            sessionServers.push(sessionServer);
-            await sessionServer.connect(transport);
-            return await transport.handleRequest(req, { parsedBody: body });
-          } catch (err) {
-            removeSession();
-            throw err;
-          }
-        }
-
-        return Response.json(
-          {
-            jsonrpc: '2.0',
-            error: {
-              code: -32600,
-              message: 'Bad Request: missing session or not an initialize request',
-            },
-            id: null,
-          },
-          { status: 400 },
-        );
-      }
-
-      if (req.method === 'GET') {
-        const getTransport = sessionId ? transports.get(sessionId) : undefined;
-        if (getTransport) {
-          return getTransport.handleRequest(req);
-        }
-        return new Response('Missing or invalid session', { status: 400 });
-      }
-
-      if (req.method === 'DELETE') {
-        const delTransport = sessionId ? transports.get(sessionId) : undefined;
-        if (delTransport) {
-          return delTransport.handleRequest(req);
-        }
-        return new Response('Missing or invalid session', { status: 400 });
-      }
-
-      return new Response('Method not allowed', { status: 405 });
-    }
+    if (url.pathname === '/ws') return handleWsUpgrade(req, bunServer, state);
+    if (url.pathname === '/ws-info' && req.method === 'GET') return handleWsInfo(req, url, state);
+    if (url.pathname === '/health' && req.method === 'GET') return handleHealth(req, state, transports, getHotState);
+    if (url.pathname === '/audit' && req.method === 'GET') return handleAudit(url, state, req);
+    if (url.pathname === '/reload' && req.method === 'POST')
+      return handleReload(req, state, sessionServers, transports);
+    if (url.pathname === '/extension/reload' && req.method === 'POST') return handleExtensionReload(req, state);
+    if (url.pathname === '/mcp') return handleMcp(req, bunServer, state, transports, sessionServers);
 
     return new Response('Not Found', { status: 404 });
   };
@@ -579,13 +601,7 @@ const createHandleWsClose =
 /** Hot-reloadable handler functions for the Bun.serve() delegate shell */
 interface HotHandlers {
   /** HTTP request handler — all routing logic */
-  fetch: (
-    req: Request,
-    bunServer: {
-      upgrade: (req: Request, opts: { data: unknown; headers?: HeadersInit }) => boolean;
-      timeout: (req: Request, seconds: number) => void;
-    },
-  ) => Promise<Response | undefined>;
+  fetch: (req: Request, bunServer: BunServer) => Promise<Response | undefined>;
   /** Extension WebSocket opened */
   wsOpen: (ws: WsHandle) => void;
   /** Extension WebSocket message received */

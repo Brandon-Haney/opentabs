@@ -35,6 +35,30 @@ export interface FileWatcherEntry {
   lastSeenMtimes: Map<string, number>;
 }
 
+/** Grouped state for file watching (plugin watchers, config watcher, mtime polling) */
+export interface FileWatchingState {
+  /** Active file watcher entries — stored on state so hot reload can clean up the previous iteration's handles */
+  entries: FileWatcherEntry[];
+  /** File watcher debounce timers — stored on state so hot reload can clear them */
+  timers: Map<string, ReturnType<typeof setTimeout>>;
+  /** Generation counter for file watchers — incremented each time startFileWatching runs.
+   *  Debounce callbacks capture the current generation and bail out if it has changed,
+   *  preventing stale closures from the previous module evaluation from executing. */
+  generation: number;
+  /** FSWatcher for ~/.opentabs/ directory, detecting config.json changes */
+  configWatcher: FSWatcher | null;
+  /** Last-seen mtime (ms) of ~/.opentabs/config.json — used by mtime polling fallback */
+  configLastSeenMtime: number | null;
+  /** Timer ID for periodic mtime polling — cleared by stopFileWatching */
+  mtimePollTimerId: ReturnType<typeof setInterval> | null;
+  /** Timestamp (ms since epoch) of the last mtime polling tick, or null if polling hasn't run yet */
+  mtimeLastPollAt: number | null;
+  /** Running count of times mtime polling detected a change that fs.watch missed */
+  mtimePollDetections: number;
+  /** Timestamps (ms since epoch) of recent mtime poll detections — used for stale watcher warning */
+  mtimePollDetectionTimestamps: number[];
+}
+
 /** How a plugin was discovered: auto-discovered from global node_modules or explicitly listed in localPlugins */
 export type PluginSource = 'npm' | 'local';
 
@@ -259,10 +283,8 @@ export interface ServerState {
   outdatedPlugins: OutdatedPlugin[];
   /** Browser tools — updated on each hot reload so existing session handlers see fresh definitions */
   browserTools: BrowserToolDefinition[];
-  /** Active file watcher entries — stored on state so hot reload can clean up the previous iteration's handles */
-  fileWatcherEntries: FileWatcherEntry[];
-  /** File watcher debounce timers — stored on state so hot reload can clear them */
-  fileWatcherTimers: Map<string, ReturnType<typeof setTimeout>>;
+  /** Grouped state for file watching (plugin watchers, config watcher, mtime polling) */
+  fileWatching: FileWatchingState;
   /** Shared secret for WebSocket authentication (loaded from config) */
   wsSecret: string | null;
   /** Cached browser tools with pre-computed JSON Schema. Rebuilt on each reload. */
@@ -277,22 +299,6 @@ export interface ServerState {
   sweepTimerId: ReturnType<typeof setInterval> | null;
   /** Timestamp (ms since epoch) when the server process first started — survives hot reloads */
   startedAt: number;
-  /** Generation counter for file watchers — incremented each time startFileWatching runs.
-   *  Debounce callbacks capture the current generation and bail out if it has changed,
-   *  preventing stale closures from the previous module evaluation from executing. */
-  fileWatcherGeneration: number;
-  /** FSWatcher for ~/.opentabs/ directory, detecting config.json changes */
-  configWatcher: FSWatcher | null;
-  /** Last-seen mtime (ms) of ~/.opentabs/config.json — used by mtime polling fallback */
-  configLastSeenMtime: number | null;
-  /** Timer ID for periodic mtime polling — cleared by stopFileWatching */
-  mtimePollTimerId: ReturnType<typeof setInterval> | null;
-  /** Timestamp (ms since epoch) of the last mtime polling tick, or null if polling hasn't run yet */
-  mtimeLastPollAt: number | null;
-  /** Running count of times mtime polling detected a change that fs.watch missed */
-  mtimePollDetections: number;
-  /** Timestamps (ms since epoch) of recent mtime poll detections — used for stale watcher warning */
-  mtimePollDetectionTimestamps: number[];
   /** Discovery errors from the most recent reload — used by config.getState for the side panel */
   discoveryErrors: ReadonlyArray<{ specifier: string; error: string }>;
   /** Circular buffer of recent tool invocations for diagnostics and monitoring */
@@ -315,7 +321,7 @@ export interface ServerState {
 }
 
 /** Increment when changing the type of an existing ServerState field */
-export const STATE_SCHEMA_VERSION = 3;
+export const STATE_SCHEMA_VERSION = 4;
 
 /** Frozen empty registry for initializing ServerState */
 export const EMPTY_REGISTRY: PluginRegistry = Object.freeze({
@@ -343,8 +349,17 @@ export const createState = (): ServerState => ({
   extensionWs: null,
   outdatedPlugins: [],
   browserTools: [],
-  fileWatcherEntries: [],
-  fileWatcherTimers: new Map(),
+  fileWatching: {
+    entries: [],
+    timers: new Map(),
+    generation: 0,
+    configWatcher: null,
+    configLastSeenMtime: null,
+    mtimePollTimerId: null,
+    mtimeLastPollAt: null,
+    mtimePollDetections: 0,
+    mtimePollDetectionTimestamps: [],
+  },
   wsSecret: null,
   cachedBrowserTools: [],
   sessionTransportIds: new WeakMap(),
@@ -352,13 +367,6 @@ export const createState = (): ServerState => ({
   activeDispatches: new Map(),
   sweepTimerId: null,
   startedAt: Date.now(),
-  fileWatcherGeneration: 0,
-  configWatcher: null,
-  configLastSeenMtime: null,
-  mtimePollTimerId: null,
-  mtimeLastPollAt: null,
-  mtimePollDetections: 0,
-  mtimePollDetectionTimestamps: [],
   discoveryErrors: [],
   auditLog: [],
   skipConfirmation: false,

@@ -21,7 +21,7 @@
  */
 
 import { getConfigDir } from './config.js';
-import { loadPlugin } from './loader.js';
+import { extractToolsArray, loadPlugin } from './loader.js';
 import { log } from './logger.js';
 import { buildRegistry } from './registry.js';
 import { ADAPTER_FILENAME, ADAPTER_SOURCE_MAP_FILENAME, TOOLS_FILENAME, isOk } from '@opentabs-dev/shared';
@@ -94,7 +94,7 @@ const getFileMtimeMs = (path: string): number | null => {
  * Find the FileWatcherEntry for a given plugin directory.
  */
 const findEntry = (state: ServerState, pluginDir: string): FileWatcherEntry | undefined =>
-  state.fileWatcherEntries.find(e => e.pluginDir === pluginDir);
+  state.fileWatching.entries.find(e => e.pluginDir === pluginDir);
 
 /**
  * Record the current mtime for a file on a FileWatcherEntry's lastSeenMtimes map.
@@ -112,17 +112,18 @@ const recordMtime = (entry: FileWatcherEntry, filePath: string): void => {
  */
 const recordPollDetection = (state: ServerState): void => {
   const now = Date.now();
-  state.mtimePollDetections++;
-  state.mtimePollDetectionTimestamps.push(now);
+  const fw = state.fileWatching;
+  fw.mtimePollDetections++;
+  fw.mtimePollDetectionTimestamps.push(now);
 
   // Trim to bounded size
-  if (state.mtimePollDetectionTimestamps.length > MAX_DETECTION_TIMESTAMPS) {
-    state.mtimePollDetectionTimestamps = state.mtimePollDetectionTimestamps.slice(-MAX_DETECTION_TIMESTAMPS);
+  if (fw.mtimePollDetectionTimestamps.length > MAX_DETECTION_TIMESTAMPS) {
+    fw.mtimePollDetectionTimestamps = fw.mtimePollDetectionTimestamps.slice(-MAX_DETECTION_TIMESTAMPS);
   }
 
   // Count detections within the window
   const windowStart = now - STALE_WATCHER_WINDOW_MS;
-  const recentDetections = state.mtimePollDetectionTimestamps.filter(ts => ts >= windowStart);
+  const recentDetections = fw.mtimePollDetectionTimestamps.filter(ts => ts >= windowStart);
 
   // Emit warning exactly when crossing the threshold (not on every subsequent detection)
   if (recentDetections.length === STALE_WATCHER_THRESHOLD) {
@@ -233,18 +234,8 @@ const parseToolsJson = (raw: string, filePath: string): ManifestTool[] | null =>
     return null;
   }
 
-  // Extract the tools array from either format
-  let toolsArray: unknown[];
-  if (Array.isArray(parsed)) {
-    toolsArray = parsed;
-  } else if (typeof parsed === 'object' && parsed !== null && 'tools' in parsed) {
-    const candidate = (parsed as Record<string, unknown>).tools;
-    if (!Array.isArray(candidate)) {
-      log.error(`File watcher: ${filePath} .tools is not an array`);
-      return null;
-    }
-    toolsArray = candidate;
-  } else {
+  const toolsArray = extractToolsArray(parsed);
+  if (!toolsArray) {
     log.error(`File watcher: ${filePath} is not a valid manifest`);
     return null;
   }
@@ -413,7 +404,7 @@ const watchPendingPlugin = (
 ): FileWatcherEntry => {
   const watchers: FSWatcher[] = [];
   const distDir = join(pluginDir, 'dist');
-  const gen = state.fileWatcherGeneration;
+  const gen = state.fileWatching.generation;
 
   // Watch dist directory for tools.json and IIFE creation/changes
   try {
@@ -421,14 +412,14 @@ const watchPendingPlugin = (
       if (filename !== TOOLS_FILENAME && filename !== ADAPTER_FILENAME) return;
 
       const key = `${pluginDir}:pending`;
-      const existing = state.fileWatcherTimers.get(key);
+      const existing = state.fileWatching.timers.get(key);
       if (existing) clearTimeout(existing);
 
-      state.fileWatcherTimers.set(
+      state.fileWatching.timers.set(
         key,
         setTimeout(() => {
-          state.fileWatcherTimers.delete(key);
-          if (state.fileWatcherGeneration !== gen) return;
+          state.fileWatching.timers.delete(key);
+          if (state.fileWatching.generation !== gen) return;
           void handlePendingPluginChange(state, pluginDir, callbacks);
         }, 200),
       );
@@ -458,34 +449,34 @@ const watchPlugin = (
 ): FileWatcherEntry => {
   const watchers: FSWatcher[] = [];
   const distDir = join(pluginDir, 'dist');
-  const gen = state.fileWatcherGeneration;
+  const gen = state.fileWatching.generation;
 
   // Watch dist directory for tools.json and IIFE changes
   try {
     const distWatcher = watch(distDir, (_eventType, filename) => {
       if (filename === TOOLS_FILENAME) {
         const key = `${pluginDir}:tools`;
-        const existing = state.fileWatcherTimers.get(key);
+        const existing = state.fileWatching.timers.get(key);
         if (existing) clearTimeout(existing);
 
-        state.fileWatcherTimers.set(
+        state.fileWatching.timers.set(
           key,
           setTimeout(() => {
-            state.fileWatcherTimers.delete(key);
-            if (state.fileWatcherGeneration !== gen) return;
+            state.fileWatching.timers.delete(key);
+            if (state.fileWatching.generation !== gen) return;
             void handleToolsJsonChange(state, pluginName, pluginDir, callbacks);
           }, 200),
         );
       } else if (filename === ADAPTER_FILENAME) {
         const key = `${pluginDir}:iife`;
-        const existing = state.fileWatcherTimers.get(key);
+        const existing = state.fileWatching.timers.get(key);
         if (existing) clearTimeout(existing);
 
-        state.fileWatcherTimers.set(
+        state.fileWatching.timers.set(
           key,
           setTimeout(() => {
-            state.fileWatcherTimers.delete(key);
-            if (state.fileWatcherGeneration !== gen) return;
+            state.fileWatching.timers.delete(key);
+            if (state.fileWatching.generation !== gen) return;
             void handleIifeChange(state, pluginName, pluginDir, callbacks);
           }, 200),
         );
@@ -507,35 +498,37 @@ const watchPlugin = (
  * with a 'config' key and checks fileWatcherGeneration to discard stale callbacks.
  */
 const startConfigWatching = (state: ServerState, callbacks: FileWatcherCallbacks): void => {
+  const fw = state.fileWatching;
+
   // Close any existing config watcher
-  if (state.configWatcher) {
-    state.configWatcher.close();
-    state.configWatcher = null;
+  if (fw.configWatcher) {
+    fw.configWatcher.close();
+    fw.configWatcher = null;
   }
 
   const configDir = getConfigDir();
-  const gen = state.fileWatcherGeneration;
+  const gen = fw.generation;
 
   // Record initial config.json mtime for mtime polling fallback
   const configPath = join(configDir, 'config.json');
-  state.configLastSeenMtime = getFileMtimeMs(configPath);
+  fw.configLastSeenMtime = getFileMtimeMs(configPath);
 
   try {
-    state.configWatcher = watch(configDir, (_eventType: string, filename: string | null) => {
+    fw.configWatcher = watch(configDir, (_eventType: string, filename: string | null) => {
       if (filename !== 'config.json') return;
 
       const key = 'config';
-      const existing = state.fileWatcherTimers.get(key);
+      const existing = fw.timers.get(key);
       if (existing) clearTimeout(existing);
 
-      state.fileWatcherTimers.set(
+      fw.timers.set(
         key,
         setTimeout(() => {
-          state.fileWatcherTimers.delete(key);
-          if (state.fileWatcherGeneration !== gen) return;
+          fw.timers.delete(key);
+          if (state.fileWatching.generation !== gen) return;
           log.info('Config watcher: config.json changed — triggering reload');
           // Update config mtime for polling fallback
-          state.configLastSeenMtime = getFileMtimeMs(configPath);
+          state.fileWatching.configLastSeenMtime = getFileMtimeMs(configPath);
           callbacks.onConfigChanged();
         }, 200),
       );
@@ -559,28 +552,30 @@ const startConfigWatching = (state: ServerState, callbacks: FileWatcherCallbacks
  * polling are safely deduplicated.
  */
 const startMtimePolling = (state: ServerState, callbacks: FileWatcherCallbacks): void => {
+  const fw = state.fileWatching;
+
   // Clean up any existing poll timer (defensive — stopFileWatching should clear this)
-  if (state.mtimePollTimerId !== null) {
-    clearInterval(state.mtimePollTimerId);
-    state.mtimePollTimerId = null;
+  if (fw.mtimePollTimerId !== null) {
+    clearInterval(fw.mtimePollTimerId);
+    fw.mtimePollTimerId = null;
   }
 
-  const gen = state.fileWatcherGeneration;
+  const gen = fw.generation;
 
-  state.mtimePollTimerId = setInterval(() => {
+  fw.mtimePollTimerId = setInterval(() => {
     // Bail out if a new generation started (hot reload happened)
-    if (state.fileWatcherGeneration !== gen) {
-      if (state.mtimePollTimerId !== null) {
-        clearInterval(state.mtimePollTimerId);
-        state.mtimePollTimerId = null;
+    if (state.fileWatching.generation !== gen) {
+      if (state.fileWatching.mtimePollTimerId !== null) {
+        clearInterval(state.fileWatching.mtimePollTimerId);
+        state.fileWatching.mtimePollTimerId = null;
       }
       return;
     }
 
-    state.mtimeLastPollAt = Date.now();
+    state.fileWatching.mtimeLastPollAt = Date.now();
 
     // Poll plugin files (tools.json + IIFE)
-    for (const entry of state.fileWatcherEntries) {
+    for (const entry of state.fileWatching.entries) {
       const toolsJsonPath = join(entry.pluginDir, 'dist', TOOLS_FILENAME);
       const iifePath = join(entry.pluginDir, 'dist', ADAPTER_FILENAME);
 
@@ -622,12 +617,16 @@ const startMtimePolling = (state: ServerState, callbacks: FileWatcherCallbacks):
     // Poll config.json mtime
     const configPath = join(getConfigDir(), 'config.json');
     const configMtime = getFileMtimeMs(configPath);
-    if (configMtime !== null && state.configLastSeenMtime !== null && configMtime > state.configLastSeenMtime) {
+    if (
+      configMtime !== null &&
+      state.fileWatching.configLastSeenMtime !== null &&
+      configMtime > state.fileWatching.configLastSeenMtime
+    ) {
       log.info(
-        `Mtime poll: Detected change to ${configPath} (old=${state.configLastSeenMtime}, new=${configMtime}) — fs.watch may be stale`,
+        `Mtime poll: Detected change to ${configPath} (old=${state.fileWatching.configLastSeenMtime}, new=${configMtime}) — fs.watch may be stale`,
       );
       recordPollDetection(state);
-      state.configLastSeenMtime = configMtime;
+      state.fileWatching.configLastSeenMtime = configMtime;
       callbacks.onConfigChanged();
     }
   }, MTIME_POLL_INTERVAL_MS);
@@ -656,7 +655,7 @@ const startFileWatching = (
 ): void => {
   // Clean up any existing watchers first
   stopFileWatching(state);
-  state.fileWatcherGeneration++;
+  state.fileWatching.generation++;
 
   // Build set of paths already successfully loaded
   const loadedPaths = new Set<string>();
@@ -668,7 +667,7 @@ const startFileWatching = (
     if (!srcPath) continue;
     loadedPaths.add(srcPath);
     const entry = watchPlugin(state, srcPath, plugin.name, callbacks);
-    state.fileWatcherEntries.push(entry);
+    state.fileWatching.entries.push(entry);
 
     // Record initial mtimes for mtime polling fallback
     recordMtime(entry, join(srcPath, 'dist', TOOLS_FILENAME));
@@ -690,7 +689,7 @@ const startFileWatching = (
     }
 
     const entry = watchPendingPlugin(state, pluginPath, callbacks);
-    state.fileWatcherEntries.push(entry);
+    state.fileWatching.entries.push(entry);
 
     // Record initial mtimes for mtime polling fallback
     recordMtime(entry, join(pluginPath, 'dist', TOOLS_FILENAME));
@@ -701,7 +700,7 @@ const startFileWatching = (
     log.info(`File watcher: Watching pending plugin path at ${pluginPath}`);
   }
 
-  const loadedCount = state.fileWatcherEntries.length - pendingCount;
+  const loadedCount = state.fileWatching.entries.length - pendingCount;
   if (loadedCount === 0 && pendingCount === 0) {
     log.info('File watcher: No local plugins to watch');
   } else {
@@ -718,29 +717,31 @@ const startFileWatching = (
  * so that the new module after hot reload can close the old module's watchers.
  */
 const stopFileWatching = (state: ServerState): void => {
-  for (const entry of state.fileWatcherEntries) {
+  const fw = state.fileWatching;
+
+  for (const entry of fw.entries) {
     for (const watcher of entry.watchers) {
       watcher.close();
     }
   }
-  state.fileWatcherEntries.length = 0;
+  fw.entries.length = 0;
 
   // Close config watcher
-  if (state.configWatcher) {
-    state.configWatcher.close();
-    state.configWatcher = null;
+  if (fw.configWatcher) {
+    fw.configWatcher.close();
+    fw.configWatcher = null;
   }
 
   // Stop mtime polling
-  if (state.mtimePollTimerId !== null) {
-    clearInterval(state.mtimePollTimerId);
-    state.mtimePollTimerId = null;
+  if (fw.mtimePollTimerId !== null) {
+    clearInterval(fw.mtimePollTimerId);
+    fw.mtimePollTimerId = null;
   }
 
-  for (const timer of state.fileWatcherTimers.values()) {
+  for (const timer of fw.timers.values()) {
     clearTimeout(timer);
   }
-  state.fileWatcherTimers.clear();
+  fw.timers.clear();
 };
 
 export type { FileWatcherCallbacks };

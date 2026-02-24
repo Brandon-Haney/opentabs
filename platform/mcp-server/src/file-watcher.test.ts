@@ -33,27 +33,27 @@ const makePlugin = (overrides: Partial<RegisteredPlugin> = {}): RegisteredPlugin
 describe('file watcher generation counter', () => {
   test('createState initializes fileWatcherGeneration to 0', () => {
     const state = createState();
-    expect(state.fileWatcherGeneration).toBe(0);
+    expect(state.fileWatching.generation).toBe(0);
   });
 
   test('startFileWatching increments fileWatcherGeneration', () => {
     const state = createState();
-    expect(state.fileWatcherGeneration).toBe(0);
+    expect(state.fileWatching.generation).toBe(0);
 
     startFileWatching(state, noopCallbacks);
-    expect(state.fileWatcherGeneration).toBe(1);
+    expect(state.fileWatching.generation).toBe(1);
 
     startFileWatching(state, noopCallbacks);
-    expect(state.fileWatcherGeneration).toBe(2);
+    expect(state.fileWatching.generation).toBe(2);
   });
 
   test('stopFileWatching does NOT change fileWatcherGeneration', () => {
     const state = createState();
     startFileWatching(state, noopCallbacks);
-    expect(state.fileWatcherGeneration).toBe(1);
+    expect(state.fileWatching.generation).toBe(1);
 
     stopFileWatching(state);
-    expect(state.fileWatcherGeneration).toBe(1);
+    expect(state.fileWatching.generation).toBe(1);
   });
 
   test('stale callback with old generation is rejected', () => {
@@ -61,14 +61,14 @@ describe('file watcher generation counter', () => {
     let callbackExecuted = false;
 
     // Capture generation 0 (simulating what watchPlugin does)
-    const capturedGen = state.fileWatcherGeneration;
+    const capturedGen = state.fileWatching.generation;
 
     // Bump generation (simulating startFileWatching being called during hot reload)
     startFileWatching(state, noopCallbacks);
-    expect(state.fileWatcherGeneration).toBe(1);
+    expect(state.fileWatching.generation).toBe(1);
 
     // Simulate the stale debounce callback check (same pattern as watchPlugin's setTimeout)
-    if (state.fileWatcherGeneration !== capturedGen) {
+    if (state.fileWatching.generation !== capturedGen) {
       // Stale — bail out (this is what the real code does: `return;`)
     } else {
       callbackExecuted = true;
@@ -85,11 +85,11 @@ describe('file watcher generation counter', () => {
     startFileWatching(state, noopCallbacks);
 
     // Capture generation 1 (simulating what watchPlugin does after restart)
-    const capturedGen = state.fileWatcherGeneration;
+    const capturedGen = state.fileWatching.generation;
     expect(capturedGen).toBe(1);
 
     // Simulate the debounce callback check — generation matches
-    if (state.fileWatcherGeneration !== capturedGen) {
+    if (state.fileWatching.generation !== capturedGen) {
       // Stale — bail out
     } else {
       callbackExecuted = true;
@@ -118,14 +118,14 @@ describe('file watcher lifecycle with real plugins', () => {
     state = createState();
     state.registry = buildRegistry([makePlugin({ sourcePath: pluginDir })], []);
 
-    expect(state.fileWatcherGeneration).toBe(0);
-    expect(state.fileWatcherEntries).toHaveLength(0);
+    expect(state.fileWatching.generation).toBe(0);
+    expect(state.fileWatching.entries).toHaveLength(0);
 
     startFileWatching(state, noopCallbacks);
 
-    expect(state.fileWatcherGeneration).toBe(1);
-    expect(state.fileWatcherEntries).toHaveLength(1);
-    const entry = state.fileWatcherEntries[0];
+    expect(state.fileWatching.generation).toBe(1);
+    expect(state.fileWatching.entries).toHaveLength(1);
+    const entry = state.fileWatching.entries[0];
     expect(entry).toBeDefined();
     expect((entry as NonNullable<typeof entry>).pluginName).toBe('test-plugin');
   });
@@ -141,17 +141,17 @@ describe('file watcher lifecycle with real plugins', () => {
     state.registry = buildRegistry([makePlugin({ sourcePath: pluginDir })], []);
 
     startFileWatching(state, noopCallbacks);
-    expect(state.fileWatcherGeneration).toBe(1);
-    const firstEntries = [...state.fileWatcherEntries];
+    expect(state.fileWatching.generation).toBe(1);
+    const firstEntries = [...state.fileWatching.entries];
 
     // Restart watchers (simulating hot reload)
     startFileWatching(state, noopCallbacks);
-    expect(state.fileWatcherGeneration).toBe(2);
-    expect(state.fileWatcherEntries).toHaveLength(1);
+    expect(state.fileWatching.generation).toBe(2);
+    expect(state.fileWatching.entries).toHaveLength(1);
 
     // Old entries should have been cleaned up (watchers closed)
     // New entries are different instances
-    const newEntry = state.fileWatcherEntries[0];
+    const newEntry = state.fileWatching.entries[0];
     expect(newEntry).toBeDefined();
     expect(newEntry).not.toBe(firstEntries[0]);
   });
@@ -168,17 +168,17 @@ describe('file watcher lifecycle with real plugins', () => {
 
     // Start file watching (generation becomes 1)
     startFileWatching(state, noopCallbacks);
-    expect(state.fileWatcherGeneration).toBe(1);
+    expect(state.fileWatching.generation).toBe(1);
 
     // Manually insert a stale timer that captured generation 0
     const staleGen = 0;
     let staleCallbackRan = false;
     const key = `${pluginDir}:test-stale`;
-    state.fileWatcherTimers.set(
+    state.fileWatching.timers.set(
       key,
       setTimeout(() => {
-        state.fileWatcherTimers.delete(key);
-        if (state.fileWatcherGeneration !== staleGen) return;
+        state.fileWatching.timers.delete(key);
+        if (state.fileWatching.generation !== staleGen) return;
         staleCallbackRan = true;
       }, 10),
     );
@@ -188,7 +188,7 @@ describe('file watcher lifecycle with real plugins', () => {
 
     // The stale callback should NOT have executed because generation 0 !== 1
     expect(staleCallbackRan).toBe(false);
-    expect(state.fileWatcherTimers.has(key)).toBe(false);
+    expect(state.fileWatching.timers.has(key)).toBe(false);
   });
 
   test('current-generation timer fires and executes the callback', async () => {
@@ -203,17 +203,17 @@ describe('file watcher lifecycle with real plugins', () => {
 
     // Start file watching (generation becomes 1)
     startFileWatching(state, noopCallbacks);
-    const currentGen = state.fileWatcherGeneration;
+    const currentGen = state.fileWatching.generation;
     expect(currentGen).toBe(1);
 
     // Manually insert a timer that captured the current generation
     let currentCallbackRan = false;
     const key = `${pluginDir}:test-current`;
-    state.fileWatcherTimers.set(
+    state.fileWatching.timers.set(
       key,
       setTimeout(() => {
-        state.fileWatcherTimers.delete(key);
-        if (state.fileWatcherGeneration !== currentGen) return;
+        state.fileWatching.timers.delete(key);
+        if (state.fileWatching.generation !== currentGen) return;
         currentCallbackRan = true;
       }, 10),
     );
@@ -223,7 +223,7 @@ describe('file watcher lifecycle with real plugins', () => {
 
     // The current-generation callback should have executed
     expect(currentCallbackRan).toBe(true);
-    expect(state.fileWatcherTimers.has(key)).toBe(false);
+    expect(state.fileWatching.timers.has(key)).toBe(false);
   });
 });
 
@@ -250,33 +250,33 @@ describe('config file watcher', () => {
   test('startConfigWatching sets configWatcher on state', () => {
     setupConfigDir();
 
-    expect(state.configWatcher).toBeNull();
+    expect(state.fileWatching.configWatcher).toBeNull();
 
     startConfigWatching(state, noopCallbacks);
 
-    expect(state.configWatcher).not.toBeNull();
+    expect(state.fileWatching.configWatcher).not.toBeNull();
   });
 
   test('stopFileWatching closes config watcher and sets it to null', () => {
     setupConfigDir();
 
     startConfigWatching(state, noopCallbacks);
-    expect(state.configWatcher).not.toBeNull();
+    expect(state.fileWatching.configWatcher).not.toBeNull();
 
     stopFileWatching(state);
 
-    expect(state.configWatcher).toBeNull();
+    expect(state.fileWatching.configWatcher).toBeNull();
   });
 
   test('startConfigWatching closes previous config watcher before creating a new one', () => {
     setupConfigDir();
 
     startConfigWatching(state, noopCallbacks);
-    const firstWatcher = state.configWatcher;
+    const firstWatcher = state.fileWatching.configWatcher;
     expect(firstWatcher).not.toBeNull();
 
     startConfigWatching(state, noopCallbacks);
-    const secondWatcher = state.configWatcher;
+    const secondWatcher = state.fileWatching.configWatcher;
     expect(secondWatcher).not.toBeNull();
     expect(secondWatcher).not.toBe(firstWatcher);
   });
@@ -293,7 +293,7 @@ describe('config file watcher', () => {
     };
 
     // Generation must be > 0 for callbacks to fire (startConfigWatching captures gen)
-    state.fileWatcherGeneration = 1;
+    state.fileWatching.generation = 1;
     startConfigWatching(state, callbacks);
 
     // Write config.json multiple times rapidly
@@ -329,7 +329,7 @@ describe('config file watcher', () => {
 
     // Before the debounce fires, bump the generation (simulating a hot reload restart)
     await new Promise(r => setTimeout(r, 50));
-    state.fileWatcherGeneration++;
+    state.fileWatching.generation++;
 
     // Wait for the debounce timer to fire
     await new Promise(r => setTimeout(r, 400));

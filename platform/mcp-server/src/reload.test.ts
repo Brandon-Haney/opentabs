@@ -186,7 +186,7 @@ describe('performReload', () => {
     await performReload(state, [], emptyTransports(), false);
 
     // File watchers are dev-only — production mode discovers once at startup
-    expect(state.fileWatcherEntries).toHaveLength(0);
+    expect(state.fileWatching.entries).toHaveLength(0);
   });
 
   test('does NOT throw when extension is disconnected (sync skipped)', async () => {
@@ -368,12 +368,12 @@ describe('performConfigReload', () => {
     const pluginDir = createPluginDir(configDir, 'my-plugin');
     writeConfig(configDir, [pluginDir]);
 
-    expect(state.fileWatcherEntries).toHaveLength(0);
+    expect(state.fileWatching.entries).toHaveLength(0);
 
     await performConfigReload(state, [], emptyTransports());
 
     // File watchers are dev-only — production mode discovers once at startup
-    expect(state.fileWatcherEntries).toHaveLength(0);
+    expect(state.fileWatching.entries).toHaveLength(0);
   });
 
   test('notifies all sessions of tool list changes', async () => {

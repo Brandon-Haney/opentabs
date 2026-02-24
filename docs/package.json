@@ -11,7 +11,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write --cache \"**/*.{ts,tsx,json,md,mjs,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md,mjs,css}\"",
-    "knip": "knip --config knip.config.ts"
+    "knip": "knip --config knip.config.ts",
+    "check": "bun run build && bun run type-check && bun run lint && bun run knip && bun run format:check"
   },
   "dependencies": {
     "@content-collections/core": "^0.14.1",

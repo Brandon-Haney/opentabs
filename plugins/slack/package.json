@@ -31,7 +31,8 @@
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format:check": "prettier --check \"src/**/*.ts\"",
-    "format": "prettier --write \"src/**/*.ts\""
+    "format": "prettier --write \"src/**/*.ts\"",
+    "check": "bun run build && bun run type-check && bun run lint && bun run format:check"
   },
   "peerDependencies": {
     "zod": "^4.0.0"

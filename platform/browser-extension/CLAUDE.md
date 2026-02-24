@@ -93,12 +93,26 @@ This project uses **React 19** (`^19.2.4`) with the automatic JSX runtime (`reac
 
 ## UI Component Authoring
 
-When creating new UI components for the side panel (`src/side-panel/components/retro/`):
+### Component preference hierarchy
 
-- **Prefer native HTML behavior over libraries for simple controls.** For inputs like number steppers, use native `<input type="number">` with `defaultValue` (uncontrolled) — the browser handles digit-only filtering, ArrowUp/Down stepping, and min/max clamping for free. Only reach for a headless library (Radix UI, React Aria) when the interaction pattern genuinely cannot be achieved with native HTML.
-- **Use Radix UI for complex interaction patterns.** The project uses **Radix UI** for primitives that require non-trivial accessibility and interaction logic (Accordion, Switch, Tooltip, Slot). Check Radix first before hand-rolling complex behavior like modals, popovers, or multi-select.
+When building UI for the side panel, follow this priority order:
+
+1. **Use an existing retro component** (`src/side-panel/components/retro/`) if one fits the need. These are the project's design-system primitives — they already apply the correct theme tokens, border treatment, and shadow style. Check what exists before reaching for anything else.
+2. **Use native HTML** for simple controls that retro doesn't cover. For inputs like number steppers, use native `<input type="number">` with `defaultValue` (uncontrolled) — the browser handles digit-only filtering, ArrowUp/Down stepping, and min/max clamping for free.
+3. **Use Radix UI** for complex interaction patterns that native HTML cannot achieve. The project uses Radix for primitives requiring non-trivial accessibility and interaction logic (Accordion, Switch, Tooltip, DropdownMenu, Slot). Check Radix before hand-rolling complex behavior like modals, popovers, or multi-select.
+4. **Hand-roll only as a last resort** — when no retro component, native element, or Radix primitive fits.
+
+### Every element must match the retro theme
+
+**This applies to all four levels above — no exceptions.** Retro components (level 1) already satisfy this. For levels 2, 3, and 4, you must style the element with retro theme tokens (`border-2`, `border-border`, `rounded`, `shadow-sm`, `font-mono`, theme colors like `bg-card`, `text-foreground`, `bg-primary`) so that it is visually indistinguishable from a retro component. No element in the side panel should look like it came from a different design system.
+
+### Architectural layering
+
+Keep styled primitives and business logic in separate layers. The retro component in `components/retro/` applies the design system. The app component (e.g., `PortEditor`) handles business logic (storage, messaging). If you create a new component at levels 2-4, create it as a retro primitive first, then consume it from the app component.
+
+### Additional guidelines
+
 - **Uncontrolled by default for commit-on-blur inputs.** When a value is only meaningful once committed (e.g., port number, URL), use `defaultValue` with an `onBlur`/`onKeyDown` commit handler. Controlled inputs (`value` + `onChange`) fight the user's typing by re-rendering on every keystroke. Only use controlled mode when the parent must dictate the displayed value in real time.
-- **Layer: styled primitive → app component.** The retro component in `components/retro/` applies the design system (border-2, shadow-sm, theme colors, font-mono). The app component (e.g., `PortEditor`) handles business logic (storage, messaging). Keep these layers separate.
 - **Every retro component gets a Storybook story** (`*.stories.tsx` alongside the component). Cover at minimum: default state, edge-case values, disabled state, and an "all states" composite story.
 
 ---

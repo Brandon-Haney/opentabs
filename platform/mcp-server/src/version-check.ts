@@ -7,46 +7,31 @@
  */
 
 import { log } from './logger.js';
-import { toErrorMessage } from '@opentabs-dev/shared';
+import { platformExec, toErrorMessage } from '@opentabs-dev/shared';
 import type { ServerState, OutdatedPlugin } from './state.js';
-
-/** npm registry response shape (minimal) */
-interface NpmRegistryResponse {
-  'dist-tags'?: {
-    latest?: string;
-  };
-}
 
 /** Result of checking a single plugin for updates */
 type CheckResult = { kind: 'outdated'; entry: OutdatedPlugin } | { kind: 'up-to-date' } | { kind: 'unreachable' };
 
 /**
- * Query the npm registry for the latest published version of a package.
- * Uses the abbreviated install metadata endpoint with a 10s timeout.
+ * Query the latest published version of a package via `npm view`.
+ * Delegates auth to npm itself, which reads ~/.npmrc for tokens —
+ * this handles private/scoped packages without manual token management.
  *
  * @param packageName - npm package name (e.g., 'opentabs-plugin-slack' or '@scope/opentabs-plugin-foo')
- * @returns The latest version string from the registry's dist-tags, or null on failure
+ * @returns The latest version string, or null on failure
  */
-export const fetchLatestVersion = async (packageName: string): Promise<string | null> => {
+export const fetchLatestVersion = (packageName: string): string | null => {
   try {
-    // Scoped packages use @scope%2Fpkg-name format in the registry URL.
-    // Encode each segment separately to preserve the @ prefix.
-    const encodedName = packageName.startsWith('@')
-      ? '@' + packageName.slice(1).replace('/', '%2F')
-      : encodeURIComponent(packageName);
-    const url = `https://registry.npmjs.org/${encodedName}`;
-    const response = await fetch(url, {
-      headers: { Accept: 'application/vnd.npm.install-v1+json' },
-      signal: AbortSignal.timeout(10_000),
+    const result = Bun.spawnSync([platformExec('npm'), 'view', packageName, 'version'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
-
-    if (!response.ok) {
-      log.debug(`npm registry returned ${response.status} for ${packageName}`);
+    if (result.exitCode !== 0) {
+      log.debug(`npm view failed for ${packageName}: ${result.stderr.toString().trim()}`);
       return null;
     }
-
-    const registryResponse = (await response.json()) as NpmRegistryResponse;
-    return registryResponse['dist-tags']?.latest ?? null;
+    const version = result.stdout.toString().trim();
+    return version || null;
   } catch (e: unknown) {
     log.debug(`Failed to fetch latest version for ${packageName}: ${toErrorMessage(e)}`);
     return null;
@@ -87,12 +72,12 @@ export const isNewer = (current: string, latest: string): boolean => {
 
 /**
  * Check all npm-installed plugins for newer versions on the registry.
- * Runs version checks in parallel, logs outdated entries, and stores
- * results in `state.outdatedPlugins`. Skips local plugins (filesystem paths).
+ * Runs `npm view` for each plugin sequentially, logs outdated entries,
+ * and stores results in `state.outdatedPlugins`. Skips local plugins.
  *
  * @param state - Server state containing the plugin registry and outdatedPlugins target
  */
-export const checkForUpdates = async (state: ServerState): Promise<void> => {
+export const checkForUpdates = (state: ServerState): void => {
   const npmPlugins = Array.from(state.registry.plugins.values()).filter(
     p => p.trustTier !== 'local' && p.npmPackageName,
   );
@@ -101,39 +86,33 @@ export const checkForUpdates = async (state: ServerState): Promise<void> => {
 
   log.info(`Checking ${npmPlugins.length} npm plugin(s) for updates...`);
 
-  const results = await Promise.allSettled(
-    npmPlugins.map(async (plugin): Promise<CheckResult> => {
-      const pkgName = plugin.npmPackageName;
-      if (!pkgName) return { kind: 'unreachable' };
+  const results: CheckResult[] = npmPlugins.map(plugin => {
+    const pkgName = plugin.npmPackageName;
+    if (!pkgName) return { kind: 'unreachable' };
 
-      const latest = await fetchLatestVersion(pkgName);
-      if (!latest) return { kind: 'unreachable' };
+    const latest = fetchLatestVersion(pkgName);
+    if (!latest) return { kind: 'unreachable' };
 
-      if (isNewer(plugin.version, latest)) {
-        return {
-          kind: 'outdated',
-          entry: {
-            name: pkgName,
-            currentVersion: plugin.version,
-            latestVersion: latest,
-            updateCommand: `npm update -g ${pkgName}`,
-          },
-        };
-      }
-      return { kind: 'up-to-date' };
-    }),
-  );
+    if (isNewer(plugin.version, latest)) {
+      return {
+        kind: 'outdated',
+        entry: {
+          name: pkgName,
+          currentVersion: plugin.version,
+          latestVersion: latest,
+          updateCommand: `npm update -g ${pkgName}`,
+        },
+      };
+    }
+    return { kind: 'up-to-date' };
+  });
 
   const outdated: OutdatedPlugin[] = [];
   let unreachableCount = 0;
   for (const result of results) {
-    if (result.status === 'fulfilled') {
-      if (result.value.kind === 'outdated') {
-        outdated.push(result.value.entry);
-      } else if (result.value.kind === 'unreachable') {
-        unreachableCount++;
-      }
-    } else {
+    if (result.kind === 'outdated') {
+      outdated.push(result.entry);
+    } else if (result.kind === 'unreachable') {
       unreachableCount++;
     }
   }

@@ -392,7 +392,7 @@ const handleExtensionMessage = (
   }
 
   if (method === 'plugin.search' && id !== undefined) {
-    void handlePluginSearch(state, params, id);
+    handlePluginSearch(state, params, id);
     return;
   }
 

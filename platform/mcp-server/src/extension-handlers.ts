@@ -486,11 +486,11 @@ const rejectAllPendingConfirmations = (state: ServerState): void => {
 
 // --- Plugin management handlers ---
 
-const handlePluginSearch = async (
+const handlePluginSearch = (
   state: ServerState,
   params: Record<string, unknown> | undefined,
   id: string | number,
-): Promise<void> => {
+): void => {
   const query = params?.query;
   if (query !== undefined && typeof query !== 'string') {
     sendJsonRpcError(state, id, -32602, 'Invalid params: query must be a string if provided');
@@ -498,7 +498,7 @@ const handlePluginSearch = async (
   }
 
   try {
-    const results = await searchNpmPlugins(query ?? undefined);
+    const results = searchNpmPlugins(query ?? undefined);
     sendToExtension(state, {
       jsonrpc: '2.0',
       result: { results },

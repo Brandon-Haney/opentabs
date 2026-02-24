@@ -4,26 +4,34 @@ import { fetchLatestVersion, isNewer, checkForUpdates } from './version-check.js
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { RegisteredPlugin } from './state.js';
 
-// ---- fetch mock helpers ----
+// ---- Bun.spawnSync mock helpers ----
 
-/** Save and restore globalThis.fetch around each test that replaces it */
-let originalFetch: typeof globalThis.fetch;
+/** Save and restore Bun.spawnSync around each test that replaces it */
+let originalSpawnSync: typeof Bun.spawnSync;
 
 beforeEach(() => {
-  originalFetch = globalThis.fetch;
+  originalSpawnSync = Bun.spawnSync;
 });
 
 afterEach(() => {
-  globalThis.fetch = originalFetch;
+  Bun.spawnSync = originalSpawnSync;
 });
 
-/** Create a mock fetch that returns the given npm registry JSON */
-const mockFetch = (distTagsLatest: string | undefined, status = 200): void => {
-  const body = JSON.stringify({
-    'dist-tags': distTagsLatest !== undefined ? { latest: distTagsLatest } : {},
-  });
-  globalThis.fetch = ((_url: URL | string, _init?: RequestInit) =>
-    Promise.resolve(new Response(body, { status }))) as unknown as typeof globalThis.fetch;
+/**
+ * Mock Bun.spawnSync to simulate `npm view <pkg> version` responses.
+ * Returns the given version string on stdout with exit code 0,
+ * or a non-zero exit code when version is undefined.
+ */
+const mockNpmView = (version: string | undefined): void => {
+  Bun.spawnSync = ((_cmd: string[], _opts?: object) => ({
+    exitCode: version !== undefined ? 0 : 1,
+    stdout: { toString: () => (version !== undefined ? `${version}\n` : '') },
+    stderr: { toString: () => (version !== undefined ? '' : 'npm ERR! code E404') },
+    success: version !== undefined,
+    signalCode: null,
+    pid: 0,
+    resourceUsage: () => undefined,
+  })) as unknown as typeof Bun.spawnSync;
 };
 
 /** Create a minimal RegisteredPlugin for testing */
@@ -140,83 +148,108 @@ describe('isNewer', () => {
 });
 
 describe('fetchLatestVersion', () => {
-  test('unscoped package constructs correct npm registry URL', async () => {
-    const seen: string[] = [];
-    globalThis.fetch = ((url: URL | string, _init?: RequestInit) => {
-      seen.push(String(url));
-      return Promise.resolve(new Response(JSON.stringify({ 'dist-tags': { latest: '2.0.0' } }), { status: 200 }));
-    }) as unknown as typeof globalThis.fetch;
+  test('passes package name to npm view', () => {
+    const seen: string[][] = [];
+    Bun.spawnSync = ((cmd: string[], _opts?: object) => {
+      seen.push(cmd);
+      return {
+        exitCode: 0,
+        stdout: { toString: () => '2.0.0\n' },
+        stderr: { toString: () => '' },
+        success: true,
+        signalCode: null,
+        pid: 0,
+        resourceUsage: () => undefined,
+      };
+    }) as unknown as typeof Bun.spawnSync;
 
-    await fetchLatestVersion('my-package');
-    expect(seen[0]).toBe('https://registry.npmjs.org/my-package');
+    fetchLatestVersion('my-package');
+    expect(seen[0]).toEqual(['npm', 'view', 'my-package', 'version']);
   });
 
-  test('scoped package encodes / as %2F in URL', async () => {
-    const seen: string[] = [];
-    globalThis.fetch = ((url: URL | string, _init?: RequestInit) => {
-      seen.push(String(url));
-      return Promise.resolve(new Response(JSON.stringify({ 'dist-tags': { latest: '1.2.3' } }), { status: 200 }));
-    }) as unknown as typeof globalThis.fetch;
+  test('scoped package name is passed directly', () => {
+    const seen: string[][] = [];
+    Bun.spawnSync = ((cmd: string[], _opts?: object) => {
+      seen.push(cmd);
+      return {
+        exitCode: 0,
+        stdout: { toString: () => '1.2.3\n' },
+        stderr: { toString: () => '' },
+        success: true,
+        signalCode: null,
+        pid: 0,
+        resourceUsage: () => undefined,
+      };
+    }) as unknown as typeof Bun.spawnSync;
 
-    await fetchLatestVersion('@opentabs-dev/plugin-sdk');
-    expect(seen[0]).toBe('https://registry.npmjs.org/@opentabs-dev%2Fplugin-sdk');
+    fetchLatestVersion('@opentabs-dev/plugin-sdk');
+    expect(seen[0]).toEqual(['npm', 'view', '@opentabs-dev/plugin-sdk', 'version']);
   });
 
-  test('successful fetch returns latest version string', async () => {
-    mockFetch('3.1.4');
-    const result = await fetchLatestVersion('some-package');
+  test('successful npm view returns version string', () => {
+    mockNpmView('3.1.4');
+    const result = fetchLatestVersion('some-package');
     expect(result).toBe('3.1.4');
   });
 
-  test('non-200 response returns null', async () => {
-    mockFetch(undefined, 404);
-    const result = await fetchLatestVersion('missing-package');
+  test('non-zero exit code returns null', () => {
+    mockNpmView(undefined);
+    const result = fetchLatestVersion('missing-package');
     expect(result).toBeNull();
   });
 
-  test('malformed JSON response returns null', async () => {
-    globalThis.fetch = ((_url: URL | string, _init?: RequestInit) =>
-      Promise.resolve(new Response('not valid json', { status: 200 }))) as unknown as typeof globalThis.fetch;
-    const result = await fetchLatestVersion('some-package');
+  test('empty stdout returns null', () => {
+    Bun.spawnSync = ((_cmd: string[], _opts?: object) => ({
+      exitCode: 0,
+      stdout: { toString: () => '' },
+      stderr: { toString: () => '' },
+      success: true,
+      signalCode: null,
+      pid: 0,
+      resourceUsage: () => undefined,
+    })) as unknown as typeof Bun.spawnSync;
+
+    const result = fetchLatestVersion('some-package');
     expect(result).toBeNull();
   });
 
-  test('network error (fetch throws) returns null', async () => {
-    globalThis.fetch = ((_url: URL | string, _init?: RequestInit) =>
-      Promise.reject(new Error('network timeout'))) as unknown as typeof globalThis.fetch;
-    const result = await fetchLatestVersion('some-package');
-    expect(result).toBeNull();
-  });
+  test('spawnSync throwing returns null', () => {
+    Bun.spawnSync = (() => {
+      throw new Error('spawn failed');
+    }) as unknown as typeof Bun.spawnSync;
 
-  test('response with no dist-tags.latest returns null', async () => {
-    globalThis.fetch = ((_url: URL | string, _init?: RequestInit) =>
-      Promise.resolve(
-        new Response(JSON.stringify({ 'dist-tags': {} }), { status: 200 }),
-      )) as unknown as typeof globalThis.fetch;
-    const result = await fetchLatestVersion('some-package');
+    const result = fetchLatestVersion('some-package');
     expect(result).toBeNull();
   });
 });
 
 describe('checkForUpdates', () => {
-  test('local plugins (no npmPackageName) are skipped', async () => {
-    const fetchCalls: string[] = [];
-    globalThis.fetch = ((url: URL | string, _init?: RequestInit) => {
-      fetchCalls.push(String(url));
-      return Promise.resolve(new Response(JSON.stringify({ 'dist-tags': { latest: '2.0.0' } }), { status: 200 }));
-    }) as unknown as typeof globalThis.fetch;
+  test('local plugins (no npmPackageName) are skipped', () => {
+    const spawnCalls: string[][] = [];
+    Bun.spawnSync = ((cmd: string[], _opts?: object) => {
+      spawnCalls.push(cmd);
+      return {
+        exitCode: 0,
+        stdout: { toString: () => '2.0.0\n' },
+        stderr: { toString: () => '' },
+        success: true,
+        signalCode: null,
+        pid: 0,
+        resourceUsage: () => undefined,
+      };
+    }) as unknown as typeof Bun.spawnSync;
 
     const state = createState();
     state.registry = buildRegistry([makePlugin('local-plugin', { trustTier: 'local', npmPackageName: undefined })], []);
 
-    await checkForUpdates(state);
+    checkForUpdates(state);
 
-    expect(fetchCalls).toHaveLength(0);
+    expect(spawnCalls).toHaveLength(0);
     expect(state.outdatedPlugins).toHaveLength(0);
   });
 
-  test('outdated npm plugin is added to state.outdatedPlugins', async () => {
-    mockFetch('2.0.0');
+  test('outdated npm plugin is added to state.outdatedPlugins', () => {
+    mockNpmView('2.0.0');
 
     const state = createState();
     state.registry = buildRegistry(
@@ -224,7 +257,7 @@ describe('checkForUpdates', () => {
       [],
     );
 
-    await checkForUpdates(state);
+    checkForUpdates(state);
 
     expect(state.outdatedPlugins).toHaveLength(1);
     expect(state.outdatedPlugins[0]?.name).toBe('opentabs-plugin-my');
@@ -232,8 +265,8 @@ describe('checkForUpdates', () => {
     expect(state.outdatedPlugins[0]?.latestVersion).toBe('2.0.0');
   });
 
-  test('up-to-date plugin is NOT added to state.outdatedPlugins', async () => {
-    mockFetch('1.0.0');
+  test('up-to-date plugin is NOT added to state.outdatedPlugins', () => {
+    mockNpmView('1.0.0');
 
     const state = createState();
     state.registry = buildRegistry(
@@ -241,14 +274,13 @@ describe('checkForUpdates', () => {
       [],
     );
 
-    await checkForUpdates(state);
+    checkForUpdates(state);
 
     expect(state.outdatedPlugins).toHaveLength(0);
   });
 
-  test('fetchLatestVersion returning null does not add to outdatedPlugins', async () => {
-    globalThis.fetch = ((_url: URL | string, _init?: RequestInit) =>
-      Promise.reject(new Error('network failure'))) as unknown as typeof globalThis.fetch;
+  test('fetchLatestVersion returning null does not add to outdatedPlugins', () => {
+    mockNpmView(undefined);
 
     const state = createState();
     state.registry = buildRegistry(
@@ -256,26 +288,42 @@ describe('checkForUpdates', () => {
       [],
     );
 
-    await checkForUpdates(state);
+    checkForUpdates(state);
 
     expect(state.outdatedPlugins).toHaveLength(0);
   });
 
-  test('empty plugins map results in empty outdatedPlugins', async () => {
+  test('empty plugins map results in empty outdatedPlugins', () => {
     const state = createState();
-    await checkForUpdates(state);
+    checkForUpdates(state);
     expect(state.outdatedPlugins).toHaveLength(0);
   });
 
-  test('mixed settled results: fulfilled outdated + rejected network error', async () => {
+  test('mixed results: outdated + failed npm view', () => {
     let callCount = 0;
-    globalThis.fetch = ((_url: URL | string, _init?: RequestInit) => {
+    Bun.spawnSync = ((_cmd: string[], _opts?: object) => {
       callCount++;
       if (callCount === 1) {
-        return Promise.resolve(new Response(JSON.stringify({ 'dist-tags': { latest: '2.0.0' } }), { status: 200 }));
+        return {
+          exitCode: 0,
+          stdout: { toString: () => '2.0.0\n' },
+          stderr: { toString: () => '' },
+          success: true,
+          signalCode: null,
+          pid: 0,
+          resourceUsage: () => undefined,
+        };
       }
-      return Promise.reject(new Error('network failure'));
-    }) as unknown as typeof globalThis.fetch;
+      return {
+        exitCode: 1,
+        stdout: { toString: () => '' },
+        stderr: { toString: () => 'npm ERR! code E404' },
+        success: false,
+        signalCode: null,
+        pid: 0,
+        resourceUsage: () => undefined,
+      };
+    }) as unknown as typeof Bun.spawnSync;
 
     const state = createState();
     state.registry = buildRegistry(
@@ -286,9 +334,9 @@ describe('checkForUpdates', () => {
       [],
     );
 
-    await checkForUpdates(state);
+    checkForUpdates(state);
 
-    // plugin-a gets version 2.0.0 (outdated), plugin-b fetch fails (skipped)
+    // plugin-a gets version 2.0.0 (outdated), plugin-b npm view fails (skipped)
     expect(state.outdatedPlugins).toHaveLength(1);
     expect(state.outdatedPlugins[0]?.name).toBe('opentabs-plugin-a');
   });

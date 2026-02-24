@@ -24,21 +24,6 @@ import { join, resolve } from 'node:path';
 import type { ServerState, RegisteredPlugin } from './state.js';
 
 // ---------------------------------------------------------------------------
-// npm registry types
-// ---------------------------------------------------------------------------
-
-interface NpmSearchPackage {
-  name: string;
-  description?: string;
-  version: string;
-  publisher?: { username: string };
-}
-
-interface NpmSearchResult {
-  objects: Array<{ package: NpmSearchPackage }>;
-}
-
-// ---------------------------------------------------------------------------
 // Search result type returned to callers
 // ---------------------------------------------------------------------------
 
@@ -137,57 +122,49 @@ const runNpmGlobal = async (command: string, packageName: string): Promise<{ std
 // npm registry search
 // ---------------------------------------------------------------------------
 
-const NPM_SEARCH_URL = 'https://registry.npmjs.org/-/v1/search';
+/** npm search --json result shape */
+interface NpmSearchJsonEntry {
+  name: string;
+  description?: string;
+  version: string;
+  author?: { name?: string };
+  publisher?: { username?: string };
+}
 
 /**
- * Search the npm registry for opentabs plugins.
- * Returns up to 20 results matching `keywords:opentabs-plugin` + optional query.
+ * Search the npm registry for opentabs plugins via `npm search`.
+ * Delegates auth to npm itself (reads ~/.npmrc), supporting private packages.
  *
  * @throws Error with `code` property for structured JSON-RPC error handling:
- *   - code -32603: registry unreachable or unexpected error
- *   - code -32603 with retryAfterMs: rate limited (HTTP 429)
+ *   - code -32603: npm search failed
  */
-const searchNpmPlugins = async (query?: string): Promise<PluginSearchResult[]> => {
-  const params = new URLSearchParams({
-    text: query ? `keywords:opentabs-plugin ${query}` : 'keywords:opentabs-plugin',
-    size: '20',
+const searchNpmPlugins = (query?: string): PluginSearchResult[] => {
+  const searchTerm = query ? `keywords:opentabs-plugin ${query}` : 'keywords:opentabs-plugin';
+  const result = Bun.spawnSync([platformExec('npm'), 'search', searchTerm, '--json'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  let response: Response;
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.toString().trim();
+    const error = new Error(stderr || 'npm search failed') as Error & { code: number };
+    error.code = -32603;
+    throw error;
+  }
+
   try {
-    response = await fetch(`${NPM_SEARCH_URL}?${params.toString()}`, {
-      signal: AbortSignal.timeout(10_000),
-    });
+    const entries = JSON.parse(result.stdout.toString().trim()) as NpmSearchJsonEntry[];
+    return entries.map(entry => ({
+      name: entry.name,
+      description: entry.description ?? '',
+      version: entry.version,
+      author: entry.publisher?.username ?? entry.author?.name ?? 'unknown',
+      isOfficial: entry.name.startsWith(`${OFFICIAL_SCOPE}/`),
+    }));
   } catch {
-    const error = new Error('npm registry unreachable') as Error & { code: number };
+    const error = new Error('Failed to parse npm search output') as Error & { code: number };
     error.code = -32603;
     throw error;
   }
-
-  if (response.status === 429) {
-    const retryAfter = response.headers.get('Retry-After');
-    const retryAfterMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 60_000;
-    const error = new Error('npm registry rate limited') as Error & { code: number; retryAfterMs: number };
-    error.code = -32603;
-    error.retryAfterMs = retryAfterMs;
-    throw error;
-  }
-
-  if (!response.ok) {
-    const error = new Error(`npm registry returned HTTP ${response.status}`) as Error & { code: number };
-    error.code = -32603;
-    throw error;
-  }
-
-  const data = (await response.json()) as NpmSearchResult;
-
-  return data.objects.map(({ package: pkg }) => ({
-    name: pkg.name,
-    description: pkg.description ?? '',
-    version: pkg.version,
-    author: pkg.publisher?.username ?? 'unknown',
-    isOfficial: pkg.name.startsWith(`${OFFICIAL_SCOPE}/`),
-  }));
 };
 
 // ---------------------------------------------------------------------------
@@ -509,7 +486,7 @@ interface CheckUpdatesResult {
  */
 const checkPluginUpdates = async (state: ServerState): Promise<CheckUpdatesResult> => {
   const { checkForUpdates } = await import('./version-check.js');
-  await checkForUpdates(state);
+  checkForUpdates(state);
   return { outdatedPlugins: state.outdatedPlugins };
 };
 

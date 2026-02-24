@@ -348,10 +348,12 @@ const performReload = async (
       }
     }
 
-    // Version check: non-blocking, best-effort on every reload
-    void checkForUpdates(state).catch(() => {
+    // Version check: synchronous via `npm view`, best-effort on every reload
+    try {
+      checkForUpdates(state);
+    } catch {
       // Update check is best-effort — failures are not actionable
-    });
+    }
 
     const durationMs = Date.now() - startTs;
     return {

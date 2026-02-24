@@ -168,6 +168,12 @@ const handleLogs = async (options: LogsOptions): Promise<void> => {
 
   if (options.follow === true) {
     await followFile(logFilePath, fileSize, filter);
+  } else if (!content && options.plugin) {
+    console.error(
+      pc.dim(
+        `No log output found for plugin "${options.plugin}". Check the plugin name or ensure the plugin has produced log output.`,
+      ),
+    );
   }
 };
 

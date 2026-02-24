@@ -49,31 +49,38 @@ const withPluginLock = (pluginName: string, fn: () => Promise<void>): Promise<vo
  * isReady() returns true within the timeout, false otherwise.
  */
 const probeTabReadiness = async (tabId: number, pluginName: string): Promise<boolean> => {
-  const results = await Promise.race([
-    chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'MAIN',
-      func: async (pName: string) => {
-        const ot = (globalThis as Record<string, unknown>).__openTabs as
-          | { adapters?: Record<string, { isReady?: unknown }> }
-          | undefined;
-        const adapter = ot?.adapters?.[pName];
-        if (!adapter || typeof adapter !== 'object') return false;
-        if (typeof adapter.isReady !== 'function') return false;
-        return await (adapter.isReady as () => Promise<boolean>)();
-      },
-      args: [pluginName],
-    }),
-    new Promise<null>(resolve => setTimeout(() => resolve(null), IS_READY_TIMEOUT_MS)),
-  ]);
+  let timerId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const results = await Promise.race([
+      chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: async (pName: string) => {
+          const ot = (globalThis as Record<string, unknown>).__openTabs as
+            | { adapters?: Record<string, { isReady?: unknown }> }
+            | undefined;
+          const adapter = ot?.adapters?.[pName];
+          if (!adapter || typeof adapter !== 'object') return false;
+          if (typeof adapter.isReady !== 'function') return false;
+          return await (adapter.isReady as () => Promise<boolean>)();
+        },
+        args: [pluginName],
+      }),
+      new Promise<null>(resolve => {
+        timerId = setTimeout(() => resolve(null), IS_READY_TIMEOUT_MS);
+      }),
+    ]);
 
-  if (results === null) {
-    console.warn(`[opentabs] isReady() timed out for plugin "${pluginName}" in tab ${tabId}`);
-    return false;
+    if (results === null) {
+      console.warn(`[opentabs] isReady() timed out for plugin "${pluginName}" in tab ${tabId}`);
+      return false;
+    }
+
+    const readyResult = results[0] as { result?: unknown } | undefined;
+    return readyResult?.result === true;
+  } finally {
+    if (timerId !== undefined) clearTimeout(timerId);
   }
-
-  const readyResult = results[0] as { result?: unknown } | undefined;
-  return readyResult?.result === true;
 };
 
 /**

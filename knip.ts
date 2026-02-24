@@ -15,40 +15,17 @@ const config: KnipConfig = {
     },
     'platform/mcp-server': {
       entry: ['src/**/*.test.ts'],
-      ignoreDependencies: [
-        // knip cannot trace imports from workspace-linked @opentabs-dev packages
-        '@opentabs-dev/shared',
-      ],
-      ignoreBinaries: [
-        // Entry point invoked directly via `bun dist/index.js` (not a registered binary)
-        'dist/index.js',
-      ],
     },
-    'platform/plugin-sdk': {
-      ignoreDependencies: [
-        // knip cannot trace re-exports from workspace-linked @opentabs-dev packages
-        '@opentabs-dev/shared',
-      ],
-    },
+    'platform/plugin-sdk': {},
     'platform/cli': {
       entry: ['src/**/*.test.ts'],
       ignoreDependencies: [
-        // Resolved at runtime via import.meta.resolve() in start.ts to locate the server entry point
-        '@opentabs-dev/mcp-server',
-        // Resolved at runtime via import.meta.resolve() in scaffold.ts to read its version
+        // Referenced as a string literal in scaffolded package.json output, not a static import
         '@opentabs-dev/plugin-tools',
-        // knip cannot trace imports from workspace-linked @opentabs-dev packages
-        '@opentabs-dev/plugin-sdk',
-        '@opentabs-dev/shared',
       ],
     },
     'platform/plugin-tools': {
       entry: ['src/**/*.test.ts'],
-      ignoreDependencies: [
-        // knip cannot trace imports from workspace-linked @opentabs-dev packages
-        '@opentabs-dev/plugin-sdk',
-        '@opentabs-dev/shared',
-      ],
     },
     'platform/browser-extension': {
       entry: [
@@ -64,18 +41,9 @@ const config: KnipConfig = {
         'tw-animate-css',
         // Vite plugin used in .storybook/main.ts via dynamic import (knip cannot trace dynamic imports)
         '@vitejs/plugin-react',
-        // knip cannot trace type imports from workspace-linked @opentabs-dev packages
-        '@opentabs-dev/shared',
-        // Used in ConfirmationDialog.tsx but knip cannot trace Radix namespace imports
-        '@radix-ui/react-dropdown-menu',
       ],
     },
-    'platform/create-plugin': {
-      ignoreDependencies: [
-        // knip cannot trace imports from workspace-linked @opentabs-dev packages
-        '@opentabs-dev/cli',
-      ],
-    },
+    'platform/create-plugin': {},
   },
   tags: ['+@public'],
   ignore: [

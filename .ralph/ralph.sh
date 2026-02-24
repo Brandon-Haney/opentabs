@@ -842,6 +842,27 @@ dispatch_prd() {
     return 1
   fi
 
+  # Pre-build: ensure the worktree has fresh dist/ artifacts and the e2e-test
+  # plugin is ready. Without this, every worker independently discovers stale
+  # or missing build artifacts and wastes time debugging infrastructure.
+  echo -e "$(ts) ${CYAN}[${tag}]${RESET} ${DIM}Building platform packages...${RESET}"
+  if ! (cd "$worktree_dir" && bun run build 2>&1 | tail -3); then
+    echo -e "$(ts) ${CYAN}[${tag}]${RESET} ${RED}bun run build failed. Aborting worker.${RESET}"
+    remove_worktree "$worktree_dir"
+    git branch -D "$branch_name" 2>/dev/null || true
+    mv "$prd_file" "${prd_file/\~running.json/.json}" 2>/dev/null || true
+    return 1
+  fi
+
+  # Build the e2e-test plugin (standalone, outside workspace). Its node_modules
+  # and dist/ are gitignored, so worktrees don't have them. Unit tests in
+  # platform/plugin-tools depend on this plugin being built.
+  if [ -f "$worktree_dir/plugins/e2e-test/package.json" ]; then
+    echo -e "$(ts) ${CYAN}[${tag}]${RESET} ${DIM}Building e2e-test plugin...${RESET}"
+    (cd "$worktree_dir/plugins/e2e-test" && bun install --frozen-lockfile 2>&1 | tail -1 && bun run build 2>&1 | tail -1) || \
+      echo -e "$(ts) ${CYAN}[${tag}]${RESET} ${YELLOW}e2e-test plugin build failed (non-fatal).${RESET}"
+  fi
+
   # Launch the worker in the background.
   # All worker output (stdout+stderr) is piped through ts_prefix so every
   # line in ralph.log gets "HH:MM:SS [W<n>:<objective>] <message>".

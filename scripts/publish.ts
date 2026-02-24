@@ -1,7 +1,10 @@
 /**
- * Publish platform packages to npm (private):
+ * Publish platform packages to npm (private) using bun publish:
  *   @opentabs-dev/shared, @opentabs-dev/plugin-sdk, @opentabs-dev/plugin-tools,
- *   @opentabs-dev/cli, and @opentabs-dev/create-plugin.
+ *   @opentabs-dev/mcp-server, @opentabs-dev/cli, and @opentabs-dev/create-plugin.
+ *
+ * All intra-workspace dependencies use workspace:* in source. bun publish
+ * automatically replaces workspace:* with the resolved version in the tarball.
  *
  * Requires:
  *   - ~/.npmrc with a token that has read+write access to @opentabs-dev packages.
@@ -66,19 +69,12 @@ const writePackageJson = async (pkgDir: string, data: PackageJson): Promise<void
 
 const PACKAGES = [
   'platform/shared',
+  'platform/mcp-server',
   'platform/plugin-sdk',
   'platform/plugin-tools',
   'platform/cli',
   'platform/create-plugin',
 ] as const;
-
-/** Cross-references: package → list of @opentabs-dev/* dependencies to update. */
-const CROSS_REFS: Record<string, string[]> = {
-  'platform/plugin-sdk': ['@opentabs-dev/shared'],
-  'platform/plugin-tools': ['@opentabs-dev/shared', '@opentabs-dev/plugin-sdk'],
-  'platform/cli': ['@opentabs-dev/shared', '@opentabs-dev/plugin-sdk', '@opentabs-dev/plugin-tools'],
-  'platform/create-plugin': ['@opentabs-dev/cli'],
-};
 
 // ---------------------------------------------------------------------------
 // Conventional commit grouping
@@ -239,26 +235,14 @@ const main = async (): Promise<void> => {
     console.log(`  ${pkg}/package.json → ${version}`);
   }
 
-  // 3. Update cross-references
-  for (const [pkg, deps] of Object.entries(CROSS_REFS)) {
-    const data = await readPackageJson(pkg);
-    for (const dep of deps) {
-      if (data.dependencies?.[dep] !== undefined) {
-        data.dependencies[dep] = `^${version}`;
-      }
-      if (data.devDependencies?.[dep] !== undefined) {
-        data.devDependencies[dep] = `^${version}`;
-      }
-    }
-    await writePackageJson(pkg, data);
-  }
-
-  // 4. Rebuild
+  // 3. Rebuild
   console.log('');
   console.log('==> Rebuilding with new versions...');
   run(['bun', 'run', 'build']);
 
-  // 5. Publish packages in dependency order
+  // 4. Publish packages in dependency order
+  // bun publish automatically replaces workspace:* with the resolved version
+  // in the published tarball, so no manual cross-reference rewriting is needed.
   console.log('');
   console.log('==> Publishing packages (dependency order)...');
   console.log('');
@@ -266,13 +250,13 @@ const main = async (): Promise<void> => {
     const shortName = pkg.split('/')[1] ?? pkg;
     const pkgName = `@opentabs-dev/${shortName}`;
     console.log(`  Publishing ${pkgName}@${version}...`);
-    run(['npm', 'publish', '--access', 'restricted', '-w', pkg]);
+    run(['bun', 'publish', '--access', 'restricted'], resolve(ROOT, pkg));
   }
 
   console.log('');
   console.log(`==> Published all packages at v${version}`);
 
-  // 6. Generate changelog
+  // 5. Generate changelog
   console.log('');
   console.log('==> Generating changelog...');
 
@@ -308,7 +292,7 @@ const main = async (): Promise<void> => {
     console.log(`  Generated changelog for v${version}`);
   }
 
-  // 7. Commit and tag
+  // 6. Commit and tag
   console.log('');
   console.log('==> Creating release commit and tag...');
 

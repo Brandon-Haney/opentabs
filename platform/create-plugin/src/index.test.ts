@@ -213,6 +213,14 @@ describe('create-opentabs-plugin CLI', () => {
         devDeps['@opentabs-dev/plugin-tools'] = localPluginTools;
       }
 
+      // Ensure transitive workspace:* deps from file:-linked packages can resolve.
+      // When plugin-sdk is linked via file:, its workspace:* dep on shared can't
+      // resolve in a non-workspace context. Adding shared as a direct dependency
+      // (plus overrides) ensures bun can find it.
+      if (deps) {
+        deps['@opentabs-dev/shared'] = localShared;
+      }
+
       // Bun overrides resolve transitive @opentabs-dev/* deps to local packages
       pkg.overrides = {
         '@opentabs-dev/shared': localShared,

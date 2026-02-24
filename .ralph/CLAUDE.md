@@ -13,7 +13,7 @@ ralph.sh (daemon, polls .ralph/ for ready PRDs)
   └── Worker 2 → git worktree .ralph/worktrees/<slug>/ → claude --print
 ```
 
-Each worker: creates worktree → `bun install` → copies PRD into worktree → launches claude → syncs PRD/progress back after each iteration → on completion: kills process group → merges branch into main → archives PRD.
+Each worker: creates worktree → `bun install` → `bun run build` → builds `plugins/e2e-test` → copies PRD into worktree → launches claude → syncs PRD/progress back after each iteration → on completion: kills process group → merges branch into main → archives PRD.
 
 ## Usage
 
@@ -30,7 +30,7 @@ tail -f .ralph/ralph.log
 
 ## Key Design Decisions and Gotchas
 
-- **Worktrees need `bun install`.** Each worktree gets its own `node_modules/`. Bun's global cache makes this fast (~1-2 seconds), but the install MUST happen before the agent starts.
+- **Worktrees are fully set up before the agent starts.** Each worktree gets `bun install` (own `node_modules/`), `bun run build` (fresh `dist/` for all platform packages), and the `plugins/e2e-test` plugin is installed and built (needed by `platform/plugin-tools` unit tests). Bun's global cache makes install fast (~1-2 seconds), and the build adds ~10-15 seconds. This eliminates agents wasting time debugging stale or missing build artifacts.
 - **Dev tooling must ignore worktrees.** ESLint, knip, and prettier will scan `.ralph/worktrees/` and `.claude/worktrees/` unless explicitly excluded. These exclusions are in `eslint.config.ts`, `knip.ts`, and `.prettierignore`. Forgetting this causes ESLint crashes (no tsconfig for worktree files) and knip reporting hundreds of false "unused files."
 - **`set -e` is intentionally NOT used.** This is a long-running daemon — a single failed `mv`, `cp`, or `jq` command must not kill the entire process tree. Every failure is handled explicitly with `|| true` or `|| return 1`.
 - **Process group isolation for e2e cleanup.** `set -m` gives each worker its own process group (PGID). On completion, ralph does a two-phase kill: `kill -- -PID` (PGID kill for most processes) then `kill_tree` (recursive walk via `pgrep -P` for processes that escaped via `setsid()`, like Chromium).

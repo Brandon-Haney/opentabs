@@ -31,7 +31,7 @@ You are running in a git worktree, not the main working directory. Key implicati
 
 - **Your branch is isolated.** Commits you make are on your worktree branch. Ralph merges them into the main branch after you finish.
 - **Other agents cannot see your changes** and you cannot see theirs. There are no type-check, lint, or build cross-contamination issues.
-- **Dependencies are installed.** Ralph runs `bun install` in your worktree before launching you. You do not need to run `bun install` unless you modify `package.json`.
+- **Dependencies are installed and packages are pre-built.** Ralph runs `bun install`, `bun run build`, and builds the `plugins/e2e-test` plugin in your worktree before launching you. You do not need to run `bun install` or `bun run build` at the start — all `dist/` artifacts are fresh. Only re-run these if you modify `package.json` or source files that affect the build.
 - **The `.ralph/` directory** contains your PRD and progress files. These are copies managed by ralph — update them normally.
 - **Merge conflicts are possible.** After you finish, ralph merges your branch into main. If another agent's branch was merged first and touched the same files, a merge conflict occurs. Ralph preserves your branch for manual resolution and moves on. To minimize conflicts:
   - **Keep changes focused.** Only modify files relevant to your story. Do not refactor unrelated code.

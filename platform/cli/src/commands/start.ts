@@ -132,7 +132,11 @@ const handleStart = async (options: StartOptions): Promise<void> => {
 
   if (!(await Bun.file(serverEntry).exists())) {
     console.error(pc.red(`Error: MCP server entry not found at ${serverEntry}`));
-    console.error('Run bun run build from the project root first.');
+    if (serverEntry.includes('node_modules')) {
+      console.error('Try reinstalling: bun install -g @opentabs-dev/cli');
+    } else {
+      console.error('Run bun run build from the project root first.');
+    }
     process.exit(1);
   }
 

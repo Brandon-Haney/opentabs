@@ -5,10 +5,10 @@
     "": {
       "name": "@opentabs-dev/opentabs-plugin-slack",
       "dependencies": {
-        "@opentabs-dev/plugin-sdk": "^0.0.26",
+        "@opentabs-dev/plugin-sdk": "^0.0.27",
       },
       "devDependencies": {
-        "@opentabs-dev/plugin-tools": "^0.0.26",
+        "@opentabs-dev/plugin-tools": "^0.0.27",
         "eslint": "^9.39.2",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-prettier": "^5.5.5",
@@ -50,9 +50,9 @@
 
     "@humanwhocodes/retry": ["@humanwhocodes/retry@0.4.3", "", {}, "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ=="],
 
-    "@opentabs-dev/plugin-sdk": ["@opentabs-dev/plugin-sdk@0.0.26", "", { "dependencies": { "@opentabs-dev/shared": "0.0.23" }, "peerDependencies": { "zod": "^4.0.0" } }, "sha512-NDMJwOraEkCxeZyKDCpsF/dt+Vok7t2G65ECLu8KcvUG4PUqnux+YjF33yBAlFi1d3W7QcEnHLuTKfk3D29W4g=="],
+    "@opentabs-dev/plugin-sdk": ["@opentabs-dev/plugin-sdk@0.0.27", "", { "dependencies": { "@opentabs-dev/shared": "0.0.23" }, "peerDependencies": { "zod": "^4.0.0" } }, "sha512-E6QAcsYZL+QJTe8EYToSpIjAK2iAAm5BCWa9464oR8su1+fcrtnAb3AVyk9dMO1j0/S/YMy33K1QfAtXPNZ/Jg=="],
 
-    "@opentabs-dev/plugin-tools": ["@opentabs-dev/plugin-tools@0.0.26", "", { "dependencies": { "@opentabs-dev/plugin-sdk": "0.0.23", "@opentabs-dev/shared": "0.0.23", "commander": "^14.0.3", "picocolors": "^1.1.1", "zod": "^4.3.6" }, "bin": { "opentabs-plugin": "dist/cli.js" } }, "sha512-yvVIg0MnWR4OK3lA4hs975UtHDE+pUdoQl+tnnacqJgpRvwVOTElpgXLphSNTgvO182nhEKSNmbKy9Nbi1CE4Q=="],
+    "@opentabs-dev/plugin-tools": ["@opentabs-dev/plugin-tools@0.0.27", "", { "dependencies": { "@opentabs-dev/plugin-sdk": "0.0.23", "@opentabs-dev/shared": "0.0.23", "commander": "^14.0.3", "picocolors": "^1.1.1", "zod": "^4.3.6" }, "bin": { "opentabs-plugin": "dist/cli.js" } }, "sha512-igdQerTcuLCwd0LjHN42UCDOkdAsAe9qu+Yg9ZaKKEsSMKs5XQpA8eWt72y4i/bJaS0KY4Nc2J8SVPOcnbzvnw=="],
 
     "@opentabs-dev/shared": ["@opentabs-dev/shared@0.0.23", "", {}, "sha512-z3x2kh0UNrn9DehZ38H/9S+98B7/mpl57oylVaJ5VmC5f7LgqfNcFo4W61/gfgR9a8vCgj4biTekLAXY+XoZnQ=="],
 

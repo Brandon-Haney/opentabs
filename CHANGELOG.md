@@ -1,3 +1,9 @@
+## v0.0.27
+
+### Refactoring
+
+- delegate all npm registry queries to npm CLI instead of direct HTTP fetch
+
 ## v0.0.26
 
 ### Features

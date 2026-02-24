@@ -40,7 +40,7 @@
 ### Tech Stack
 
 - **Language**: TypeScript (strict, ES Modules)
-- **Runtime**: Bun (monorepo with workspaces)
+- **Runtime**: Node.js 20+ (production); Bun (development, testing)
 - **Build**: `tsc --build` (composite project references)
 - **Testing**: Playwright (E2E)
 - **UI**: React 19, Tailwind CSS 4 (side panel only)
@@ -126,6 +126,8 @@ bun run storybook       # Launch Storybook dev server (browser extension compone
 bun install             # Install dependencies
 ```
 
+The `bun run` commands above are for **platform contributors** working in the monorepo. Normal users interact via the `opentabs` CLI (which runs on Node.js), and plugin developers use `npm run build` / `npx create-opentabs-plugin`.
+
 ### Loading the Extension
 
 1. `bun run build`
@@ -193,7 +195,7 @@ bun run build
 ```bash
 # 1. Edit plugin source
 # 2. Build the plugin
-cd plugins/<name> && bun run build
+cd plugins/<name> && npm run build
 # 3. Done — build notifies the server via POST /reload
 ```
 
@@ -276,32 +278,24 @@ For full repository verification including docs and plugins, use `bun run check:
 
 - Follow all configured ESLint rules.
 
-### Bun-First Convention
+### Runtime Compatibility
 
-This project runs on Bun. Always prefer Bun-native APIs over Node.js equivalents unless Bun has no equivalent.
+Published packages (CLI, MCP server, plugin-tools, create-plugin) run on **Node.js 20+**. Platform contributors use **Bun** for development, testing, and monorepo management. Code is organized into three tiers:
 
-**Use Bun APIs for:**
+**Production code** (`platform/*/src/`): Uses the runtime compatibility layer from `@opentabs-dev/shared` (`runtime.ts`). Functions like `readFile`, `writeFile`, `fileExists`, `spawnProcess`, `getEnv`, and `sha256` automatically use Bun APIs when available, falling back to Node.js equivalents. New production code must use these abstractions — never call `Bun.file()`, `Bun.env`, `Bun.spawn`, etc. directly.
 
-- File reading: `Bun.file(path).text()` instead of `readFile(path, 'utf-8')` from `node:fs/promises`
-- File writing: `Bun.write(path, content)` instead of `writeFile(path, content)` from `node:fs/promises`
-- File deletion: `Bun.file(path).delete()` instead of `unlinkSync(path)` from `node:fs`
-- File existence checks: `Bun.file(path).exists()` instead of `stat()`-based checks
-- Environment variables: `Bun.env.VAR` instead of `process.env.VAR`
-- CLI arguments: `Bun.argv` instead of `process.argv`
-- HTTP server: `Bun.serve()` (already in use)
-- Bundling: `Bun.build()` (already in use)
-- Package execution: `bunx` instead of `npx`
+**Build scripts** (`build-*.ts`, `scripts/`): Use esbuild for bundling. Invoked via `bun run` in the contributor workflow. These are contributor-only and do not need to run on Node.js.
 
-**Keep Node.js APIs for (no Bun-native equivalent):**
+**Tests** (`*.test.ts`): Use `bun:test`. Contributor-only — normal users and plugin developers do not run platform tests.
+
+**Node.js APIs used directly** (no runtime layer needed):
 
 - `node:path` (`join`, `resolve`, `relative`, `dirname`) — no Bun path API
 - `node:os` (`homedir`, `tmpdir`) — no Bun equivalents
-- `node:fs` `watch` / `FSWatcher` — no Bun file watching API
 - `node:fs` directory operations (`mkdir`, `mkdirSync`, `readdir`, `stat` for directories, `existsSync` for directories) — no Bun equivalents
-- `node:fs` `mkdtempSync`, `cpSync`, `rmSync` — no Bun equivalents
-- `node:child_process` — in Playwright E2E tests (Playwright runs under Node.js, not Bun)
+- `node:fs` `watch` / `FSWatcher`, `mkdtempSync`, `cpSync`, `rmSync` — no Bun equivalents
 
-**E2E tests (`e2e/`)** run under Playwright's Node.js test runner, so Node.js APIs are correct there.
+**E2E tests** (`e2e/`) run under Playwright's Node.js test runner, so Node.js APIs are correct there.
 
 ### Comments
 

@@ -31,4 +31,4 @@ E2E tests spawn Chromium browsers, MCP server processes, and test servers. You M
 
 ## Node.js APIs
 
-E2E tests run under Playwright's Node.js test runner, so Node.js APIs (`node:fs`, `node:child_process`, etc.) are correct here. Do not use Bun-specific APIs in E2E test files.
+E2E tests run under Playwright's Node.js test runner, so Node.js APIs (`node:fs`, `node:child_process`, etc.) are correct here. Do not use Bun-specific APIs in E2E test files. The MCP server test fixture spawns the server using Bun (`bun --hot`) for hot-reload testing — this is intentional since E2E tests exercise the platform contributor workflow.

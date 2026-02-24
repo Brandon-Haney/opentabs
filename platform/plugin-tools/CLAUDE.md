@@ -2,7 +2,7 @@
 
 ## Overview
 
-Plugin developer CLI (`opentabs-plugin`). The `opentabs-plugin build` command bundles the plugin adapter into an IIFE, generates `dist/tools.json` (containing tool schemas, resource metadata, and prompt metadata), auto-registers the plugin in `~/.opentabs/config.json` (under `localPlugins`), and calls `POST /reload` to notify the running MCP server. Supports `--watch` mode for development.
+Plugin developer CLI (`opentabs-plugin`), installed via `npm install -g @opentabs-dev/plugin-tools` or as a dev dependency. Runs on Node.js 20+ — Bun is not required. Uses esbuild for IIFE bundling. The `opentabs-plugin build` command bundles the plugin adapter into an IIFE, generates `dist/tools.json` (containing tool schemas, resource metadata, and prompt metadata), auto-registers the plugin in `~/.opentabs/config.json` (under `localPlugins`), and calls `POST /reload` to notify the running MCP server. Supports `--watch` mode for development.
 
 ## Key Files
 

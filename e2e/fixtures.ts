@@ -543,7 +543,6 @@ const startMcpServer = (configDir: string, hot: boolean = true, explicitPort?: n
         OPENTABS_SKIP_NPM_DISCOVERY: '1',
         OPENTABS_SKIP_CONFIRMATION: '1',
         OPENTABS_SKIP_SANITIZATION: '1',
-        OPENTABS_SKIP_NPM_DISCOVERY: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });

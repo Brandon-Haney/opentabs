@@ -6,6 +6,7 @@
  */
 
 import { toErrorMessage } from './error.js';
+import { writeFile } from './runtime.js';
 import { chmod, rename, unlink } from 'node:fs/promises';
 
 // ---------------------------------------------------------------------------
@@ -16,15 +17,15 @@ import { chmod, rename, unlink } from 'node:fs/promises';
 export const isWindows = (): boolean => process.platform === 'win32';
 
 // ---------------------------------------------------------------------------
-// Command resolution for Bun.spawn / Bun.spawnSync
+// Command resolution for cross-platform process spawning
 // ---------------------------------------------------------------------------
 
 /**
  * Resolves a bare command name for the current platform.
  *
  * On Windows, npm is distributed as `npm.cmd` (a cmd wrapper) and bun as
- * `bun.exe`. Bun.spawn requires the full name on Windows because it does
- * not search PATHEXT the way cmd.exe does.
+ * `bun.exe`. Process spawning requires the full name on Windows because it
+ * does not search PATHEXT the way cmd.exe does.
  *
  * On Unix, the command name is returned unchanged.
  */
@@ -33,6 +34,7 @@ export const platformExec = (cmd: string): string => {
   switch (cmd) {
     case 'npm':
     case 'npx':
+    case 'node':
       return `${cmd}.cmd`;
     case 'bun':
     case 'bunx':
@@ -64,7 +66,7 @@ export const platformExec = (cmd: string): string => {
 export const atomicWrite = async (filePath: string, content: string, mode?: number): Promise<void> => {
   const tmpPath = filePath + '.tmp';
   try {
-    await Bun.write(tmpPath, content);
+    await writeFile(tmpPath, content);
 
     if (mode !== undefined) {
       await safeChmod(tmpPath, mode);

@@ -5,6 +5,7 @@
  * browser-extension). Defining them once here prevents drift and duplication.
  */
 
+import { getEnv } from './runtime.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -34,7 +35,7 @@ export const TOOLS_FILENAME = 'tools.json';
 
 /** Returns the config directory path (~/.opentabs or OPENTABS_CONFIG_DIR override).
  *  Re-evaluated on each call so test overrides via OPENTABS_CONFIG_DIR take effect. */
-export const getConfigDir = (): string => Bun.env.OPENTABS_CONFIG_DIR || join(homedir(), '.opentabs');
+export const getConfigDir = (): string => getEnv('OPENTABS_CONFIG_DIR') || join(homedir(), '.opentabs');
 
 /** Returns the path to config.json inside the config directory. */
 export const getConfigPath = (): string => join(getConfigDir(), 'config.json');

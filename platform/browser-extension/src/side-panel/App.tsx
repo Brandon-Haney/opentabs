@@ -11,15 +11,13 @@ import { Footer } from './components/Footer.js';
 import { PluginList } from './components/PluginList.js';
 import { Input } from './components/retro/Input.js';
 import { Tooltip } from './components/retro/Tooltip.js';
-import { VALID_PLUGIN_NAME } from '../constants.js';
+import { useServerNotifications } from './hooks/useServerNotifications.js';
 import { Search, X } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { FailedPluginState, PluginState } from './bridge.js';
 import type { DisconnectReason, InternalMessage } from '../extension-messages.js';
 import type { ConfirmationData } from './components/ConfirmationDialog.js';
 import type { TabState } from '@opentabs-dev/shared';
-
-const validTabStates: ReadonlySet<string> = new Set<TabState>(['closed', 'unavailable', 'ready']);
 
 const App = () => {
   const [connected, setConnected] = useState(false);
@@ -66,6 +64,13 @@ const App = () => {
       });
   }, []);
 
+  const handleNotification = useServerNotifications({
+    setPlugins,
+    setActiveTools,
+    setPendingConfirmations,
+    pendingTabStates,
+  });
+
   useEffect(() => {
     void getConnectionState().then(result => {
       setConnected(result.connected);
@@ -75,77 +80,6 @@ const App = () => {
       }
       setLoading(false);
     });
-
-    const handleNotification = (data: Record<string, unknown>): void => {
-      if (data.method === 'confirmation.request' && data.params) {
-        const params = data.params as Record<string, unknown>;
-        if (typeof params.id === 'string' && typeof params.tool === 'string' && typeof params.timeoutMs === 'number') {
-          const confirmation: ConfirmationData = {
-            id: params.id,
-            tool: params.tool,
-            domain: typeof params.domain === 'string' ? params.domain : null,
-            tabId: typeof params.tabId === 'number' ? params.tabId : undefined,
-            paramsPreview: typeof params.paramsPreview === 'string' ? params.paramsPreview : '',
-            timeoutMs: params.timeoutMs,
-            receivedAt: Date.now(),
-          };
-          setPendingConfirmations(prev => [...prev, confirmation]);
-          // Auto-remove when the server-side timeout expires (plus a small buffer)
-          const removeDelay = params.timeoutMs + 1000;
-          setTimeout(() => {
-            setPendingConfirmations(prev => prev.filter(c => c.id !== confirmation.id));
-          }, removeDelay);
-        }
-      }
-
-      if (data.method === 'tab.stateChanged' && data.params) {
-        const params = data.params as Record<string, unknown>;
-        if (
-          typeof params.plugin === 'string' &&
-          typeof params.state === 'string' &&
-          validTabStates.has(params.state) &&
-          VALID_PLUGIN_NAME.test(params.plugin)
-        ) {
-          const pluginName = params.plugin;
-          const newState = params.state as TabState;
-          setPlugins(prev => {
-            if (prev.length === 0) {
-              pendingTabStates.current.set(pluginName, newState);
-              return prev;
-            }
-            return prev.map(p => (p.name === pluginName ? { ...p, tabState: newState } : p));
-          });
-        }
-      }
-
-      if (data.method === 'tool.invocationStart' && data.params) {
-        const params = data.params as Record<string, unknown>;
-        if (
-          typeof params.plugin === 'string' &&
-          typeof params.tool === 'string' &&
-          VALID_PLUGIN_NAME.test(params.plugin)
-        ) {
-          const toolKey = `${params.plugin}:${params.tool}`;
-          setActiveTools(prev => new Set(prev).add(toolKey));
-        }
-      }
-
-      if (data.method === 'tool.invocationEnd' && data.params) {
-        const params = data.params as Record<string, unknown>;
-        if (
-          typeof params.plugin === 'string' &&
-          typeof params.tool === 'string' &&
-          VALID_PLUGIN_NAME.test(params.plugin)
-        ) {
-          const toolKey = `${params.plugin}:${params.tool}`;
-          setActiveTools(prev => {
-            const next = new Set(prev);
-            next.delete(toolKey);
-            return next;
-          });
-        }
-      }
-    };
 
     const listener = (
       message: InternalMessage,
@@ -217,7 +151,7 @@ const App = () => {
 
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
-  }, [loadPlugins]);
+  }, [loadPlugins, handleNotification]);
 
   const handleConfirmationRespond = useCallback(
     (

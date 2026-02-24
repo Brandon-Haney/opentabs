@@ -3,12 +3,12 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "opentabs-plugin-e2e-test",
+      "name": "@opentabs-dev/opentabs-plugin-e2e-test",
       "dependencies": {
-        "@opentabs-dev/plugin-sdk": "^0.0.23",
+        "@opentabs-dev/plugin-sdk": "^0.0.24",
       },
       "devDependencies": {
-        "@opentabs-dev/plugin-tools": "^0.0.23",
+        "@opentabs-dev/plugin-tools": "^0.0.24",
         "eslint": "^9.39.2",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-prettier": "^5.5.5",
@@ -34,7 +34,7 @@
 
     "@eslint/core": ["@eslint/core@0.17.0", "", { "dependencies": { "@types/json-schema": "^7.0.15" } }, "sha512-yL/sLrpmtDaFEiUj1osRP4TI2MDz1AddJL+jZ7KSqvBuliN4xqYY54IfdN8qD8Toa6g1iloph1fxQNkjOxrrpQ=="],
 
-    "@eslint/eslintrc": ["@eslint/eslintrc@3.3.3", "", { "dependencies": { "ajv": "^6.12.4", "debug": "^4.3.2", "espree": "^10.0.1", "globals": "^14.0.0", "ignore": "^5.2.0", "import-fresh": "^3.2.1", "js-yaml": "^4.1.1", "minimatch": "^3.1.2", "strip-json-comments": "^3.1.1" } }, "sha512-Kr+LPIUVKz2qkx1HAMH8q1q6azbqBAsXJUxBl/ODDuVPX45Z9DfwB8tPjTi6nNZ8BuM3nbJxC5zCAg5elnBUTQ=="],
+    "@eslint/eslintrc": ["@eslint/eslintrc@3.3.4", "", { "dependencies": { "ajv": "^6.14.0", "debug": "^4.3.2", "espree": "^10.0.1", "globals": "^14.0.0", "ignore": "^5.2.0", "import-fresh": "^3.2.1", "js-yaml": "^4.1.1", "minimatch": "^3.1.3", "strip-json-comments": "^3.1.1" } }, "sha512-4h4MVF8pmBsncB60r0wSJiIeUKTSD4m7FmTFThG8RHlsg9ajqckLm9OraguFGZE4vVdpiI1Q4+hFnisopmG6gQ=="],
 
     "@eslint/js": ["@eslint/js@9.39.3", "", {}, "sha512-1B1VkCq6FuUNlQvlBYb+1jDu/gV297TIs/OeiaSR9l1H27SVW55ONE1e1Vp16NqP683+xEGzxYtv4XCiDPaQiw=="],
 
@@ -50,9 +50,9 @@
 
     "@humanwhocodes/retry": ["@humanwhocodes/retry@0.4.3", "", {}, "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ=="],
 
-    "@opentabs-dev/plugin-sdk": ["@opentabs-dev/plugin-sdk@0.0.23", "", { "dependencies": { "@opentabs-dev/shared": "^0.0.23" }, "peerDependencies": { "zod": "^4.0.0" } }, "sha512-jKalzQI2ilDwfd8NINLrnYY2ercIKuQvtlhLxQ7+JZC9w8ZFo1n+n7nbV24wQ4NQCDA3oDj04oyfXWxasmdx0A=="],
+    "@opentabs-dev/plugin-sdk": ["@opentabs-dev/plugin-sdk@0.0.24", "", { "dependencies": { "@opentabs-dev/shared": "0.0.23" }, "peerDependencies": { "zod": "^4.0.0" } }, "sha512-MRiv0EcJXSyIOCW9lXUzSwjd71CJUiAw7dF1TbOan3zfMySx9XPwuHVG7NcqxOXZn54bsxTiwRGIkP4sYl+/uQ=="],
 
-    "@opentabs-dev/plugin-tools": ["@opentabs-dev/plugin-tools@0.0.23", "", { "dependencies": { "@opentabs-dev/plugin-sdk": "^0.0.23", "@opentabs-dev/shared": "^0.0.23", "commander": "^14.0.3", "picocolors": "^1.1.1", "zod": "^4.3.6" }, "bin": { "opentabs-plugin": "dist/cli.js" } }, "sha512-R1uHM35SDs2HRJu/nc1lDyJhHclxeXAAQ/GYj/Y68vceC00Ahk8bsxhYAK9yPZyMCFo39xqDaohSY9bK6rr4Yw=="],
+    "@opentabs-dev/plugin-tools": ["@opentabs-dev/plugin-tools@0.0.24", "", { "dependencies": { "@opentabs-dev/plugin-sdk": "0.0.23", "@opentabs-dev/shared": "0.0.23", "commander": "^14.0.3", "picocolors": "^1.1.1", "zod": "^4.3.6" }, "bin": { "opentabs-plugin": "dist/cli.js" } }, "sha512-w9uYQKrE1y8DcbIHWRUntz2VECW+/1fR6I+i1nkhYCiJfDREGn6VdA/kvU6akVLh7jsdt4BjOHDdAu5lzIeJBQ=="],
 
     "@opentabs-dev/shared": ["@opentabs-dev/shared@0.0.23", "", {}, "sha512-z3x2kh0UNrn9DehZ38H/9S+98B7/mpl57oylVaJ5VmC5f7LgqfNcFo4W61/gfgR9a8vCgj4biTekLAXY+XoZnQ=="],
 
@@ -255,6 +255,8 @@
     "zod": ["zod@4.3.6", "", {}, "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg=="],
 
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
+
+    "@opentabs-dev/plugin-tools/@opentabs-dev/plugin-sdk": ["@opentabs-dev/plugin-sdk@0.0.23", "", { "dependencies": { "@opentabs-dev/shared": "^0.0.23" }, "peerDependencies": { "zod": "^4.0.0" } }, "sha512-jKalzQI2ilDwfd8NINLrnYY2ercIKuQvtlhLxQ7+JZC9w8ZFo1n+n7nbV24wQ4NQCDA3oDj04oyfXWxasmdx0A=="],
 
     "@typescript-eslint/eslint-plugin/ignore": ["ignore@7.0.5", "", {}, "sha512-Hs59xBNfUIunMFgWAbGX5cq6893IbWg4KnrjbYwX3tx0ztorVgTDA6B2sxf8ejHJ4wz8BqGUMYlnzNBer5NvGg=="],
 

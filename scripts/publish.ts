@@ -1,7 +1,13 @@
 /**
- * Publish platform packages to npm (private) using bun publish:
- *   @opentabs-dev/shared, @opentabs-dev/plugin-sdk, @opentabs-dev/plugin-tools,
- *   @opentabs-dev/mcp-server, @opentabs-dev/cli, and @opentabs-dev/create-plugin.
+ * Publish platform packages to npm (private) and update plugins.
+ *
+ * Platform packages published (in dependency order):
+ *   @opentabs-dev/shared, @opentabs-dev/mcp-server, @opentabs-dev/plugin-sdk,
+ *   @opentabs-dev/plugin-tools, @opentabs-dev/cli, @opentabs-dev/create-plugin.
+ *
+ * After publishing, plugins under plugins/ have their @opentabs-dev/* dependency
+ * versions updated to ^<version>, then are reinstalled and rebuilt. Plugin
+ * versions are NOT bumped — they have their own independent release lifecycle.
  *
  * All intra-workspace dependencies use workspace:* in source. bun publish
  * automatically replaces workspace:* with the resolved version in the tarball.
@@ -19,6 +25,7 @@
  *   bun scripts/publish.ts 0.0.3
  */
 
+import { existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -75,6 +82,21 @@ const PACKAGES = [
   'platform/cli',
   'platform/create-plugin',
 ] as const;
+
+/** @opentabs-dev dependency names that plugins reference. */
+const OPENTABS_DEP_NAMES = ['@opentabs-dev/plugin-sdk', '@opentabs-dev/plugin-tools'] as const;
+
+/**
+ * Auto-discover plugin directories under plugins/.
+ * A directory is a plugin if it contains a package.json.
+ */
+const discoverPlugins = (): string[] => {
+  const pluginsDir = resolve(ROOT, 'plugins');
+  return readdirSync(pluginsDir, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .map(d => `plugins/${d.name}`)
+    .filter(dir => existsSync(resolve(ROOT, dir, 'package.json')));
+};
 
 // ---------------------------------------------------------------------------
 // Conventional commit grouping
@@ -256,7 +278,44 @@ const main = async (): Promise<void> => {
   console.log('');
   console.log(`==> Published all packages at v${version}`);
 
-  // 5. Generate changelog
+  // 5. Update plugin dependencies and rebuild
+  const plugins = discoverPlugins();
+  if (plugins.length > 0) {
+    console.log('');
+    console.log(`==> Updating ${plugins.length} plugin(s) to use @opentabs-dev/*@^${version}...`);
+    for (const plugin of plugins) {
+      const data = await readPackageJson(plugin);
+      for (const depName of OPENTABS_DEP_NAMES) {
+        if (data.dependencies?.[depName]) data.dependencies[depName] = `^${version}`;
+        if (data.devDependencies?.[depName]) data.devDependencies[depName] = `^${version}`;
+      }
+      await writePackageJson(plugin, data);
+      console.log(`  ${plugin}/package.json — deps → ^${version}`);
+    }
+
+    // Wait for npm registry to propagate the new versions before installing.
+    // bun's resolver caches aggressively, so we also clear lockfiles.
+    console.log('');
+    console.log('  Waiting 10s for npm registry propagation...');
+    await new Promise(r => setTimeout(r, 10_000));
+
+    console.log('');
+    console.log('==> Installing and rebuilding plugins...');
+    for (const plugin of plugins) {
+      const pluginDir = resolve(ROOT, plugin);
+      // Remove lockfile so bun resolves fresh versions from npm
+      const lockPath = resolve(pluginDir, 'bun.lock');
+      if (existsSync(lockPath)) {
+        await Bun.file(lockPath).delete();
+      }
+      console.log(`  ${plugin}: bun install...`);
+      run(['bun', 'install'], pluginDir);
+      console.log(`  ${plugin}: bun run build...`);
+      run(['bun', 'run', 'build'], pluginDir);
+    }
+  }
+
+  // 6. Generate changelog
   console.log('');
   console.log('==> Generating changelog...');
 
@@ -292,11 +351,15 @@ const main = async (): Promise<void> => {
     console.log(`  Generated changelog for v${version}`);
   }
 
-  // 6. Commit and tag
+  // 7. Commit and tag
   console.log('');
   console.log('==> Creating release commit and tag...');
 
   const filesToStage = PACKAGES.map(pkg => `${pkg}/package.json`);
+  for (const plugin of plugins) {
+    filesToStage.push(`${plugin}/package.json`);
+    filesToStage.push(`${plugin}/bun.lock`);
+  }
   const changelogExists = await Bun.file(resolve(ROOT, 'CHANGELOG.md')).exists();
   if (changelogExists) {
     filesToStage.push('CHANGELOG.md');
@@ -311,8 +374,6 @@ const main = async (): Promise<void> => {
   console.log('');
   console.log('Next steps:');
   console.log('  1. git push && git push --tags');
-  console.log(`  2. Update plugin dependencies to ^${version} in plugins/*/package.json`);
-  console.log('  3. Rebuild plugins: cd plugins/<name> && bun install && bun run build');
 };
 
 await main();

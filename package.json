@@ -28,7 +28,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
     "knip": "knip",
     "check": "bun run build && bun run type-check && bun run lint && bun run format:check && bun run knip && bun run test",
-    "check:all": "bun run build && bun run type-check && bun run lint && bun run format:check && bun run knip && bun run test && bun run test:e2e",
+    "check:all": "bun run build && bun run type-check && bun run lint && bun run format:check && bun run knip && bun run test && bun run test:e2e && bun run check:docs && bun run check:plugins",
     "test": "bun test platform/",
     "build:e2e-plugin": "cd plugins/e2e-test && bun install --frozen-lockfile && bun run build",
     "test:e2e": "bun run build:e2e-plugin && bunx playwright test",

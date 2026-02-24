@@ -19,9 +19,21 @@ bun run build         # next build (static export)
 bun run type-check    # tsc --noEmit
 bun run lint          # eslint
 bun run knip          # unused code detection
+bun run format:check  # prettier check
+bun run check         # All checks (build + type-check + lint + knip + format:check)
 ```
 
-All four must pass. This project has no test suite.
+All checks must pass. This project has no test suite. `bun run check` runs them all sequentially, stopping on first failure.
+
+From the repo root, these convenience aliases are available:
+
+```bash
+bun run dev:docs        # next dev (docs dev server)
+bun run build:docs      # next build
+bun run lint:docs       # eslint
+bun run type-check:docs # tsc --noEmit
+bun run check:docs      # All docs checks from root
+```
 
 ## Directory Structure
 

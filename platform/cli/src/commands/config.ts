@@ -385,7 +385,24 @@ const writeAuthFile = async (secret: string): Promise<void> => {
   await atomicWrite(authPath, JSON.stringify({ secret }) + '\n', 0o600);
 };
 
-const handleRotateSecret = async (options: { port?: number }): Promise<void> => {
+interface RotateSecretOptions {
+  port?: number;
+  confirm?: boolean;
+}
+
+const handleRotateSecret = async (options: RotateSecretOptions): Promise<void> => {
+  if (!options.confirm) {
+    console.error(
+      pc.yellow(
+        'This will generate a new authentication secret. All MCP client configurations (Claude Code, Cursor, etc.) will need to be updated with the new secret.',
+      ),
+    );
+    console.error('');
+    console.error(`Run with ${pc.bold('--confirm')} to proceed:`);
+    console.error('  opentabs config rotate-secret --confirm');
+    process.exit(1);
+  }
+
   const oldSecret = await readAuthSecret();
   const newSecret = generateSecret();
   const port = resolvePort(options);
@@ -495,6 +512,7 @@ Examples:
   configCmd
     .command('rotate-secret')
     .description('Rotate the shared authentication secret')
+    .option('--confirm', 'Skip confirmation and rotate immediately')
     .addHelpText(
       'after',
       `
@@ -502,9 +520,11 @@ Generates a new 256-bit random secret and writes it to auth.json.
 If the MCP server is running, notifies it to reload.
 
 Examples:
-  $ opentabs config rotate-secret`,
+  $ opentabs config rotate-secret --confirm`,
     )
-    .action((_options: Record<string, unknown>, command: Command) => handleRotateSecret(command.optsWithGlobals()));
+    .action((options: { confirm?: boolean }, command: Command) =>
+      handleRotateSecret({ ...options, ...command.optsWithGlobals() }),
+    );
 };
 
 export { registerConfigCommand };

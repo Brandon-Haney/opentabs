@@ -21,6 +21,7 @@ import {
   normalizePluginName,
   resolvePluginPackageCandidates,
   platformExec,
+  toErrorMessage,
 } from '@opentabs-dev/shared';
 import pc from 'picocolors';
 import { homedir } from 'node:os';
@@ -501,7 +502,7 @@ const handlePluginList = async (options: PluginListOptions): Promise<void> => {
     }
   } catch (err: unknown) {
     if (!isConnectionRefused(err)) {
-      // Unexpected error (not just "server not running") — still fall through to offline mode
+      console.error(pc.dim(`Could not reach server: ${toErrorMessage(err)}. Showing offline data.`));
     }
   }
 

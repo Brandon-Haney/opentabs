@@ -66,6 +66,8 @@ const config: KnipConfig = {
         '@vitejs/plugin-react',
         // knip cannot trace type imports from workspace-linked @opentabs-dev packages
         '@opentabs-dev/shared',
+        // Used in ConfirmationDialog.tsx but knip cannot trace Radix namespace imports
+        '@radix-ui/react-dropdown-menu',
       ],
     },
     'platform/create-plugin': {

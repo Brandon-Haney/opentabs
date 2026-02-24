@@ -10,6 +10,7 @@
  * original dist/ location, overwriting the tsc output.
  */
 
+import { build } from 'esbuild';
 import { join } from 'node:path';
 
 const base = import.meta.dirname;
@@ -25,37 +26,27 @@ const entries = [
 let failed = false;
 
 for (const { entrypoint, outfile, label } of entries) {
-  const result = await Bun.build({
-    entrypoints: [entrypoint],
-    target: 'browser',
-    format: 'esm',
-    minify: false,
+  try {
     // Bundling resolves bare specifiers (e.g., @opentabs-dev/shared) and
     // relative imports into a single self-contained file.
-    //
     // chrome.* APIs are globals — they don't need to be imported/resolved.
-  });
+    await build({
+      entryPoints: [entrypoint],
+      outfile,
+      bundle: true,
+      platform: 'browser',
+      format: 'esm',
+      minify: false,
+      // Write directly to the exact output path, overwriting the tsc-produced file.
+      allowOverwrite: true,
+    });
 
-  if (!result.success) {
+    console.log(`[opentabs:build:${label}] Bundled successfully`);
+  } catch (error: unknown) {
     console.error(`[opentabs:build:${label}] Bundle failed:`);
-    for (const log of result.logs) {
-      console.error(log);
-    }
+    console.error(error);
     failed = true;
-    continue;
   }
-
-  // Bun.build writes to outdir (directory-based) — we need to write to the
-  // exact output path since we're overwriting the tsc-produced file.
-  const output = result.outputs[0];
-  if (!output) {
-    console.error(`[opentabs:build:${label}] Bundle produced no output`);
-    failed = true;
-    continue;
-  }
-
-  await Bun.write(outfile, output);
-  console.log(`[opentabs:build:${label}] Bundled successfully`);
 }
 
 if (failed) {

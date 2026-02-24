@@ -18,8 +18,8 @@ platform/browser-extension/
 │       │   ├── retro/              # RetroUI primitives (Button, Badge, Switch, Accordion, etc.)
 │       │   └── *.tsx               # App-specific components (PluginCard, ToolRow, etc.)
 │       └── hooks/                  # React hooks
-├── build-side-panel.ts             # Bun.build script for side panel
-├── build-extension.ts              # Bun.build script for background + offscreen
+├── build-side-panel.ts             # esbuild script for side panel
+├── build-extension.ts              # esbuild script for background + offscreen
 └── manifest.json                   # Extension manifest
 ```
 

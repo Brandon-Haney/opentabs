@@ -9,7 +9,7 @@
     "build": "tsc --build",
     "build:bundle": "bun run build-extension.ts",
     "build:side-panel": "bun run build-side-panel.ts && bun run build:tailwind",
-    "build:tailwind": "bunx @tailwindcss/cli -i src/side-panel/styles.css -o dist/side-panel/styles.css --minify",
+    "build:tailwind": "npx @tailwindcss/cli -i src/side-panel/styles.css -o dist/side-panel/styles.css --minify",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build -o storybook-static"
   },
@@ -32,6 +32,7 @@
     "@tailwindcss/vite": "^4.2.0",
     "@types/chrome": "^0.1.36",
     "@vitejs/plugin-react": "^5.1.4",
+    "esbuild": "^0.24.0",
     "lucide-react": "^0.574.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

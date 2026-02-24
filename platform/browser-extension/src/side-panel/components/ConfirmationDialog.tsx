@@ -68,10 +68,11 @@ const AllowAlwaysButton = ({ domain, onSelect }: { domain: string | null; onSele
 );
 
 const ConfirmationDialog = ({ confirmations, onRespond, onDenyAll }: ConfirmationDialogProps) => {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentId, setCurrentId] = useState<string | null>(null);
 
-  // Clamp index when confirmations are removed (derived, no effect needed)
-  const safeIndex = Math.min(currentIndex, Math.max(0, confirmations.length - 1));
+  // Find confirmation by ID; fall back to the first item when the tracked ID is gone
+  const currentIndex = confirmations.findIndex(c => c.id === currentId);
+  const safeIndex = currentIndex === -1 ? 0 : currentIndex;
   const current = confirmations[safeIndex];
   if (!current) return null;
 
@@ -150,14 +151,14 @@ const ConfirmationDialog = ({ confirmations, onRespond, onDenyAll }: Confirmatio
               type="button"
               className="text-muted-foreground hover:text-foreground cursor-pointer font-mono text-xs disabled:cursor-not-allowed disabled:opacity-40"
               disabled={safeIndex === 0}
-              onClick={() => setCurrentIndex(i => Math.max(0, i - 1))}>
+              onClick={() => setCurrentId(confirmations[safeIndex - 1]?.id ?? null)}>
               prev
             </button>
             <button
               type="button"
               className="text-muted-foreground hover:text-foreground cursor-pointer font-mono text-xs disabled:cursor-not-allowed disabled:opacity-40"
               disabled={safeIndex >= count - 1}
-              onClick={() => setCurrentIndex(i => Math.min(count - 1, i + 1))}>
+              onClick={() => setCurrentId(confirmations[safeIndex + 1]?.id ?? null)}>
               next
             </button>
           </div>

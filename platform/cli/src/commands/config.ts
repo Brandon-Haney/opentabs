@@ -170,6 +170,7 @@ const handleListTools = async (): Promise<void> => {
     console.error(`Start it with: ${pc.bold('opentabs start')}`);
     console.error('');
     console.error('Tool names use the format <plugin>_<tool>, e.g. slack_send_message');
+    console.error(pc.dim('You can also list installed plugins with: opentabs plugin list'));
     process.exit(1);
   }
 

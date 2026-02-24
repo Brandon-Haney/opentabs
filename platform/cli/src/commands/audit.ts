@@ -148,11 +148,12 @@ const handleAuditFromFile = async (options: AuditOptions): Promise<void> => {
   const lines = raw.split('\n').filter(line => line.trim().length > 0);
 
   let entries: AuditEntry[] = [];
+  let skippedCount = 0;
   for (const line of lines) {
     try {
       entries.push(JSON.parse(line) as AuditEntry);
     } catch {
-      // Skip malformed lines
+      skippedCount++;
     }
   }
 
@@ -171,20 +172,22 @@ const handleAuditFromFile = async (options: AuditOptions): Promise<void> => {
 
   if (options.json) {
     console.log(JSON.stringify(entries, null, 2));
-    return;
-  }
-
-  if (entries.length === 0) {
+  } else if (entries.length === 0) {
     const hasFilters = options.plugin || options.tool || options.since;
     if (hasFilters) {
       console.log(pc.dim('No entries match the current filters. Try broadening the search.'));
     } else {
       console.log(pc.dim('No audit entries found. Invoke tools through an MCP client to generate audit entries.'));
     }
-    return;
+  } else {
+    printAuditTable(entries);
   }
 
-  printAuditTable(entries);
+  if (skippedCount > 0) {
+    console.log(
+      pc.dim(`Note: ${skippedCount} malformed log ${skippedCount === 1 ? 'entry was' : 'entries were'} skipped.`),
+    );
+  }
 };
 
 const handleAudit = async (options: AuditOptions): Promise<void> => {

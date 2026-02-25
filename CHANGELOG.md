@@ -1,3 +1,57 @@
+## v0.0.32
+
+### Features
+
+- US-012 - Replace remaining Bun API calls with runtime-compatible equivalents
+- US-011 - Update docs site to reflect Node.js-first user experience
+- US-030 - Use terminal width for plugin search description truncation
+- US-029 - Add doctor check for Chrome/Chromium browser installation
+- US-010 - Update README.md files to reflect Node.js-first user experience
+- US-028 - Add plugin list hint when config set list-tools fails
+- US-009 - Update all CLAUDE.md files to reflect dual-runtime support
+- US-027 - Style config reset success message with path and color
+- US-026 - Add hint when logs --plugin matches nothing
+- US-008 - Update browser-extension build scripts to use esbuild
+- US-025 - Detect dev vs installed context in update command
+- US-024 - Warn when config set localPlugins.add path does not contain package.json
+- US-007 - Update package.json files: engines, scripts, and dependencies
+- US-023 - Warn when config set tool name does not match any registered tool
+- US-006 - Migrate platform/create-plugin to use runtime layer
+- US-022 - Validate plugin package after install
+- US-021 - Add auth.json check to doctor command
+- US-005 - Migrate platform/plugin-tools to use esbuild instead of Bun.build
+- US-020 - Add bun run dev to plugin create next steps
+- US-019 - Add shutdown message to start command SIGINT handler
+- US-018 - Add malformed line count warning to audit file parsing
+- US-004 - Migrate platform/cli to use runtime layer
+- US-017 - Log warning for unexpected errors in plugin list offline fallback
+- US-016 - Improve audit empty results message with context-aware guidance
+- US-015 - Format MCP client config JSON as multi-line for readability
+- US-014 - Add config show alias 'config get'
+- US-013 - Add command aliases for common plugin operations
+- US-003 - Create a Node.js-compatible HTTP+WebSocket server adapter
+- US-012 - Fix plugin search empty query display
+- US-011 - Use platformExec in update command for Windows compatibility
+- US-010 - Add 401 error handling to status command
+- US-009 - Mask secret in config show output
+- US-008 - Add did-you-mean suggestions for config set keys
+- US-002 - Migrate platform/mcp-server production code to use runtime layer
+- US-007 - Fix alignment in start command output
+- US-006 - Distinguish dev vs installed context in start command error
+- US-005 - Add timeout handling to audit command error path
+- US-004 - Fix doctor to use readAuthSecret instead of config.secret
+- US-003 - Add confirmation prompt to config rotate-secret
+- US-001 - Create a runtime compatibility layer in platform/shared
+- US-002 - Add confirmation prompt to plugin remove
+- US-001 - Notify running server after config set changes
+
+### Bug Fixes
+
+- delete bun.lock before install to force fresh workspace:\* resolution during publish
+- run bun install after version bump to sync workspace:\* resolutions in lockfile
+- use build:force in publish script to prevent stale incremental tsc output
+- externalize node: builtins in extension esbuild to support shared runtime layer
+
 ## v0.0.27
 
 ### Refactoring

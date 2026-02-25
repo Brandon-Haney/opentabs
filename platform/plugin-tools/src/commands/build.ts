@@ -719,29 +719,36 @@ if (!Reflect.deleteProperty(adapters, ${name})) {
   globalThis.__openTabs = Object.assign({}, ot, { adapters: newAdapters });
 }
 
-// Wire onToolInvocationStart / onToolInvocationEnd around each tool.handle()
-if (typeof plugin.onToolInvocationStart === 'function' || typeof plugin.onToolInvocationEnd === 'function') {
-  for (const tool of plugin.tools) {
-    const origHandle = tool.handle;
-    tool.handle = async function(...handleArgs: [unknown, ...unknown[]]) {
-      const startTime = performance.now();
-      if (typeof plugin.onToolInvocationStart === 'function') {
-        try { plugin.onToolInvocationStart(tool.name); } catch (e) { console.warn('[OpenTabs] onToolInvocationStart failed:', e); }
-      }
-      let success = true;
-      try {
-        return await origHandle.apply(this, handleArgs);
-      } catch (err) {
-        success = false;
-        throw err;
-      } finally {
+// Wrap each tool.handle() to flush log entries after execution and call
+// lifecycle hooks (onToolInvocationStart / onToolInvocationEnd) if defined.
+// Flushing logs here guarantees entries emitted during a tool call are sent
+// via postMessage before the tool result is returned, instead of relying on
+// the background LOG_FLUSH_INTERVAL timer which can be delayed under load.
+const hasLifecycleHooks = typeof plugin.onToolInvocationStart === 'function' || typeof plugin.onToolInvocationEnd === 'function';
+for (const tool of plugin.tools) {
+  const origHandle = tool.handle;
+  tool.handle = async function(...handleArgs: [unknown, ...unknown[]]) {
+    const startTime = performance.now();
+    if (hasLifecycleHooks && typeof plugin.onToolInvocationStart === 'function') {
+      try { plugin.onToolInvocationStart(tool.name); } catch (e) { console.warn('[OpenTabs] onToolInvocationStart failed:', e); }
+    }
+    let success = true;
+    try {
+      return await origHandle.apply(this, handleArgs);
+    } catch (err) {
+      success = false;
+      throw err;
+    } finally {
+      if (hasLifecycleHooks) {
         const durationMs = performance.now() - startTime;
         if (typeof plugin.onToolInvocationEnd === 'function') {
           try { plugin.onToolInvocationEnd(tool.name, success, durationMs); } catch (e) { console.warn('[OpenTabs] onToolInvocationEnd failed:', e); }
         }
       }
-    };
-  }
+      if (logFlushTimer !== null) { clearTimeout(logFlushTimer); logFlushTimer = null; }
+      flushLogs();
+    }
+  };
 }
 
 // Re-read the adapters reference (may have been rebuilt above)
@@ -881,7 +888,12 @@ const runBuild = async (projectDir: string): Promise<void> => {
       );
     }
     console.log(pc.dim('Compiled output not found, running tsc...'));
-    const tscResult = spawnProcessSync('tsc', [], { cwd: projectDir });
+    // Prepend node_modules/.bin to PATH so the project-local tsc is found
+    const binDir = join(projectDir, 'node_modules', '.bin');
+    const pathSep = process.platform === 'win32' ? ';' : ':';
+    const pathKey = process.platform === 'win32' ? 'Path' : 'PATH';
+    const envWithBin = { ...process.env, [pathKey]: `${binDir}${pathSep}${process.env[pathKey] ?? ''}` };
+    const tscResult = spawnProcessSync('tsc', [], { cwd: projectDir, env: envWithBin });
     if (tscResult.exitCode !== 0) {
       const stderr = tscResult.stderr.trim();
       const stdout = tscResult.stdout.trim();

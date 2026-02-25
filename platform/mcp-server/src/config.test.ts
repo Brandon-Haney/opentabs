@@ -193,6 +193,9 @@ describe('loadConfig / saveConfig round-trip', () => {
 
 describe('tool config round-trip with isToolEnabled', () => {
   beforeEach(async () => {
+    // Re-assert the env var before each test since the prior describe's
+    // afterAll restores it, and concurrent test files may also modify it.
+    Bun.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
     await removeConfig();
   });
 

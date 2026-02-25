@@ -52,7 +52,9 @@ const installExtension = async (configDir: string): Promise<InstallExtensionResu
 
   // Verify the extension source exists
   if (!(await runtimeFileExists(join(extensionSrc, 'manifest.json')))) {
-    throw new Error(`Browser extension not found at ${extensionSrc}. Run npm run build from the project root first.`);
+    throw new Error(
+      `Browser extension not found at ${extensionSrc}. Try reinstalling: npm install -g @opentabs-dev/cli`,
+    );
   }
 
   const version = await getCliVersion();

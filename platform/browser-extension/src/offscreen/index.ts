@@ -442,12 +442,12 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, sender, sendResp
           const parsed = new URL(rawUrl);
           if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
             console.warn(`[opentabs:offscreen] Rejected ws:setUrl with invalid protocol: ${parsed.protocol}`);
-            sendResponse({ ok: true });
+            sendResponse({ ok: false, reason: 'Invalid WebSocket protocol' });
             return;
           }
         } catch {
           console.warn('[opentabs:offscreen] Rejected ws:setUrl: invalid URL format');
-          sendResponse({ ok: true });
+          sendResponse({ ok: false, reason: 'Invalid URL format' });
           return;
         }
 
@@ -460,7 +460,7 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, sender, sendResp
             if (isValidWsOrigin(wsInfo.wsUrl, httpBase)) {
               resolvedUrl = wsInfo.wsUrl;
             } else {
-              sendResponse({ ok: true });
+              sendResponse({ ok: false, reason: 'WebSocket URL origin mismatch' });
               return;
             }
           } else if (typeof wsInfo.wsUrl === 'string') {
@@ -468,7 +468,7 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, sender, sendResp
           }
         }
         if (!isValidWsOrigin(resolvedUrl, httpBase)) {
-          sendResponse({ ok: true });
+          sendResponse({ ok: false, reason: 'WebSocket URL origin mismatch' });
           return;
         }
         if (resolvedUrl !== mcpServerUrl) {

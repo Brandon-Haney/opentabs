@@ -1,6 +1,6 @@
 import { Button } from './retro/Button.js';
 import { NumberStepper } from './retro/NumberStepper.js';
-import { DEFAULT_PORT, PORT_STORAGE_KEY } from '../constants.js';
+import { DEFAULT_SERVER_PORT, SERVER_PORT_KEY } from '../../constants.js';
 import { useTheme } from '../hooks/useTheme.js';
 import { Moon, Sun } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
@@ -10,19 +10,19 @@ const PortEditor = () => {
   const [initialPort, setInitialPort] = useState<number | null>(null);
 
   useEffect(() => {
-    chrome.storage.local.get(PORT_STORAGE_KEY).then(
+    chrome.storage.local.get(SERVER_PORT_KEY).then(
       result => {
-        const stored = result[PORT_STORAGE_KEY] as number | undefined;
-        setInitialPort(typeof stored === 'number' && stored >= 1 && stored <= 65535 ? stored : DEFAULT_PORT);
+        const stored = result[SERVER_PORT_KEY] as number | undefined;
+        setInitialPort(typeof stored === 'number' && stored >= 1 && stored <= 65535 ? stored : DEFAULT_SERVER_PORT);
       },
       () => {
-        setInitialPort(DEFAULT_PORT);
+        setInitialPort(DEFAULT_SERVER_PORT);
       },
     );
   }, []);
 
   const handleChange = useCallback((value: number) => {
-    chrome.storage.local.set({ [PORT_STORAGE_KEY]: value }).catch(() => {});
+    chrome.storage.local.set({ [SERVER_PORT_KEY]: value }).catch(() => {});
     const message: PortChangedMessage = { type: 'port-changed', port: value };
     chrome.runtime.sendMessage(message).catch(() => {});
   }, []);

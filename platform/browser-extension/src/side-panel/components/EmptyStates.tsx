@@ -1,16 +1,16 @@
 import { Empty } from './retro/Empty.js';
 import { Loader } from './retro/Loader.js';
-import { DEFAULT_PORT, PORT_STORAGE_KEY } from '../constants.js';
+import { DEFAULT_SERVER_PORT, SERVER_PORT_KEY } from '../../constants.js';
 import { useState, useEffect } from 'react';
 import type { DisconnectReason } from '../../extension-messages.js';
 
 const ConnectionRefusedState = () => {
-  const [port, setPort] = useState(DEFAULT_PORT);
+  const [port, setPort] = useState(DEFAULT_SERVER_PORT);
 
   useEffect(() => {
-    chrome.storage.local.get(PORT_STORAGE_KEY).then(
+    chrome.storage.local.get(SERVER_PORT_KEY).then(
       result => {
-        const stored = result[PORT_STORAGE_KEY] as number | undefined;
+        const stored = result[SERVER_PORT_KEY] as number | undefined;
         if (typeof stored === 'number' && stored >= 1 && stored <= 65535) {
           setPort(stored);
         }
@@ -21,8 +21,8 @@ const ConnectionRefusedState = () => {
     );
 
     const onChanged = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
-      if (area !== 'local' || !(PORT_STORAGE_KEY in changes)) return;
-      const newValue = changes[PORT_STORAGE_KEY].newValue as number | undefined;
+      if (area !== 'local' || !(SERVER_PORT_KEY in changes)) return;
+      const newValue = changes[SERVER_PORT_KEY].newValue as number | undefined;
       if (typeof newValue === 'number' && newValue >= 1 && newValue <= 65535) {
         setPort(newValue);
       }
@@ -31,7 +31,7 @@ const ConnectionRefusedState = () => {
     return () => chrome.storage.onChanged.removeListener(onChanged);
   }, []);
 
-  const command = port === DEFAULT_PORT ? 'opentabs start' : `opentabs start --port ${port}`;
+  const command = port === DEFAULT_SERVER_PORT ? 'opentabs start' : `opentabs start --port ${port}`;
 
   return (
     <Empty className="border-destructive/60">

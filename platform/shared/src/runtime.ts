@@ -60,7 +60,9 @@ export const fileExists = async (path: string): Promise<boolean> => {
 /** Delete a file. Does not throw if the file does not exist. */
 export const deleteFile = async (path: string): Promise<void> => {
   if (isBun) {
-    await Bun.file(path).delete();
+    await Bun.file(path)
+      .delete()
+      .catch(() => {});
     return;
   }
   await unlink(path).catch(() => {});

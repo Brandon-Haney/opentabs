@@ -27,7 +27,7 @@
 
 **MCP Server** (`platform/mcp-server`): Plugin discovery, tool/resource/prompt dispatch via WebSocket, browser tools, audit log. See `platform/mcp-server/CLAUDE.md` for details.
 
-**Chrome Extension** (`platform/browser-extension`): Adapter injection, tool dispatch relay, React side panel UI. See `platform/browser-extension/CLAUDE.md` for details.
+**Chrome Extension** (`platform/browser-extension`): Adapter injection, tool dispatch relay, React side panel UI. Published to npm as `@opentabs-dev/browser-extension` and bundled as a CLI dependency so `opentabs start` can auto-install it. See `platform/browser-extension/CLAUDE.md` for details.
 
 **Plugin SDK** (`platform/plugin-sdk`): `OpenTabsPlugin` base class, `defineTool`/`defineResource`/`definePrompt` factories, SDK utilities, structured errors. See `platform/plugin-sdk/CLAUDE.md` for details.
 
@@ -280,7 +280,7 @@ For full repository verification including docs and plugins, use `bun run check:
 
 ### Runtime Compatibility
 
-Published packages (CLI, MCP server, plugin-tools, create-plugin) run on **Node.js 20+**. Platform contributors use **Bun** for development, testing, and monorepo management. Code is organized into three tiers:
+Published packages (CLI, browser-extension, MCP server, plugin-tools, create-plugin) run on **Node.js 20+**. Platform contributors use **Bun** for development, testing, and monorepo management. Code is organized into three tiers:
 
 **Production code** (`platform/*/src/`): Uses the runtime compatibility layer from `@opentabs-dev/shared` (`runtime.ts`). Functions like `readFile`, `writeFile`, `fileExists`, `spawnProcess`, `getEnv`, and `sha256` automatically use Bun APIs when available, falling back to Node.js equivalents. New production code must use these abstractions — never call `Bun.file()`, `Bun.env`, `Bun.spawn`, etc. directly.
 

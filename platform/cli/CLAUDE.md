@@ -14,7 +14,7 @@ platform/cli/src/
 
 ## Publishing Platform Packages
 
-The platform packages `@opentabs-dev/shared`, `@opentabs-dev/mcp-server`, `@opentabs-dev/plugin-sdk`, `@opentabs-dev/plugin-tools`, `@opentabs-dev/cli`, and `@opentabs-dev/create-plugin` are published as private packages to the npm registry under the `@opentabs-dev` org. Publish order follows the dependency graph: shared → mcp-server → plugin-sdk → plugin-tools → cli → create-plugin.
+The platform packages `@opentabs-dev/shared`, `@opentabs-dev/browser-extension`, `@opentabs-dev/mcp-server`, `@opentabs-dev/plugin-sdk`, `@opentabs-dev/plugin-tools`, `@opentabs-dev/cli`, and `@opentabs-dev/create-plugin` are published as private packages to the npm registry under the `@opentabs-dev` org. Publish order follows the dependency graph: shared → browser-extension → mcp-server → plugin-sdk → plugin-tools → cli → create-plugin. The CLI depends on browser-extension (the Chrome extension is distributed via npm as part of the CLI package).
 
 **Authentication**: npm requires a single token in `~/.npmrc` with read+write access to `@opentabs-dev` packages.
 

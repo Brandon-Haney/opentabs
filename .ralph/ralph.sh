@@ -38,7 +38,7 @@ TOOL="claude"
 MODEL=""
 ONCE=false
 POLL_INTERVAL=5
-MAX_WORKERS=3
+MAX_WORKERS=2
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -635,7 +635,7 @@ dispatch_prd() {
   # Instead, mount config files to /tmp/staging/ and copy them into HOME in
   # the CONTAINER_INIT command after creating the writable directory.
   local -a DOCKER_COMMON=()
-  DOCKER_COMMON+=(--init --ipc=host --shm-size=2g)
+  DOCKER_COMMON+=(--init --ipc=host --shm-size=2g --memory=5g --cpus=5)
   # Run as host user — Claude CLI refuses --dangerously-skip-permissions as
   # root, and file ownership in the bind-mounted worktree must match the host.
   DOCKER_COMMON+=(--user "$(id -u):$(id -g)")
@@ -733,6 +733,8 @@ dispatch_prd() {
   #   --init      Tini as PID 1 to reap zombie processes (Chromium forks helpers)
   #   --ipc=host  Required for Chromium IPC (without it, Chrome crashes)
   #   --shm-size  Chromium uses /dev/shm heavily; default 64MB causes OOM crashes
+  #   --memory    Hard memory cap prevents OOM-kills when workers run E2E in parallel
+  #   --cpus      CPU quota prevents workers from starving each other during builds
   local -a DOCKER_ARGS=()
   DOCKER_ARGS+=(--name "$container_name")
   DOCKER_ARGS+=(--detach)

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Ralph (`.ralph/ralph.sh`) is a long-running daemon that processes PRD files in parallel using git worktrees. It dispatches up to N workers (default 3), each in an isolated worktree with its own branch, so agents never interfere with each other's builds, type-checks, or tests.
+Ralph (`.ralph/ralph.sh`) is a long-running daemon that processes PRD files in parallel using git worktrees. It dispatches up to N workers (default 2), each in an isolated worktree with its own branch, so agents never interfere with each other's builds, type-checks, or tests.
 
 Each worker runs inside a **Docker container**. Process cleanup is handled by the kernel via cgroups — `docker kill` atomically destroys every process in the container (Chromium, Playwright workers, test servers). No orphaned processes, no pgrep pattern matching, no process tree walking.
 
@@ -10,9 +10,8 @@ Each worker runs inside a **Docker container**. Process cleanup is handled by th
 
 ```
 ralph.sh (daemon on host, polls .ralph/ for ready PRDs)
-  ├── Worker 0 → git worktree → Docker container (ralph-worker-0) → claude --print
-  ├── Worker 1 → git worktree → Docker container (ralph-worker-1) → claude --print
-  └── Worker 2 → git worktree → Docker container (ralph-worker-2) → claude --print
+  ├── Worker 0 → git worktree → Docker container (ralph-worker-0, 5GB/5CPU) → claude --print
+  └── Worker 1 → git worktree → Docker container (ralph-worker-1, 5GB/5CPU) → claude --print
 ```
 
 **Host responsibilities** (ralph.sh): PRD discovery, worktree creation, `bun install` + `bun run build`, container lifecycle, branch merging, PRD state machine.
@@ -36,11 +35,11 @@ Each worker lifecycle:
 # Build the worker image (one-time, or after Dockerfile changes)
 bash .ralph/docker-build.sh
 
-# Start daemon (continuous mode, 3 workers)
-nohup bash .ralph/ralph.sh --workers 3 &
+# Start daemon (continuous mode, default 2 workers)
+nohup bash .ralph/ralph.sh &
 
 # Process current queue and exit
-nohup bash .ralph/ralph.sh --workers 3 --once &
+nohup bash .ralph/ralph.sh --once &
 
 # Monitor
 tail -f .ralph/ralph.log
@@ -73,6 +72,7 @@ docker ps --filter "name=ralph-worker-"
 - **Worktrees are fully set up before the container starts.** Each worktree gets `bun install` (own `node_modules/`), `bun run build` (fresh `dist/` for all platform packages), and the `plugins/e2e-test` plugin is installed and built. This runs inside a setup container (same image). The resulting files are bind-mounted into the worker container.
 - **Official Playwright base image.** The Docker image is based on `mcr.microsoft.com/playwright:v1.58.2-noble`, which includes Chromium and all required system dependencies pre-configured and tested by the Playwright team. Firefox and WebKit are removed to save space.
 - **`--ipc=host` is required.** Chromium uses IPC extensively. Without `--ipc=host`, Chrome crashes with SIGTRAP. `--shm-size=2g` is also required (default 64MB is too small for Chromium).
+- **Container resource limits prevent OOM kills.** Each container gets `--memory=5g --cpus=5`. During E2E, each Playwright worker (4 per container) spawns an MCP server, a test server, and a Chromium instance (~600 MB each), totaling ~2.5 GB for Playwright alone plus headroom for the Claude CLI and build tools. Without limits, two workers running E2E simultaneously can exhaust Docker's ~12 GB memory allocation, triggering `Killed: 9` (OOM) and cascading test failures. The default of 2 workers × 5 GB = 10 GB leaves ~2 GB for Docker overhead.
 - **Dev tooling must ignore worktrees.** ESLint, knip, and prettier will scan `.ralph/worktrees/` and `.claude/worktrees/` unless explicitly excluded. These exclusions are in `eslint.config.ts`, `knip.ts`, and `.prettierignore`. Forgetting this causes ESLint crashes (no tsconfig for worktree files) and knip reporting hundreds of false "unused files."
 - **`set -e` is intentionally NOT used.** This is a long-running daemon — a single failed `mv`, `cp`, or `jq` command must not kill the entire process tree. Every failure is handled explicitly with `|| true` or `|| return 1`.
 - **Startup orphan cleanup kills leftover containers.** On startup, ralph scans for containers matching `ralph-worker-*` and kills/removes them. This handles the case where the previous daemon was killed with `kill -9` (bypassing the EXIT trap).

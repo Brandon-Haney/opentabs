@@ -113,6 +113,7 @@ const App = () => {
           setFailedPlugins([]);
           setActiveTools(new Set());
           setPendingConfirmations([]);
+          setToolFilter('');
           rejectAllPending();
         }
         sendResponse({ ok: true });

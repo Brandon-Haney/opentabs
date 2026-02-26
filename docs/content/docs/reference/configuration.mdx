@@ -301,12 +301,14 @@ opentabs start
 ### Dev mode (contributors only)
 
 ```bash
-bun --hot platform/mcp-server/dist/index.js --dev
+bun run dev
 ```
 
 - **File watchers** monitor local plugin `dist/` directories — auto-reloads when plugins are rebuilt
 - **Config watching** detects changes to `config.json` and re-discovers plugins
-- **`bun --hot`** enables hot reload — rebuilt server files take effect without restarting
+- **Hot reload** — rebuilt server files take effect without restarting
+
+Use `bun run dev:mcp` for a lightweight alternative that runs the MCP server only (no tsc watch or extension build).
 
 Dev mode requires Bun and is intended for platform contributors working on the server source code. Normal users and plugin developers use production mode.
 

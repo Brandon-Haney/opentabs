@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "@opentabs-dev/cli": "workspace:*",
-    "@opentabs-dev/shared": "workspace:*",
     "commander": "^14.0.3",
     "picocolors": "^1.1.1"
   },

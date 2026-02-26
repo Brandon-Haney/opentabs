@@ -4,8 +4,9 @@
  * a human-readable summary of tools, resources, and prompts.
  */
 
-import { TOOLS_FILENAME, fileExists, parsePluginPackageJson, readFile } from '@opentabs-dev/shared';
+import { TOOLS_FILENAME, parsePluginPackageJson } from '@opentabs-dev/shared';
 import pc from 'picocolors';
+import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ManifestPrompt, ManifestResource, ManifestTool } from '@opentabs-dev/shared';
 import type { Command } from 'commander';
@@ -45,14 +46,19 @@ const truncate = (s: string, maxLen: number): string => (s.length > maxLen ? s.s
 const handleInspect = async (options: { json?: boolean }, projectDir: string = process.cwd()): Promise<void> => {
   // Read dist/tools.json
   const toolsJsonPath = join(projectDir, 'dist', TOOLS_FILENAME);
-  if (!(await fileExists(toolsJsonPath))) {
+  if (
+    !(await access(toolsJsonPath).then(
+      () => true,
+      () => false,
+    ))
+  ) {
     console.error(pc.red('No manifest found. Run opentabs-plugin build first.'));
     process.exit(1);
   }
 
   let manifest: ToolsJsonManifest;
   try {
-    const parsed: unknown = JSON.parse(await readFile(toolsJsonPath));
+    const parsed: unknown = JSON.parse(await readFile(toolsJsonPath, 'utf-8'));
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       throw new Error('not an object');
     }
@@ -81,9 +87,14 @@ const handleInspect = async (options: { json?: boolean }, projectDir: string = p
   let pluginVersion = '(unknown)';
   let displayName: string | undefined;
   const pkgJsonPath = join(projectDir, 'package.json');
-  if (await fileExists(pkgJsonPath)) {
+  if (
+    await access(pkgJsonPath).then(
+      () => true,
+      () => false,
+    )
+  ) {
     try {
-      const pkgJsonRaw: unknown = JSON.parse(await readFile(pkgJsonPath));
+      const pkgJsonRaw: unknown = JSON.parse(await readFile(pkgJsonPath, 'utf-8'));
       const result = parsePluginPackageJson(pkgJsonRaw, projectDir);
       if (result.ok) {
         pluginName = result.value.name;

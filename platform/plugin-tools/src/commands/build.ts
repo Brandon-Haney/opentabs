@@ -13,23 +13,18 @@ import {
   TOOLS_FILENAME,
   atomicWrite,
   DEFAULT_PORT,
-  deleteFile,
-  fileExists,
   getConfigDir,
   getConfigPath,
-  getEnv,
-  getFileSize,
   parsePluginPackageJson,
-  readFile,
-  sha256,
-  spawnProcessSync,
   toErrorMessage,
-  writeFile as runtimeWriteFile,
 } from '@opentabs-dev/shared';
 import { build as esbuild } from 'esbuild';
 import pc from 'picocolors';
 import { z } from 'zod';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, rmSync, statSync, watch } from 'node:fs';
+import { access, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve, join, relative, dirname } from 'node:path';
 import type {
@@ -124,7 +119,12 @@ const resolvePluginPathForComparison = (storedPath: string, configDir: string): 
  */
 const registerInConfig = async (projectDir: string): Promise<boolean> => {
   const configPath = getConfigPath();
-  if (!(await fileExists(configPath))) {
+  if (
+    !(await access(configPath).then(
+      () => true,
+      () => false,
+    ))
+  ) {
     console.warn(pc.yellow('Warning: Config file not found — skipping auto-registration.'));
     console.warn(pc.yellow(`  Run ${pc.cyan('opentabs start')} to create ~/.opentabs/config.json`));
     return false;
@@ -137,7 +137,7 @@ const registerInConfig = async (projectDir: string): Promise<boolean> => {
     // Re-read config inside the lock to get the latest state
     let config: Record<string, unknown>;
     try {
-      const parsed: unknown = JSON.parse(await readFile(configPath));
+      const parsed: unknown = JSON.parse(await readFile(configPath, 'utf-8'));
       if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
         console.warn(pc.yellow('Warning: Config file is not a JSON object — skipping auto-registration.'));
         return false;
@@ -174,11 +174,17 @@ const registerInConfig = async (projectDir: string): Promise<boolean> => {
  */
 const notifyServer = async (): Promise<void> => {
   const authJsonPath = join(getConfigDir(), 'extension', 'auth.json');
-  if (!(await fileExists(authJsonPath))) return;
+  if (
+    !(await access(authJsonPath).then(
+      () => true,
+      () => false,
+    ))
+  )
+    return;
 
   let secret: string | undefined;
   try {
-    const parsed: unknown = JSON.parse(await readFile(authJsonPath));
+    const parsed: unknown = JSON.parse(await readFile(authJsonPath, 'utf-8'));
     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
       const record = parsed as Record<string, unknown>;
       if (typeof record.secret === 'string') secret = record.secret;
@@ -189,7 +195,7 @@ const notifyServer = async (): Promise<void> => {
 
   if (!secret) return;
 
-  const portEnv = getEnv('OPENTABS_PORT');
+  const portEnv = process.env['OPENTABS_PORT'];
   const port = portEnv ? Number(portEnv) : DEFAULT_PORT;
   if (!Number.isFinite(port) || port < 1 || port > 65535) return;
 
@@ -427,8 +433,14 @@ const readAndValidateIcons = async (projectDir: string): Promise<IconResult> => 
   const iconPath = join(projectDir, 'icon.svg');
   const inactivePath = join(projectDir, 'icon-inactive.svg');
 
-  const hasIcon = await fileExists(iconPath);
-  const hasInactive = await fileExists(inactivePath);
+  const hasIcon = await access(iconPath).then(
+    () => true,
+    () => false,
+  );
+  const hasInactive = await access(inactivePath).then(
+    () => true,
+    () => false,
+  );
 
   // No icons — nothing to do
   if (!hasIcon && !hasInactive) {
@@ -444,7 +456,7 @@ const readAndValidateIcons = async (projectDir: string): Promise<IconResult> => 
   }
 
   // Read and validate icon.svg
-  const iconContent = await readFile(iconPath);
+  const iconContent = await readFile(iconPath, 'utf-8');
   const iconValidation = validateIconSvg(iconContent, 'icon.svg');
   if (!iconValidation.valid) {
     throw new Error(`icon.svg validation failed:\n${iconValidation.errors.map(e => `  - ${e}`).join('\n')}`);
@@ -454,7 +466,7 @@ const readAndValidateIcons = async (projectDir: string): Promise<IconResult> => 
 
   if (hasInactive) {
     // Manual override: read and validate icon-inactive.svg
-    const inactiveContent = await readFile(inactivePath);
+    const inactiveContent = await readFile(inactivePath, 'utf-8');
     const inactiveStructValidation = validateIconSvg(inactiveContent, 'icon-inactive.svg');
     if (!inactiveStructValidation.valid) {
       throw new Error(
@@ -566,12 +578,17 @@ const generatePromptsManifest = (prompts: PromptDefinition[]): ManifestPrompt[] 
  */
 const resolveSdkVersion = async (projectDir: string): Promise<string> => {
   const sdkPkgPath = join(projectDir, 'node_modules', '@opentabs-dev', 'plugin-sdk', 'package.json');
-  if (!(await fileExists(sdkPkgPath))) {
+  if (
+    !(await access(sdkPkgPath).then(
+      () => true,
+      () => false,
+    ))
+  ) {
     throw new Error('Could not resolve @opentabs-dev/plugin-sdk version. Ensure the package is installed.');
   }
   let sdkPkg: unknown;
   try {
-    sdkPkg = JSON.parse(await readFile(sdkPkgPath));
+    sdkPkg = JSON.parse(await readFile(sdkPkgPath, 'utf-8'));
   } catch {
     throw new Error('Could not resolve @opentabs-dev/plugin-sdk version. Ensure the package is installed.');
   }
@@ -818,7 +835,7 @@ if (typeof plugin.onNavigate === 'function') {
   delete (plugin as Record<string, unknown>).onDeactivate;
 }
 `;
-  await runtimeWriteFile(wrapperPath, wrapperCode);
+  await writeFile(wrapperPath, wrapperCode, 'utf-8');
 
   try {
     await esbuild({
@@ -832,7 +849,7 @@ if (typeof plugin.onNavigate === 'function') {
       plugins: [stripNodeBuiltins],
     });
   } finally {
-    await deleteFile(wrapperPath);
+    await unlink(wrapperPath).catch(() => {});
   }
 };
 
@@ -860,12 +877,17 @@ const runBuild = async (projectDir: string): Promise<void> => {
 
   // Step 1: Read and validate package.json (must have opentabs field)
   const pkgJsonPath = join(projectDir, 'package.json');
-  if (!(await fileExists(pkgJsonPath))) {
+  if (
+    !(await access(pkgJsonPath).then(
+      () => true,
+      () => false,
+    ))
+  ) {
     throw new Error('No valid package.json found in current directory. Run this command from a plugin directory.');
   }
   let pkgJsonRaw: unknown;
   try {
-    pkgJsonRaw = JSON.parse(await readFile(pkgJsonPath));
+    pkgJsonRaw = JSON.parse(await readFile(pkgJsonPath, 'utf-8'));
   } catch {
     throw new Error('No valid package.json found in current directory. Run this command from a plugin directory.');
   }
@@ -880,8 +902,16 @@ const runBuild = async (projectDir: string): Promise<void> => {
   const entryPoint = resolve(projectDir, 'dist', 'index.js');
   const sourceEntry = resolve(projectDir, 'src', 'index.ts');
 
-  if (!(await fileExists(entryPoint))) {
-    const sourceExists = await fileExists(sourceEntry);
+  if (
+    !(await access(entryPoint).then(
+      () => true,
+      () => false,
+    ))
+  ) {
+    const sourceExists = await access(sourceEntry).then(
+      () => true,
+      () => false,
+    );
     if (!sourceExists) {
       throw new Error(
         `Neither compiled output (${entryPoint}) nor source (${sourceEntry}) found. Is this a plugin directory?`,
@@ -893,13 +923,18 @@ const runBuild = async (projectDir: string): Promise<void> => {
     const pathSep = process.platform === 'win32' ? ';' : ':';
     const pathKey = process.platform === 'win32' ? 'Path' : 'PATH';
     const envWithBin = { ...process.env, [pathKey]: `${binDir}${pathSep}${process.env[pathKey] ?? ''}` };
-    const tscResult = spawnProcessSync('tsc', [], { cwd: projectDir, env: envWithBin });
-    if (tscResult.exitCode !== 0) {
-      const stderr = tscResult.stderr.trim();
-      const stdout = tscResult.stdout.trim();
+    const tscResult = spawnSync('tsc', [], { cwd: projectDir, env: envWithBin });
+    if ((tscResult.status ?? 1) !== 0) {
+      const stderr = tscResult.stderr.toString().trim();
+      const stdout = tscResult.stdout.toString().trim();
       throw new Error(`tsc failed:\n${stderr || stdout || 'Unknown error'}`);
     }
-    if (!(await fileExists(entryPoint))) {
+    if (
+      !(await access(entryPoint).then(
+        () => true,
+        () => false,
+      ))
+    ) {
       throw new Error(`tsc succeeded but ${entryPoint} was not created. Check your tsconfig.json outDir setting.`);
     }
   }
@@ -946,8 +981,8 @@ const runBuild = async (projectDir: string): Promise<void> => {
   // Read the bundled IIFE and compute its SHA-256 hash. The hash is computed
   // from the core IIFE content (before the __adapterHash setter is appended).
   const iifePath = join(distDir, ADAPTER_FILENAME);
-  const iifeContent = await readFile(iifePath);
-  const adapterHash = sha256(iifeContent);
+  const iifeContent = await readFile(iifePath, 'utf-8');
+  const adapterHash = createHash('sha256').update(iifeContent).digest('hex');
 
   // Append a self-contained snippet that sets the adapter hash and then freezes
   // the adapter entry to prevent cross-adapter tampering. The freeze must happen
@@ -962,17 +997,27 @@ const runBuild = async (projectDir: string): Promise<void> => {
   const hashAndFreeze = `
 (function(){var o=(globalThis).__openTabs;if(o&&o.adapters&&o.adapters[${JSON.stringify(plugin.name)}]){var a=o.adapters[${JSON.stringify(plugin.name)}];a.__adapterHash=${JSON.stringify(adapterHash)};if(a.tools&&Array.isArray(a.tools)){for(var i=0;i<a.tools.length;i++){Object.freeze(a.tools[i]);}Object.freeze(a.tools);}Object.freeze(a);Object.defineProperty(o.adapters,${JSON.stringify(plugin.name)},{value:a,writable:false,configurable:false,enumerable:true});Object.defineProperty(o,"adapters",{value:o.adapters,writable:false,configurable:false});}})();
 `;
-  await runtimeWriteFile(iifePath, iifeContent + hashAndFreeze);
-  if (await fileExists(iifePath)) {
-    const iifeSize = await getFileSize(iifePath);
+  await writeFile(iifePath, iifeContent + hashAndFreeze, 'utf-8');
+  if (
+    await access(iifePath).then(
+      () => true,
+      () => false,
+    )
+  ) {
+    const iifeSize = (await stat(iifePath)).size;
     console.log(`  Written: ${pc.bold(`dist/${ADAPTER_FILENAME}`)} (${formatBytes(iifeSize)})`);
   } else {
     console.log(pc.dim(`  dist/${ADAPTER_FILENAME} not generated`));
   }
 
   const sourceMapPath = join(distDir, ADAPTER_SOURCE_MAP_FILENAME);
-  if (await fileExists(sourceMapPath)) {
-    const sourceMapSize = await getFileSize(sourceMapPath);
+  if (
+    await access(sourceMapPath).then(
+      () => true,
+      () => false,
+    )
+  ) {
+    const sourceMapSize = (await stat(sourceMapPath)).size;
     console.log(`  Written: ${pc.bold(`dist/${ADAPTER_SOURCE_MAP_FILENAME}`)} (${formatBytes(sourceMapSize)})`);
   } else {
     console.log(pc.dim('  Source map not generated'));
@@ -986,7 +1031,7 @@ const runBuild = async (projectDir: string): Promise<void> => {
   console.log(pc.dim(`Generating ${TOOLS_FILENAME}...`));
   const manifest = generateManifest(plugin, sdkVersion, icons);
   const toolsJsonPath = join(distDir, TOOLS_FILENAME);
-  await runtimeWriteFile(toolsJsonPath, JSON.stringify(manifest, null, 2) + '\n');
+  await writeFile(toolsJsonPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
   const toolCount = manifest.tools.length;
   const resourceCount = manifest.resources.length;
   const promptCount = manifest.prompts.length;

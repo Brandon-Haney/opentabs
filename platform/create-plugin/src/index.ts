@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
 import { scaffoldPlugin, promptForMissingArgs, ScaffoldError } from '@opentabs-dev/cli/scaffold';
-import { readFile } from '@opentabs-dev/shared';
 import { Command } from 'commander';
 import pc from 'picocolors';
+import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const cliDir = dirname(fileURLToPath(import.meta.url));
-const pkgJson = JSON.parse(await readFile(join(cliDir, '..', 'package.json'))) as { version: string };
+const pkgJson = JSON.parse(await readFile(join(cliDir, '..', 'package.json'), 'utf-8')) as { version: string };
 
 const program = new Command('create-opentabs-plugin')
   .version(pkgJson.version, '-V, --version')

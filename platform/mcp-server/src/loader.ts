@@ -314,15 +314,16 @@ const validatePromptArguments = (
 };
 
 /**
- * Compute SHA-256 hex hash of content using the Web Crypto API.
+ * Extract the adapter hash embedded in the IIFE by the hashAndFreeze snippet.
+ *
+ * The build tool appends a snippet that sets adapter.__adapterHash to the
+ * SHA-256 of the IIFE content *before* the snippet was appended. Computing
+ * SHA-256 of the full file (including the hash-setter) produces a different
+ * value and causes spurious hash-mismatch errors in the extension.
  */
-const computeHash = async (content: string): Promise<string> => {
-  const encoded = new TextEncoder().encode(content);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
-  const hashArray = new Uint8Array(hashBuffer);
-  return Array.from(hashArray)
-    .map(byte => byte.toString(16).padStart(2, '0'))
-    .join('');
+const extractEmbeddedAdapterHash = (iife: string): string | undefined => {
+  const match = iife.match(/\.__adapterHash="([0-9a-f]{64})"/);
+  return match?.[1];
 };
 
 /**
@@ -502,8 +503,9 @@ const loadPlugin = async (
     );
   }
 
-  // Compute adapter hash from IIFE content
-  const adapterHash = await computeHash(iife);
+  // Extract the adapter hash embedded by the build tool's hashAndFreeze snippet.
+  // This matches what adapter.__adapterHash reports at runtime in the browser.
+  const adapterHash = extractEmbeddedAdapterHash(iife);
 
   // Read source map if available (optional — older plugins won't have one)
   const sourceMapPath = join(dir, 'dist', ADAPTER_SOURCE_MAP_FILENAME);

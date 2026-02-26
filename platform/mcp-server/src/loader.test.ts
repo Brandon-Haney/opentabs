@@ -126,12 +126,21 @@ describe('loadPlugin', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
+  /** A 64-char hex string used as the embedded adapter hash in test IIFEs */
+  const TEST_ADAPTER_HASH = 'a'.repeat(64);
+
+  /**
+   * Minimal IIFE content that includes the embedded __adapterHash pattern,
+   * matching the output produced by the build tool's hashAndFreeze snippet.
+   */
+  const TEST_IIFE = `(function(){window.__test=true})();(function(){var a={};a.__adapterHash="${TEST_ADAPTER_HASH}";})()`;
+
   /** Write a full plugin directory structure */
   const writePlugin = (
     dir: string,
     packageJson: Record<string, unknown>,
     tools: unknown[] = validTools(),
-    iifeContent = '(function(){window.__test=true})()',
+    iifeContent = TEST_IIFE,
   ) => {
     mkdirSync(join(dir, 'dist'), { recursive: true });
     writeFileSync(join(dir, 'package.json'), JSON.stringify(packageJson));
@@ -154,13 +163,12 @@ describe('loadPlugin', () => {
     expect(result.value.urlPatterns).toEqual(['http://localhost/*']);
     expect(result.value.trustTier).toBe('local');
     expect(result.value.source).toBe('local');
-    expect(result.value.iife).toBe('(function(){window.__test=true})()');
+    expect(result.value.iife).toBe(TEST_IIFE);
     expect(result.value.tools).toHaveLength(1);
     expect(result.value.tools[0]?.name).toBe('my_tool');
     expect(result.value.sourcePath).toBe(pluginDir);
     expect(result.value.npmPackageName).toBe('opentabs-plugin-test');
-    expect(result.value.adapterHash).toBeTypeOf('string');
-    expect(result.value.adapterHash?.length).toBe(64);
+    expect(result.value.adapterHash).toBe(TEST_ADAPTER_HASH);
   });
 
   test('returns Err when package.json is missing', async () => {
@@ -252,11 +260,15 @@ describe('loadPlugin', () => {
     expect(result.value.npmPackageName).toBe('@myorg/opentabs-plugin-jira');
   });
 
-  test('computes adapterHash from IIFE content', async () => {
+  test('extracts adapterHash embedded in IIFE by build tool', async () => {
+    const hashA = 'a'.repeat(64);
+    const hashB = 'b'.repeat(64);
+    const iifeA = `(function(){})();(function(){var a={};a.__adapterHash="${hashA}";})()`;
+    const iifeB = `(function(){})();(function(){var a={};a.__adapterHash="${hashB}";})()`;
     const pluginDir1 = join(tmpDir, 'hash1');
     const pluginDir2 = join(tmpDir, 'hash2');
-    writePlugin(pluginDir1, validPackageJson(), validTools(), 'content-a');
-    writePlugin(pluginDir2, validPackageJson(), validTools(), 'content-b');
+    writePlugin(pluginDir1, validPackageJson(), validTools(), iifeA);
+    writePlugin(pluginDir2, validPackageJson(), validTools(), iifeB);
 
     const result1 = await loadPlugin(pluginDir1, 'local', 'local');
     const result2 = await loadPlugin(pluginDir2, 'local', 'local');
@@ -264,6 +276,8 @@ describe('loadPlugin', () => {
     expect(result1.ok).toBe(true);
     expect(result2.ok).toBe(true);
     if (!result1.ok || !result2.ok) return;
+    expect(result1.value.adapterHash).toBe(hashA);
+    expect(result2.value.adapterHash).toBe(hashB);
     expect(result1.value.adapterHash).not.toBe(result2.value.adapterHash);
   });
 

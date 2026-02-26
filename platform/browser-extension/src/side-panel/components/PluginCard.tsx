@@ -51,10 +51,11 @@ const PluginCard = ({
   };
 
   const handleToggleTool = (toolName: string, currentEnabled: boolean) => {
+    const originalTools = plugin.tools;
     const newEnabled = !currentEnabled;
     updatePluginTools(tools => tools.map(t => (t.name === toolName ? { ...t, enabled: newEnabled } : t)));
     void setToolEnabled(plugin.name, toolName, newEnabled).catch(() => {
-      updatePluginTools(tools => tools.map(t => (t.name === toolName ? { ...t, enabled: !newEnabled } : t)));
+      updatePluginTools(() => originalTools);
       showToggleError(`Failed to toggle ${toolName}`);
     });
   };

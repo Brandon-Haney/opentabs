@@ -83,7 +83,7 @@ The primary endpoint for MCP clients. Implements the [MCP Streamable HTTP transp
     <Table.Row>
       <Table.Cell className="font-medium">`Authorization`</Table.Cell>
       <Table.Cell>Yes (if secret configured)</Table.Cell>
-      <Table.Cell>`Bearer <secret>` — the 64-char hex token from `~/.opentabs/config.json`.</Table.Cell>
+      <Table.Cell>`Bearer <secret>` — the 64-char hex token from `~/.opentabs/extension/auth.json`.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`mcp-session-id`</Table.Cell>
@@ -311,7 +311,7 @@ curl -X POST http://localhost:9515/extension/reload \
 
 ## Authentication
 
-All authenticated endpoints use the same `secret` from `~/.opentabs/config.json`.
+All authenticated endpoints use the same `secret` from `~/.opentabs/extension/auth.json`.
 
 <Table>
   <Table.Header>

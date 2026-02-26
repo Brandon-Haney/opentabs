@@ -138,7 +138,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
 
   const portChange = changes[SERVER_PORT_KEY];
-  if (typeof portChange?.newValue === 'number' && portChange.newValue > 0) {
+  if (
+    typeof portChange?.newValue === 'number' &&
+    Number.isInteger(portChange.newValue) &&
+    portChange.newValue >= 1 &&
+    portChange.newValue <= 65535
+  ) {
     const newUrl = buildWsUrl(portChange.newValue);
     chrome.runtime.sendMessage({ type: 'ws:setUrl', url: newUrl } satisfies InternalMessage).catch(() => {
       // Offscreen may not be ready yet

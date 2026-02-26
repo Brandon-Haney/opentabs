@@ -1,3 +1,68 @@
+## v0.0.34
+
+### Features
+
+- [US-007] Update CLAUDE.md files to reflect correct runtime model
+- [US-005] Remove runtime.ts and clean up shared barrel exports
+- [US-004] Replace runtime imports in platform/plugin-tools and platform/create-plugin
+- [US-003] Replace runtime imports in platform/cli
+- [US-002] Replace runtime imports in platform/mcp-server
+- [US-001] add fetch utilities summary table to SDK utilities reference
+- [US-001] Replace runtime imports in platform/shared internals
+- dockerize ralph workers for bulletproof process cleanup
+- US-005 - Pass port option through to handleListTools in config set
+- US-004 - Auto-prefix browser tool shorthand names in config set
+- US-004 — update CLAUDE.md docs for extension publishing
+- US-003 — fix error message for missing extension in setup.ts
+- US-002 — add browser extension to CLI dependencies and publish pipeline
+- US-001 — prepare browser extension package.json for npm publishing
+- add restart hint after config set port change
+
+### Bug Fixes
+
+- [US-003] add update command, --show-secret flag, complete doctor checks, fix rotate-secret docs
+- [US-002] correct secret storage location in configuration reference
+- [US-001] correct secret storage location in MCP server reference
+- stage config files at /tmp/staging/ to avoid root-owned HOME directory
+- copy Claude settings.json into writable dir instead of mounting into ~/.claude
+- run Docker containers as host user (Claude CLI refuses root)
+- mount Claude settings.json read-only into Docker containers
+- mount ~/.npmrc read-only into Docker containers for private npm auth
+- cherry-pick valid fixes from ralph worker branches
+- rebuild Docker workers on official Playwright image, fix all tests for host+Docker parity
+- mount ~/.opentabs into Docker containers and fix whitespace
+- run bun install and build inside Docker container
+- run Docker containers as current user, mount claude config read-write
+- robust orphan cleanup in ralph — startup sweep for kill -9 survivors
+- eliminate E2E test flakiness and disable retries
+- eliminate E2E test flakiness and disable retries
+- adapter re-injection into frozen \_\_openTabs container and content-hashed adapter filenames
+- adapter re-injection into frozen \_\_openTabs container and content-hashed adapter filenames
+- stop log rotation so tail -f survives daemon restarts
+- check if plugin is globally installed before removing
+- increase status label padding to accommodate 'Plugin reloads'
+- handle invalid --since duration gracefully in audit command
+- graceful shutdown preserves work, resume on restart, kill ghost processes
+- restore E2E checkpoint changes lost by prettier reformatting
+
+### Documentation
+
+- add runtime and tooling context section to docs CLAUDE.md
+
+### Chores
+
+- reduce Playwright workers from 8 to 4 to prevent OOM under parallel ralph
+
+### Other
+
+- track .ralph/perfect_docs.sh
+
+### Other
+
+- rename perfect_docs.sh to perfect-docs.sh for consistency
+- add perfect_docs.sh: automated docs audit via Claude + ralph skill
+- update ralph skill: always small stories, AI decides PRD splitting and E2E checkpoints
+
 ## v0.0.33
 
 ### Features

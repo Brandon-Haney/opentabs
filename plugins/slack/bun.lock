@@ -5,10 +5,10 @@
     "": {
       "name": "@opentabs-dev/opentabs-plugin-slack",
       "dependencies": {
-        "@opentabs-dev/plugin-sdk": "^0.0.33",
+        "@opentabs-dev/plugin-sdk": "^0.0.34",
       },
       "devDependencies": {
-        "@opentabs-dev/plugin-tools": "^0.0.33",
+        "@opentabs-dev/plugin-tools": "^0.0.34",
         "eslint": "^9.39.2",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-prettier": "^5.5.5",
@@ -100,11 +100,11 @@
 
     "@humanwhocodes/retry": ["@humanwhocodes/retry@0.4.3", "", {}, "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ=="],
 
-    "@opentabs-dev/plugin-sdk": ["@opentabs-dev/plugin-sdk@0.0.33", "", { "dependencies": { "@opentabs-dev/shared": "0.0.33" }, "peerDependencies": { "zod": "^4.0.0" } }, "sha512-qSTMD8icCcCeSa6+86o+QZZQQmpw3O75qo3QJDm1vBgw1wIycpXuyFjwW6wkmh6/Owcd6bC+oUQ2BpvGd1Imxw=="],
+    "@opentabs-dev/plugin-sdk": ["@opentabs-dev/plugin-sdk@0.0.34", "", { "dependencies": { "@opentabs-dev/shared": "0.0.34" }, "peerDependencies": { "zod": "^4.0.0" } }, "sha512-jsxSVaHklsqOs9R01gYECB85WiQpxWktIXxicwirD0IPWB61Es2N4CKJ0NbMkS0p7TaSxdpBxgQ88mOU5+y+ig=="],
 
-    "@opentabs-dev/plugin-tools": ["@opentabs-dev/plugin-tools@0.0.33", "", { "dependencies": { "@opentabs-dev/plugin-sdk": "0.0.33", "@opentabs-dev/shared": "0.0.33", "commander": "^14.0.3", "esbuild": "^0.24.0", "picocolors": "^1.1.1", "zod": "^4.3.6" }, "bin": { "opentabs-plugin": "dist/cli.js" } }, "sha512-V15254TZ1WKuJrvnuOcAVi2f/yENta2jZlQoEaI1uedtHKCbYZnytljmuUeEurH+zxcI+X4uP8bZ9EGpU+6ckg=="],
+    "@opentabs-dev/plugin-tools": ["@opentabs-dev/plugin-tools@0.0.34", "", { "dependencies": { "@opentabs-dev/plugin-sdk": "0.0.34", "@opentabs-dev/shared": "0.0.34", "commander": "^14.0.3", "esbuild": "^0.24.0", "picocolors": "^1.1.1", "zod": "^4.3.6" }, "bin": { "opentabs-plugin": "dist/cli.js" } }, "sha512-aT76YaG8rE0NyTsSbsnLw8J425AfD7WmCuYJ+eONq7clYB3Ayv1Ng3phf91T8fm+VfWIojnjiYT6wKXw+KONqw=="],
 
-    "@opentabs-dev/shared": ["@opentabs-dev/shared@0.0.33", "", {}, "sha512-kBDun5iiLYJdJeHSpUDllMmEjbL5ZxHU8R6vu4T00TU0A6StpNMUJCDYGO9ufbHHoWh+A389ErqnPyXSzH83Hw=="],
+    "@opentabs-dev/shared": ["@opentabs-dev/shared@0.0.34", "", {}, "sha512-HGCvK6PnGUgRh+qO3OIvaqfhUDt/LUuwLcSCtq/K/FIvkK0cetrLdlrCMr6Hj4+kSSd+0eNalOTHuLCN9SbZJQ=="],
 
     "@pkgr/core": ["@pkgr/core@0.2.9", "", {}, "sha512-QNqXyfVS2wm9hweSYD2O7F0G06uurj9kZ96TRQE5Y9hU7+tgdZwIkbAKc5Ocy1HxEY2kuDQa6cQ1WRs/O5LFKA=="],
 
@@ -242,7 +242,7 @@
 
     "lodash.merge": ["lodash.merge@4.6.2", "", {}, "sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ=="],
 
-    "minimatch": ["minimatch@3.1.4", "", { "dependencies": { "brace-expansion": "^1.1.7" } }, "sha512-twmL+S8+7yIsE9wsqgzU3E8/LumN3M3QELrBZ20OdmQ9jB2JvW5oZtBEmft84k/Gs5CG9mqtWc6Y9vW+JEzGxw=="],
+    "minimatch": ["minimatch@3.1.5", "", { "dependencies": { "brace-expansion": "^1.1.7" } }, "sha512-VgjWUsnnT6n+NUk6eZq77zeFdpW2LWDzP6zFGrCbHXiYNul5Dzqk2HHQ5uFH2DNW5Xbp8+jVzaeNt94ssEEl4w=="],
 
     "ms": ["ms@2.1.3", "", {}, "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA=="],
 
@@ -310,7 +310,7 @@
 
     "@typescript-eslint/eslint-plugin/ignore": ["ignore@7.0.5", "", {}, "sha512-Hs59xBNfUIunMFgWAbGX5cq6893IbWg4KnrjbYwX3tx0ztorVgTDA6B2sxf8ejHJ4wz8BqGUMYlnzNBer5NvGg=="],
 
-    "@typescript-eslint/typescript-estree/minimatch": ["minimatch@10.2.3", "", { "dependencies": { "brace-expansion": "^5.0.2" } }, "sha512-Rwi3pnapEqirPSbWbrZaa6N3nmqq4Xer/2XooiOKyV3q12ML06f7MOuc5DVH8ONZIFhwIYQ3yzPH4nt7iWHaTg=="],
+    "@typescript-eslint/typescript-estree/minimatch": ["minimatch@10.2.4", "", { "dependencies": { "brace-expansion": "^5.0.2" } }, "sha512-oRjTw/97aTBN0RHbYCdtF1MQfvusSIBQM0IZEgzl6426+8jSC0nF1a/GmnVLpfB9yyr6g6FTqWqiZVbxrtaCIg=="],
 
     "@typescript-eslint/visitor-keys/eslint-visitor-keys": ["eslint-visitor-keys@5.0.1", "", {}, "sha512-tD40eHxA35h0PEIZNeIjkHoDR4YjjJp34biM0mDvplBe//mB+IHCqHDGV7pxF+7MklTvighcCPPZC7ynWyjdTA=="],
 

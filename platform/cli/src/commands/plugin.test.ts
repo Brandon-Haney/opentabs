@@ -1,11 +1,17 @@
-import { buildDirectLookupCandidates } from './plugin.js';
-import { normalizePluginName, resolvePluginPackageCandidates } from '@opentabs-dev/shared';
+import { buildDirectLookupCandidates, KNOWN_OFFICIAL_PLUGIN_SLUGS } from './plugin.js';
+import {
+  normalizePluginName,
+  resolvePluginPackageCandidates,
+  OFFICIAL_SCOPE,
+  PLUGIN_PREFIX,
+} from '@opentabs-dev/shared';
 import { describe, expect, test } from 'bun:test';
 
 describe('buildDirectLookupCandidates', () => {
-  test('returns empty array when no query is provided', () => {
-    expect(buildDirectLookupCandidates()).toEqual([]);
-    expect(buildDirectLookupCandidates(undefined)).toEqual([]);
+  test('returns known official plugin packages when no query is provided', () => {
+    const expected = KNOWN_OFFICIAL_PLUGIN_SLUGS.map(slug => `${OFFICIAL_SCOPE}/${PLUGIN_PREFIX}${slug}`);
+    expect(buildDirectLookupCandidates()).toEqual(expected);
+    expect(buildDirectLookupCandidates(undefined)).toEqual(expected);
   });
 
   test('returns official and community candidates for a shorthand query', () => {

@@ -64,6 +64,7 @@ const spawnStreaming = (
 
 interface StartOptions {
   port?: number;
+  showConfig?: boolean;
 }
 
 const resolveServerEntry = (): string => {
@@ -248,13 +249,18 @@ const handleStart = async (options: StartOptions): Promise<void> => {
   console.log(`${label('Log file:')}${logFilePath}`);
   console.log('');
 
-  if (isFirstTime) {
+  if (isFirstTime || options.showConfig) {
     const extensionDest = resolve(configDir, 'extension');
-    printFirstTimeInstructions(extensionDest, port, secret);
+    if (isFirstTime) {
+      printFirstTimeInstructions(extensionDest, port, secret);
+    } else {
+      console.log(pc.dim('  MCP client config (add to your client):'));
+      console.log('');
+      printMcpClientConfigs(`http://127.0.0.1:${port}/mcp`, secret);
+    }
   } else {
-    console.log(pc.dim('  MCP client config (add to your client):'));
+    console.log(pc.dim(`  Run ${pc.bold('opentabs config show --show-secret')} to see MCP client configuration.`));
     console.log('');
-    printMcpClientConfigs(`http://127.0.0.1:${port}/mcp`, secret);
   }
 
   console.log(pc.dim('  Press Ctrl+C to stop'));
@@ -286,12 +292,14 @@ export const registerStartCommand = (program: Command): void => {
     .command('start')
     .description('Start the MCP server')
     .option('--port <number>', 'Server port (default: 9515)', parsePort)
+    .option('--show-config', 'Print full MCP client configuration even on subsequent runs')
     .addHelpText(
       'after',
       `
 Examples:
   $ opentabs start
-  $ opentabs start --port 3000`,
+  $ opentabs start --port 3000
+  $ opentabs start --show-config`,
     )
     .action((_options: StartOptions, command: Command) => handleStart(command.optsWithGlobals()));
 };

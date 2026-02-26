@@ -290,14 +290,28 @@ const fetchPackageInfo = (pkg: string): NpmSearchPackage | null => {
 };
 
 /**
+ * Known official plugin slugs for the @opentabs-dev scope.
+ *
+ * When a search is performed with no query, these slugs are probed directly on
+ * the npm registry so that private @opentabs-dev packages — which `npm search`
+ * excludes from keyword results — are still discoverable.
+ */
+const KNOWN_OFFICIAL_PLUGIN_SLUGS = ['slack'] as const;
+
+/**
  * Build a list of candidate package names to probe directly on the npm registry.
  *
  * When a query is provided (e.g., "slack"), generates the official and community
  * package names to check via direct registry lookup. This catches private/scoped
  * packages that `npm search` excludes from keyword-based results.
+ *
+ * When no query is provided, probes all known official plugin package names so
+ * that private @opentabs-dev packages are included in no-query searches.
  */
 const buildDirectLookupCandidates = (query?: string): string[] => {
-  if (!query) return [];
+  if (!query) {
+    return KNOWN_OFFICIAL_PLUGIN_SLUGS.map(slug => `${OFFICIAL_SCOPE}/${PLUGIN_PREFIX}${slug}`);
+  }
   // If the query is already a fully qualified name, probe it directly
   if (query.startsWith('@') || query.startsWith(PLUGIN_PREFIX)) return [query];
   return [`${OFFICIAL_SCOPE}/${PLUGIN_PREFIX}${query}`, `${PLUGIN_PREFIX}${query}`];
@@ -746,4 +760,4 @@ Examples:
     });
 };
 
-export { registerPluginCommand, resolvePackageName, buildDirectLookupCandidates };
+export { registerPluginCommand, resolvePackageName, buildDirectLookupCandidates, KNOWN_OFFICIAL_PLUGIN_SLUGS };

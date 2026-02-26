@@ -630,6 +630,9 @@ dispatch_prd() {
   # Build common Docker args for setup and worker containers.
   local -a DOCKER_COMMON=()
   DOCKER_COMMON+=(--init --ipc=host --shm-size=2g)
+  # Run as host user — Claude CLI refuses --dangerously-skip-permissions as
+  # root, and file ownership in the bind-mounted worktree must match the host.
+  DOCKER_COMMON+=(--user "$(id -u):$(id -g)")
   DOCKER_COMMON+=(-e "HOME=/tmp/worker")
   DOCKER_COMMON+=(-v "$worktree_dir:$worktree_dir")
   DOCKER_COMMON+=(-v "$PROJECT_DIR/.git:$PROJECT_DIR/.git")

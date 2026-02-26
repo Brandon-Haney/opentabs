@@ -15,6 +15,7 @@ playwright-report/
 !/.ralph/worker.sh
 !/.ralph/Dockerfile
 !/.ralph/docker-build.sh
+!/.ralph/run-prompt.sh
 !/.ralph/perfect-docs.sh
 .claude/worktrees/
 .tmp/

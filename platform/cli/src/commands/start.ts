@@ -149,7 +149,7 @@ const printFirstTimeInstructions = (extensionDest: string, port: number, secret:
 const indent = (json: string, prefix: string): string =>
   json
     .split('\n')
-    .map((line, i) => (i === 0 ? `${prefix}${line}` : `${prefix}${line}`))
+    .map(line => `${prefix}${line}`)
     .join('\n');
 
 const printMcpClientConfigs = (mcpUrl: string, secret: string | null): void => {

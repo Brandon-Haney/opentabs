@@ -18,6 +18,7 @@ playwright-report/
 !/.ralph/run-prompt.sh
 !/.ralph/perfect-docs.sh
 !/.ralph/perfect-extension.sh
+!/.ralph/perfect-backend.sh
 .claude/worktrees/
 .tmp/
 opencode.json

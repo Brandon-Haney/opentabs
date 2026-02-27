@@ -192,7 +192,7 @@ const writeExecFile = async (state: ServerState, execId: string, code: string): 
 /** Delete a dynamic exec script file. Fire-and-forget — logs on failure. */
 const deleteExecFile = async (filename: string): Promise<void> => {
   try {
-    await unlink(join(getAdaptersDir(), filename)).catch(() => {});
+    await unlink(join(getAdaptersDir(), filename));
   } catch {
     log.warn(`Failed to delete exec file: ${filename}`);
   }

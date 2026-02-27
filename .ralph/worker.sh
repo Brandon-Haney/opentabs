@@ -323,7 +323,9 @@ You are an autonomous coding agent running in a git worktree. The safety net ver
       wlog "ERROR: Empty iteration — claude produced no output."
       if [ -s "$STDERR_FILE" ]; then
         wlog "stderr:"
-        head -20 "$STDERR_FILE"
+        head -20 "$STDERR_FILE" | while IFS= read -r sline; do
+          wlog "  $sline"
+        done
       fi
       rm -f "$ITER_RESULT_FILE" "$STDERR_FILE"
       wlog "Aborting PRD to avoid burning iterations."

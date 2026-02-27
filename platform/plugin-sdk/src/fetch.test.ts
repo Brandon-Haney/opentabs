@@ -1,136 +1,152 @@
 import { ToolError } from './errors.js';
 import { fetchFromPage, fetchJSON, postJSON } from './fetch.js';
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
 import { z } from 'zod';
+import { createServer } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 // ---------------------------------------------------------------------------
 // Test HTTP server — lightweight alternative to fetch mocking
 // ---------------------------------------------------------------------------
 
-let server: ReturnType<typeof Bun.serve>;
+let server: ReturnType<typeof createServer>;
 let baseUrl: string;
 
 /** Tracks how many times /flaky has been called (for flaky endpoint testing) */
 let flakyCallCount = 0;
 
-beforeAll(() => {
-  server = Bun.serve({
-    port: 0,
-    fetch(req) {
-      const url = new URL(req.url);
+beforeAll(
+  () =>
+    new Promise<void>(resolve => {
+      server = createServer((req: IncomingMessage, res: ServerResponse) => {
+        const url = new URL(req.url ?? '/', 'http://localhost');
 
-      if (url.pathname === '/ok') {
-        return new Response(JSON.stringify({ status: 'success' }), {
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-
-      if (url.pathname === '/text') {
-        return new Response('plain text response', {
-          headers: { 'Content-Type': 'text/plain' },
-        });
-      }
-
-      if (url.pathname === '/error-404') {
-        return new Response('Not Found', { status: 404 });
-      }
-
-      if (url.pathname === '/error-401') {
-        return new Response('Unauthorized', { status: 401 });
-      }
-
-      if (url.pathname === '/error-403') {
-        return new Response('Forbidden', { status: 403 });
-      }
-
-      if (url.pathname === '/error-429') {
-        return new Response('Too Many Requests', {
-          status: 429,
-          headers: { 'Retry-After': '30' },
-        });
-      }
-
-      if (url.pathname === '/error-429-no-header') {
-        return new Response('Too Many Requests', { status: 429 });
-      }
-
-      if (url.pathname === '/error-500') {
-        return new Response('Internal Server Error', { status: 500 });
-      }
-
-      if (url.pathname === '/error-503') {
-        return new Response('Service Unavailable', {
-          status: 503,
-          headers: { 'Retry-After': '60' },
-        });
-      }
-
-      if (url.pathname === '/invalid-json') {
-        return new Response('this is not json', {
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-
-      if (url.pathname === '/echo-post') {
-        return req.json().then(
-          (body: unknown) =>
-            new Response(JSON.stringify({ received: body }), {
-              headers: { 'Content-Type': 'application/json' },
-            }),
-        );
-      }
-
-      if (url.pathname === '/echo-headers') {
-        const contentType = req.headers.get('content-type');
-        const credentials = req.headers.get('cookie');
-        return new Response(
-          JSON.stringify({
-            contentType,
-            hasCookies: credentials !== null,
-          }),
-          { headers: { 'Content-Type': 'application/json' } },
-        );
-      }
-
-      if (url.pathname === '/slow') {
-        return new Promise<Response>(resolve => {
-          setTimeout(() => {
-            resolve(
-              new Response(JSON.stringify({ slow: true }), {
-                headers: { 'Content-Type': 'application/json' },
-              }),
-            );
-          }, 5_000);
-        });
-      }
-
-      if (url.pathname === '/flaky') {
-        flakyCallCount++;
-        if (flakyCallCount <= 2) {
-          return new Response('Service Unavailable', { status: 503 });
+        if (url.pathname === '/ok') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'success' }));
+          return;
         }
-        return new Response(JSON.stringify({ ok: true }), {
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
 
-      if (url.pathname === '/no-content') {
-        return new Response(null, { status: 204 });
-      }
+        if (url.pathname === '/text') {
+          res.writeHead(200, { 'Content-Type': 'text/plain' });
+          res.end('plain text response');
+          return;
+        }
 
-      return new Response('Not Found', { status: 404 });
-    },
-  });
-  baseUrl = `http://localhost:${String(server.port)}`;
-});
+        if (url.pathname === '/error-404') {
+          res.writeHead(404);
+          res.end('Not Found');
+          return;
+        }
+
+        if (url.pathname === '/error-401') {
+          res.writeHead(401);
+          res.end('Unauthorized');
+          return;
+        }
+
+        if (url.pathname === '/error-403') {
+          res.writeHead(403);
+          res.end('Forbidden');
+          return;
+        }
+
+        if (url.pathname === '/error-429') {
+          res.writeHead(429, { 'Retry-After': '30' });
+          res.end('Too Many Requests');
+          return;
+        }
+
+        if (url.pathname === '/error-429-no-header') {
+          res.writeHead(429);
+          res.end('Too Many Requests');
+          return;
+        }
+
+        if (url.pathname === '/error-500') {
+          res.writeHead(500);
+          res.end('Internal Server Error');
+          return;
+        }
+
+        if (url.pathname === '/error-503') {
+          res.writeHead(503, { 'Retry-After': '60' });
+          res.end('Service Unavailable');
+          return;
+        }
+
+        if (url.pathname === '/invalid-json') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end('this is not json');
+          return;
+        }
+
+        if (url.pathname === '/echo-post') {
+          const chunks: Buffer[] = [];
+          req.on('data', (chunk: Buffer) => chunks.push(chunk));
+          req.on('end', () => {
+            const body: unknown = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ received: body }));
+          });
+          return;
+        }
+
+        if (url.pathname === '/echo-headers') {
+          const contentType = req.headers['content-type'] ?? null;
+          const credentials = req.headers['cookie'] ?? null;
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ contentType, hasCookies: credentials !== null }));
+          return;
+        }
+
+        if (url.pathname === '/slow') {
+          setTimeout(() => {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ slow: true }));
+          }, 5_000);
+          return;
+        }
+
+        if (url.pathname === '/flaky') {
+          flakyCallCount++;
+          if (flakyCallCount <= 2) {
+            res.writeHead(503);
+            res.end('Service Unavailable');
+            return;
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+          return;
+        }
+
+        if (url.pathname === '/no-content') {
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+
+        res.writeHead(404);
+        res.end('Not Found');
+      });
+      server.listen(0, () => {
+        const addr = server.address() as { port: number };
+        baseUrl = `http://localhost:${String(addr.port)}`;
+        resolve();
+      });
+    }),
+);
 
 afterEach(() => {
   flakyCallCount = 0;
 });
 
-afterAll(() => {
-  void server.stop(true);
-});
+afterAll(
+  () =>
+    new Promise<void>(resolve => {
+      server.close(() => resolve());
+    }),
+);
 
 // ---------------------------------------------------------------------------
 // fetchFromPage

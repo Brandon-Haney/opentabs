@@ -1,6 +1,6 @@
 import { getTextContent, observeDOM, querySelectorAll, waitForSelector, waitForSelectorRemoval } from './dom.js';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { GlobalWindow } from 'happy-dom';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
 let win: GlobalWindow;
 
@@ -37,8 +37,8 @@ describe('waitForSelector', () => {
     expect(el.id).toBe('delayed');
   });
 
-  test('rejects on timeout', () => {
-    expect(waitForSelector('#nonexistent', { timeout: 100 })).rejects.toThrow(
+  test('rejects on timeout', async () => {
+    await expect(waitForSelector('#nonexistent', { timeout: 100 })).rejects.toThrow(
       'waitForSelector: timed out after 100ms waiting for "#nonexistent"',
     );
   });
@@ -66,9 +66,9 @@ describe('waitForSelectorRemoval', () => {
     expect(document.querySelector('#removable')).toBeNull();
   });
 
-  test('rejects on timeout if element is not removed', () => {
+  test('rejects on timeout if element is not removed', async () => {
     document.body.innerHTML = '<div id="persistent">stays</div>';
-    expect(waitForSelectorRemoval('#persistent', { timeout: 100 })).rejects.toThrow(
+    await expect(waitForSelectorRemoval('#persistent', { timeout: 100 })).rejects.toThrow(
       'waitForSelectorRemoval: timed out after 100ms waiting for "#persistent" to be removed',
     );
   });

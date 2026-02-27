@@ -1,18 +1,20 @@
-import { mock, describe, expect, test, beforeEach } from 'bun:test';
+import { vi, describe, expect, test, beforeEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Module mocks — set up before importing helpers.ts so that the exported
 // functions bind to the mocked versions of dependencies.
 // ---------------------------------------------------------------------------
 
-const mockSendToServer = mock<(data: unknown) => void>();
-
-await mock.module('../messaging.js', () => ({
-  sendToServer: mockSendToServer,
-  forwardToSidePanel: mock(),
+const { mockSendToServer } = vi.hoisted(() => ({
+  mockSendToServer: vi.fn<(data: unknown) => void>(),
 }));
 
-await mock.module('../sanitize-error.js', () => ({
+vi.mock('../messaging.js', () => ({
+  sendToServer: mockSendToServer,
+  forwardToSidePanel: vi.fn(),
+}));
+
+vi.mock('../sanitize-error.js', () => ({
   sanitizeErrorMessage: (msg: string) => msg,
 }));
 

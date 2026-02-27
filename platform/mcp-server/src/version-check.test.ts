@@ -1,7 +1,8 @@
-import { mock, beforeEach, describe, expect, test } from 'bun:test';
+import { vi, beforeEach, describe, expect, test } from 'vitest';
 import type { RegisteredPlugin } from './state.js';
+import type * as ChildProcess from 'node:child_process';
 
-// ---- spawnSync mock via mock.module ----
+// ---- spawnSync mock via vi.mock ----
 
 /** Minimal shape of a spawnSync result used by version-check.ts */
 interface SpawnSyncResult {
@@ -16,12 +17,12 @@ interface SpawnSyncResult {
 
 type SpawnSyncFn = (cmd: string, args: string[], opts: object) => SpawnSyncResult;
 
-// Capture the real module exports before mocking so they can be passed through
-const realChildProcess = await import('node:child_process');
-const mockSpawnSync = mock<SpawnSyncFn>();
+const { mockSpawnSync } = vi.hoisted(() => ({
+  mockSpawnSync: vi.fn<SpawnSyncFn>(),
+}));
 
-await mock.module('node:child_process', () => ({
-  ...realChildProcess,
+vi.mock('node:child_process', async importOriginal => ({
+  ...(await importOriginal<typeof ChildProcess>()),
   spawnSync: mockSpawnSync,
 }));
 

@@ -15,7 +15,7 @@ import { registerMcpHandlers, rebuildCachedBrowserTools } from './mcp-setup.js';
 import { buildRegistry } from './registry.js';
 import { createState } from './state.js';
 import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { describe, expect, test, beforeEach } from 'bun:test';
+import { describe, expect, test, beforeEach } from 'vitest';
 import { z } from 'zod';
 import type { McpServerInstance, RequestHandlerExtra } from './mcp-setup.js';
 import type { RegisteredPlugin } from './state.js';

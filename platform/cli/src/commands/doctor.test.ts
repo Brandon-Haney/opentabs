@@ -9,11 +9,29 @@ import {
   checkPlugins,
   checkServerHealth,
 } from './doctor.js';
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { CheckResult } from './doctor.js';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+
+/** Create a test HTTP server listening on a random port. Returns { port, close }. */
+const createTestServer = (
+  handler: (req: IncomingMessage, res: ServerResponse) => void,
+): Promise<{ port: number; close: () => Promise<void> }> =>
+  new Promise(resolve => {
+    const server = createServer(handler);
+    server.listen(0, () => {
+      const addr = server.address() as { port: number };
+      resolve({
+        port: addr.port,
+        close: () => new Promise<void>(res => server.close(() => res())),
+      });
+    });
+  });
 
 // ---------------------------------------------------------------------------
 // checkExtensionConnected
@@ -61,7 +79,7 @@ describe('checkRuntime', () => {
     const result: CheckResult = checkRuntime();
     expect(result.ok).toBe(true);
     expect(result.label).toBe('Runtime');
-    expect(result.detail).toContain(Bun.version);
+    expect(result.detail).toContain(process.version);
   });
 });
 
@@ -91,69 +109,61 @@ describe('checkBrowser', () => {
 describe('checkServerHealth', () => {
   test('sends Authorization header when secret is provided', async () => {
     let receivedAuth = '';
-    const server = Bun.serve({
-      port: 0,
-      fetch(req) {
-        receivedAuth = req.headers.get('Authorization') ?? '';
-        return Response.json({ status: 'ok', version: '1.0.0' });
-      },
+    const server = await createTestServer((req, res) => {
+      receivedAuth = req.headers['authorization'] ?? '';
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', version: '1.0.0' }));
     });
-    const port = server.port as number;
+    const port = server.port;
     try {
       const { result } = await checkServerHealth(port, 'test-secret');
       expect(result.ok).toBe(true);
       expect(receivedAuth).toBe('Bearer test-secret');
     } finally {
-      await server.stop(true);
+      await server.close();
     }
   });
 
   test('sends no Authorization header when secret is null', async () => {
-    let receivedAuth: string | null = null;
-    const server = Bun.serve({
-      port: 0,
-      fetch(req) {
-        receivedAuth = req.headers.get('Authorization');
-        return Response.json({ status: 'ok', version: '1.0.0' });
-      },
+    let receivedAuth: string | undefined = undefined;
+    const server = await createTestServer((req, res) => {
+      receivedAuth = req.headers['authorization'];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', version: '1.0.0' }));
     });
-    const port = server.port as number;
+    const port = server.port;
     try {
       const { result } = await checkServerHealth(port, null);
       expect(result.ok).toBe(true);
-      expect(receivedAuth).toBeNull();
+      expect(receivedAuth).toBeUndefined();
     } finally {
-      await server.stop(true);
+      await server.close();
     }
   });
 
   test('sends no Authorization header when secret is undefined', async () => {
-    let receivedAuth: string | null = null;
-    const server = Bun.serve({
-      port: 0,
-      fetch(req) {
-        receivedAuth = req.headers.get('Authorization');
-        return Response.json({ status: 'ok', version: '1.0.0' });
-      },
+    let receivedAuth: string | undefined = undefined;
+    const server = await createTestServer((req, res) => {
+      receivedAuth = req.headers['authorization'];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', version: '1.0.0' }));
     });
-    const port = server.port as number;
+    const port = server.port;
     try {
       const { result } = await checkServerHealth(port);
       expect(result.ok).toBe(true);
-      expect(receivedAuth).toBeNull();
+      expect(receivedAuth).toBeUndefined();
     } finally {
-      await server.stop(true);
+      await server.close();
     }
   });
 
   test('returns fail when server returns non-ok status', async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch() {
-        return new Response('Unauthorized', { status: 401 });
-      },
+    const server = await createTestServer((_req, res) => {
+      res.writeHead(401);
+      res.end('Unauthorized');
     });
-    const port = server.port as number;
+    const port = server.port;
     try {
       const { result, data } = await checkServerHealth(port, 'bad-secret');
       expect(result.ok).toBe(false);
@@ -161,7 +171,7 @@ describe('checkServerHealth', () => {
       expect(result.detail).toContain('401');
       expect(data).toBeNull();
     } finally {
-      await server.stop(true);
+      await server.close();
     }
   });
 
@@ -174,20 +184,18 @@ describe('checkServerHealth', () => {
   });
 
   test('returns health data on success', async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch() {
-        return Response.json({ status: 'ok', version: '2.0.0', extensionConnected: true });
-      },
+    const server = await createTestServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', version: '2.0.0', extensionConnected: true }));
     });
-    const port = server.port as number;
+    const port = server.port;
     try {
       const { result, data } = await checkServerHealth(port);
       expect(result.ok).toBe(true);
       expect(result.detail).toContain('v2.0.0');
       expect(data).toEqual({ status: 'ok', version: '2.0.0', extensionConnected: true });
     } finally {
-      await server.stop(true);
+      await server.close();
     }
   });
 });
@@ -197,14 +205,14 @@ describe('checkServerHealth', () => {
 // ---------------------------------------------------------------------------
 
 const TEST_BASE_DIR = mkdtempSync(join(tmpdir(), 'opentabs-cli-doctor-test-'));
-const originalConfigDir = Bun.env.OPENTABS_CONFIG_DIR;
-Bun.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
+const originalConfigDir = process.env.OPENTABS_CONFIG_DIR;
+process.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
 
 afterAll(() => {
   if (originalConfigDir !== undefined) {
-    Bun.env.OPENTABS_CONFIG_DIR = originalConfigDir;
+    process.env.OPENTABS_CONFIG_DIR = originalConfigDir;
   } else {
-    delete Bun.env.OPENTABS_CONFIG_DIR;
+    delete process.env.OPENTABS_CONFIG_DIR;
   }
   rmSync(TEST_BASE_DIR, { recursive: true, force: true });
 });
@@ -215,7 +223,7 @@ afterAll(() => {
 
 describe('checkConfigFile', () => {
   test('returns pass when config file exists', async () => {
-    await Bun.write(join(TEST_BASE_DIR, 'config.json'), JSON.stringify({ localPlugins: [] }));
+    await writeFile(join(TEST_BASE_DIR, 'config.json'), JSON.stringify({ localPlugins: [] }), 'utf-8');
     const { result, config } = await checkConfigFile();
     expect(result.ok).toBe(true);
     expect(result.label).toBe('Config file');
@@ -227,8 +235,8 @@ describe('checkConfigFile', () => {
     // Use a subdirectory that has no config.json
     const emptyDir = join(TEST_BASE_DIR, 'empty-config-dir');
     mkdirSync(emptyDir, { recursive: true });
-    const prev = Bun.env.OPENTABS_CONFIG_DIR;
-    Bun.env.OPENTABS_CONFIG_DIR = emptyDir;
+    const prev = process.env.OPENTABS_CONFIG_DIR;
+    process.env.OPENTABS_CONFIG_DIR = emptyDir;
     try {
       const { result, config } = await checkConfigFile();
       expect(result.ok).toBe(false);
@@ -238,7 +246,7 @@ describe('checkConfigFile', () => {
       expect(result.hint).toContain('opentabs start');
       expect(config).toBeNull();
     } finally {
-      Bun.env.OPENTABS_CONFIG_DIR = prev;
+      process.env.OPENTABS_CONFIG_DIR = prev;
     }
   });
 });
@@ -253,7 +261,7 @@ describe('checkAuthSecret', () => {
 
   test('returns pass when auth.json contains a valid secret', async () => {
     mkdirSync(extensionDir, { recursive: true });
-    await Bun.write(authPath, JSON.stringify({ secret: 'abc123def456' }));
+    await writeFile(authPath, JSON.stringify({ secret: 'abc123def456' }), 'utf-8');
     const { result, secret } = await checkAuthSecret();
     expect(result.ok).toBe(true);
     expect(result.label).toBe('Auth secret');
@@ -264,8 +272,8 @@ describe('checkAuthSecret', () => {
   test('returns warn when auth.json is missing', async () => {
     const emptyDir = join(TEST_BASE_DIR, 'empty-auth-dir');
     mkdirSync(emptyDir, { recursive: true });
-    const prev = Bun.env.OPENTABS_CONFIG_DIR;
-    Bun.env.OPENTABS_CONFIG_DIR = emptyDir;
+    const prev = process.env.OPENTABS_CONFIG_DIR;
+    process.env.OPENTABS_CONFIG_DIR = emptyDir;
     try {
       const { result, secret } = await checkAuthSecret();
       expect(result.ok).toBe(false);
@@ -275,13 +283,13 @@ describe('checkAuthSecret', () => {
       expect(result.hint).toContain('opentabs start');
       expect(secret).toBeNull();
     } finally {
-      Bun.env.OPENTABS_CONFIG_DIR = prev;
+      process.env.OPENTABS_CONFIG_DIR = prev;
     }
   });
 
   test('returns warn when auth.json has empty secret', async () => {
     mkdirSync(extensionDir, { recursive: true });
-    await Bun.write(authPath, JSON.stringify({ secret: '' }));
+    await writeFile(authPath, JSON.stringify({ secret: '' }), 'utf-8');
     const { result, secret } = await checkAuthSecret();
     expect(result.ok).toBe(false);
     expect(result.fatal).toBe(false);
@@ -291,7 +299,7 @@ describe('checkAuthSecret', () => {
 
   test('returns warn when auth.json is malformed JSON', async () => {
     mkdirSync(extensionDir, { recursive: true });
-    await Bun.write(authPath, 'not valid json');
+    await writeFile(authPath, 'not valid json', 'utf-8');
     const { result, secret } = await checkAuthSecret();
     expect(result.ok).toBe(false);
     expect(result.fatal).toBe(false);
@@ -346,7 +354,7 @@ describe('checkPlugins', () => {
   test('returns warn when IIFE file is missing', async () => {
     const pluginDir = join(TEST_BASE_DIR, 'plugin-no-iife');
     mkdirSync(join(pluginDir, 'dist'), { recursive: true });
-    await Bun.write(join(pluginDir, 'dist', 'tools.json'), JSON.stringify([{ name: 'test' }]));
+    await writeFile(join(pluginDir, 'dist', 'tools.json'), JSON.stringify([{ name: 'test' }]), 'utf-8');
     const config = { localPlugins: [pluginDir] };
     const results = await checkPlugins(config);
     expect(results).toHaveLength(1);
@@ -359,12 +367,13 @@ describe('checkPlugins', () => {
   test('returns pass for valid plugin directory with tools.json and IIFE', async () => {
     const pluginDir = join(TEST_BASE_DIR, 'plugin-valid');
     mkdirSync(join(pluginDir, 'dist'), { recursive: true });
-    await Bun.write(
+    await writeFile(
       join(pluginDir, 'package.json'),
       JSON.stringify({ name: 'opentabs-plugin-my-plugin', version: '1.0.0' }),
+      'utf-8',
     );
-    await Bun.write(join(pluginDir, 'dist', 'tools.json'), JSON.stringify([{ name: 'test' }]));
-    await Bun.write(join(pluginDir, 'dist', 'adapter.iife.js'), '(function(){})()');
+    await writeFile(join(pluginDir, 'dist', 'tools.json'), JSON.stringify([{ name: 'test' }]), 'utf-8');
+    await writeFile(join(pluginDir, 'dist', 'adapter.iife.js'), '(function(){})()', 'utf-8');
     const config = { localPlugins: [pluginDir] };
     const results = await checkPlugins(config);
     expect(results).toHaveLength(1);
@@ -376,9 +385,9 @@ describe('checkPlugins', () => {
   test('uses path as label when package.json name is unreadable', async () => {
     const pluginDir = join(TEST_BASE_DIR, 'plugin-bad-package');
     mkdirSync(join(pluginDir, 'dist'), { recursive: true });
-    await Bun.write(join(pluginDir, 'package.json'), 'not valid json');
-    await Bun.write(join(pluginDir, 'dist', 'tools.json'), JSON.stringify([{ name: 'test' }]));
-    await Bun.write(join(pluginDir, 'dist', 'adapter.iife.js'), '(function(){})()');
+    await writeFile(join(pluginDir, 'package.json'), 'not valid json', 'utf-8');
+    await writeFile(join(pluginDir, 'dist', 'tools.json'), JSON.stringify([{ name: 'test' }]), 'utf-8');
+    await writeFile(join(pluginDir, 'dist', 'adapter.iife.js'), '(function(){})()', 'utf-8');
     const config = { localPlugins: [pluginDir] };
     const results = await checkPlugins(config);
     expect(results).toHaveLength(1);
@@ -483,7 +492,7 @@ describe('checkMcpClientConfig', () => {
     const configDir = join(TEST_BASE_DIR, 'mcp-claude');
     mkdirSync(configDir, { recursive: true });
     const configPath = join(configDir, 'mcp.json');
-    await Bun.write(configPath, JSON.stringify({ mcpServers: { opentabs: { command: 'opentabs' } } }));
+    await writeFile(configPath, JSON.stringify({ mcpServers: { opentabs: { command: 'opentabs' } } }), 'utf-8');
 
     const result = await checkMcpClientConfig([{ name: 'Claude Code', path: configPath }]);
     expect(result.ok).toBe(true);
@@ -496,7 +505,11 @@ describe('checkMcpClientConfig', () => {
     const configDir = join(TEST_BASE_DIR, 'mcp-cursor');
     mkdirSync(configDir, { recursive: true });
     const configPath = join(configDir, 'mcp.json');
-    await Bun.write(configPath, JSON.stringify({ mcpServers: { opentabs: { url: 'http://localhost:9515/mcp' } } }));
+    await writeFile(
+      configPath,
+      JSON.stringify({ mcpServers: { opentabs: { url: 'http://localhost:9515/mcp' } } }),
+      'utf-8',
+    );
 
     const result = await checkMcpClientConfig([{ name: 'Cursor', path: configPath }]);
     expect(result.ok).toBe(true);
@@ -520,7 +533,7 @@ describe('checkMcpClientConfig', () => {
     const configDir = join(TEST_BASE_DIR, 'mcp-no-opentabs');
     mkdirSync(configDir, { recursive: true });
     const configPath = join(configDir, 'mcp.json');
-    await Bun.write(configPath, JSON.stringify({ mcpServers: { other: { command: 'other' } } }));
+    await writeFile(configPath, JSON.stringify({ mcpServers: { other: { command: 'other' } } }), 'utf-8');
 
     const result = await checkMcpClientConfig([{ name: 'Claude Code', path: configPath }]);
     expect(result.ok).toBe(false);
@@ -532,7 +545,7 @@ describe('checkMcpClientConfig', () => {
     const configDir = join(TEST_BASE_DIR, 'mcp-no-servers');
     mkdirSync(configDir, { recursive: true });
     const configPath = join(configDir, 'mcp.json');
-    await Bun.write(configPath, JSON.stringify({ something: 'else' }));
+    await writeFile(configPath, JSON.stringify({ something: 'else' }), 'utf-8');
 
     const result = await checkMcpClientConfig([{ name: 'Claude Code', path: configPath }]);
     expect(result.ok).toBe(false);
@@ -543,12 +556,12 @@ describe('checkMcpClientConfig', () => {
     const badDir = join(TEST_BASE_DIR, 'mcp-bad-json');
     mkdirSync(badDir, { recursive: true });
     const badPath = join(badDir, 'mcp.json');
-    await Bun.write(badPath, 'not valid json');
+    await writeFile(badPath, 'not valid json', 'utf-8');
 
     const goodDir = join(TEST_BASE_DIR, 'mcp-good-json');
     mkdirSync(goodDir, { recursive: true });
     const goodPath = join(goodDir, 'mcp.json');
-    await Bun.write(goodPath, JSON.stringify({ mcpServers: { opentabs: {} } }));
+    await writeFile(goodPath, JSON.stringify({ mcpServers: { opentabs: {} } }), 'utf-8');
 
     const result = await checkMcpClientConfig([
       { name: 'Bad Client', path: badPath },
@@ -562,12 +575,12 @@ describe('checkMcpClientConfig', () => {
     const dir1 = join(TEST_BASE_DIR, 'mcp-first');
     mkdirSync(dir1, { recursive: true });
     const path1 = join(dir1, 'mcp.json');
-    await Bun.write(path1, JSON.stringify({ mcpServers: { opentabs: {} } }));
+    await writeFile(path1, JSON.stringify({ mcpServers: { opentabs: {} } }), 'utf-8');
 
     const dir2 = join(TEST_BASE_DIR, 'mcp-second');
     mkdirSync(dir2, { recursive: true });
     const path2 = join(dir2, 'mcp.json');
-    await Bun.write(path2, JSON.stringify({ mcpServers: { opentabs: {} } }));
+    await writeFile(path2, JSON.stringify({ mcpServers: { opentabs: {} } }), 'utf-8');
 
     const result = await checkMcpClientConfig([
       { name: 'First', path: path1 },
@@ -581,9 +594,10 @@ describe('checkMcpClientConfig', () => {
     const configDir = join(TEST_BASE_DIR, 'mcp-opencode');
     mkdirSync(configDir, { recursive: true });
     const configPath = join(configDir, 'opencode.json');
-    await Bun.write(
+    await writeFile(
       configPath,
       JSON.stringify({ mcp: { opentabs: { command: 'opentabs', args: ['start', '--mcp'] } } }),
+      'utf-8',
     );
 
     const result = await checkMcpClientConfig([{ name: 'OpenCode', path: configPath }]);
@@ -597,7 +611,7 @@ describe('checkMcpClientConfig', () => {
     const configDir = join(TEST_BASE_DIR, 'mcp-opencode-no-opentabs');
     mkdirSync(configDir, { recursive: true });
     const configPath = join(configDir, 'opencode.json');
-    await Bun.write(configPath, JSON.stringify({ mcp: { other: { command: 'other' } } }));
+    await writeFile(configPath, JSON.stringify({ mcp: { other: { command: 'other' } } }), 'utf-8');
 
     const result = await checkMcpClientConfig([{ name: 'OpenCode', path: configPath }]);
     expect(result.ok).toBe(false);
@@ -620,7 +634,7 @@ describe('checkMcpClientConfig', () => {
     const configDir = join(TEST_BASE_DIR, 'mcp-both-formats');
     mkdirSync(configDir, { recursive: true });
     const configPath = join(configDir, 'config.json');
-    await Bun.write(configPath, JSON.stringify({ mcpServers: { opentabs: {} }, mcp: { opentabs: {} } }));
+    await writeFile(configPath, JSON.stringify({ mcpServers: { opentabs: {} }, mcp: { opentabs: {} } }), 'utf-8');
 
     const result = await checkMcpClientConfig([{ name: 'Both', path: configPath }]);
     expect(result.ok).toBe(true);

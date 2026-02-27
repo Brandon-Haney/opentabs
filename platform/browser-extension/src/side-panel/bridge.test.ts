@@ -5,7 +5,7 @@ import {
   setAllToolsEnabled,
   setToolEnabled,
 } from './bridge.js';
-import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 
 /** Captured sendMessage calls. Each entry has the message object passed to sendMessage. */
 let sendMessageCalls: Array<{ message: unknown }> = [];
@@ -249,17 +249,17 @@ describe('setAllToolsEnabled', () => {
 
 describe('request timeout', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   test('rejects after REQUEST_TIMEOUT_MS with timeout error', async () => {
     const promise = fetchConfigState();
 
-    jest.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(30_000);
 
     await expectRejection(promise, 'timed out after 30000ms');
   });
@@ -268,7 +268,7 @@ describe('request timeout', () => {
     const promise = fetchConfigState();
     const id = getLastRequestId();
 
-    jest.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(30_000);
 
     await expectRejection(promise, 'timed out after 30000ms');
 

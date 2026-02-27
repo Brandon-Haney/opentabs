@@ -5,9 +5,9 @@ import {
   readConfig,
   resolvePluginPath,
 } from './config.js';
-import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -16,14 +16,14 @@ import { join } from 'node:path';
 // ---------------------------------------------------------------------------
 
 const TEST_BASE_DIR = mkdtempSync(join(tmpdir(), 'opentabs-cli-config-test-'));
-const originalConfigDir = Bun.env.OPENTABS_CONFIG_DIR;
-Bun.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
+const originalConfigDir = process.env.OPENTABS_CONFIG_DIR;
+process.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
 
 afterAll(() => {
   if (originalConfigDir !== undefined) {
-    Bun.env.OPENTABS_CONFIG_DIR = originalConfigDir;
+    process.env.OPENTABS_CONFIG_DIR = originalConfigDir;
   } else {
-    delete Bun.env.OPENTABS_CONFIG_DIR;
+    delete process.env.OPENTABS_CONFIG_DIR;
   }
   rmSync(TEST_BASE_DIR, { recursive: true, force: true });
 });
@@ -37,7 +37,7 @@ describe('readConfig', () => {
 
   afterEach(async () => {
     try {
-      await Bun.file(configPath).delete();
+      await unlink(configPath);
     } catch {
       // File may not exist
     }
@@ -49,14 +49,14 @@ describe('readConfig', () => {
   });
 
   test('returns config object for valid JSON object', async () => {
-    await Bun.write(configPath, JSON.stringify({ localPlugins: [], tools: {} }));
+    await writeFile(configPath, JSON.stringify({ localPlugins: [], tools: {} }), 'utf-8');
     const result = await readConfig(configPath);
     expect(result.config).toEqual({ localPlugins: [], tools: {} });
     expect(result.error).toBeUndefined();
   });
 
   test('returns invalid error for JSON array', async () => {
-    await Bun.write(configPath, JSON.stringify([1, 2, 3]));
+    await writeFile(configPath, JSON.stringify([1, 2, 3]), 'utf-8');
     const result = await readConfig(configPath);
     expect(result.config).toBeNull();
     expect(result.error).toBe('invalid');
@@ -66,28 +66,28 @@ describe('readConfig', () => {
   });
 
   test('returns invalid error for JSON string', async () => {
-    await Bun.write(configPath, JSON.stringify('hello'));
+    await writeFile(configPath, JSON.stringify('hello'), 'utf-8');
     const result = await readConfig(configPath);
     expect(result.config).toBeNull();
     expect(result.error).toBe('invalid');
   });
 
   test('returns invalid error for JSON number', async () => {
-    await Bun.write(configPath, JSON.stringify(42));
+    await writeFile(configPath, JSON.stringify(42), 'utf-8');
     const result = await readConfig(configPath);
     expect(result.config).toBeNull();
     expect(result.error).toBe('invalid');
   });
 
   test('returns invalid error for JSON null', async () => {
-    await Bun.write(configPath, 'null');
+    await writeFile(configPath, 'null', 'utf-8');
     const result = await readConfig(configPath);
     expect(result.config).toBeNull();
     expect(result.error).toBe('invalid');
   });
 
   test('returns invalid error for invalid JSON', async () => {
-    await Bun.write(configPath, '{not valid json}');
+    await writeFile(configPath, '{not valid json}', 'utf-8');
     const result = await readConfig(configPath);
     expect(result.config).toBeNull();
     expect(result.error).toBe('invalid');
@@ -97,14 +97,14 @@ describe('readConfig', () => {
   });
 
   test('returns invalid error for truncated JSON', async () => {
-    await Bun.write(configPath, '{"localPlugins": [');
+    await writeFile(configPath, '{"localPlugins": [', 'utf-8');
     const result = await readConfig(configPath);
     expect(result.config).toBeNull();
     expect(result.error).toBe('invalid');
   });
 
   test('returns config with extra fields preserved', async () => {
-    await Bun.write(configPath, JSON.stringify({ localPlugins: [], custom: 'value' }));
+    await writeFile(configPath, JSON.stringify({ localPlugins: [], custom: 'value' }), 'utf-8');
     const result = await readConfig(configPath);
     expect(result.config).toEqual({ localPlugins: [], custom: 'value' });
   });
@@ -182,7 +182,7 @@ describe('ensureAuthSecret', () => {
 
   afterEach(async () => {
     try {
-      await Bun.file(authPath).delete();
+      await unlink(authPath);
     } catch {
       // File may not exist
     }
@@ -193,7 +193,7 @@ describe('ensureAuthSecret', () => {
     expect(typeof secret).toBe('string');
     expect(secret.length).toBe(64);
     // Verify auth.json was written
-    const content: unknown = JSON.parse(await Bun.file(authPath).text());
+    const content: unknown = JSON.parse(await readFile(authPath, 'utf-8'));
     expect(content).toEqual({ secret });
   });
 
@@ -220,7 +220,7 @@ describe('ensureAuthSecret', () => {
     expect(typeof secret).toBe('string');
     expect(secret.length).toBe(64);
     // New secret was written over the malformed file
-    const content: unknown = JSON.parse(await Bun.file(authPath).text());
+    const content: unknown = JSON.parse(await readFile(authPath, 'utf-8'));
     expect(content).toEqual({ secret });
   });
 

@@ -1,5 +1,5 @@
 import { findAllMatchingTabs, findMatchingTab, matchPattern, urlMatchesPatterns } from './tab-matching.js';
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'vitest';
 import type { PluginMeta } from './extension-messages.js';
 
 describe('matchPattern', () => {

@@ -1,5 +1,5 @@
 import { detectFramework } from './detect-framework.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import type { FrameworkDetectionInput } from './detect-framework.js';
 
 const emptyInput: FrameworkDetectionInput = {

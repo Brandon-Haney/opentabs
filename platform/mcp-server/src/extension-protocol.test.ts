@@ -7,9 +7,9 @@ import {
 } from './extension-protocol.js';
 import { buildRegistry } from './registry.js';
 import { createState, DISPATCH_TIMEOUT_MS, MAX_DISPATCH_TIMEOUT_MS } from './state.js';
-import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { mkdir, readdir } from 'node:fs/promises';
+import { mkdir, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { PendingDispatch, RegisteredPlugin } from './state.js';
@@ -536,9 +536,9 @@ describe('sendSyncFull', () => {
 
   afterEach(() => {
     if (originalConfigDir !== undefined) {
-      Bun.env.OPENTABS_CONFIG_DIR = originalConfigDir;
+      process.env.OPENTABS_CONFIG_DIR = originalConfigDir;
     } else {
-      delete Bun.env.OPENTABS_CONFIG_DIR;
+      delete process.env.OPENTABS_CONFIG_DIR;
     }
     if (tmpDir) {
       rmSync(tmpDir, { recursive: true, force: true });
@@ -546,9 +546,9 @@ describe('sendSyncFull', () => {
   });
 
   const setupTmpConfigDir = (): void => {
-    originalConfigDir = Bun.env.OPENTABS_CONFIG_DIR;
+    originalConfigDir = process.env.OPENTABS_CONFIG_DIR;
     tmpDir = mkdtempSync(join(tmpdir(), 'opentabs-test-'));
-    Bun.env.OPENTABS_CONFIG_DIR = tmpDir;
+    process.env.OPENTABS_CONFIG_DIR = tmpDir;
   };
 
   const makePlugin = (overrides: Partial<RegisteredPlugin> & Pick<RegisteredPlugin, 'name'>): RegisteredPlugin => ({
@@ -701,7 +701,7 @@ describe('sendSyncFull', () => {
     const hashedFile = entries.find(f => f.startsWith('test-plugin-') && f.endsWith('.js'));
     expect(hashedFile).toBeDefined();
     if (!hashedFile) return; // Unreachable after expect, satisfies TypeScript
-    const content = await Bun.file(join(adaptersDir, hashedFile)).text();
+    const content = await readFile(join(adaptersDir, hashedFile), 'utf-8');
     expect(content).toBe('(function(){/* adapter */})()');
   });
 
@@ -721,7 +721,7 @@ describe('sendSyncFull', () => {
     const hashedFile = entries.find(f => f.startsWith('alpha-') && f.endsWith('.js'));
     expect(hashedFile).toBeDefined();
     if (!hashedFile) return; // Unreachable after expect, satisfies TypeScript
-    const content = await Bun.file(join(adaptersDir, hashedFile)).text();
+    const content = await readFile(join(adaptersDir, hashedFile), 'utf-8');
     expect(content).toBe('// alpha');
   });
 
@@ -840,10 +840,12 @@ describe('sendSyncFull', () => {
 });
 
 describe('dispatchToExtension', () => {
-  test('rejects immediately when extensionWs is null', () => {
+  test('rejects immediately when extensionWs is null', async () => {
     const state = createState();
 
-    expect(dispatchToExtension(state, 'tool.dispatch', { tool: 'test' })).rejects.toThrow('Extension not connected');
+    await expect(dispatchToExtension(state, 'tool.dispatch', { tool: 'test' })).rejects.toThrow(
+      'Extension not connected',
+    );
   });
 
   test('sends JSON-RPC request and creates a pending dispatch entry', () => {
@@ -1938,11 +1940,11 @@ describe('handleExtensionMessage — config.setAllToolsEnabled', () => {
 
 describe('dispatchToExtension — timeout', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   test('rejects with timeout error after DISPATCH_TIMEOUT_MS and removes pending entry', async () => {
@@ -1961,7 +1963,7 @@ describe('dispatchToExtension — timeout', () => {
     expect(state.pendingDispatches.has(id)).toBe(true);
 
     // Advance time past the timeout
-    jest.advanceTimersByTime(DISPATCH_TIMEOUT_MS);
+    vi.advanceTimersByTime(DISPATCH_TIMEOUT_MS);
 
     // The promise should reject with a timeout error containing the label and timeout duration
     const err: unknown = await promise.catch((e: unknown) => e);
@@ -1981,7 +1983,7 @@ describe('dispatchToExtension — timeout', () => {
 
     const promise = dispatchToExtension(state, 'browser.openTab', { url: 'https://example.com' });
 
-    jest.advanceTimersByTime(DISPATCH_TIMEOUT_MS);
+    vi.advanceTimersByTime(DISPATCH_TIMEOUT_MS);
 
     const err: unknown = await promise.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
@@ -1992,11 +1994,11 @@ describe('dispatchToExtension — timeout', () => {
 
 describe('handleToolProgress — timeout reset', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   test('dispatch without progress times out at DISPATCH_TIMEOUT_MS', async () => {
@@ -2011,7 +2013,7 @@ describe('handleToolProgress — timeout reset', () => {
       { label: 'test/slow', onProgress: () => {} },
     );
 
-    jest.advanceTimersByTime(DISPATCH_TIMEOUT_MS);
+    vi.advanceTimersByTime(DISPATCH_TIMEOUT_MS);
 
     const err: unknown = await promise.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
@@ -2044,7 +2046,7 @@ describe('handleToolProgress — timeout reset', () => {
     const dispatchId = sentMsg.params.dispatchId;
 
     // Advance 20s (before 30s timeout) and send a progress notification
-    jest.advanceTimersByTime(20_000);
+    vi.advanceTimersByTime(20_000);
     expect(state.pendingDispatches.has(dispatchId)).toBe(true);
 
     handleExtensionMessage(
@@ -2060,7 +2062,7 @@ describe('handleToolProgress — timeout reset', () => {
 
     // Advance another 20s (total 40s — past original 30s timeout).
     // The dispatch should still be alive because progress reset the timer.
-    jest.advanceTimersByTime(20_000);
+    vi.advanceTimersByTime(20_000);
     expect(state.pendingDispatches.has(dispatchId)).toBe(true);
 
     // Send another progress at 40s
@@ -2142,7 +2144,7 @@ describe('handleToolProgress — timeout reset', () => {
     // MAX_DISPATCH_TIMEOUT_MS is 300_000 (5 minutes).
     // After 280s, send progress — remaining max = 20s, next timeout = min(30s, 20s) = 20s.
     for (let elapsed = 0; elapsed < MAX_DISPATCH_TIMEOUT_MS - DISPATCH_TIMEOUT_MS; elapsed += 20_000) {
-      jest.advanceTimersByTime(20_000);
+      vi.advanceTimersByTime(20_000);
       if (!state.pendingDispatches.has(dispatchId)) break;
       handleExtensionMessage(
         state,
@@ -2159,7 +2161,7 @@ describe('handleToolProgress — timeout reset', () => {
     expect(state.pendingDispatches.has(dispatchId)).toBe(true);
 
     // Advance past the absolute max timeout — the next progress or timeout fires rejection
-    jest.advanceTimersByTime(DISPATCH_TIMEOUT_MS + 1_000);
+    vi.advanceTimersByTime(DISPATCH_TIMEOUT_MS + 1_000);
 
     const err: unknown = await promise.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
@@ -2214,18 +2216,18 @@ describe('writeAdapterFile', () => {
   let originalConfigDir: string | undefined;
 
   beforeEach(async () => {
-    originalConfigDir = Bun.env.OPENTABS_CONFIG_DIR;
+    originalConfigDir = process.env.OPENTABS_CONFIG_DIR;
     tmpDir = mkdtempSync(join(tmpdir(), 'opentabs-writeadapter-'));
-    Bun.env.OPENTABS_CONFIG_DIR = tmpDir;
+    process.env.OPENTABS_CONFIG_DIR = tmpDir;
     adaptersDir = join(tmpDir, 'extension', 'adapters');
     await mkdir(adaptersDir, { recursive: true });
   });
 
   afterEach(() => {
     if (originalConfigDir !== undefined) {
-      Bun.env.OPENTABS_CONFIG_DIR = originalConfigDir;
+      process.env.OPENTABS_CONFIG_DIR = originalConfigDir;
     } else {
-      delete Bun.env.OPENTABS_CONFIG_DIR;
+      delete process.env.OPENTABS_CONFIG_DIR;
     }
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -2237,7 +2239,7 @@ describe('writeAdapterFile', () => {
     expect(adapterFile).toMatch(/^adapters\/my-plugin-[0-9a-f]{8}\.js$/);
 
     const fileName = adapterFile.replace('adapters/', '');
-    const written = await Bun.file(join(adaptersDir, fileName)).text();
+    const written = await readFile(join(adaptersDir, fileName), 'utf-8');
     expect(written).toBe(content);
   });
 
@@ -2268,7 +2270,7 @@ describe('writeAdapterFile', () => {
     const latestFile = myPluginFiles[0];
     expect(latestFile).toBeDefined();
     if (!latestFile) return; // Unreachable after expect, satisfies TypeScript
-    const content = await Bun.file(join(adaptersDir, latestFile)).text();
+    const content = await readFile(join(adaptersDir, latestFile), 'utf-8');
     expect(content).toBe('// version 2');
   });
 
@@ -2290,9 +2292,9 @@ describe('writeAdapterFile', () => {
     expect(pathB).toBeDefined();
     expect(pathC).toBeDefined();
     if (!pathA || !pathB || !pathC) return; // Unreachable after expect, satisfies TypeScript
-    const contentA = await Bun.file(join(adaptersDir, pathA.replace('adapters/', ''))).text();
-    const contentB = await Bun.file(join(adaptersDir, pathB.replace('adapters/', ''))).text();
-    const contentC = await Bun.file(join(adaptersDir, pathC.replace('adapters/', ''))).text();
+    const contentA = await readFile(join(adaptersDir, pathA.replace('adapters/', '')), 'utf-8');
+    const contentB = await readFile(join(adaptersDir, pathB.replace('adapters/', '')), 'utf-8');
+    const contentC = await readFile(join(adaptersDir, pathC.replace('adapters/', '')), 'utf-8');
 
     expect(contentA).toBe('// adapter A');
     expect(contentB).toBe('// adapter B');
@@ -2309,7 +2311,7 @@ describe('writeAdapterFile', () => {
     const adapterFile = await writeAdapterFile('large-plugin', largeContent);
 
     const fileName = adapterFile.replace('adapters/', '');
-    const written = await Bun.file(join(adaptersDir, fileName)).text();
+    const written = await readFile(join(adaptersDir, fileName), 'utf-8');
     expect(written).toBe(largeContent);
   });
 });

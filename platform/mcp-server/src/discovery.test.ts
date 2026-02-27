@@ -1,6 +1,6 @@
 import { npmTrustTier } from './discovery.js';
 import { checkBrowserToolReferences, pluginNameFromPackage } from './loader.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 describe('pluginNameFromPackage', () => {
   test('strips opentabs-plugin- prefix from unscoped package', () => {

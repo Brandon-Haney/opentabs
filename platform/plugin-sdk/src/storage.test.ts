@@ -6,8 +6,8 @@ import {
   removeSessionStorage,
   setLocalStorage,
 } from './storage.js';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { GlobalWindow } from 'happy-dom';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
 let win: GlobalWindow;
 

@@ -1,12 +1,12 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, vi, test } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Chrome API stubs — network-capture.ts registers listeners at module level
 // ---------------------------------------------------------------------------
 
 (globalThis as Record<string, unknown>).chrome = {
-  debugger: { onEvent: { addListener: mock() }, detach: mock(() => Promise.resolve()) },
-  tabs: { onRemoved: { addListener: mock() } },
+  debugger: { onEvent: { addListener: vi.fn() }, detach: vi.fn(() => Promise.resolve()) },
+  tabs: { onRemoved: { addListener: vi.fn() } },
 };
 
 const { scrubHeaders } = await import('./network-capture.js');

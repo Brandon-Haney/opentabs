@@ -1,5 +1,5 @@
 import { parsePort, resolvePort } from './parse-port.js';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // parsePort
@@ -46,17 +46,17 @@ describe('parsePort', () => {
 // ---------------------------------------------------------------------------
 
 describe('resolvePort', () => {
-  const originalEnv = Bun.env.OPENTABS_PORT;
+  const originalEnv = process.env.OPENTABS_PORT;
 
   beforeAll(() => {
-    delete Bun.env.OPENTABS_PORT;
+    delete process.env.OPENTABS_PORT;
   });
 
   afterAll(() => {
     if (originalEnv !== undefined) {
-      Bun.env.OPENTABS_PORT = originalEnv;
+      process.env.OPENTABS_PORT = originalEnv;
     } else {
-      delete Bun.env.OPENTABS_PORT;
+      delete process.env.OPENTABS_PORT;
     }
   });
 
@@ -65,43 +65,43 @@ describe('resolvePort', () => {
   });
 
   test('returns OPENTABS_PORT env var when options.port is undefined', () => {
-    Bun.env.OPENTABS_PORT = '5000';
+    process.env.OPENTABS_PORT = '5000';
     expect(resolvePort({})).toBe(5000);
-    delete Bun.env.OPENTABS_PORT;
+    delete process.env.OPENTABS_PORT;
   });
 
   test('returns default 9515 when neither option nor env is set', () => {
-    delete Bun.env.OPENTABS_PORT;
+    delete process.env.OPENTABS_PORT;
     expect(resolvePort({})).toBe(9515);
   });
 
   test('options.port takes priority over env var', () => {
-    Bun.env.OPENTABS_PORT = '5000';
+    process.env.OPENTABS_PORT = '5000';
     expect(resolvePort({ port: 3000 })).toBe(3000);
-    delete Bun.env.OPENTABS_PORT;
+    delete process.env.OPENTABS_PORT;
   });
 
   test('ignores invalid OPENTABS_PORT env var and falls back to default', () => {
-    Bun.env.OPENTABS_PORT = 'not-a-number';
+    process.env.OPENTABS_PORT = 'not-a-number';
     expect(resolvePort({})).toBe(9515);
-    delete Bun.env.OPENTABS_PORT;
+    delete process.env.OPENTABS_PORT;
   });
 
   test('ignores OPENTABS_PORT of 0', () => {
-    Bun.env.OPENTABS_PORT = '0';
+    process.env.OPENTABS_PORT = '0';
     expect(resolvePort({})).toBe(9515);
-    delete Bun.env.OPENTABS_PORT;
+    delete process.env.OPENTABS_PORT;
   });
 
   test('ignores OPENTABS_PORT above 65535', () => {
-    Bun.env.OPENTABS_PORT = '70000';
+    process.env.OPENTABS_PORT = '70000';
     expect(resolvePort({})).toBe(9515);
-    delete Bun.env.OPENTABS_PORT;
+    delete process.env.OPENTABS_PORT;
   });
 
   test('ignores float OPENTABS_PORT', () => {
-    Bun.env.OPENTABS_PORT = '3000.5';
+    process.env.OPENTABS_PORT = '3000.5';
     expect(resolvePort({})).toBe(9515);
-    delete Bun.env.OPENTABS_PORT;
+    delete process.env.OPENTABS_PORT;
   });
 });

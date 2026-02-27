@@ -1,6 +1,7 @@
 import { extractFields, handleInspect, truncate } from './inspect.js';
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ToolsJsonManifest } from './inspect.js';
@@ -22,12 +23,12 @@ afterEach(() => {
 /** Write a valid tools.json manifest to tmpDir/dist/tools.json */
 const writeToolsJson = async (manifest: ToolsJsonManifest): Promise<void> => {
   mkdirSync(join(tmpDir, 'dist'), { recursive: true });
-  await Bun.write(join(tmpDir, 'dist', 'tools.json'), JSON.stringify(manifest));
+  await writeFile(join(tmpDir, 'dist', 'tools.json'), JSON.stringify(manifest), 'utf-8');
 };
 
 /** Write a valid package.json to tmpDir/package.json */
 const writePackageJson = async (pkg: Record<string, unknown>): Promise<void> => {
-  await Bun.write(join(tmpDir, 'package.json'), JSON.stringify(pkg));
+  await writeFile(join(tmpDir, 'package.json'), JSON.stringify(pkg), 'utf-8');
 };
 
 /** A sample tool for use in test manifests */
@@ -80,13 +81,13 @@ const captureOutput = async (
   const origError = console.error.bind(console);
   const origExit = process.exit.bind(process);
 
-  console.log = mock((...args: unknown[]) => {
+  console.log = vi.fn((...args: unknown[]) => {
     logs.push(args.map(String).join(' '));
   });
-  console.error = mock((...args: unknown[]) => {
+  console.error = vi.fn((...args: unknown[]) => {
     errors.push(args.map(String).join(' '));
   });
-  process.exit = mock((code?: number) => {
+  process.exit = vi.fn((code?: number) => {
     exitCode = code ?? 0;
     throw new Error(`process.exit(${String(code)})`);
   }) as never;
@@ -216,7 +217,7 @@ describe('handleInspect — missing manifest', () => {
 describe('handleInspect — invalid manifest', () => {
   test('exits with error when dist/tools.json is invalid JSON', async () => {
     mkdirSync(join(tmpDir, 'dist'), { recursive: true });
-    await Bun.write(join(tmpDir, 'dist', 'tools.json'), '{not valid json');
+    await writeFile(join(tmpDir, 'dist', 'tools.json'), '{not valid json', 'utf-8');
     const { errors, exitCode } = await captureOutput(() => handleInspect({}, tmpDir));
     expect(exitCode).toBe(1);
     expect(errors.some(e => e.includes('Failed to parse'))).toBe(true);
@@ -224,7 +225,7 @@ describe('handleInspect — invalid manifest', () => {
 
   test('exits with error when dist/tools.json is not an object', async () => {
     mkdirSync(join(tmpDir, 'dist'), { recursive: true });
-    await Bun.write(join(tmpDir, 'dist', 'tools.json'), '"just a string"');
+    await writeFile(join(tmpDir, 'dist', 'tools.json'), '"just a string"', 'utf-8');
     const { errors, exitCode } = await captureOutput(() => handleInspect({}, tmpDir));
     expect(exitCode).toBe(1);
     expect(errors.some(e => e.includes('Failed to parse'))).toBe(true);
@@ -232,7 +233,7 @@ describe('handleInspect — invalid manifest', () => {
 
   test('exits with error when manifest object has no tools array', async () => {
     mkdirSync(join(tmpDir, 'dist'), { recursive: true });
-    await Bun.write(join(tmpDir, 'dist', 'tools.json'), JSON.stringify({ version: '1.0' }));
+    await writeFile(join(tmpDir, 'dist', 'tools.json'), JSON.stringify({ version: '1.0' }), 'utf-8');
     const { errors, exitCode } = await captureOutput(() => handleInspect({}, tmpDir));
     expect(exitCode).toBe(1);
     expect(errors.some(e => e.includes('Failed to parse'))).toBe(true);

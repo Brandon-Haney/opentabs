@@ -1,4 +1,4 @@
-import { mock, describe, expect, test, beforeEach } from 'bun:test';
+import { vi, describe, expect, test, beforeEach } from 'vitest';
 import type { DispatchResult } from './dispatch-helpers.js';
 import type { PluginMeta } from './extension-messages.js';
 
@@ -7,38 +7,40 @@ import type { PluginMeta } from './extension-messages.js';
 // the exported functions bind to the mocked versions of dependencies.
 // ---------------------------------------------------------------------------
 
-const mockSendToServer = mock<(data: unknown) => void>();
-const mockGetPluginMeta = mock<(name: string) => Promise<PluginMeta | null>>();
-const mockFindAllMatchingTabs = mock<(plugin: PluginMeta) => Promise<chrome.tabs.Tab[]>>();
-const mockUrlMatchesPatterns = mock<(url: string, patterns: string[]) => boolean>();
+const { mockSendToServer, mockGetPluginMeta, mockFindAllMatchingTabs, mockUrlMatchesPatterns } = vi.hoisted(() => ({
+  mockSendToServer: vi.fn<(data: unknown) => void>(),
+  mockGetPluginMeta: vi.fn<(name: string) => Promise<PluginMeta | null>>(),
+  mockFindAllMatchingTabs: vi.fn<(plugin: PluginMeta) => Promise<chrome.tabs.Tab[]>>(),
+  mockUrlMatchesPatterns: vi.fn<(url: string, patterns: string[]) => boolean>(),
+}));
 
-await mock.module('./messaging.js', () => ({
+vi.mock('./messaging.js', () => ({
   sendToServer: mockSendToServer,
-  forwardToSidePanel: mock(),
+  forwardToSidePanel: vi.fn(),
 }));
 
-await mock.module('./plugin-storage.js', () => ({
-  storePluginsBatch: mock(),
-  removePlugin: mock(),
-  removePluginsBatch: mock(),
-  getAllPluginMeta: mock(),
+vi.mock('./plugin-storage.js', () => ({
+  storePluginsBatch: vi.fn(),
+  removePlugin: vi.fn(),
+  removePluginsBatch: vi.fn(),
+  getAllPluginMeta: vi.fn(),
   getPluginMeta: mockGetPluginMeta,
-  invalidatePluginCache: mock(),
+  invalidatePluginCache: vi.fn(),
 }));
 
-await mock.module('./tab-matching.js', () => ({
+vi.mock('./tab-matching.js', () => ({
   findAllMatchingTabs: mockFindAllMatchingTabs,
   urlMatchesPatterns: mockUrlMatchesPatterns,
-  matchPattern: mock(),
-  findMatchingTab: mock(),
+  matchPattern: vi.fn(),
+  findMatchingTab: vi.fn(),
 }));
 
-await mock.module('./sanitize-error.js', () => ({
+vi.mock('./sanitize-error.js', () => ({
   sanitizeErrorMessage: (msg: string) => msg,
 }));
 
 // Chrome API stubs
-const mockTabsGet = mock<(tabId: number) => Promise<chrome.tabs.Tab>>();
+const mockTabsGet = vi.fn<(tabId: number) => Promise<chrome.tabs.Tab>>();
 (globalThis as Record<string, unknown>).chrome = {
   tabs: { get: mockTabsGet },
 };
@@ -147,7 +149,7 @@ describe('dispatchWithTabFallback', () => {
       pluginName: 'test-plugin',
       plugin,
       operationName: 'tool dispatch',
-      executeOnTab: mock(),
+      executeOnTab: vi.fn(),
     });
 
     expect(mockSendToServer).toHaveBeenCalledTimes(1);
@@ -164,7 +166,7 @@ describe('dispatchWithTabFallback', () => {
     mockTabsGet.mockResolvedValue(tab);
     mockUrlMatchesPatterns.mockReturnValue(true);
 
-    const executeOnTab = mock<(tabId: number) => Promise<DispatchResult>>();
+    const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
     executeOnTab.mockResolvedValue({ type: 'success', output: { data: 'result' } });
 
     await dispatchWithTabFallback({
@@ -194,7 +196,7 @@ describe('dispatchWithTabFallback', () => {
     );
     mockUrlMatchesPatterns.mockReturnValue(true);
 
-    const executeOnTab = mock<(tabId: number) => Promise<DispatchResult>>();
+    const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
     executeOnTab.mockImplementation(tabId => {
       if (tabId === 1) return Promise.resolve({ type: 'error', code: -32002, message: 'Adapter not ready' });
       return Promise.resolve({ type: 'success', output: 'ok' });
@@ -227,7 +229,7 @@ describe('dispatchWithTabFallback', () => {
     );
     mockUrlMatchesPatterns.mockReturnValue(true);
 
-    const executeOnTab = mock<(tabId: number) => Promise<DispatchResult>>();
+    const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
     executeOnTab.mockImplementation(tabId => {
       if (tabId === 1) return Promise.reject(new Error('No tab with id: 1'));
       return Promise.resolve({ type: 'success', output: 'recovered' });
@@ -258,7 +260,7 @@ describe('dispatchWithTabFallback', () => {
     );
     mockUrlMatchesPatterns.mockReturnValue(true);
 
-    const executeOnTab = mock<(tabId: number) => Promise<DispatchResult>>();
+    const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
     executeOnTab.mockResolvedValue({ type: 'error', code: -32002, message: 'Adapter not ready' });
 
     await dispatchWithTabFallback({
@@ -286,7 +288,7 @@ describe('dispatchWithTabFallback', () => {
       pluginName: 'test-plugin',
       plugin,
       operationName: 'tool dispatch',
-      executeOnTab: mock(),
+      executeOnTab: vi.fn(),
     });
 
     expect(mockSendToServer).toHaveBeenCalledTimes(1);
@@ -308,7 +310,7 @@ describe('dispatchWithTabFallback', () => {
     });
     mockUrlMatchesPatterns.mockImplementation(url => url.includes('example.com'));
 
-    const executeOnTab = mock<(tabId: number) => Promise<DispatchResult>>();
+    const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
     executeOnTab.mockResolvedValue({ type: 'success', output: 'ok' });
 
     await dispatchWithTabFallback({
@@ -339,7 +341,7 @@ describe('dispatchWithTabFallback', () => {
     });
     mockUrlMatchesPatterns.mockReturnValue(true);
 
-    const executeOnTab = mock<(tabId: number) => Promise<DispatchResult>>();
+    const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
     executeOnTab.mockResolvedValue({ type: 'success', output: 'ok' });
 
     await dispatchWithTabFallback({
@@ -363,7 +365,7 @@ describe('dispatchWithTabFallback', () => {
     );
     mockUrlMatchesPatterns.mockReturnValue(true);
 
-    const executeOnTab = mock<(tabId: number) => Promise<DispatchResult>>();
+    const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
     executeOnTab.mockResolvedValue({ type: 'error', code: -32603, message: 'Internal error' });
 
     await dispatchWithTabFallback({

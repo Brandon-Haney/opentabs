@@ -11,9 +11,10 @@ import {
   readAndValidateIcons,
   validatePlugin,
 } from './build.js';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { z } from 'zod';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type {
@@ -25,8 +26,8 @@ import type {
 } from '@opentabs-dev/plugin-sdk';
 
 /** Write a file to the temp directory, awaiting the result. */
-const writeFile = async (path: string, content: string): Promise<void> => {
-  await Bun.write(path, content);
+const writeTestFile = async (path: string, content: string): Promise<void> => {
+  await writeFile(path, content, 'utf-8');
 };
 
 /**
@@ -854,7 +855,7 @@ describe('readAndValidateIcons', () => {
   });
 
   test('auto-generates inactive icon when only icon.svg exists', async () => {
-    await writeFile(join(tmpDir, 'icon.svg'), VALID_ICON_SVG);
+    await writeTestFile(join(tmpDir, 'icon.svg'), VALID_ICON_SVG);
     const result = await readAndValidateIcons(tmpDir);
     expect(result.iconSvg).toBeDefined();
     expect(result.iconInactiveSvg).toBeDefined();
@@ -866,8 +867,8 @@ describe('readAndValidateIcons', () => {
   });
 
   test('uses manual override when both icon files exist', async () => {
-    await writeFile(join(tmpDir, 'icon.svg'), VALID_ICON_SVG);
-    await writeFile(join(tmpDir, 'icon-inactive.svg'), VALID_INACTIVE_SVG);
+    await writeTestFile(join(tmpDir, 'icon.svg'), VALID_ICON_SVG);
+    await writeTestFile(join(tmpDir, 'icon-inactive.svg'), VALID_INACTIVE_SVG);
     const result = await readAndValidateIcons(tmpDir);
     expect(result.iconSvg).toBeDefined();
     expect(result.iconInactiveSvg).toBeDefined();
@@ -876,36 +877,36 @@ describe('readAndValidateIcons', () => {
   });
 
   test('throws when icon-inactive.svg exists without icon.svg', async () => {
-    await writeFile(join(tmpDir, 'icon-inactive.svg'), VALID_INACTIVE_SVG);
-    expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon-inactive.svg requires icon.svg');
+    await writeTestFile(join(tmpDir, 'icon-inactive.svg'), VALID_INACTIVE_SVG);
+    await expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon-inactive.svg requires icon.svg');
   });
 
   test('throws when icon.svg is invalid (missing viewBox)', async () => {
-    await writeFile(join(tmpDir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
-    expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon.svg validation failed');
+    await writeTestFile(join(tmpDir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
+    await expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon.svg validation failed');
   });
 
   test('throws when icon.svg has non-square viewBox', async () => {
     const nonSquare = '<svg viewBox="0 0 32 24" xmlns="http://www.w3.org/2000/svg"><rect/></svg>';
-    await writeFile(join(tmpDir, 'icon.svg'), nonSquare);
-    expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon.svg validation failed');
+    await writeTestFile(join(tmpDir, 'icon.svg'), nonSquare);
+    await expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon.svg validation failed');
   });
 
   test('throws when icon-inactive.svg has invalid structure', async () => {
-    await writeFile(join(tmpDir, 'icon.svg'), VALID_ICON_SVG);
-    await writeFile(
+    await writeTestFile(join(tmpDir, 'icon.svg'), VALID_ICON_SVG);
+    await writeTestFile(
       join(tmpDir, 'icon-inactive.svg'),
       '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="#808080"/></svg>',
     );
-    expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon-inactive.svg validation failed');
+    await expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon-inactive.svg validation failed');
   });
 
   test('throws when icon-inactive.svg has saturated colors', async () => {
     const coloredInactive =
       '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><circle fill="#ff0000"/></svg>';
-    await writeFile(join(tmpDir, 'icon.svg'), VALID_ICON_SVG);
-    await writeFile(join(tmpDir, 'icon-inactive.svg'), coloredInactive);
-    expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon-inactive.svg color validation failed');
+    await writeTestFile(join(tmpDir, 'icon.svg'), VALID_ICON_SVG);
+    await writeTestFile(join(tmpDir, 'icon-inactive.svg'), coloredInactive);
+    await expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon-inactive.svg color validation failed');
   });
 
   test('minifies SVGs before returning', async () => {
@@ -915,7 +916,7 @@ describe('readAndValidateIcons', () => {
       '  <circle cx="16" cy="16" r="12" fill="#ff0000"/>',
       '</svg>',
     ].join('\n');
-    await writeFile(join(tmpDir, 'icon.svg'), unminified);
+    await writeTestFile(join(tmpDir, 'icon.svg'), unminified);
     const result = await readAndValidateIcons(tmpDir);
     expect(result.iconSvg).not.toContain('<!--');
     expect(result.iconSvg).not.toContain('\n');
@@ -924,7 +925,7 @@ describe('readAndValidateIcons', () => {
   test('auto-generated inactive icon does not contain original colors', async () => {
     const multiColor =
       '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect fill="#ff0000"/><circle stroke="#00ff00"/></svg>';
-    await writeFile(join(tmpDir, 'icon.svg'), multiColor);
+    await writeTestFile(join(tmpDir, 'icon.svg'), multiColor);
     const result = await readAndValidateIcons(tmpDir);
     expect(result.iconInactiveSvg).not.toContain('#ff0000');
     expect(result.iconInactiveSvg).not.toContain('#00ff00');

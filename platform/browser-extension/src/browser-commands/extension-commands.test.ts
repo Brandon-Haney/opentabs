@@ -1,21 +1,23 @@
-import { mock, describe, expect, test, beforeEach } from 'bun:test';
+import { vi, describe, expect, test, beforeEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Module mocks — set up before importing handler modules
 // ---------------------------------------------------------------------------
 
-const mockSendToServer = mock<(data: unknown) => void>();
-
-await mock.module('../messaging.js', () => ({
-  sendToServer: mockSendToServer,
-  forwardToSidePanel: mock(),
+const { mockSendToServer } = vi.hoisted(() => ({
+  mockSendToServer: vi.fn<(data: unknown) => void>(),
 }));
 
-await mock.module('../sanitize-error.js', () => ({
+vi.mock('../messaging.js', () => ({
+  sendToServer: mockSendToServer,
+  forwardToSidePanel: vi.fn(),
+}));
+
+vi.mock('../sanitize-error.js', () => ({
   sanitizeErrorMessage: (msg: string) => msg,
 }));
 
-await mock.module('../constants.js', () => ({
+vi.mock('../constants.js', () => ({
   buildWsUrl: (port: number) => `ws://localhost:${port}/ws`,
   DEFAULT_LOG_LIMIT: 100,
   DEFAULT_SERVER_PORT: 9515,
@@ -30,45 +32,45 @@ await mock.module('../constants.js', () => ({
   WS_FLUSH_DELAY_MS: 50,
 }));
 
-await mock.module('../background-log-state.js', () => ({
+vi.mock('../background-log-state.js', () => ({
   bgLogCollector: {
-    getEntries: mock(() => []),
-    getStats: mock(() => ({ totalCaptured: 0, bufferSize: 0, oldestTimestamp: null, newestTimestamp: null })),
+    getEntries: vi.fn(() => []),
+    getStats: vi.fn(() => ({ totalCaptured: 0, bufferSize: 0, oldestTimestamp: null, newestTimestamp: null })),
   },
 }));
 
-await mock.module('../network-capture.js', () => ({
-  getActiveCapturesSummary: mock(() => []),
+vi.mock('../network-capture.js', () => ({
+  getActiveCapturesSummary: vi.fn(() => []),
 }));
 
-await mock.module('../plugin-storage.js', () => ({
-  getAllPluginMeta: mock(() => Promise.resolve({})),
-  getPluginMeta: mock(() => Promise.resolve(null)),
+vi.mock('../plugin-storage.js', () => ({
+  getAllPluginMeta: vi.fn(() => Promise.resolve({})),
+  getPluginMeta: vi.fn(() => Promise.resolve(null)),
 }));
 
-await mock.module('../tab-matching.js', () => ({
-  findAllMatchingTabs: mock(() => Promise.resolve([])),
+vi.mock('../tab-matching.js', () => ({
+  findAllMatchingTabs: vi.fn(() => Promise.resolve([])),
 }));
 
-await mock.module('../tab-state.js', () => ({
-  getLastKnownStates: mock(() => new Map()),
+vi.mock('../tab-state.js', () => ({
+  getLastKnownStates: vi.fn(() => new Map()),
 }));
 
 // Stub chrome APIs
-const mockExecuteScript = mock<(opts: unknown) => Promise<unknown[]>>().mockResolvedValue([]);
-const mockSendMessage = mock<(msg: unknown) => Promise<unknown>>().mockResolvedValue(undefined);
+const mockExecuteScript = vi.fn<(opts: unknown) => Promise<unknown[]>>().mockResolvedValue([]);
+const mockSendMessage = vi.fn<(msg: unknown) => Promise<unknown>>().mockResolvedValue(undefined);
 Object.assign(globalThis, {
   chrome: {
     ...((globalThis as Record<string, unknown>).chrome as object),
     runtime: {
       id: 'test-extension-id',
       sendMessage: mockSendMessage,
-      getContexts: mock(() => Promise.resolve([])),
+      getContexts: vi.fn(() => Promise.resolve([])),
     },
     scripting: { executeScript: mockExecuteScript },
     storage: {
-      session: { get: mock(() => Promise.resolve({})) },
-      local: { get: mock(() => Promise.resolve({})) },
+      session: { get: vi.fn(() => Promise.resolve({})) },
+      local: { get: vi.fn(() => Promise.resolve({})) },
     },
   },
 });

@@ -1,5 +1,5 @@
 import { err, isErr, isOk, mapResult, ok, unwrap, unwrapOr } from './result.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 describe('ok', () => {
   test('creates an Ok result with the given value', () => {

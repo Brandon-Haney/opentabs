@@ -1,26 +1,28 @@
-import { mock, describe, expect, test, beforeEach } from 'bun:test';
+import { vi, describe, expect, test, beforeEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Module mocks — set up before importing handler modules
 // ---------------------------------------------------------------------------
 
-const mockSendToServer = mock<(data: unknown) => void>();
-
-await mock.module('../messaging.js', () => ({
-  sendToServer: mockSendToServer,
-  forwardToSidePanel: mock(),
+const { mockSendToServer } = vi.hoisted(() => ({
+  mockSendToServer: vi.fn<(data: unknown) => void>(),
 }));
 
-await mock.module('../sanitize-error.js', () => ({
+vi.mock('../messaging.js', () => ({
+  sendToServer: mockSendToServer,
+  forwardToSidePanel: vi.fn(),
+}));
+
+vi.mock('../sanitize-error.js', () => ({
   sanitizeErrorMessage: (msg: string) => msg,
 }));
 
-await mock.module('../constants.js', () => ({
+vi.mock('../constants.js', () => ({
   TEXT_PREVIEW_MAX_LENGTH: 200,
 }));
 
 // Stub chrome.scripting
-const mockExecuteScript = mock<(opts: unknown) => Promise<unknown[]>>().mockResolvedValue([]);
+const mockExecuteScript = vi.fn<(opts: unknown) => Promise<unknown[]>>().mockResolvedValue([]);
 Object.assign(globalThis, {
   chrome: {
     ...((globalThis as Record<string, unknown>).chrome as object),

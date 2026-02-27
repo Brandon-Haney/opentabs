@@ -1,5 +1,5 @@
 import { detectApis } from './detect-apis.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import type { ApiEndpoint, ApiProtocol } from './detect-apis.js';
 import type { NetworkRequest } from './detect-auth.js';
 

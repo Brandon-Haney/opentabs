@@ -1,7 +1,7 @@
 import { handleToolsJsonChange, startConfigWatching, startFileWatching, stopFileWatching } from './file-watcher.js';
 import { buildRegistry } from './registry.js';
 import { createState } from './state.js';
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -234,14 +234,14 @@ describe('config file watcher', () => {
 
   afterEach(() => {
     stopFileWatching(state);
-    Bun.env.OPENTABS_CONFIG_DIR = originalConfigDir;
+    process.env.OPENTABS_CONFIG_DIR = originalConfigDir;
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
   const setupConfigDir = (): string => {
     tmpDir = mkdtempSync(join(tmpdir(), 'config-watcher-'));
-    originalConfigDir = Bun.env.OPENTABS_CONFIG_DIR;
-    Bun.env.OPENTABS_CONFIG_DIR = tmpDir;
+    originalConfigDir = process.env.OPENTABS_CONFIG_DIR;
+    process.env.OPENTABS_CONFIG_DIR = tmpDir;
     writeFileSync(join(tmpDir, 'config.json'), '{"localPlugins":[]}');
     state = createState();
     return tmpDir;

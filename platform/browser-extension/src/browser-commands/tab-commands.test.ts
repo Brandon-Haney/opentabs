@@ -1,28 +1,31 @@
-import { mock, describe, expect, test, beforeEach } from 'bun:test';
+import { vi, describe, expect, test, beforeEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Module mocks — set up before importing handler modules
 // ---------------------------------------------------------------------------
 
-const mockSendToServer = mock<(data: unknown) => void>();
-
-await mock.module('../messaging.js', () => ({
-  sendToServer: mockSendToServer,
-  forwardToSidePanel: mock(),
+const { mockSendToServer } = vi.hoisted(() => ({
+  mockSendToServer: vi.fn<(data: unknown) => void>(),
 }));
 
-await mock.module('../sanitize-error.js', () => ({
+vi.mock('../messaging.js', () => ({
+  sendToServer: mockSendToServer,
+  forwardToSidePanel: vi.fn(),
+}));
+
+vi.mock('../sanitize-error.js', () => ({
   sanitizeErrorMessage: (msg: string) => msg,
 }));
 
 // Stub chrome APIs
-const mockTabsQuery = mock<() => Promise<chrome.tabs.Tab[]>>().mockResolvedValue([]);
-const mockTabsCreate = mock<(opts: unknown) => Promise<chrome.tabs.Tab>>().mockResolvedValue({} as chrome.tabs.Tab);
-const mockTabsRemove = mock<(tabId: number) => Promise<void>>().mockResolvedValue(undefined);
-const mockTabsUpdate =
-  mock<(tabId: number, props: unknown) => Promise<chrome.tabs.Tab | undefined>>().mockResolvedValue(undefined);
-const mockTabsGet = mock<(tabId: number) => Promise<chrome.tabs.Tab>>().mockResolvedValue({} as chrome.tabs.Tab);
-const mockWindowsUpdate = mock<(windowId: number, props: unknown) => Promise<void>>().mockResolvedValue(undefined);
+const mockTabsQuery = vi.fn<() => Promise<chrome.tabs.Tab[]>>().mockResolvedValue([]);
+const mockTabsCreate = vi.fn<(opts: unknown) => Promise<chrome.tabs.Tab>>().mockResolvedValue({} as chrome.tabs.Tab);
+const mockTabsRemove = vi.fn<(tabId: number) => Promise<void>>().mockResolvedValue(undefined);
+const mockTabsUpdate = vi
+  .fn<(tabId: number, props: unknown) => Promise<chrome.tabs.Tab | undefined>>()
+  .mockResolvedValue(undefined);
+const mockTabsGet = vi.fn<(tabId: number) => Promise<chrome.tabs.Tab>>().mockResolvedValue({} as chrome.tabs.Tab);
+const mockWindowsUpdate = vi.fn<(windowId: number, props: unknown) => Promise<void>>().mockResolvedValue(undefined);
 
 Object.assign(globalThis, {
   chrome: {

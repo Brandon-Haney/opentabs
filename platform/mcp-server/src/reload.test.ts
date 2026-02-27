@@ -2,7 +2,7 @@ import { stopFileWatching } from './file-watcher.js';
 import { performConfigReload, performReload } from './reload.js';
 import { resetGlobalPathsCache } from './resolver.js';
 import { createState, prefixedToolName } from './state.js';
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,7 +21,7 @@ import type { WebStandardStreamableHTTPServerTransport } from '@modelcontextprot
  * by E2E tests that start the server with --dev.
  */
 
-const originalConfigDir = Bun.env.OPENTABS_CONFIG_DIR;
+const originalConfigDir = process.env.OPENTABS_CONFIG_DIR;
 
 /** Create a minimal mock McpServerInstance that tracks method calls */
 const createMockServer = () => ({
@@ -83,7 +83,7 @@ describe('performReload', () => {
   beforeEach(() => {
     configDir = mkdtempSync(join(tmpdir(), 'opentabs-reload-test-'));
     writeConfig(configDir);
-    Bun.env.OPENTABS_CONFIG_DIR = configDir;
+    process.env.OPENTABS_CONFIG_DIR = configDir;
     state = createState();
 
     // Clear the globalThis reload guard
@@ -101,9 +101,9 @@ describe('performReload', () => {
 
   afterAll(() => {
     if (originalConfigDir !== undefined) {
-      Bun.env.OPENTABS_CONFIG_DIR = originalConfigDir;
+      process.env.OPENTABS_CONFIG_DIR = originalConfigDir;
     } else {
-      delete Bun.env.OPENTABS_CONFIG_DIR;
+      delete process.env.OPENTABS_CONFIG_DIR;
     }
   });
 
@@ -282,7 +282,7 @@ describe('performReload — concurrent reload guard', () => {
   beforeEach(() => {
     configDir = mkdtempSync(join(tmpdir(), 'opentabs-reload-guard-'));
     writeConfig(configDir);
-    Bun.env.OPENTABS_CONFIG_DIR = configDir;
+    process.env.OPENTABS_CONFIG_DIR = configDir;
     state = createState();
 
     (globalThis as Record<string, unknown>).__opentabs_reload_guard__ = undefined;
@@ -297,9 +297,9 @@ describe('performReload — concurrent reload guard', () => {
 
   afterAll(() => {
     if (originalConfigDir !== undefined) {
-      Bun.env.OPENTABS_CONFIG_DIR = originalConfigDir;
+      process.env.OPENTABS_CONFIG_DIR = originalConfigDir;
     } else {
-      delete Bun.env.OPENTABS_CONFIG_DIR;
+      delete process.env.OPENTABS_CONFIG_DIR;
     }
   });
 
@@ -334,7 +334,7 @@ describe('performConfigReload', () => {
   beforeEach(() => {
     configDir = mkdtempSync(join(tmpdir(), 'opentabs-config-reload-'));
     writeConfig(configDir);
-    Bun.env.OPENTABS_CONFIG_DIR = configDir;
+    process.env.OPENTABS_CONFIG_DIR = configDir;
     state = createState();
 
     (globalThis as Record<string, unknown>).__opentabs_reload_guard__ = undefined;
@@ -351,9 +351,9 @@ describe('performConfigReload', () => {
 
   afterAll(() => {
     if (originalConfigDir !== undefined) {
-      Bun.env.OPENTABS_CONFIG_DIR = originalConfigDir;
+      process.env.OPENTABS_CONFIG_DIR = originalConfigDir;
     } else {
-      delete Bun.env.OPENTABS_CONFIG_DIR;
+      delete process.env.OPENTABS_CONFIG_DIR;
     }
   });
 

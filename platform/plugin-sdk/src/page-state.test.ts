@@ -1,6 +1,6 @@
 import { getCurrentUrl, getPageGlobal, getPageTitle } from './page-state.js';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { GlobalWindow } from 'happy-dom';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
 let win: GlobalWindow;
 

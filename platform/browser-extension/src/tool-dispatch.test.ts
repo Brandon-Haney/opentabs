@@ -1,4 +1,4 @@
-import { mock, describe, expect, test, beforeEach } from 'bun:test';
+import { vi, describe, expect, test, beforeEach } from 'vitest';
 import type { PluginMeta } from './extension-messages.js';
 
 // ---------------------------------------------------------------------------
@@ -10,30 +10,32 @@ import type { PluginMeta } from './extension-messages.js';
 // the real modules to function.
 // ---------------------------------------------------------------------------
 
-const mockSendToServer = mock<(data: unknown) => void>();
-
-await mock.module('./messaging.js', () => ({
-  sendToServer: mockSendToServer,
-  forwardToSidePanel: mock(),
-  sendTabStateNotification: mock(),
+const { mockSendToServer } = vi.hoisted(() => ({
+  mockSendToServer: vi.fn<(data: unknown) => void>(),
 }));
 
-await mock.module('./sanitize-error.js', () => ({
+vi.mock('./messaging.js', () => ({
+  sendToServer: mockSendToServer,
+  forwardToSidePanel: vi.fn(),
+  sendTabStateNotification: vi.fn(),
+}));
+
+vi.mock('./sanitize-error.js', () => ({
   sanitizeErrorMessage: (msg: string) => msg,
 }));
 
 // Chrome API stubs for real plugin-storage.js, tab-matching.js, and tool-dispatch.js
 (globalThis as Record<string, unknown>).chrome = {
-  scripting: { executeScript: mock(() => Promise.resolve([{ result: undefined }])) },
-  runtime: { sendMessage: mock(() => Promise.resolve()) },
+  scripting: { executeScript: vi.fn(() => Promise.resolve([{ result: undefined }])) },
+  runtime: { sendMessage: vi.fn(() => Promise.resolve()) },
   tabs: {
-    query: mock(() => Promise.resolve([])),
-    get: mock(() => Promise.reject(new Error('no tab'))),
+    query: vi.fn(() => Promise.resolve([])),
+    get: vi.fn(() => Promise.reject(new Error('no tab'))),
   },
   storage: {
     local: {
-      get: mock(() => Promise.resolve({})),
-      set: mock(() => Promise.resolve()),
+      get: vi.fn(() => Promise.resolve({})),
+      set: vi.fn(() => Promise.resolve()),
     },
   },
 };
@@ -102,7 +104,7 @@ describe('notifyDispatchProgress', () => {
   });
 
   test('calls callback for a registered dispatchId', () => {
-    const cb = mock();
+    const cb = vi.fn();
     progressCallbacks.set('dispatch-1', cb);
     notifyDispatchProgress('dispatch-1');
     expect(cb).toHaveBeenCalledTimes(1);
@@ -113,8 +115,8 @@ describe('notifyDispatchProgress', () => {
   });
 
   test('calls only the matching callback when multiple are registered', () => {
-    const cb1 = mock();
-    const cb2 = mock();
+    const cb1 = vi.fn();
+    const cb2 = vi.fn();
     progressCallbacks.set('dispatch-a', cb1);
     progressCallbacks.set('dispatch-b', cb2);
     notifyDispatchProgress('dispatch-b');

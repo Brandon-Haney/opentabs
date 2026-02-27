@@ -28,7 +28,7 @@
     "knip": "knip",
     "check": "bun run build && bun run lint && bun run format:check && bun run knip && bun run test",
     "check:everything": "bun run check && bun run test:e2e && bun run check:docs && bun run check:plugins",
-    "test": "bun test platform/",
+    "test": "vitest run",
     "test:e2e": "cd plugins/e2e-test && bun install --frozen-lockfile && OPENTABS_CONFIG_DIR=/tmp/opentabs-e2e-prebuild bun run build && cd ../.. && bunx playwright test",
     "dev:docs": "bun run --cwd docs dev",
     "build:docs": "bun run --cwd docs build",
@@ -74,7 +74,9 @@
     "prettier-plugin-tailwindcss": "^0.7.2",
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.56.0"
+    "typescript-eslint": "^8.56.0",
+    "vitest": "^4.0.18",
+    "zod": "^4.3.6"
   },
   "lint-staged": {
     "*.{ts,tsx,json}": [

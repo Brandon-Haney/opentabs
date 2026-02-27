@@ -1,5 +1,5 @@
 import { installLogCollector, LogCollector } from './log-collector.js';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
 describe('LogCollector', () => {
   describe('capture and getEntries', () => {

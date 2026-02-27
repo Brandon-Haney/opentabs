@@ -1,42 +1,42 @@
-import { mock, describe, expect, test, beforeEach } from 'bun:test';
+import { vi, describe, expect, test, beforeEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Module mocks — set up before importing iife-injection.ts so that the
 // exported functions bind to the mocked versions of dependencies.
 // ---------------------------------------------------------------------------
 
-await mock.module('./constants.js', () => ({
+vi.mock('./constants.js', () => ({
   INJECTION_RETRY_DELAY_MS: 0,
   isValidPluginName: (name: string) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(name),
 }));
 
-await mock.module('./plugin-storage.js', () => ({
-  storePluginsBatch: mock(),
-  removePlugin: mock(),
-  removePluginsBatch: mock(),
-  getAllPluginMeta: mock(),
-  getPluginMeta: mock(),
-  invalidatePluginCache: mock(),
+vi.mock('./plugin-storage.js', () => ({
+  storePluginsBatch: vi.fn(),
+  removePlugin: vi.fn(),
+  removePluginsBatch: vi.fn(),
+  getAllPluginMeta: vi.fn(),
+  getPluginMeta: vi.fn(),
+  invalidatePluginCache: vi.fn(),
 }));
 
-await mock.module('./tab-matching.js', () => ({
-  urlMatchesPatterns: mock(),
-  matchPattern: mock(),
-  findAllMatchingTabs: mock(),
-  findMatchingTab: mock(),
+vi.mock('./tab-matching.js', () => ({
+  urlMatchesPatterns: vi.fn(),
+  matchPattern: vi.fn(),
+  findAllMatchingTabs: vi.fn(),
+  findMatchingTab: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
 // Chrome API stubs
 // ---------------------------------------------------------------------------
 
-const mockTabsQuery = mock<(queryInfo: chrome.tabs.QueryInfo) => Promise<chrome.tabs.Tab[]>>();
-const mockExecuteScript = mock<(injection: unknown) => Promise<Array<{ result?: unknown }>>>();
+const mockTabsQuery = vi.fn<(queryInfo: chrome.tabs.QueryInfo) => Promise<chrome.tabs.Tab[]>>();
+const mockExecuteScript = vi.fn<(injection: unknown) => Promise<Array<{ result?: unknown }>>>();
 
 (globalThis as Record<string, unknown>).chrome = {
   tabs: { query: mockTabsQuery },
   scripting: { executeScript: mockExecuteScript },
-  runtime: { sendMessage: mock(() => Promise.resolve()) },
+  runtime: { sendMessage: vi.fn(() => Promise.resolve()) },
 };
 
 // Import after mocking

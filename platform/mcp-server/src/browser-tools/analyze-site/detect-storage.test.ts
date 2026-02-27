@@ -1,5 +1,5 @@
 import { detectStorage } from './detect-storage.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import type { StorageDetectionInput } from './detect-storage.js';
 
 const emptyInput: StorageDetectionInput = {

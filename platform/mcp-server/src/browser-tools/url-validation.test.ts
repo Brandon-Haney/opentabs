@@ -1,5 +1,5 @@
 import { safeUrl } from './url-validation.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 describe('safeUrl', () => {
   // -- Accepted URLs --

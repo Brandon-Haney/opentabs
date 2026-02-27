@@ -1,5 +1,5 @@
 import { appendLog, clearAllLogs, getBufferedPlugins, getLogCount, getLogs, pruneStaleBuffers } from './log-buffer.js';
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'vitest';
 import type { PluginLogEntry } from './log-buffer.js';
 
 const makeEntry = (plugin: string, message: string, overrides?: Partial<PluginLogEntry>): PluginLogEntry => ({

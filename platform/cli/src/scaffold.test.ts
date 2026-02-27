@@ -1,6 +1,7 @@
 import { scaffoldPlugin, ScaffoldError, toPascalCase, toTitleCase } from './scaffold.js';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -40,20 +41,20 @@ describe('scaffoldPlugin', () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'opentabs-scaffold-test-'));
     originalCwd = process.cwd();
-    originalConfigDir = Bun.env.OPENTABS_CONFIG_DIR;
+    originalConfigDir = process.env.OPENTABS_CONFIG_DIR;
 
     // Change cwd so scaffoldPlugin creates projects in the temp dir
     process.chdir(tmpDir);
     // Point config to temp dir for test isolation
-    Bun.env.OPENTABS_CONFIG_DIR = join(tmpDir, '.opentabs');
+    process.env.OPENTABS_CONFIG_DIR = join(tmpDir, '.opentabs');
   });
 
   afterEach(() => {
     process.chdir(originalCwd);
     if (originalConfigDir !== undefined) {
-      Bun.env.OPENTABS_CONFIG_DIR = originalConfigDir;
+      process.env.OPENTABS_CONFIG_DIR = originalConfigDir;
     } else {
-      delete Bun.env.OPENTABS_CONFIG_DIR;
+      delete process.env.OPENTABS_CONFIG_DIR;
     }
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -74,14 +75,14 @@ describe('scaffoldPlugin', () => {
   test("domain 'slack.com' produces URL pattern '*://slack.com/*'", async () => {
     await scaffoldPlugin({ name: 'slack', domain: 'slack.com' });
 
-    const indexContent = await Bun.file(join(tmpDir, 'slack', 'src', 'index.ts')).text();
+    const indexContent = await readFile(join(tmpDir, 'slack', 'src', 'index.ts'), 'utf-8');
     expect(indexContent).toContain('*://slack.com/*');
   });
 
   test("domain '.slack.com' produces URL pattern '*://*.slack.com/*'", async () => {
     await scaffoldPlugin({ name: 'wildcard', domain: '.slack.com' });
 
-    const indexContent = await Bun.file(join(tmpDir, 'wildcard', 'src', 'index.ts')).text();
+    const indexContent = await readFile(join(tmpDir, 'wildcard', 'src', 'index.ts'), 'utf-8');
     expect(indexContent).toContain('*://*.slack.com/*');
   });
 

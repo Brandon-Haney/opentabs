@@ -1,5 +1,5 @@
 import { sanitizeErrorMessage } from './sanitize-error.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 describe('sanitizeErrorMessage', () => {
   describe('passthrough', () => {

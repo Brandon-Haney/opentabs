@@ -1,21 +1,23 @@
-import { mock, describe, expect, test, beforeEach } from 'bun:test';
+import { vi, describe, expect, test, beforeEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Module mocks — set up before importing handler modules
 // ---------------------------------------------------------------------------
 
-const mockSendToServer = mock<(data: unknown) => void>();
-
-await mock.module('../messaging.js', () => ({
-  sendToServer: mockSendToServer,
-  forwardToSidePanel: mock(),
+const { mockSendToServer } = vi.hoisted(() => ({
+  mockSendToServer: vi.fn<(data: unknown) => void>(),
 }));
 
-await mock.module('../sanitize-error.js', () => ({
+vi.mock('../messaging.js', () => ({
+  sendToServer: mockSendToServer,
+  forwardToSidePanel: vi.fn(),
+}));
+
+vi.mock('../sanitize-error.js', () => ({
   sanitizeErrorMessage: (msg: string) => msg,
 }));
 
-await mock.module('../constants.js', () => ({
+vi.mock('../constants.js', () => ({
   DEFAULT_WAIT_TIMEOUT_MS: 10000,
   POLL_INTERVAL_MS: 100,
   DEFAULT_QUERY_LIMIT: 100,
@@ -23,16 +25,21 @@ await mock.module('../constants.js', () => ({
 }));
 
 // Stub chrome.scripting so handler code that reaches past validation doesn't throw
-const mockExecuteScript = mock<(opts: unknown) => Promise<unknown[]>>().mockResolvedValue([]);
+const mockExecuteScript = vi.fn<(opts: unknown) => Promise<unknown[]>>().mockResolvedValue([]);
 Object.assign(globalThis, {
   chrome: {
     ...((globalThis as Record<string, unknown>).chrome as object),
     runtime: { id: 'test-extension-id' },
     scripting: { executeScript: mockExecuteScript },
     debugger: {
-      attach: mock(),
-      detach: mock(),
-      sendCommand: mock(),
+      attach: vi.fn(),
+      detach: vi.fn(),
+      sendCommand: vi.fn(),
+      onEvent: { addListener: vi.fn() },
+    },
+    tabs: {
+      ...((globalThis as Record<string, unknown>).chrome as { tabs?: object } | undefined)?.tabs,
+      onRemoved: { addListener: vi.fn() },
     },
   },
 });

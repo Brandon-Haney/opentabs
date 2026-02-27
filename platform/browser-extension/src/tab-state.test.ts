@@ -1,4 +1,4 @@
-import { mock, describe, expect, test, beforeEach } from 'bun:test';
+import { vi, describe, expect, test, beforeEach } from 'vitest';
 import type { PluginMeta } from './extension-messages.js';
 
 // ---------------------------------------------------------------------------
@@ -6,45 +6,54 @@ import type { PluginMeta } from './extension-messages.js';
 // functions bind to the mocked versions of dependencies.
 // ---------------------------------------------------------------------------
 
-const mockSendToServer = mock<(data: unknown) => void>();
-const mockForwardToSidePanel = mock<(data: unknown) => void>();
-const mockSendTabStateNotification = mock<(pluginName: string, stateInfo: unknown) => void>();
-const mockGetAllPluginMeta = mock<() => Promise<Record<string, PluginMeta>>>();
-const mockFindAllMatchingTabs = mock<(plugin: PluginMeta) => Promise<chrome.tabs.Tab[]>>();
-const mockUrlMatchesPatterns = mock<(url: string, patterns: string[]) => boolean>();
+const {
+  mockSendToServer,
+  mockForwardToSidePanel,
+  mockSendTabStateNotification,
+  mockGetAllPluginMeta,
+  mockFindAllMatchingTabs,
+  mockUrlMatchesPatterns,
+} = vi.hoisted(() => ({
+  mockSendToServer: vi.fn<(data: unknown) => void>(),
+  mockForwardToSidePanel: vi.fn<(data: unknown) => void>(),
+  mockSendTabStateNotification: vi.fn<(pluginName: string, stateInfo: unknown) => void>(),
+  mockGetAllPluginMeta: vi.fn<() => Promise<Record<string, PluginMeta>>>(),
+  mockFindAllMatchingTabs: vi.fn<(plugin: PluginMeta) => Promise<chrome.tabs.Tab[]>>(),
+  mockUrlMatchesPatterns: vi.fn<(url: string, patterns: string[]) => boolean>(),
+}));
 
-await mock.module('./constants.js', () => ({
+vi.mock('./constants.js', () => ({
   IS_READY_TIMEOUT_MS: 100,
 }));
 
-await mock.module('./messaging.js', () => ({
+vi.mock('./messaging.js', () => ({
   sendToServer: mockSendToServer,
   forwardToSidePanel: mockForwardToSidePanel,
   sendTabStateNotification: mockSendTabStateNotification,
 }));
 
-await mock.module('./plugin-storage.js', () => ({
-  storePluginsBatch: mock(),
-  removePlugin: mock(),
-  removePluginsBatch: mock(),
+vi.mock('./plugin-storage.js', () => ({
+  storePluginsBatch: vi.fn(),
+  removePlugin: vi.fn(),
+  removePluginsBatch: vi.fn(),
   getAllPluginMeta: mockGetAllPluginMeta,
-  getPluginMeta: mock(),
-  invalidatePluginCache: mock(),
+  getPluginMeta: vi.fn(),
+  invalidatePluginCache: vi.fn(),
 }));
 
-await mock.module('./tab-matching.js', () => ({
+vi.mock('./tab-matching.js', () => ({
   findAllMatchingTabs: mockFindAllMatchingTabs,
   urlMatchesPatterns: mockUrlMatchesPatterns,
-  matchPattern: mock(),
-  findMatchingTab: mock(),
+  matchPattern: vi.fn(),
+  findMatchingTab: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
 // Chrome API stubs
 // ---------------------------------------------------------------------------
 
-const mockExecuteScript = mock<(injection: unknown) => Promise<Array<{ result?: unknown }>>>();
-const mockTabsGet = mock<(tabId: number) => Promise<chrome.tabs.Tab>>();
+const mockExecuteScript = vi.fn<(injection: unknown) => Promise<Array<{ result?: unknown }>>>();
+const mockTabsGet = vi.fn<(tabId: number) => Promise<chrome.tabs.Tab>>();
 
 (globalThis as Record<string, unknown>).chrome = {
   scripting: { executeScript: mockExecuteScript },

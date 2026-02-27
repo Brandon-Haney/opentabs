@@ -6,7 +6,7 @@ import {
   prefixedToolName,
   STATE_SCHEMA_VERSION,
 } from './state.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 describe('createState', () => {
   test('returns state with correct defaults', () => {

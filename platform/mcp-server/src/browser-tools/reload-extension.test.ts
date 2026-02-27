@@ -1,6 +1,6 @@
 import { reloadExtension } from './reload-extension.js';
 import { createState } from '../state.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 describe('reloadExtension handler', () => {
   test('returns error when extensionWs is null', async () => {

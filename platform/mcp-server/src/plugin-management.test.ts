@@ -1,5 +1,5 @@
 import { normalizePluginName, isValidPluginPackageName } from './plugin-management.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 describe('normalizePluginName', () => {
   test('shorthand names resolve to official scoped package', () => {

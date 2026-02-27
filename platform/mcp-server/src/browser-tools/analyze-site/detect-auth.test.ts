@@ -1,5 +1,5 @@
 import { detectAuth } from './detect-auth.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import type { AuthDetectionInput, AuthMethod, AuthMethodType } from './detect-auth.js';
 
 const emptyInput: AuthDetectionInput = {

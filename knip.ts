@@ -46,17 +46,7 @@ const config: KnipConfig = {
     'platform/create-plugin': {},
   },
   tags: ['+@public'],
-  ignore: [
-    '**/dist/**',
-    'plugins/**',
-    'docs/**',
-    'docs-v2/**',
-    'platform/browser-extension/side-panel/**/*.{js,css}',
-    '**/storybook-static/**',
-    '.ralph/worktrees/**',
-    '.claude/worktrees/**',
-    '.tmp/**',
-  ],
+  ignore: ['plugins/**', 'docs/**', 'platform/browser-extension/side-panel/**/*.{js,css}', '.ralph/worktrees/**'],
   ignoreExportsUsedInFile: true,
 };
 

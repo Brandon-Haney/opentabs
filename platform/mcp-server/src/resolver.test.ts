@@ -1,9 +1,17 @@
 import { discoverGlobalNpmPlugins, isAllowedPluginPath, resetGlobalPathsCache, resolvePluginPath } from './resolver.js';
 import { isErr, isOk } from '@opentabs-dev/shared';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import type { SpawnSyncReturns } from 'node:child_process';
+import type * as ChildProcess from 'node:child_process';
+
+vi.mock('node:child_process', async importOriginal => {
+  const actual = await importOriginal<typeof ChildProcess>();
+  return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
+});
 
 /**
  * Unit tests for the plugin resolver module.
@@ -370,11 +378,14 @@ describe('isAllowedPluginPath', () => {
 
 describe('discoverGlobalNpmPlugins', () => {
   let tempDir: string;
-  let originalSpawnSync: typeof Bun.spawnSync;
 
-  /** Mock result matching the shape returned by Bun.spawnSync */
-  const spawnResult = (exitCode: number, stdout: string) =>
-    ({ exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from('') }) as ReturnType<typeof Bun.spawnSync>;
+  /** Type for the spawnSync mock — simplified to the overload signature resolver.ts uses */
+  type SpawnSyncFn = (command: string, args: string[], options: object) => SpawnSyncReturns<Buffer>;
+  const mockedSpawnSync = spawnSync as unknown as ReturnType<typeof vi.fn<SpawnSyncFn>>;
+
+  /** Mock result matching the shape returned by node:child_process spawnSync */
+  const spawnResult = (status: number, stdout: string): SpawnSyncReturns<Buffer> =>
+    ({ status, stdout: Buffer.from(stdout), stderr: Buffer.from(''), error: undefined }) as SpawnSyncReturns<Buffer>;
 
   /** Write a valid opentabs plugin package.json */
   const writePluginPkgJson = (dir: string, name: string): void => {
@@ -396,22 +407,20 @@ describe('discoverGlobalNpmPlugins', () => {
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version: '1.0.0' }));
   };
 
-  const mockSpawnSync = (handler: (cmd: string[]) => ReturnType<typeof Bun.spawnSync>): void => {
-    Bun.spawnSync = ((...args: unknown[]) => {
-      const first = args[0];
-      const cmd = Array.isArray(first) ? (first as string[]) : (first as { cmd: string[] }).cmd;
-      return handler(cmd);
-    }) as typeof Bun.spawnSync;
+  /** Install a mock for node:child_process spawnSync that delegates to the given handler.
+   *  The handler receives `[command, ...args]` to match the test's existing cmd-array pattern. */
+  const mockSpawnSync = (handler: (cmd: string[]) => SpawnSyncReturns<Buffer>): void => {
+    mockedSpawnSync.mockImplementation((command: string, args: string[]) => handler([command, ...args]));
   };
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'opentabs-resolver-npm-'));
-    originalSpawnSync = Bun.spawnSync;
+    mockedSpawnSync.mockReset();
     resetGlobalPathsCache();
   });
 
   afterEach(() => {
-    Bun.spawnSync = originalSpawnSync;
+    mockedSpawnSync.mockRestore();
     resetGlobalPathsCache();
     rmSync(tempDir, { recursive: true, force: true });
   });
@@ -521,20 +530,16 @@ describe('discoverGlobalNpmPlugins', () => {
     const globalDir = join(tempDir, 'node_modules');
     mkdirSync(globalDir, { recursive: true });
 
-    let callCount = 0;
-    Bun.spawnSync = ((...args: unknown[]) => {
-      callCount++;
-      const first = args[0];
-      const cmd = Array.isArray(first) ? (first as string[]) : (first as { cmd: string[] }).cmd;
-      if (cmd[0] === 'npm' && cmd[1] === 'root') return spawnResult(0, globalDir);
+    mockedSpawnSync.mockImplementation((command: string, args: string[]) => {
+      if (command === 'npm' && args[0] === 'root') return spawnResult(0, globalDir);
       return spawnResult(1, '');
-    }) as typeof Bun.spawnSync;
+    });
 
     await discoverGlobalNpmPlugins();
-    const firstCallCount = callCount;
+    const firstCallCount = mockedSpawnSync.mock.calls.length;
 
     await discoverGlobalNpmPlugins();
     // Second call should not invoke spawnSync again due to caching
-    expect(callCount).toBe(firstCallCount);
+    expect(mockedSpawnSync.mock.calls.length).toBe(firstCallCount);
   });
 });

@@ -14,7 +14,7 @@ import {
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { z } from 'zod';
 import type { BrowserToolDefinition } from './browser-tools/definition.js';
 import type { McpServerInstance, RequestHandlerExtra } from './mcp-setup.js';

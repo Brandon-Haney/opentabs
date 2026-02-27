@@ -1,11 +1,13 @@
-import { mock, describe, expect, test, beforeEach } from 'bun:test';
+import { vi, describe, expect, test, beforeEach } from 'vitest';
 
-const mockWriteExecFile = mock<(state: unknown, execId: string, code: string) => Promise<string>>();
-const mockDispatchToExtension =
-  mock<(state: unknown, method: string, params: Record<string, unknown>) => Promise<unknown>>();
-const mockDeleteExecFile = mock<(filename: string) => Promise<void>>();
+const { mockWriteExecFile, mockDispatchToExtension, mockDeleteExecFile } = vi.hoisted(() => ({
+  mockWriteExecFile: vi.fn<(state: unknown, execId: string, code: string) => Promise<string>>(),
+  mockDispatchToExtension:
+    vi.fn<(state: unknown, method: string, params: Record<string, unknown>) => Promise<unknown>>(),
+  mockDeleteExecFile: vi.fn<(filename: string) => Promise<void>>(),
+}));
 
-await mock.module('../extension-protocol.js', () => ({
+vi.mock('../extension-protocol.js', () => ({
   writeExecFile: mockWriteExecFile,
   dispatchToExtension: mockDispatchToExtension,
   deleteExecFile: mockDeleteExecFile,
@@ -68,12 +70,12 @@ describe('executeScript handler', () => {
     });
   });
 
-  test('when writeExecFile rejects, the handler rejects with the same error and deleteExecFile is not called', () => {
+  test('when writeExecFile rejects, the handler rejects with the same error and deleteExecFile is not called', async () => {
     const state = createState();
     mockWriteExecFile.mockRejectedValue(new Error('disk full'));
 
     const fn = async () => await executeScript.handler({ tabId: 3, code: 'return 1' }, state);
-    expect(fn).toThrow(/disk full/);
+    await expect(fn()).rejects.toThrow(/disk full/);
 
     expect(mockDispatchToExtension).not.toHaveBeenCalled();
     expect(mockDeleteExecFile).not.toHaveBeenCalled();

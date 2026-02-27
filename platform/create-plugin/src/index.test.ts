@@ -1,5 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 const CLI_PATH = resolve(import.meta.dirname, '..', 'dist', 'index.js');
@@ -9,12 +11,12 @@ const runCli = (
   args: string[],
   opts: { cwd: string; configDir: string },
 ): { exitCode: number; stdout: string; stderr: string } => {
-  const result = Bun.spawnSync(['bun', CLI_PATH, ...args], {
+  const result = spawnSync('bun', [CLI_PATH, ...args], {
     cwd: opts.cwd,
-    env: { ...Bun.env, OPENTABS_CONFIG_DIR: opts.configDir },
+    env: { ...process.env, OPENTABS_CONFIG_DIR: opts.configDir },
   });
   return {
-    exitCode: result.exitCode,
+    exitCode: result.status ?? 1,
     stdout: result.stdout.toString(),
     stderr: result.stderr.toString(),
   };
@@ -66,7 +68,7 @@ describe('create-opentabs-plugin CLI', () => {
     test('package.json has correct name and dependencies', async () => {
       runCli(['my-plugin', '--domain', 'example.com'], { cwd: tmpDir, configDir });
 
-      const pkgJson = (await Bun.file(join(tmpDir, 'my-plugin', 'package.json')).json()) as {
+      const pkgJson = JSON.parse(await readFile(join(tmpDir, 'my-plugin', 'package.json'), 'utf-8')) as {
         name: string;
         dependencies: Record<string, string>;
         devDependencies: Record<string, string>;
@@ -80,7 +82,7 @@ describe('create-opentabs-plugin CLI', () => {
     test('src/index.ts contains correct class name and URL pattern', async () => {
       runCli(['my-plugin', '--domain', 'example.com'], { cwd: tmpDir, configDir });
 
-      const indexContent = await Bun.file(join(tmpDir, 'my-plugin', 'src', 'index.ts')).text();
+      const indexContent = await readFile(join(tmpDir, 'my-plugin', 'src', 'index.ts'), 'utf-8');
       expect(indexContent).toContain('class MyPluginPlugin');
       expect(indexContent).toContain('"*://example.com/*"');
       expect(indexContent).toContain('export default new MyPluginPlugin()');
@@ -89,7 +91,7 @@ describe('create-opentabs-plugin CLI', () => {
     test('README.md explains the package.json opentabs field', async () => {
       runCli(['my-plugin', '--domain', 'example.com'], { cwd: tmpDir, configDir });
 
-      const readme = await Bun.file(join(tmpDir, 'my-plugin', 'README.md')).text();
+      const readme = await readFile(join(tmpDir, 'my-plugin', 'README.md'), 'utf-8');
       expect(readme).toContain('opentabs-plugin-my-plugin');
       expect(readme).toContain('"opentabs"');
       expect(readme).toContain('urlPatterns');
@@ -101,7 +103,7 @@ describe('create-opentabs-plugin CLI', () => {
     test('src/tools/example.ts contains a defineTool call with Zod schemas', async () => {
       runCli(['my-plugin', '--domain', 'example.com'], { cwd: tmpDir, configDir });
 
-      const toolContent = await Bun.file(join(tmpDir, 'my-plugin', 'src', 'tools', 'example.ts')).text();
+      const toolContent = await readFile(join(tmpDir, 'my-plugin', 'src', 'tools', 'example.ts'), 'utf-8');
       expect(toolContent).toContain('defineTool(');
       expect(toolContent).toContain('z.object(');
       expect(toolContent).toContain('z.string()');
@@ -119,10 +121,10 @@ describe('create-opentabs-plugin CLI', () => {
     test('--display is reflected in generated code', async () => {
       runCli(['my-app', '--domain', 'example.com', '--display', 'My App'], { cwd: tmpDir, configDir });
 
-      const indexContent = await Bun.file(join(tmpDir, 'my-app', 'src', 'index.ts')).text();
+      const indexContent = await readFile(join(tmpDir, 'my-app', 'src', 'index.ts'), 'utf-8');
       expect(indexContent).toContain('"My App"');
 
-      const toolContent = await Bun.file(join(tmpDir, 'my-app', 'src', 'tools', 'example.ts')).text();
+      const toolContent = await readFile(join(tmpDir, 'my-app', 'src', 'tools', 'example.ts'), 'utf-8');
       expect(toolContent).toContain('My App');
     });
 
@@ -132,7 +134,7 @@ describe('create-opentabs-plugin CLI', () => {
         configDir,
       });
 
-      const indexContent = await Bun.file(join(tmpDir, 'my-app', 'src', 'index.ts')).text();
+      const indexContent = await readFile(join(tmpDir, 'my-app', 'src', 'index.ts'), 'utf-8');
       expect(indexContent).toContain('Custom description');
     });
   });
@@ -182,14 +184,14 @@ describe('create-opentabs-plugin CLI', () => {
     test("domain '.example.com' produces wildcard URL pattern '*://*.example.com/*'", async () => {
       runCli(['wildcard-test', '--domain', '.example.com'], { cwd: tmpDir, configDir });
 
-      const indexContent = await Bun.file(join(tmpDir, 'wildcard-test', 'src', 'index.ts')).text();
+      const indexContent = await readFile(join(tmpDir, 'wildcard-test', 'src', 'index.ts'), 'utf-8');
       expect(indexContent).toContain('*://*.example.com/*');
     });
 
     test("domain 'example.com' produces exact URL pattern '*://example.com/*'", async () => {
       runCli(['exact-test', '--domain', 'example.com'], { cwd: tmpDir, configDir });
 
-      const indexContent = await Bun.file(join(tmpDir, 'exact-test', 'src', 'index.ts')).text();
+      const indexContent = await readFile(join(tmpDir, 'exact-test', 'src', 'index.ts'), 'utf-8');
       expect(indexContent).toContain('*://example.com/*');
       expect(indexContent).not.toContain('*://*.example.com/*');
     });
@@ -209,7 +211,7 @@ describe('create-opentabs-plugin CLI', () => {
      */
     const overrideToLocalPackages = async (projectDir: string): Promise<void> => {
       const pkgPath = join(projectDir, 'package.json');
-      const pkg = (await Bun.file(pkgPath).json()) as Record<string, unknown>;
+      const pkg = JSON.parse(await readFile(pkgPath, 'utf-8')) as Record<string, unknown>;
 
       const deps = pkg.dependencies as Record<string, string> | undefined;
       const devDeps = pkg.devDependencies as Record<string, string> | undefined;
@@ -236,11 +238,12 @@ describe('create-opentabs-plugin CLI', () => {
         '@opentabs-dev/plugin-tools': localPluginTools,
       };
 
-      await Bun.write(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+      await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf-8');
     };
 
     test(
       'scaffolded plugin can be installed and built, producing valid manifest and adapter',
+      { timeout: 60_000 },
       async () => {
         const { exitCode: scaffoldExit } = runCli(['build-test', '--domain', 'example.com'], {
           cwd: tmpDir,
@@ -255,29 +258,29 @@ describe('create-opentabs-plugin CLI', () => {
 
         // Use isolated config so the build doesn't register in the user's
         // real ~/.opentabs/config.json or notify a running MCP server.
-        const buildEnv = { ...Bun.env, OPENTABS_CONFIG_DIR: configDir };
+        const buildEnv = { ...process.env, OPENTABS_CONFIG_DIR: configDir };
 
         // bun install
-        const install = Bun.spawnSync(['bun', 'install'], { cwd: projectDir, env: buildEnv });
-        if (install.exitCode !== 0) {
+        const install = spawnSync('bun', ['install'], { cwd: projectDir, env: buildEnv });
+        if ((install.status ?? 1) !== 0) {
           console.error('install stdout:', install.stdout.toString());
           console.error('install stderr:', install.stderr.toString());
         }
-        expect(install.exitCode).toBe(0);
+        expect(install.status ?? 1).toBe(0);
 
         // bun run build (tsc && opentabs-plugin build)
-        const build = Bun.spawnSync(['bun', 'run', 'build'], { cwd: projectDir, env: buildEnv });
-        if (build.exitCode !== 0) {
+        const build = spawnSync('bun', ['run', 'build'], { cwd: projectDir, env: buildEnv });
+        if ((build.status ?? 1) !== 0) {
           console.error('build stdout:', build.stdout.toString());
           console.error('build stderr:', build.stderr.toString());
         }
-        expect(build.exitCode).toBe(0);
+        expect(build.status ?? 1).toBe(0);
 
         // Verify dist/tools.json exists and is valid JSON
         const toolsJsonPath = join(projectDir, 'dist', 'tools.json');
         expect(existsSync(toolsJsonPath)).toBe(true);
 
-        const manifest = (await Bun.file(toolsJsonPath).json()) as {
+        const manifest = JSON.parse(await readFile(toolsJsonPath, 'utf-8')) as {
           tools: Array<{
             name: string;
             description: string;
@@ -303,7 +306,10 @@ describe('create-opentabs-plugin CLI', () => {
         expect(tool?.output_schema).toBeDefined();
 
         // Verify package.json has opentabs field with metadata
-        const pkgJson = (await Bun.file(join(projectDir, 'package.json')).json()) as Record<string, unknown>;
+        const pkgJson = JSON.parse(await readFile(join(projectDir, 'package.json'), 'utf-8')) as Record<
+          string,
+          unknown
+        >;
         expect(pkgJson.name).toBe('opentabs-plugin-build-test');
         expect(pkgJson.version).toBe('0.0.1');
         expect(pkgJson.main).toBe('dist/adapter.iife.js');
@@ -314,10 +320,9 @@ describe('create-opentabs-plugin CLI', () => {
         // Verify dist/adapter.iife.js exists and is non-empty
         const adapterPath = join(projectDir, 'dist', 'adapter.iife.js');
         expect(existsSync(adapterPath)).toBe(true);
-        const adapterContent = await Bun.file(adapterPath).text();
+        const adapterContent = await readFile(adapterPath, 'utf-8');
         expect(adapterContent.length).toBeGreaterThan(0);
       },
-      { timeout: 60_000 },
     );
   });
 });

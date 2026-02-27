@@ -1,5 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { access, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -12,12 +14,12 @@ const E2E_PLUGIN_DIR = resolve(import.meta.dirname, '..', '..', '..', '..', 'plu
  * in the user's real ~/.opentabs/config.json or notify a running server.
  */
 const runBuild = (pluginDir: string, configDir: string): { exitCode: number; stdout: string; stderr: string } => {
-  const result = Bun.spawnSync(['bun', CLI_PATH, 'build'], {
+  const result = spawnSync('bun', [CLI_PATH, 'build'], {
     cwd: pluginDir,
-    env: { ...Bun.env, OPENTABS_CONFIG_DIR: configDir },
+    env: { ...process.env, OPENTABS_CONFIG_DIR: configDir },
   });
   return {
-    exitCode: result.exitCode,
+    exitCode: result.status ?? 1,
     stdout: result.stdout.toString(),
     stderr: result.stderr.toString(),
   };
@@ -39,6 +41,13 @@ const copyPlugin = (destDir: string): void => {
     process.platform === 'win32' ? 'junction' : 'dir',
   );
 };
+
+/** Check if a file exists using node:fs/promises access */
+const fileExists = (path: string): Promise<boolean> =>
+  access(path).then(
+    () => true,
+    () => false,
+  );
 
 describe('opentabs-plugin build E2E', () => {
   let tmpDir: string;
@@ -77,10 +86,10 @@ describe('opentabs-plugin build E2E', () => {
       expect(stdout).toContain('Built ');
 
       // Verify dist/tools.json was generated
-      const toolsFile = Bun.file(join(pluginDir, 'dist', 'tools.json'));
-      expect(await toolsFile.exists()).toBe(true);
+      const toolsJsonPath = join(pluginDir, 'dist', 'tools.json');
+      expect(await fileExists(toolsJsonPath)).toBe(true);
 
-      const manifest = (await toolsFile.json()) as {
+      const manifest = JSON.parse(await readFile(toolsJsonPath, 'utf-8')) as {
         sdkVersion: string;
         tools: Array<{
           name: string;
@@ -129,10 +138,9 @@ describe('opentabs-plugin build E2E', () => {
       expect(exitCode).toBe(0);
 
       const iifePath = join(pluginDir, 'dist', 'adapter.iife.js');
-      const iifeFile = Bun.file(iifePath);
-      expect(await iifeFile.exists()).toBe(true);
+      expect(await fileExists(iifePath)).toBe(true);
 
-      const iifeContent = await iifeFile.text();
+      const iifeContent = await readFile(iifePath, 'utf-8');
       expect(iifeContent.length).toBeGreaterThan(0);
 
       // IIFE should contain the self-invoking wrapper pattern
@@ -148,7 +156,7 @@ describe('opentabs-plugin build E2E', () => {
       const { exitCode } = runBuild(pluginDir, configDir);
       expect(exitCode).toBe(0);
 
-      const iifeContent = await Bun.file(join(pluginDir, 'dist', 'adapter.iife.js')).text();
+      const iifeContent = await readFile(join(pluginDir, 'dist', 'adapter.iife.js'), 'utf-8');
       expect(iifeContent).toContain('__adapterHash');
     });
 
@@ -161,7 +169,7 @@ describe('opentabs-plugin build E2E', () => {
       const { exitCode } = runBuild(pluginDir, configDir);
       expect(exitCode).toBe(0);
 
-      const iifeContent = await Bun.file(join(pluginDir, 'dist', 'adapter.iife.js')).text();
+      const iifeContent = await readFile(join(pluginDir, 'dist', 'adapter.iife.js'), 'utf-8');
       expect(iifeContent).toContain('Object.freeze');
     });
   });
@@ -185,7 +193,7 @@ describe('opentabs-plugin build E2E', () => {
       expect(stdout).toContain('Built ');
 
       // Verify dist/index.js was recreated by tsc
-      expect(await Bun.file(join(pluginDir, 'dist', 'index.js')).exists()).toBe(true);
+      expect(await fileExists(join(pluginDir, 'dist', 'index.js'))).toBe(true);
     }, 30_000);
 
     test('fails with descriptive error when neither dist/index.js nor src/index.ts exists', () => {
@@ -227,9 +235,9 @@ describe('opentabs-plugin build E2E', () => {
 
       // Modify the compiled dist/index.js to change the plugin name to 'INVALID'
       const distIndex = join(pluginDir, 'dist', 'index.js');
-      const content = await Bun.file(distIndex).text();
+      const content = await readFile(distIndex, 'utf-8');
       const modified = content.replace(/name\s*=\s*["']e2e-test["']/, 'name = "INVALID"');
-      await Bun.write(distIndex, modified);
+      await writeFile(distIndex, modified, 'utf-8');
 
       const { exitCode, stderr } = runBuild(pluginDir, configDir);
 
@@ -244,9 +252,9 @@ describe('opentabs-plugin build E2E', () => {
       // Modify the compiled dist/index.js to set tools to an empty array.
       // The compiled output uses class field syntax: `tools = [\n  echo, greet, ...];`
       const distIndex = join(pluginDir, 'dist', 'index.js');
-      const content = await Bun.file(distIndex).text();
+      const content = await readFile(distIndex, 'utf-8');
       const modified = content.replace(/tools\s*=\s*\[\s*echo[\s\S]*?\];/, 'tools = [];');
-      await Bun.write(distIndex, modified);
+      await writeFile(distIndex, modified, 'utf-8');
 
       const { exitCode, stderr } = runBuild(pluginDir, configDir);
 

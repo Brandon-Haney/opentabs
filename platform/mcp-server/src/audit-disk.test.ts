@@ -1,6 +1,7 @@
 import { appendAuditEntryToDisk, getAuditLogPath, _resetInitialized } from './audit-disk.js';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AuditEntry } from './state.js';
@@ -20,13 +21,13 @@ describe('audit-disk', () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'audit-disk-test-'));
-    origConfigDir = Bun.env.OPENTABS_CONFIG_DIR;
-    Bun.env.OPENTABS_CONFIG_DIR = tmpDir;
+    origConfigDir = process.env.OPENTABS_CONFIG_DIR;
+    process.env.OPENTABS_CONFIG_DIR = tmpDir;
     _resetInitialized();
   });
 
   afterEach(() => {
-    Bun.env.OPENTABS_CONFIG_DIR = origConfigDir;
+    process.env.OPENTABS_CONFIG_DIR = origConfigDir;
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -37,7 +38,7 @@ describe('audit-disk', () => {
     const logPath = getAuditLogPath();
     expect(logPath).toBe(join(tmpDir, 'audit.log'));
 
-    const content = await Bun.file(logPath).text();
+    const content = await readFile(logPath, 'utf-8');
     const lines = content.trim().split('\n');
     expect(lines).toHaveLength(1);
 
@@ -50,7 +51,7 @@ describe('audit-disk', () => {
     await appendAuditEntryToDisk(makeEntry({ tool: 'tool_b' }));
     await appendAuditEntryToDisk(makeEntry({ tool: 'tool_c' }));
 
-    const content = await Bun.file(getAuditLogPath()).text();
+    const content = await readFile(getAuditLogPath(), 'utf-8');
     const lines = content.trim().split('\n');
     expect(lines).toHaveLength(3);
 
@@ -67,7 +68,7 @@ describe('audit-disk', () => {
     });
     await appendAuditEntryToDisk(entry);
 
-    const content = await Bun.file(getAuditLogPath()).text();
+    const content = await readFile(getAuditLogPath(), 'utf-8');
     const parsed = JSON.parse(content.trim()) as AuditEntry;
     expect(parsed.error).toEqual({ code: 'TIMEOUT', message: 'Tool timed out', category: 'timeout' });
   });
@@ -77,19 +78,19 @@ describe('audit-disk', () => {
 
     // Write a 10 MB file directly to trigger rotation on next append
     const largeContent = 'x'.repeat(10 * 1024 * 1024 + 1);
-    await Bun.write(logPath, largeContent);
+    await writeFile(logPath, largeContent);
 
     const entry = makeEntry({ tool: 'after_rotation' });
     await appendAuditEntryToDisk(entry);
 
     // The original file should have been rotated
     const rotatedPath = logPath + '.1';
-    expect(await Bun.file(rotatedPath).exists()).toBe(true);
-    const rotatedContent = await Bun.file(rotatedPath).text();
+    expect(existsSync(rotatedPath)).toBe(true);
+    const rotatedContent = await readFile(rotatedPath, 'utf-8');
     expect(rotatedContent).toBe(largeContent);
 
     // The new file should contain only the new entry
-    const newContent = await Bun.file(logPath).text();
+    const newContent = await readFile(logPath, 'utf-8');
     const parsed = JSON.parse(newContent.trim()) as AuditEntry;
     expect(parsed.tool).toBe('after_rotation');
   });
@@ -98,17 +99,17 @@ describe('audit-disk', () => {
     const logPath = getAuditLogPath();
 
     // Write a small file
-    await Bun.write(logPath, 'small content\n');
+    await writeFile(logPath, 'small content\n');
 
     await appendAuditEntryToDisk(makeEntry());
 
     // No rotation should have occurred
     const rotatedPath = logPath + '.1';
-    expect(await Bun.file(rotatedPath).exists()).toBe(false);
+    expect(existsSync(rotatedPath)).toBe(false);
   });
 
   test('does not throw when config dir is invalid', async () => {
-    Bun.env.OPENTABS_CONFIG_DIR = '/nonexistent/path/that/does/not/exist';
+    process.env.OPENTABS_CONFIG_DIR = '/nonexistent/path/that/does/not/exist';
     _resetInitialized();
 
     // Should not throw — fire-and-forget with internal logging

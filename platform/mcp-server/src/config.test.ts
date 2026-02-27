@@ -1,7 +1,8 @@
 import { loadConfig, saveConfig, writeAuthFile } from './config.js';
 import { isToolEnabled } from './state.js';
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { afterAll, beforeEach, describe, expect, test } from 'vitest';
+import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { OpentabsConfig } from './config.js';
@@ -10,8 +11,8 @@ import type { ServerState } from './state.js';
 // Override OPENTABS_CONFIG_DIR for test isolation.
 // Config functions read this env var lazily on each call.
 const TEST_BASE_DIR = mkdtempSync(join(tmpdir(), 'opentabs-config-test-'));
-const originalConfigDir = Bun.env.OPENTABS_CONFIG_DIR;
-Bun.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
+const originalConfigDir = process.env.OPENTABS_CONFIG_DIR;
+process.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
 
 const configPath = join(TEST_BASE_DIR, 'config.json');
 
@@ -21,7 +22,7 @@ const saveConfigWrapped = (config: OpentabsConfig) => saveConfig(mockState, conf
 
 const removeConfig = async () => {
   try {
-    await Bun.file(configPath).delete();
+    await unlink(configPath);
   } catch {
     // File may not exist
   }
@@ -34,15 +35,15 @@ describe('loadConfig / saveConfig round-trip', () => {
 
   afterAll(() => {
     if (originalConfigDir !== undefined) {
-      Bun.env.OPENTABS_CONFIG_DIR = originalConfigDir;
+      process.env.OPENTABS_CONFIG_DIR = originalConfigDir;
     } else {
-      delete Bun.env.OPENTABS_CONFIG_DIR;
+      delete process.env.OPENTABS_CONFIG_DIR;
     }
     rmSync(TEST_BASE_DIR, { recursive: true, force: true });
   });
 
   test('creates default config on first load', async () => {
-    expect(await Bun.file(configPath).exists()).toBe(false);
+    expect(existsSync(configPath)).toBe(false);
 
     const config = await loadConfig();
 
@@ -50,7 +51,7 @@ describe('loadConfig / saveConfig round-trip', () => {
     expect(config.tools).toEqual({});
 
     // File was created on disk
-    expect(await Bun.file(configPath).exists()).toBe(true);
+    expect(existsSync(configPath)).toBe(true);
   });
 
   test('round-trips through save and load', async () => {
@@ -75,7 +76,7 @@ describe('loadConfig / saveConfig round-trip', () => {
   });
 
   test('filters non-string elements from localPlugins array', async () => {
-    await Bun.write(
+    await writeFile(
       configPath,
       JSON.stringify({
         localPlugins: ['/valid/path', 123, null, true, '/another/path'],
@@ -88,7 +89,7 @@ describe('loadConfig / saveConfig round-trip', () => {
   });
 
   test('filters non-boolean values from tools object', async () => {
-    await Bun.write(
+    await writeFile(
       configPath,
       JSON.stringify({
         localPlugins: [],
@@ -101,7 +102,7 @@ describe('loadConfig / saveConfig round-trip', () => {
   });
 
   test('migrates local paths from legacy plugins array into localPlugins', async () => {
-    await Bun.write(
+    await writeFile(
       configPath,
       JSON.stringify({
         plugins: ['/local/plugin', './relative/plugin', 'opentabs-plugin-jira', '@myorg/opentabs-plugin-github'],
@@ -116,7 +117,7 @@ describe('loadConfig / saveConfig round-trip', () => {
   });
 
   test('migrates Windows-style paths from legacy plugins array into localPlugins', async () => {
-    await Bun.write(
+    await writeFile(
       configPath,
       JSON.stringify({
         plugins: [
@@ -141,7 +142,7 @@ describe('loadConfig / saveConfig round-trip', () => {
   });
 
   test('drops legacy npmPlugins entries with a log notice', async () => {
-    await Bun.write(
+    await writeFile(
       configPath,
       JSON.stringify({
         localPlugins: ['/existing/plugin'],
@@ -156,7 +157,7 @@ describe('loadConfig / saveConfig round-trip', () => {
   });
 
   test('migration deduplicates local paths from plugins into localPlugins', async () => {
-    await Bun.write(
+    await writeFile(
       configPath,
       JSON.stringify({
         localPlugins: ['/already/here'],
@@ -170,7 +171,7 @@ describe('loadConfig / saveConfig round-trip', () => {
   });
 
   test('ignores absent plugins and npmPlugins fields without error', async () => {
-    await Bun.write(
+    await writeFile(
       configPath,
       JSON.stringify({
         localPlugins: ['/some/plugin'],
@@ -195,7 +196,7 @@ describe('tool config round-trip with isToolEnabled', () => {
   beforeEach(async () => {
     // Re-assert the env var before each test since the prior describe's
     // afterAll restores it, and concurrent test files may also modify it.
-    Bun.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
+    process.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
     await removeConfig();
   });
 
@@ -257,15 +258,14 @@ describe('writeAuthFile', () => {
   beforeEach(() => {
     // Re-assert the env var before each test since other test files running
     // concurrently in the same bun process may have modified it.
-    Bun.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
+    process.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
   });
 
   test('writes auth.json with secret only (no port)', async () => {
     await writeAuthFile('test-secret-abc');
 
-    const file = Bun.file(authPath);
-    expect(await file.exists()).toBe(true);
-    const content = JSON.parse(await file.text()) as Record<string, unknown>;
+    expect(existsSync(authPath)).toBe(true);
+    const content = JSON.parse(await readFile(authPath, 'utf-8')) as Record<string, unknown>;
     expect(content.secret).toBe('test-secret-abc');
     expect(content).not.toHaveProperty('port');
   });
@@ -282,7 +282,7 @@ describe('writeAuthFile', () => {
     await writeAuthFile('first-secret');
     await writeAuthFile('second-secret');
 
-    const content = JSON.parse(await Bun.file(authPath).text()) as Record<string, unknown>;
+    const content = JSON.parse(await readFile(authPath, 'utf-8')) as Record<string, unknown>;
     expect(content.secret).toBe('second-secret');
   });
 });

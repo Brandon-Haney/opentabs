@@ -8,7 +8,7 @@ import {
   listAllPrompts,
   listAllResources,
 } from './registry.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
 import type { FailedPlugin, RegisteredPlugin } from './state.js';

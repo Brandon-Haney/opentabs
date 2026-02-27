@@ -1,5 +1,5 @@
 import { generateInactiveIcon, MAX_ICON_SIZE, validateIconSvg, validateInactiveIconColors } from './validate-icon.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 /** Wrap SVG content in a valid SVG tag with a square viewBox */
 const svgWrap = (inner: string, viewBox = '0 0 32 32'): string =>

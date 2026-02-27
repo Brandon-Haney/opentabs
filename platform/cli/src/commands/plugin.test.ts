@@ -5,7 +5,7 @@ import {
   OFFICIAL_SCOPE,
   PLUGIN_PREFIX,
 } from '@opentabs-dev/shared';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 describe('buildDirectLookupCandidates', () => {
   test('returns known official plugin packages when no query is provided', () => {

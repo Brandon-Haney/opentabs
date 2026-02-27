@@ -6,7 +6,7 @@ import {
 } from './extension-handlers.js';
 import { clearAllLogs, getLogs } from './log-buffer.js';
 import { createState, DISPATCH_TIMEOUT_MS, MAX_DISPATCH_TIMEOUT_MS } from './state.js';
-import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import type { McpCallbacks } from './extension-handlers.js';
 import type { PendingConfirmation, PendingDispatch, SessionPermissionRule } from './state.js';
 
@@ -169,11 +169,11 @@ describe('handleConfirmationResponse', () => {
 
 describe('handleToolProgress', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   test('forwards progress to onProgress callback', () => {
@@ -237,19 +237,19 @@ describe('handleToolProgress', () => {
     state.pendingDispatches.set('dispatch-3', pending);
 
     // Advance close to timeout
-    jest.advanceTimersByTime(DISPATCH_TIMEOUT_MS - 5_000);
+    vi.advanceTimersByTime(DISPATCH_TIMEOUT_MS - 5_000);
     expect(state.pendingDispatches.has('dispatch-3')).toBe(true);
 
     // Send progress — this should reset the timer
     handleToolProgress(state, { dispatchId: 'dispatch-3', progress: 1, total: 10 });
 
     // Advance past the original timeout — dispatch should still be alive
-    jest.advanceTimersByTime(10_000);
+    vi.advanceTimersByTime(10_000);
     expect(state.pendingDispatches.has('dispatch-3')).toBe(true);
     expect(rejected).toBeUndefined();
 
     // Advance to trigger the new timeout (DISPATCH_TIMEOUT_MS from progress)
-    jest.advanceTimersByTime(DISPATCH_TIMEOUT_MS);
+    vi.advanceTimersByTime(DISPATCH_TIMEOUT_MS);
     expect(state.pendingDispatches.has('dispatch-3')).toBe(false);
     expect(rejected).toBeDefined();
     expect(rejected?.message).toContain('timed out');

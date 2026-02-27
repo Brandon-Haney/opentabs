@@ -8,22 +8,22 @@ import {
 } from './adapter-files.js';
 import { getAdaptersDir } from './config.js';
 import { createState } from './state.js';
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { readdir } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // Override OPENTABS_CONFIG_DIR for test isolation.
 const TEST_BASE_DIR = mkdtempSync(join(tmpdir(), 'opentabs-adapter-files-test-'));
-const originalConfigDir = Bun.env.OPENTABS_CONFIG_DIR;
-Bun.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
+const originalConfigDir = process.env.OPENTABS_CONFIG_DIR;
+process.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
 
 afterAll(() => {
   if (originalConfigDir !== undefined) {
-    Bun.env.OPENTABS_CONFIG_DIR = originalConfigDir;
+    process.env.OPENTABS_CONFIG_DIR = originalConfigDir;
   } else {
-    delete Bun.env.OPENTABS_CONFIG_DIR;
+    delete process.env.OPENTABS_CONFIG_DIR;
   }
   rmSync(TEST_BASE_DIR, { recursive: true, force: true });
 });
@@ -43,10 +43,10 @@ describe('writeExecFile', () => {
 
     expect(filename).toBe(`${EXEC_FILE_PREFIX}test-1.js`);
 
-    const content = await Bun.file(join(getAdaptersDir(), filename)).text();
+    const content = await readFile(join(getAdaptersDir(), filename), 'utf-8');
     // Starts with IIFE wrapper
-    expect(content).toStartWith('(function() {');
-    expect(content).toEndWith('})();');
+    expect(content.startsWith('(function() {')).toBe(true);
+    expect(content.endsWith('})();')).toBe(true);
     // User code is JSON-escaped inside new Function()
     expect(content).toContain(`new Function(${JSON.stringify('return 42')})`);
     // Contains the result capture mechanism
@@ -59,7 +59,7 @@ describe('writeExecFile', () => {
     const code = 'return "hello\\nworld"';
     const filename = await writeExecFile(state, 'escape-test', code);
 
-    const content = await Bun.file(join(getAdaptersDir(), filename)).text();
+    const content = await readFile(join(getAdaptersDir(), filename), 'utf-8');
     expect(content).toContain(`new Function(${JSON.stringify(code)})`);
   });
 
@@ -68,7 +68,7 @@ describe('writeExecFile', () => {
     const code = 'return fetch("/api").then(r => r.json())';
     const filename = await writeExecFile(state, 'async-test', code);
 
-    const content = await Bun.file(join(getAdaptersDir(), filename)).text();
+    const content = await readFile(join(getAdaptersDir(), filename), 'utf-8');
     // The wrapper checks for thenable results
     expect(content).toContain('typeof __r.then === "function"');
     expect(content).toContain('__lastExecAsync');
@@ -82,19 +82,19 @@ describe('writeExecFile', () => {
     const maliciousCode = '});alert(1);//';
     const filename = await writeExecFile(state, 'malicious-test', maliciousCode);
 
-    const content = await Bun.file(join(getAdaptersDir(), filename)).text();
+    const content = await readFile(join(getAdaptersDir(), filename), 'utf-8');
     // The malicious code is safely JSON-escaped inside Function constructor
     expect(content).toContain(`new Function(${JSON.stringify(maliciousCode)})`);
     // The IIFE wrapper is still intact
-    expect(content).toStartWith('(function() {');
-    expect(content).toEndWith('})();');
+    expect(content.startsWith('(function() {')).toBe(true);
+    expect(content.endsWith('})();')).toBe(true);
   });
 
   test('creates the adapters directory via ensureAdaptersDir if needed', async () => {
     // Use a fresh temp dir where adapters/ doesn't exist
     const freshDir = mkdtempSync(join(tmpdir(), 'opentabs-adapter-fresh-'));
-    const prevConfigDir = Bun.env.OPENTABS_CONFIG_DIR;
-    Bun.env.OPENTABS_CONFIG_DIR = freshDir;
+    const prevConfigDir = process.env.OPENTABS_CONFIG_DIR;
+    process.env.OPENTABS_CONFIG_DIR = freshDir;
 
     try {
       const state = createState();
@@ -103,7 +103,7 @@ describe('writeExecFile', () => {
       const entries = await readdir(adaptersDir);
       expect(entries).toContain(filename);
     } finally {
-      Bun.env.OPENTABS_CONFIG_DIR = prevConfigDir;
+      process.env.OPENTABS_CONFIG_DIR = prevConfigDir;
       rmSync(freshDir, { recursive: true, force: true });
     }
   });
@@ -112,7 +112,7 @@ describe('writeExecFile', () => {
     const state = createState();
     const filename = await writeExecFile(state, 'error-test', 'throw new Error("boom")');
 
-    const content = await Bun.file(join(getAdaptersDir(), filename)).text();
+    const content = await readFile(join(getAdaptersDir(), filename), 'utf-8');
     // The wrapper has a try/catch
     expect(content).toContain('} catch (e) {');
     expect(content).toContain('e instanceof Error ? e.message : String(e)');
@@ -136,7 +136,7 @@ describe('writeAdapterFile', () => {
 
     // File is written to the adapters directory using the returned path
     const fileName = adapterFile.replace('adapters/', '');
-    const content = await Bun.file(join(getAdaptersDir(), fileName)).text();
+    const content = await readFile(join(getAdaptersDir(), fileName), 'utf-8');
     expect(content).toBe(iife);
   });
 
@@ -149,12 +149,12 @@ describe('writeAdapterFile', () => {
     const baseName = adapterFile.replace('adapters/', '').replace('.js', '');
     const fileName = adapterFile.replace('adapters/', '');
 
-    const content = await Bun.file(join(getAdaptersDir(), fileName)).text();
+    const content = await readFile(join(getAdaptersDir(), fileName), 'utf-8');
     expect(content).toContain(`//# sourceMappingURL=${baseName}.js.map`);
     expect(content).not.toContain('adapter.iife.js.map');
 
     // Source map file is also written with hashed name
-    const mapContent = await Bun.file(join(getAdaptersDir(), `${baseName}.js.map`)).text();
+    const mapContent = await readFile(join(getAdaptersDir(), `${baseName}.js.map`), 'utf-8');
     expect(mapContent).toBe(sourceMap);
   });
 
@@ -163,7 +163,7 @@ describe('writeAdapterFile', () => {
     const adapterFile = await writeAdapterFile('no-map-plugin', iife);
 
     const fileName = adapterFile.replace('adapters/', '');
-    const content = await Bun.file(join(getAdaptersDir(), fileName)).text();
+    const content = await readFile(join(getAdaptersDir(), fileName), 'utf-8');
     // sourceMappingURL is left as-is since no source map was provided
     expect(content).toContain('sourceMappingURL=adapter.iife.js.map');
   });
@@ -215,8 +215,8 @@ describe('cleanupStaleExecFiles', () => {
 
   test('removes __exec-*.js files from adapters directory', async () => {
     const adaptersDir = getAdaptersDir();
-    await Bun.write(join(adaptersDir, `${EXEC_FILE_PREFIX}abc.js`), 'code');
-    await Bun.write(join(adaptersDir, `${EXEC_FILE_PREFIX}def.js`), 'code');
+    await writeFile(join(adaptersDir, `${EXEC_FILE_PREFIX}abc.js`), 'code');
+    await writeFile(join(adaptersDir, `${EXEC_FILE_PREFIX}def.js`), 'code');
 
     await cleanupStaleExecFiles();
 
@@ -226,7 +226,7 @@ describe('cleanupStaleExecFiles', () => {
 
   test('removes __exec-*.js.tmp files from adapters directory', async () => {
     const adaptersDir = getAdaptersDir();
-    await Bun.write(join(adaptersDir, `${EXEC_FILE_PREFIX}abc.js.tmp`), 'tmp');
+    await writeFile(join(adaptersDir, `${EXEC_FILE_PREFIX}abc.js.tmp`), 'tmp');
 
     await cleanupStaleExecFiles();
 
@@ -236,8 +236,8 @@ describe('cleanupStaleExecFiles', () => {
 
   test('leaves non-exec files untouched', async () => {
     const adaptersDir = getAdaptersDir();
-    await Bun.write(join(adaptersDir, 'my-plugin.js'), 'adapter code');
-    await Bun.write(join(adaptersDir, `${EXEC_FILE_PREFIX}stale.js`), 'exec code');
+    await writeFile(join(adaptersDir, 'my-plugin.js'), 'adapter code');
+    await writeFile(join(adaptersDir, `${EXEC_FILE_PREFIX}stale.js`), 'exec code');
 
     await cleanupStaleExecFiles();
 
@@ -249,14 +249,14 @@ describe('cleanupStaleExecFiles', () => {
   test('handles missing adapters directory gracefully', async () => {
     // Point to a directory that does not exist
     const emptyDir = mkdtempSync(join(tmpdir(), 'opentabs-adapter-empty-'));
-    const prevConfigDir = Bun.env.OPENTABS_CONFIG_DIR;
-    Bun.env.OPENTABS_CONFIG_DIR = emptyDir;
+    const prevConfigDir = process.env.OPENTABS_CONFIG_DIR;
+    process.env.OPENTABS_CONFIG_DIR = emptyDir;
 
     try {
       // Should not throw
       await cleanupStaleExecFiles();
     } finally {
-      Bun.env.OPENTABS_CONFIG_DIR = prevConfigDir;
+      process.env.OPENTABS_CONFIG_DIR = prevConfigDir;
       rmSync(emptyDir, { recursive: true, force: true });
     }
   });
@@ -272,8 +272,8 @@ describe('cleanupStaleAdapterFiles', () => {
 
   test('removes hashed .js files for plugins not in current set', async () => {
     const adaptersDir = getAdaptersDir();
-    await Bun.write(join(adaptersDir, 'plugin-a-12345678.js'), 'a');
-    await Bun.write(join(adaptersDir, 'plugin-b-abcdef01.js'), 'b');
+    await writeFile(join(adaptersDir, 'plugin-a-12345678.js'), 'a');
+    await writeFile(join(adaptersDir, 'plugin-b-abcdef01.js'), 'b');
 
     await cleanupStaleAdapterFiles(new Set(['plugin-a']));
 
@@ -284,10 +284,10 @@ describe('cleanupStaleAdapterFiles', () => {
 
   test('removes hashed .js.map files for plugins not in current set', async () => {
     const adaptersDir = getAdaptersDir();
-    await Bun.write(join(adaptersDir, 'plugin-a-12345678.js'), 'a');
-    await Bun.write(join(adaptersDir, 'plugin-a-12345678.js.map'), 'map-a');
-    await Bun.write(join(adaptersDir, 'plugin-b-abcdef01.js'), 'b');
-    await Bun.write(join(adaptersDir, 'plugin-b-abcdef01.js.map'), 'map-b');
+    await writeFile(join(adaptersDir, 'plugin-a-12345678.js'), 'a');
+    await writeFile(join(adaptersDir, 'plugin-a-12345678.js.map'), 'map-a');
+    await writeFile(join(adaptersDir, 'plugin-b-abcdef01.js'), 'b');
+    await writeFile(join(adaptersDir, 'plugin-b-abcdef01.js.map'), 'map-b');
 
     await cleanupStaleAdapterFiles(new Set(['plugin-a']));
 
@@ -300,8 +300,8 @@ describe('cleanupStaleAdapterFiles', () => {
 
   test('keeps current plugins untouched', async () => {
     const adaptersDir = getAdaptersDir();
-    await Bun.write(join(adaptersDir, 'kept-a-11111111.js'), 'a');
-    await Bun.write(join(adaptersDir, 'kept-b-22222222.js'), 'b');
+    await writeFile(join(adaptersDir, 'kept-a-11111111.js'), 'a');
+    await writeFile(join(adaptersDir, 'kept-b-22222222.js'), 'b');
 
     await cleanupStaleAdapterFiles(new Set(['kept-a', 'kept-b']));
 
@@ -312,7 +312,7 @@ describe('cleanupStaleAdapterFiles', () => {
 
   test('does not remove __exec-* files (managed by cleanupStaleExecFiles)', async () => {
     const adaptersDir = getAdaptersDir();
-    await Bun.write(join(adaptersDir, `${EXEC_FILE_PREFIX}session.js`), 'exec');
+    await writeFile(join(adaptersDir, `${EXEC_FILE_PREFIX}session.js`), 'exec');
 
     await cleanupStaleAdapterFiles(new Set());
 
@@ -322,7 +322,7 @@ describe('cleanupStaleAdapterFiles', () => {
 
   test('does not remove .tmp files', async () => {
     const adaptersDir = getAdaptersDir();
-    await Bun.write(join(adaptersDir, 'stale.js.tmp'), 'tmp');
+    await writeFile(join(adaptersDir, 'stale.js.tmp'), 'tmp');
 
     await cleanupStaleAdapterFiles(new Set());
 
@@ -332,13 +332,13 @@ describe('cleanupStaleAdapterFiles', () => {
 
   test('handles missing adapters directory gracefully', async () => {
     const emptyDir = mkdtempSync(join(tmpdir(), 'opentabs-adapter-nodir-'));
-    const prevConfigDir = Bun.env.OPENTABS_CONFIG_DIR;
-    Bun.env.OPENTABS_CONFIG_DIR = emptyDir;
+    const prevConfigDir = process.env.OPENTABS_CONFIG_DIR;
+    process.env.OPENTABS_CONFIG_DIR = emptyDir;
 
     try {
       await cleanupStaleAdapterFiles(new Set(['any']));
     } finally {
-      Bun.env.OPENTABS_CONFIG_DIR = prevConfigDir;
+      process.env.OPENTABS_CONFIG_DIR = prevConfigDir;
       rmSync(emptyDir, { recursive: true, force: true });
     }
   });

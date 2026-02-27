@@ -1,5 +1,5 @@
 import { colorTabState, formatUptime, isTimeout } from './status.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // formatUptime

@@ -1,5 +1,5 @@
 import { normalizePluginName, resolvePluginPackageCandidates, OFFICIAL_SCOPE, PLUGIN_PREFIX } from './constants.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 describe('OFFICIAL_SCOPE', () => {
   test('is @opentabs-dev', () => {

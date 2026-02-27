@@ -2,7 +2,7 @@ import { checkBearerAuth, createHandlers, isLocalhostHost, sweepStaleSessions } 
 import { buildRegistry } from './registry.js';
 import { createState, STATE_SCHEMA_VERSION } from './state.js';
 import { version } from './version.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import type { HotHandlers } from './http-routes.js';
 import type { McpServerInstance } from './mcp-setup.js';
 import type { PendingDispatch } from './state.js';

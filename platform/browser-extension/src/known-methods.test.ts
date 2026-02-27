@@ -1,86 +1,89 @@
 import { ALL_ALLOWED_METHODS, DISPATCH_METHODS, PASSTHROUGH_METHODS } from './known-methods.js';
-import { describe, expect, test, mock } from 'bun:test';
+import { vi, describe, expect, test } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Module mocks — message-router.ts imports many Chrome-API-dependent modules.
 // Mock them so we can import methodHandlerNames without runtime errors.
 // ---------------------------------------------------------------------------
 
-await mock.module('./confirmation-badge.js', () => ({
-  notifyConfirmationRequest: mock(),
+const { asyncNoop } = vi.hoisted(() => ({
+  asyncNoop: () => Promise.resolve(),
 }));
 
-await mock.module('./messaging.js', () => ({
-  sendToServer: mock(),
-  forwardToSidePanel: mock(),
-  sendTabStateNotification: mock(),
+vi.mock('./confirmation-badge.js', () => ({
+  notifyConfirmationRequest: vi.fn(),
 }));
 
-await mock.module('./tool-dispatch.js', () => ({
-  getPluginLink: mock(),
-  handleToolDispatch: mock(),
-  notifyDispatchProgress: mock(),
+vi.mock('./messaging.js', () => ({
+  sendToServer: vi.fn(),
+  forwardToSidePanel: vi.fn(),
+  sendTabStateNotification: vi.fn(),
 }));
 
-await mock.module('./resource-prompt-dispatch.js', () => ({
-  handleResourceRead: mock(),
-  handlePromptGet: mock(),
+vi.mock('./tool-dispatch.js', () => ({
+  getPluginLink: vi.fn(),
+  handleToolDispatch: vi.fn(),
+  notifyDispatchProgress: vi.fn(),
 }));
 
-const asyncNoop = () => Promise.resolve();
+vi.mock('./resource-prompt-dispatch.js', () => ({
+  handleResourceRead: vi.fn(),
+  handlePromptGet: vi.fn(),
+}));
 
-await mock.module('./browser-commands.js', () => ({
-  handleBrowserListTabs: mock(asyncNoop),
-  handleBrowserOpenTab: mock(asyncNoop),
-  handleBrowserCloseTab: mock(asyncNoop),
-  handleBrowserNavigateTab: mock(asyncNoop),
-  handleBrowserFocusTab: mock(asyncNoop),
-  handleBrowserGetTabInfo: mock(asyncNoop),
-  handleBrowserGetTabContent: mock(asyncNoop),
-  handleBrowserGetPageHtml: mock(asyncNoop),
-  handleBrowserGetStorage: mock(asyncNoop),
-  handleBrowserScreenshotTab: mock(asyncNoop),
-  handleBrowserClickElement: mock(asyncNoop),
-  handleBrowserTypeText: mock(asyncNoop),
-  handleBrowserSelectOption: mock(asyncNoop),
-  handleBrowserWaitForElement: mock(asyncNoop),
-  handleBrowserQueryElements: mock(asyncNoop),
-  handleBrowserGetCookies: mock(asyncNoop),
-  handleBrowserSetCookie: mock(asyncNoop),
-  handleBrowserDeleteCookies: mock(asyncNoop),
-  handleBrowserEnableNetworkCapture: mock(asyncNoop),
-  handleBrowserGetNetworkRequests: mock(asyncNoop),
-  handleBrowserDisableNetworkCapture: mock(asyncNoop),
-  handleBrowserGetConsoleLogs: mock(asyncNoop),
-  handleBrowserClearConsoleLogs: mock(asyncNoop),
-  handleBrowserExecuteScript: mock(asyncNoop),
-  handleBrowserListResources: mock(asyncNoop),
-  handleBrowserGetResourceContent: mock(asyncNoop),
-  handleBrowserPressKey: mock(asyncNoop),
-  handleBrowserScroll: mock(asyncNoop),
-  handleBrowserHoverElement: mock(asyncNoop),
-  handleBrowserHandleDialog: mock(asyncNoop),
-  handleExtensionCheckAdapter: mock(asyncNoop),
-  handleExtensionForceReconnect: mock(asyncNoop),
-  handleExtensionGetState: mock(asyncNoop),
-  handleExtensionGetLogs: mock(asyncNoop),
-  handleExtensionGetSidePanel: mock(asyncNoop),
+vi.mock('./browser-commands/index.js', () => ({
+  handleBrowserListTabs: vi.fn(asyncNoop),
+  handleBrowserOpenTab: vi.fn(asyncNoop),
+  handleBrowserCloseTab: vi.fn(asyncNoop),
+  handleBrowserNavigateTab: vi.fn(asyncNoop),
+  handleBrowserFocusTab: vi.fn(asyncNoop),
+  handleBrowserGetTabInfo: vi.fn(asyncNoop),
+  handleBrowserGetTabContent: vi.fn(asyncNoop),
+  handleBrowserGetPageHtml: vi.fn(asyncNoop),
+  handleBrowserGetStorage: vi.fn(asyncNoop),
+  handleBrowserScreenshotTab: vi.fn(asyncNoop),
+  handleBrowserClickElement: vi.fn(asyncNoop),
+  handleBrowserTypeText: vi.fn(asyncNoop),
+  handleBrowserSelectOption: vi.fn(asyncNoop),
+  handleBrowserWaitForElement: vi.fn(asyncNoop),
+  handleBrowserQueryElements: vi.fn(asyncNoop),
+  handleBrowserGetCookies: vi.fn(asyncNoop),
+  handleBrowserSetCookie: vi.fn(asyncNoop),
+  handleBrowserDeleteCookies: vi.fn(asyncNoop),
+  handleBrowserEnableNetworkCapture: vi.fn(asyncNoop),
+  handleBrowserGetNetworkRequests: vi.fn(asyncNoop),
+  handleBrowserDisableNetworkCapture: vi.fn(asyncNoop),
+  handleBrowserGetConsoleLogs: vi.fn(asyncNoop),
+  handleBrowserClearConsoleLogs: vi.fn(asyncNoop),
+  handleBrowserExecuteScript: vi.fn(asyncNoop),
+  handleBrowserListResources: vi.fn(asyncNoop),
+  handleBrowserGetResourceContent: vi.fn(asyncNoop),
+  handleBrowserPressKey: vi.fn(asyncNoop),
+  handleBrowserScroll: vi.fn(asyncNoop),
+  handleBrowserHoverElement: vi.fn(asyncNoop),
+  handleBrowserHandleDialog: vi.fn(asyncNoop),
+  handleExtensionCheckAdapter: vi.fn(asyncNoop),
+  handleExtensionForceReconnect: vi.fn(asyncNoop),
+  handleExtensionGetState: vi.fn(asyncNoop),
+  handleExtensionGetLogs: vi.fn(asyncNoop),
+  handleExtensionGetSidePanel: vi.fn(asyncNoop),
 }));
 
 // Chrome API stubs needed by modules that message-router imports
 (globalThis as Record<string, unknown>).chrome = {
   storage: {
-    local: { get: mock(() => Promise.resolve({})), set: mock(() => Promise.resolve()) },
-    session: { set: mock(() => Promise.resolve()) },
+    local: { get: vi.fn(() => Promise.resolve({})), set: vi.fn(() => Promise.resolve()) },
+    session: { set: vi.fn(() => Promise.resolve()) },
   },
-  runtime: { reload: mock(), sendMessage: mock(() => Promise.resolve()) },
-  tabs: { query: mock(() => Promise.resolve([])) },
+  runtime: { reload: vi.fn(), sendMessage: vi.fn(() => Promise.resolve()) },
+  tabs: { query: vi.fn(() => Promise.resolve([])), onRemoved: { addListener: vi.fn() } },
   scripting: {
-    executeScript: mock(() => Promise.resolve([{ result: false }])),
-    unregisterContentScripts: mock(() => Promise.resolve()),
-    registerContentScripts: mock(() => Promise.resolve()),
+    executeScript: vi.fn(() => Promise.resolve([{ result: false }])),
+    unregisterContentScripts: vi.fn(() => Promise.resolve()),
+    registerContentScripts: vi.fn(() => Promise.resolve()),
   },
-  windows: { getLastFocused: mock(() => Promise.resolve({ id: 1 })) },
+  windows: { getLastFocused: vi.fn(() => Promise.resolve({ id: 1 })) },
+  debugger: { onEvent: { addListener: vi.fn() }, detach: vi.fn(() => Promise.resolve()) },
 };
 
 const { methodHandlerNames } = await import('./message-router.js');

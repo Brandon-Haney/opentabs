@@ -1,5 +1,5 @@
 import { AVATAR_PALETTE_SIZE, getAvatarLetter, getAvatarVar, hashString } from './PluginIcon.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 describe('hashString', () => {
   test('returns an unsigned 32-bit integer', () => {

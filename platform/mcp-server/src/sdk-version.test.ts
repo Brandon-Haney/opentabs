@@ -1,5 +1,5 @@
 import { sdkVersion } from './sdk-version.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 describe('sdkVersion', () => {
   test('is a string', () => {
@@ -13,6 +13,7 @@ describe('sdkVersion', () => {
   test('matches the plugin-sdk package.json version', async () => {
     const nodePath = await import('node:path');
     const nodeUrl = await import('node:url');
+    const nodeFs = await import('node:fs/promises');
 
     const sdkPkgPath = nodePath.join(
       nodePath.dirname(nodeUrl.fileURLToPath(import.meta.url)),
@@ -21,7 +22,7 @@ describe('sdkVersion', () => {
       'plugin-sdk',
       'package.json',
     );
-    const pkgJson = (await Bun.file(sdkPkgPath).json()) as { version: string };
+    const pkgJson = JSON.parse(await nodeFs.readFile(sdkPkgPath, 'utf-8')) as { version: string };
 
     expect(sdkVersion).toBe(pkgJson.version);
   });

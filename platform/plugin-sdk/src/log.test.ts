@@ -1,5 +1,5 @@
 import { _setLogTransport, log } from './log.js';
-import { afterEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, describe, expect, vi, test } from 'vitest';
 import type { LogEntry } from './log.js';
 
 describe('sdk.log', () => {
@@ -68,7 +68,7 @@ describe('sdk.log', () => {
     restoreFn();
 
     // After restoring, logs should go to console (default transport), not our collector
-    const consoleMock = mock(() => {});
+    const consoleMock = vi.fn(() => {});
     const originalInfo = console.info;
     console.info = consoleMock;
     try {
@@ -85,10 +85,10 @@ describe('sdk.log', () => {
 
   test('default transport calls console methods', () => {
     const mocks = {
-      debug: mock(() => {}),
-      info: mock(() => {}),
-      warn: mock(() => {}),
-      error: mock(() => {}),
+      debug: vi.fn(() => {}),
+      info: vi.fn(() => {}),
+      warn: vi.fn(() => {}),
+      error: vi.fn(() => {}),
     };
 
     const originals = {

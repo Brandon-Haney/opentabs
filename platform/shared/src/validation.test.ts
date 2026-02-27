@@ -1,5 +1,5 @@
 import { EXTENSION_COPY_EXCLUDE_PATTERN, isBlockedUrlScheme, validatePluginName, validateUrlPattern } from './index.js';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 describe('validateUrlPattern', () => {
   describe('valid patterns', () => {

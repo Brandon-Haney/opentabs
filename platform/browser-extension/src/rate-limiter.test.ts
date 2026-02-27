@@ -1,5 +1,5 @@
 import { checkRateLimit, getTrackedMethodCount, resetRateLimiter } from './rate-limiter.js';
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'vitest';
 
 let now: number;
 

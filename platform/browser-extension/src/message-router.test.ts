@@ -1,4 +1,4 @@
-import { mock, describe, expect, test, beforeEach, afterEach, jest } from 'bun:test';
+import { vi, describe, expect, test, beforeEach, afterEach } from 'vitest';
 import type { ValidatedPluginPayload } from './message-router.js';
 
 // ---------------------------------------------------------------------------
@@ -11,135 +11,205 @@ import type { ValidatedPluginPayload } from './message-router.js';
 // files in the same process.
 // ---------------------------------------------------------------------------
 
-const mockSendToServer = mock<(data: unknown) => void>();
-const mockForwardToSidePanel = mock<(message: unknown) => void>();
-const mockSendTabStateNotification = mock<(pluginName: string, stateInfo: unknown) => void>();
+const {
+  mockSendToServer,
+  mockForwardToSidePanel,
+  mockSendTabStateNotification,
+  mockHandleToolDispatch,
+  mockHandleBrowserListTabs,
+  mockHandleBrowserOpenTab,
+  mockHandleBrowserCloseTab,
+  mockHandleBrowserNavigateTab,
+  mockHandleBrowserFocusTab,
+  mockHandleBrowserGetTabInfo,
+  mockHandleBrowserGetTabContent,
+  mockHandleBrowserGetPageHtml,
+  mockHandleBrowserGetStorage,
+  mockHandleBrowserScreenshotTab,
+  mockHandleBrowserClickElement,
+  mockHandleBrowserTypeText,
+  mockHandleBrowserSelectOption,
+  mockHandleBrowserWaitForElement,
+  mockHandleBrowserQueryElements,
+  mockHandleBrowserGetCookies,
+  mockHandleBrowserSetCookie,
+  mockHandleBrowserDeleteCookies,
+  mockHandleBrowserEnableNetworkCapture,
+  mockHandleBrowserGetNetworkRequests,
+  mockHandleBrowserDisableNetworkCapture,
+  mockHandleBrowserGetConsoleLogs,
+  mockHandleBrowserClearConsoleLogs,
+  mockHandleBrowserExecuteScript,
+  mockHandleBrowserListResources,
+  mockHandleBrowserGetResourceContent,
+  mockHandleBrowserPressKey,
+  mockHandleBrowserScroll,
+  mockHandleBrowserHoverElement,
+  mockHandleBrowserHandleDialog,
+  mockHandleExtensionGetState,
+  mockHandleExtensionGetLogs,
+  mockHandleExtensionGetSidePanel,
+  mockHandleExtensionCheckAdapter,
+  mockHandleExtensionForceReconnect,
+  mockHandleResourceRead,
+  mockHandlePromptGet,
+  mockNotifyConfirmationRequest,
+} = vi.hoisted(() => {
+  const asyncNoop = () => Promise.resolve();
+  const syncNoop = (() => {}) as (params: Record<string, unknown>, id: string | number) => void;
 
-const asyncNoop = () => Promise.resolve();
-const mockHandleToolDispatch = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
+  return {
+    asyncNoop,
+    syncNoop,
+    mockSendToServer: vi.fn<(data: unknown) => void>(),
+    mockForwardToSidePanel: vi.fn<(message: unknown) => void>(),
+    mockSendTabStateNotification: vi.fn<(pluginName: string, stateInfo: unknown) => void>(),
+    mockHandleToolDispatch: vi.fn(asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>),
+    mockHandleBrowserListTabs: vi.fn(asyncNoop as (id: string | number) => Promise<void>),
+    mockHandleBrowserOpenTab: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserCloseTab: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserNavigateTab: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserFocusTab: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserGetTabInfo: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserGetTabContent: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserGetPageHtml: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserGetStorage: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserScreenshotTab: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserClickElement: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserTypeText: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserSelectOption: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserWaitForElement: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserQueryElements: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserGetCookies: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserSetCookie: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserDeleteCookies: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserEnableNetworkCapture: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserGetNetworkRequests: vi.fn(syncNoop),
+    mockHandleBrowserDisableNetworkCapture: vi.fn(syncNoop),
+    mockHandleBrowserGetConsoleLogs: vi.fn(syncNoop),
+    mockHandleBrowserClearConsoleLogs: vi.fn(syncNoop),
+    mockHandleBrowserExecuteScript: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserListResources: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserGetResourceContent: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserPressKey: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserScroll: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserHoverElement: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleBrowserHandleDialog: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleExtensionGetState: vi.fn(asyncNoop as (id: string | number) => Promise<void>),
+    mockHandleExtensionGetLogs: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleExtensionGetSidePanel: vi.fn(asyncNoop as (id: string | number) => Promise<void>),
+    mockHandleExtensionCheckAdapter: vi.fn(
+      asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
+    ),
+    mockHandleExtensionForceReconnect: vi.fn(asyncNoop as (id: string | number) => Promise<void>),
+    mockHandleResourceRead: vi.fn(asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>),
+    mockHandlePromptGet: vi.fn(asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>),
+    mockNotifyConfirmationRequest: vi.fn<(params: Record<string, unknown>) => void>(),
+  };
+});
 
-const mockHandleBrowserListTabs = mock(asyncNoop as (id: string | number) => Promise<void>);
-const mockHandleBrowserOpenTab = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserCloseTab = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserNavigateTab = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserFocusTab = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserGetTabInfo = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserGetTabContent = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserGetPageHtml = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserGetStorage = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserScreenshotTab = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserClickElement = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserTypeText = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserSelectOption = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserWaitForElement = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserQueryElements = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserGetCookies = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserSetCookie = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserDeleteCookies = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserEnableNetworkCapture = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const syncNoop = (() => {}) as (params: Record<string, unknown>, id: string | number) => void;
-const mockHandleBrowserGetNetworkRequests = mock(syncNoop);
-const mockHandleBrowserDisableNetworkCapture = mock(syncNoop);
-const mockHandleBrowserGetConsoleLogs = mock(syncNoop);
-const mockHandleBrowserClearConsoleLogs = mock(syncNoop);
-const mockHandleBrowserExecuteScript = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserListResources = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserGetResourceContent = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserPressKey = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserScroll = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserHoverElement = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleBrowserHandleDialog = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleExtensionGetState = mock(asyncNoop as (id: string | number) => Promise<void>);
-const mockHandleExtensionGetLogs = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleExtensionGetSidePanel = mock(asyncNoop as (id: string | number) => Promise<void>);
-const mockHandleExtensionCheckAdapter = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandleExtensionForceReconnect = mock(asyncNoop as (id: string | number) => Promise<void>);
-
-const mockHandleResourceRead = mock(
-  asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
-);
-const mockHandlePromptGet = mock(asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>);
-
-const mockNotifyConfirmationRequest = mock<(params: Record<string, unknown>) => void>();
-
-await mock.module('./confirmation-badge.js', () => ({
+vi.mock('./confirmation-badge.js', () => ({
   notifyConfirmationRequest: mockNotifyConfirmationRequest,
 }));
 
-await mock.module('./messaging.js', () => ({
+vi.mock('./messaging.js', () => ({
   sendToServer: mockSendToServer,
   forwardToSidePanel: mockForwardToSidePanel,
   sendTabStateNotification: mockSendTabStateNotification,
 }));
 
-await mock.module('./tool-dispatch.js', () => ({
-  getPluginLink: mock(),
+vi.mock('./tool-dispatch.js', () => ({
+  getPluginLink: vi.fn(),
   handleToolDispatch: mockHandleToolDispatch,
-  notifyDispatchProgress: mock(),
+  notifyDispatchProgress: vi.fn(),
 }));
 
-await mock.module('./resource-prompt-dispatch.js', () => ({
+vi.mock('./resource-prompt-dispatch.js', () => ({
   handleResourceRead: mockHandleResourceRead,
   handlePromptGet: mockHandlePromptGet,
 }));
 
-await mock.module('./browser-commands/index.js', () => ({
+vi.mock('./plugin-storage.js', () => ({
+  storePluginsBatch: vi.fn(() => Promise.resolve()),
+  removePlugin: vi.fn(() => Promise.resolve()),
+  removePluginsBatch: vi.fn(() => Promise.resolve()),
+  getAllPluginMeta: vi.fn(() => Promise.resolve({})),
+  getPluginMeta: vi.fn(() => Promise.resolve(null)),
+  invalidatePluginCache: vi.fn(),
+}));
+
+vi.mock('./iife-injection.js', () => ({
+  syncAdaptersForPlugins: vi.fn(() => Promise.resolve()),
+  isSafePluginName: vi.fn(() => true),
+  queryMatchingTabIds: vi.fn(() => Promise.resolve([])),
+  verifyAdapterVersion: vi.fn(() => Promise.resolve(true)),
+  teardownAdapterInTab: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock('./tab-state.js', () => ({
+  sendTabSyncAll: vi.fn(() => Promise.resolve()),
+  computePluginTabState: vi.fn(() => Promise.resolve({ state: 'closed', tabId: null, url: null })),
+  clearTabStateCache: vi.fn(),
+  clearPluginTabState: vi.fn(),
+  updateLastKnownState: vi.fn(() => Promise.resolve()),
+  getLastKnownStates: vi.fn(() => new Map()),
+  checkTabRemoved: vi.fn(() => Promise.resolve()),
+  checkTabChanged: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock('./browser-commands/index.js', () => ({
   handleBrowserListTabs: mockHandleBrowserListTabs,
   handleBrowserOpenTab: mockHandleBrowserOpenTab,
   handleBrowserCloseTab: mockHandleBrowserCloseTab,
@@ -183,27 +253,27 @@ await mock.module('./browser-commands/index.js', () => ({
 (globalThis as Record<string, unknown>).chrome = {
   storage: {
     local: {
-      get: mock(() => Promise.resolve({})),
-      set: mock(() => Promise.resolve()),
+      get: vi.fn(() => Promise.resolve({})),
+      set: vi.fn(() => Promise.resolve()),
     },
     session: {
-      set: mock(() => Promise.resolve()),
+      set: vi.fn(() => Promise.resolve()),
     },
   },
   runtime: {
-    reload: mock(),
-    sendMessage: mock(() => Promise.resolve()),
+    reload: vi.fn(),
+    sendMessage: vi.fn(() => Promise.resolve()),
   },
   tabs: {
-    query: mock(() => Promise.resolve([])),
+    query: vi.fn(() => Promise.resolve([])),
   },
   scripting: {
-    executeScript: mock(() => Promise.resolve([{ result: false }])),
-    unregisterContentScripts: mock(() => Promise.resolve()),
-    registerContentScripts: mock(() => Promise.resolve()),
+    executeScript: vi.fn(() => Promise.resolve([{ result: false }])),
+    unregisterContentScripts: vi.fn(() => Promise.resolve()),
+    registerContentScripts: vi.fn(() => Promise.resolve()),
   },
   windows: {
-    getLastFocused: mock(() => Promise.resolve({ id: 1 })),
+    getLastFocused: vi.fn(() => Promise.resolve({ id: 1 })),
   },
 };
 
@@ -1171,20 +1241,20 @@ describe('handleServerMessage', () => {
 
   describe('extension.reload routing', () => {
     const chromeMock = (globalThis as Record<string, unknown>).chrome as {
-      storage: { session: { set: ReturnType<typeof mock> } };
-      runtime: { reload: ReturnType<typeof mock> };
+      storage: { session: { set: ReturnType<typeof vi.fn> } };
+      runtime: { reload: ReturnType<typeof vi.fn> };
     };
     const chromeSessionSet = chromeMock.storage.session.set;
     const chromeRuntimeReload = chromeMock.runtime.reload;
 
     beforeEach(() => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       chromeSessionSet.mockClear();
       chromeRuntimeReload.mockClear();
     });
 
     afterEach(() => {
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     test('sends success result and calls chrome.runtime.reload() when id is provided', async () => {
@@ -1207,7 +1277,7 @@ describe('handleServerMessage', () => {
       await Promise.resolve();
 
       // Advance past RELOAD_FLUSH_DELAY_MS (100ms)
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(chromeRuntimeReload).toHaveBeenCalledTimes(1);
     });
 
@@ -1223,7 +1293,7 @@ describe('handleServerMessage', () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(chromeRuntimeReload).toHaveBeenCalledTimes(1);
     });
   });

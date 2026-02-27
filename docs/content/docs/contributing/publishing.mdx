@@ -8,7 +8,7 @@ The platform packages are published as private packages to the npm registry unde
 
 ## Packages
 
-Five platform packages are published. They must be published in dependency order:
+Seven platform packages are published. They must be published in dependency order:
 
 <Table>
   <Table.Header>
@@ -26,28 +26,38 @@ Five platform packages are published. They must be published in dependency order
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">2</Table.Cell>
-      <Table.Cell>`@opentabs-dev/plugin-sdk`</Table.Cell>
+      <Table.Cell>`@opentabs-dev/browser-extension`</Table.Cell>
       <Table.Cell>`shared`</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">3</Table.Cell>
+      <Table.Cell>`@opentabs-dev/mcp-server`</Table.Cell>
+      <Table.Cell>`shared`, `browser-extension`</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">4</Table.Cell>
+      <Table.Cell>`@opentabs-dev/plugin-sdk`</Table.Cell>
+      <Table.Cell>`shared`</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">5</Table.Cell>
       <Table.Cell>`@opentabs-dev/plugin-tools`</Table.Cell>
       <Table.Cell>`plugin-sdk`, `shared`</Table.Cell>
     </Table.Row>
     <Table.Row>
-      <Table.Cell className="font-medium">4</Table.Cell>
+      <Table.Cell className="font-medium">6</Table.Cell>
       <Table.Cell>`@opentabs-dev/cli`</Table.Cell>
-      <Table.Cell>`plugin-sdk`, `plugin-tools`, `shared`</Table.Cell>
+      <Table.Cell>`mcp-server`, `browser-extension`, `plugin-sdk`, `plugin-tools`, `shared`</Table.Cell>
     </Table.Row>
     <Table.Row>
-      <Table.Cell className="font-medium">5</Table.Cell>
+      <Table.Cell className="font-medium">7</Table.Cell>
       <Table.Cell>`@opentabs-dev/create-plugin`</Table.Cell>
       <Table.Cell>`plugin-sdk`, `shared`</Table.Cell>
     </Table.Row>
   </Table.Body>
 </Table>
 
-The MCP server and browser extension are **not published** — they are internal platform runtimes that ship via the CLI's `opentabs start` command.
+All seven packages are published to npm. `browser-extension` and `mcp-server` are additionally bundled with the CLI — `opentabs start` uses the bundled MCP server and auto-installs the bundled browser extension to `~/.opentabs/extension/`.
 
 ## npm Authentication (One-Time Setup)
 
@@ -81,10 +91,10 @@ The script:
 
 1. Verifies npm authentication via `npm whoami`
 2. Runs `bun run build` to compile all packages
-3. Bumps `"version"` in all five `platform/*/package.json` files
+3. Bumps `"version"` in all seven `platform/*/package.json` files
 4. Updates cross-references between packages (e.g., `plugin-sdk` depends on `shared`)
 5. Runs `bun run build` again with the new versions
-6. Publishes in dependency order: `shared` → `plugin-sdk` → `plugin-tools` → `cli` → `create-plugin`
+6. Publishes in dependency order: `shared` → `browser-extension` → `mcp-server` → `plugin-sdk` → `plugin-tools` → `cli` → `create-plugin`
 
 All packages use `"publishConfig": { "access": "restricted" }` — only `@opentabs-dev` org members can install them.
 
@@ -113,6 +123,4 @@ This means you can publish a patch release (e.g., `0.0.16` → `0.0.17`) and exi
 
 ## What NOT to Publish
 
-- **`platform/mcp-server`** — ships as a bundled runtime via the CLI
-- **`platform/browser-extension`** — installed to `~/.opentabs/extension/` by the CLI
 - **`plugins/*`** — example plugins are standalone projects that publish independently to npm under `opentabs-plugin-*` names

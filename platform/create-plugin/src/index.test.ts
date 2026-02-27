@@ -260,8 +260,14 @@ describe('create-opentabs-plugin CLI', () => {
         // real ~/.opentabs/config.json or notify a running MCP server.
         const buildEnv = { ...process.env, OPENTABS_CONFIG_DIR: configDir };
 
-        // bun install
-        const install = spawnSync('bun', ['install'], { cwd: projectDir, env: buildEnv });
+        // bun install — use per-test cache dir to avoid EEXIST errors when
+        // multiple tests run bun install concurrently (bun races on the global
+        // cache entry for local workspace packages that resolve to the same path).
+        const bunCacheDir = join(tmpDir, 'bun-cache');
+        const install = spawnSync('bun', ['install', `--cache-dir=${bunCacheDir}`], {
+          cwd: projectDir,
+          env: buildEnv,
+        });
         if ((install.status ?? 1) !== 0) {
           console.error('install stdout:', install.stdout.toString());
           console.error('install stderr:', install.stderr.toString());

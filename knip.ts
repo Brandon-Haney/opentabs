@@ -46,7 +46,7 @@ const config: KnipConfig = {
     'platform/create-plugin': {},
   },
   tags: ['+@public'],
-  ignore: ['plugins/**', 'docs/**', 'platform/browser-extension/side-panel/**/*.{js,css}', '.ralph/worktrees/**'],
+  ignore: ['plugins/**', 'docs/**', 'platform/browser-extension/side-panel/**/*.{js,css}'],
   ignoreExportsUsedInFile: true,
 };
 

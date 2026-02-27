@@ -60,14 +60,17 @@ interface PluginInstallResult {
 
 const NPM_SUBPROCESS_TIMEOUT_MS = 60_000;
 
-/** Spawn a process asynchronously and return its exit code, stdout, and stderr. */
-const spawnAsync = (cmd: string, args: string[]): Promise<{ exitCode: number; stdout: string; stderr: string }> =>
-  new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
-    child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
-    child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+/** Spawn a process asynchronously and return a result promise and a kill handle. */
+const spawnAsync = (
+  cmd: string,
+  args: string[],
+): { promise: Promise<{ exitCode: number; stdout: string; stderr: string }>; kill: () => void } => {
+  const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  const stdoutChunks: Buffer[] = [];
+  const stderrChunks: Buffer[] = [];
+  child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+  child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+  const promise = new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {
     child.on('error', reject);
     child.on('close', code => {
       resolve({
@@ -77,6 +80,13 @@ const spawnAsync = (cmd: string, args: string[]): Promise<{ exitCode: number; st
       });
     });
   });
+  return {
+    promise,
+    kill: () => {
+      child.kill();
+    },
+  };
+};
 
 /**
  * Run an npm command globally with the given package name.
@@ -85,7 +95,7 @@ const spawnAsync = (cmd: string, args: string[]): Promise<{ exitCode: number; st
  * @throws Error with code -32603 and data { stderr, stdout } on non-zero exit or timeout
  */
 const runNpmGlobal = async (command: string, packageName: string): Promise<{ stdout: string; stderr: string }> => {
-  const resultPromise = spawnAsync(platformExec('npm'), [command, '-g', packageName]);
+  const { promise: resultPromise, kill } = spawnAsync(platformExec('npm'), [command, '-g', packageName]);
 
   let rejectTimeout: (reason: Error) => void;
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -101,6 +111,7 @@ const runNpmGlobal = async (command: string, packageName: string): Promise<{ std
     result = await Promise.race([resultPromise, timeoutPromise]);
   } finally {
     clearTimeout(timerId);
+    kill();
   }
 
   if (result.exitCode !== 0) {

@@ -7,4 +7,4 @@ if git diff --cached --name-only | grep -qE '\.ralph/(prd\.json|progress\.txt)$'
   exit 1
 fi
 
-bunx lint-staged --allow-empty
+npx lint-staged --allow-empty

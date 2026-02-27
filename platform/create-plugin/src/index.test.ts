@@ -11,7 +11,7 @@ const runCli = (
   args: string[],
   opts: { cwd: string; configDir: string },
 ): { exitCode: number; stdout: string; stderr: string } => {
-  const result = spawnSync('bun', [CLI_PATH, ...args], {
+  const result = spawnSync('node', [CLI_PATH, ...args], {
     cwd: opts.cwd,
     env: { ...process.env, OPENTABS_CONFIG_DIR: opts.configDir },
   });
@@ -23,10 +23,9 @@ const runCli = (
 };
 
 // Temp directories must live on the same filesystem as the project root so
-// that bun's `file:` dep resolution can hardlink package contents. In Docker,
+// that npm's `file:` dep resolution can work correctly. In Docker,
 // os.tmpdir() returns /tmp (a container tmpfs) which is a different filesystem
-// from the bind-mounted worktree — bun creates empty cache entries instead of
-// proper hardlinks, causing tsc to fail with "Cannot find module".
+// from the bind-mounted worktree, causing potential resolution issues.
 const PROJECT_ROOT = resolve(import.meta.dirname, '..', '..', '..');
 const TEMP_BASE = join(PROJECT_ROOT, '.tmp', 'create-plugin-test');
 
@@ -226,12 +225,12 @@ describe('create-opentabs-plugin CLI', () => {
       // Ensure transitive workspace:* deps from file:-linked packages can resolve.
       // When plugin-sdk is linked via file:, its workspace:* dep on shared can't
       // resolve in a non-workspace context. Adding shared as a direct dependency
-      // (plus overrides) ensures bun can find it.
+      // (plus overrides) ensures npm can find it.
       if (deps) {
         deps['@opentabs-dev/shared'] = localShared;
       }
 
-      // Bun overrides resolve transitive @opentabs-dev/* deps to local packages
+      // npm overrides resolve transitive @opentabs-dev/* deps to local packages
       pkg.overrides = {
         '@opentabs-dev/shared': localShared,
         '@opentabs-dev/plugin-sdk': localSdk,
@@ -260,11 +259,8 @@ describe('create-opentabs-plugin CLI', () => {
         // real ~/.opentabs/config.json or notify a running MCP server.
         const buildEnv = { ...process.env, OPENTABS_CONFIG_DIR: configDir };
 
-        // bun install — use per-test cache dir to avoid EEXIST errors when
-        // multiple tests run bun install concurrently (bun races on the global
-        // cache entry for local workspace packages that resolve to the same path).
-        const bunCacheDir = join(tmpDir, 'bun-cache');
-        const install = spawnSync('bun', ['install', `--cache-dir=${bunCacheDir}`], {
+        // npm install
+        const install = spawnSync('npm', ['install'], {
           cwd: projectDir,
           env: buildEnv,
         });
@@ -274,8 +270,8 @@ describe('create-opentabs-plugin CLI', () => {
         }
         expect(install.status ?? 1).toBe(0);
 
-        // bun run build (tsc && opentabs-plugin build)
-        const build = spawnSync('bun', ['run', 'build'], { cwd: projectDir, env: buildEnv });
+        // npm run build (tsc && opentabs-plugin build)
+        const build = spawnSync('npm', ['run', 'build'], { cwd: projectDir, env: buildEnv });
         if ((build.status ?? 1) !== 0) {
           console.error('build stdout:', build.stdout.toString());
           console.error('build stderr:', build.stderr.toString());

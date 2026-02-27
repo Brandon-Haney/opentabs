@@ -14,7 +14,7 @@ const E2E_PLUGIN_DIR = resolve(import.meta.dirname, '..', '..', '..', '..', 'plu
  * in the user's real ~/.opentabs/config.json or notify a running server.
  */
 const runBuild = (pluginDir: string, configDir: string): { exitCode: number; stdout: string; stderr: string } => {
-  const result = spawnSync('bun', [CLI_PATH, 'build'], {
+  const result = spawnSync('node', [CLI_PATH, 'build'], {
     cwd: pluginDir,
     env: { ...process.env, OPENTABS_CONFIG_DIR: configDir },
   });

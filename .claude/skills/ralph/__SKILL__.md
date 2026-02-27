@@ -229,6 +229,7 @@ Keep the objective slug to 3-5 words max.
       "priority": 1,
       "passes": false,
       "e2eCheckpoint": false,
+      "model": "sonnet",
       "notes": "Context to help the agent implement this story"
     }
   ]
@@ -241,6 +242,7 @@ Keep the objective slug to 3-5 words max.
 - `qualityChecks` (optional): A shell command string that overrides the default verification suite. Must match the target project's available scripts. Omit for root monorepo work — the ralph agent uses two-phase verification: Phase 1 (fast checks) always runs, Phase 2 (including `test:e2e`) runs only at `e2eCheckpoint` stories.
 - `passes`: MUST be the boolean `false`, not `null` or omitted. Ralph checks `passes == false` to find incomplete stories.
 - `e2eCheckpoint` (boolean): Controls whether the agent runs E2E tests (Phase 2) after completing this story. Only meaningful for root monorepo PRDs — set to `false` for standalone subproject stories (docs, plugins) since they don't have separate E2E tests. See "E2E Checkpoint Strategy" below.
+- `model` (string): Which AI model to use for this story. Either `"sonnet"` or `"opus"`. The worker maps these to the configured model names (e.g., `claude-sonnet` or `claude-opus`). See "Model Selection" below for guidance.
 
 ---
 
@@ -346,6 +348,34 @@ Use the `notes` field to give the agent implementation hints:
 - What gotchas to watch for
 
 Good notes dramatically increase success rate per iteration.
+
+---
+
+## Model Selection
+
+Each story specifies which AI model the worker should use. Choose based on complexity:
+
+**Use `"sonnet"` (default) for:**
+
+- Straightforward code changes with clear instructions
+- Search-and-replace migrations (e.g., rename API, update imports)
+- Documentation updates
+- Adding/modifying tests with well-defined expected behavior
+- Config file changes
+- Bug fixes where the root cause is identified in the notes
+- Stories with detailed notes and specific file paths
+
+**Use `"opus"` for:**
+
+- Architectural changes that require understanding cross-cutting concerns
+- Complex debugging where the root cause is unknown
+- Converting between fundamentally different APIs (e.g., Bun.serve → node:http)
+- Stories that require reading and understanding large amounts of code before making changes
+- Multi-file refactors where the agent needs to reason about dependencies
+- E2E test infrastructure changes that interact with process management, WebSocket proxying, or hot reload
+- Any story where a less capable model would likely get stuck and waste iterations
+
+When in doubt, use `"sonnet"` — it's faster and cheaper. Upgrade to `"opus"` only when the task genuinely requires deeper reasoning. A story that burns multiple iterations on sonnet should have been tagged opus from the start.
 
 ---
 
@@ -486,6 +516,7 @@ PRD and progress files in a worker's local `.ralph/` directory (inside the code 
 - [ ] Notes field has implementation hints for non-trivial stories
 - [ ] Notes use repo-root-relative file paths
 - [ ] `passes` field is boolean `false` for every story
+- [ ] `model` field is set on every story — `"sonnet"` for straightforward work, `"opus"` for complex architectural/debugging tasks (see "Model Selection")
 - [ ] `e2eCheckpoint` field is set on every story (`false` for standalone subprojects; see "E2E Checkpoint Strategy" for root monorepo)
 - [ ] **For root monorepo PRDs that touch browser behavior: the final story has `e2eCheckpoint: true`** and checkpoints are placed at logical group boundaries
 - [ ] **For root monorepo PRDs with no browser-observable changes: all stories can be `e2eCheckpoint: false`** (ralph's safety net runs E2E after completion)

@@ -18,7 +18,6 @@
 # NOTE: set -e is intentionally NOT used — same rationale as ralph.sh.
 
 TOOL="${WORKER_TOOL:-claude}"
-MODEL="${WORKER_MODEL:-}"
 PRD_BASENAME="${WORKER_PRD_FILE}"
 RESULT_FILE="${WORKER_RESULT_FILE:-/tmp/worker-result.txt}"
 TAG="${WORKER_TAG:-worker}"
@@ -224,8 +223,10 @@ You are an autonomous coding agent running in a git worktree. The safety net ver
     if [[ "$TOOL" == "amp" ]]; then
       echo "$E2E_FIX_PROMPT" | (cd "$WORKTREE_DIR" && amp --dangerously-allow-all) 2>&1 || true
     else
+      # E2E fix iterations always use opus — debugging test failures requires deeper reasoning
+      local fix_model="${WORKER_MODEL_OPUS:-claude-opus}"
       CLAUDE_ARGS=(--dangerously-skip-permissions --print --output-format stream-json --verbose)
-      [ -n "$MODEL" ] && CLAUDE_ARGS+=(--model "$MODEL")
+      CLAUDE_ARGS+=(--model "$fix_model")
       echo "$E2E_FIX_PROMPT" | (cd "$WORKTREE_DIR" && claude "${CLAUDE_ARGS[@]}") \
         2>"$FIX_STDERR" | stream_filter "$FIX_RESULT_FILE" || true
     fi
@@ -302,6 +303,19 @@ You are an autonomous coding agent running in a git worktree. The safety net ver
     wlog ""
     wlog "── Iteration $i/$max_iterations — story ($passed/$total) — $remaining remaining ──"
 
+    # Determine model for the current (first incomplete) story from the PRD.
+    # Each story has a "model" field: "sonnet" or "opus". The worker maps these
+    # to the actual model names via WORKER_MODEL_SONNET / WORKER_MODEL_OPUS env vars.
+    local story_model
+    story_model=$(jq -r '[.userStories[] | select(.passes != true)] | sort_by(.priority) | .[0].model // "sonnet"' "$wt_prd" 2>/dev/null || echo "sonnet")
+    local iter_model=""
+    if [ "$story_model" = "opus" ]; then
+      iter_model="${WORKER_MODEL_OPUS:-claude-opus}"
+    else
+      iter_model="${WORKER_MODEL_SONNET:-claude-sonnet}"
+    fi
+    wlog "Model: $iter_model (story requests: $story_model)"
+
     ITER_RESULT_FILE=$(mktemp)
     STDERR_FILE=$(mktemp)
 
@@ -310,7 +324,7 @@ You are an autonomous coding agent running in a git worktree. The safety net ver
       echo "$OUTPUT" > "$ITER_RESULT_FILE"
     else
       CLAUDE_ARGS=(--dangerously-skip-permissions --print --output-format stream-json --verbose)
-      [ -n "$MODEL" ] && CLAUDE_ARGS+=(--model "$MODEL")
+      CLAUDE_ARGS+=(--model "$iter_model")
       (cd "$WORKTREE_DIR" && claude "${CLAUDE_ARGS[@]}") \
         < "$WORKTREE_DIR/.ralph/RALPH.md" 2>"$STDERR_FILE" \
         | stream_filter "$ITER_RESULT_FILE" || true

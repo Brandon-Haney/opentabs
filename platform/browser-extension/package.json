@@ -14,8 +14,8 @@
   },
   "scripts": {
     "build": "tsc --build",
-    "build:bundle": "bun run build-extension.ts",
-    "build:side-panel": "bun run build-side-panel.ts && bun run build:tailwind",
+    "build:bundle": "tsx build-extension.ts",
+    "build:side-panel": "tsx build-side-panel.ts && npm run build:tailwind",
     "build:tailwind": "npx @tailwindcss/cli -i src/side-panel/styles.css -o dist/side-panel/styles.css --minify",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build -o storybook-static"

@@ -8,8 +8,6 @@ const config: KnipConfig = {
         // Peer dependencies required by ESLint plugins at runtime
         '@typescript-eslint/parser',
         'eslint-plugin-react-hooks',
-        // TypeScript executor used in package.json scripts; not imported as a module
-        'tsx',
       ],
     },
     'platform/shared': {

@@ -19,7 +19,7 @@ const distPath = resolve(ROOT, 'platform', 'mcp-server', 'dist', 'index.js');
 
 if (!existsSync(distPath)) {
   console.error('Error: platform/mcp-server/dist/index.js not found.');
-  console.error('Run `bun run build` first to compile the project.');
+  console.error('Run `npm run build` first to compile the project.');
   process.exit(1);
 }
 

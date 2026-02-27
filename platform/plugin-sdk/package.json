@@ -17,7 +17,7 @@
   },
   "scripts": {
     "build": "tsc --build",
-    "generate:icons": "bun scripts/generate-icon-names.ts"
+    "generate:icons": "tsx scripts/generate-icon-names.ts"
   },
   "dependencies": {
     "@opentabs-dev/shared": "workspace:*"

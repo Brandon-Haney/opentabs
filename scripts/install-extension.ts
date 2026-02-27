@@ -1,6 +1,6 @@
 /**
  * Copy the built browser extension to the managed install directory
- * (~/.opentabs/extension/). Runs as the final step of `bun run build`
+ * (~/.opentabs/extension/). Runs as the final step of `npm run build`
  * to ensure the managed extension stays in sync with the source during
  * development.
  *

@@ -25,6 +25,12 @@ Override the config directory with the `OPENTABS_CONFIG_DIR` environment variabl
   </Table.Header>
   <Table.Body>
     <Table.Row>
+      <Table.Cell className="font-medium">`port`</Table.Cell>
+      <Table.Cell className="*:text-xs">`number`</Table.Cell>
+      <Table.Cell className="*:text-xs">`9515`</Table.Cell>
+      <Table.Cell>MCP server port. Set via `opentabs config set port <n>` or the `--port` CLI flag. Port resolution order (highest precedence first): `--port` flag → `OPENTABS_PORT` env var → `config.json port` → default `9515`.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
       <Table.Cell className="font-medium">`localPlugins`</Table.Cell>
       <Table.Cell className="*:text-xs">`string[]`</Table.Cell>
       <Table.Cell className="*:text-xs">`[]`</Table.Cell>

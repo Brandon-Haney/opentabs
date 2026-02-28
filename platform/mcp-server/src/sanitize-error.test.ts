@@ -21,16 +21,28 @@ describe('sanitizeErrorMessage', () => {
       expect(sanitizeErrorMessage('Error at /usr/local/lib/node_modules/pkg/index.js:42')).toBe('Error at [PATH]:42');
     });
 
-    test('replaces single-segment unix paths like /tmp', () => {
-      expect(sanitizeErrorMessage('File not found in /tmp')).toBe('File not found in [PATH]');
+    test('does not replace single-segment unix paths like /tmp', () => {
+      expect(sanitizeErrorMessage('File not found in /tmp')).toBe('File not found in /tmp');
     });
 
-    test('replaces single-segment unix paths like /etc', () => {
-      expect(sanitizeErrorMessage('/etc permission denied')).toBe('[PATH] permission denied');
+    test('does not replace single-segment unix paths like /etc', () => {
+      expect(sanitizeErrorMessage('/etc permission denied')).toBe('/etc permission denied');
     });
 
-    test('replaces single-segment unix paths like /var', () => {
-      expect(sanitizeErrorMessage('Could not access /var')).toBe('Could not access [PATH]');
+    test('does not replace single-segment unix paths like /var', () => {
+      expect(sanitizeErrorMessage('Could not access /var')).toBe('Could not access /var');
+    });
+
+    test('does not replace single-segment URL path fragments like /api', () => {
+      expect(sanitizeErrorMessage('Route /api not found')).toBe('Route /api not found');
+    });
+
+    test('does not replace single-segment URL path fragments like /json', () => {
+      expect(sanitizeErrorMessage('Cannot parse /json response')).toBe('Cannot parse /json response');
+    });
+
+    test('replaces multi-segment URL path fragments like /api/v1/users with [PATH]', () => {
+      expect(sanitizeErrorMessage('Request to /api/v1/users failed')).toBe('Request to [PATH] failed');
     });
 
     test('does not replace a single slash', () => {

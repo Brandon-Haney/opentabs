@@ -16,8 +16,10 @@ const sanitizeErrorMessage = (message: string): string => {
     // Windows absolute paths: C:\path\to\file or C:/path/to/file
     .replace(/[a-z]:[/\\][^\s,;)}\]]+/gi, '[PATH]')
     // Unix absolute paths: /path/to/file — first segment must start with a letter to avoid
-    // false positives on numeric segments like "1/2" (fractions/ratios)
-    .replace(/\/[a-z][a-z0-9._-]*(?:\/[a-z0-9._-]+)*/gi, '[PATH]')
+    // false positives on numeric segments like "1/2" (fractions/ratios). Requires at least 2
+    // segments so single-segment paths like "/api" or "/json" are not stripped (they are more
+    // likely URL path fragments than filesystem paths).
+    .replace(/\/[a-z][a-z0-9._-]*(?:\/[a-z0-9._-]+)+/gi, '[PATH]')
     // localhost with optional port
     .replace(/localhost(?::\d+)?/gi, '[LOCALHOST]')
     // IPv4 addresses

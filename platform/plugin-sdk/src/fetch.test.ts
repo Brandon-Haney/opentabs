@@ -583,7 +583,8 @@ describe('fetchJSON', () => {
       const toolError = error as ToolError;
       expect(toolError.code).toBe('VALIDATION_ERROR');
       expect(toolError.category).toBe('validation');
-      expect(toolError.message).toContain('failed schema validation');
+      expect(toolError.message).toContain('204 No Content');
+      expect(toolError.message).toContain('no body to validate');
     }
   });
 });

@@ -85,6 +85,24 @@ describe('setLocalStorage', () => {
       writable: true,
     });
   });
+
+  test('silently fails when localStorage.setItem throws QuotaExceededError', () => {
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        setItem: () => {
+          throw new DOMException('Storage quota exceeded', 'QuotaExceededError');
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+    expect(() => setLocalStorage('key', 'value')).not.toThrow();
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: win.localStorage as unknown as Storage,
+      configurable: true,
+      writable: true,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -164,6 +182,24 @@ describe('setSessionStorage', () => {
         throw new DOMException('Access denied', 'SecurityError');
       },
       configurable: true,
+    });
+    expect(() => setSessionStorage('key', 'value')).not.toThrow();
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      value: win.sessionStorage as unknown as Storage,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  test('silently fails when sessionStorage.setItem throws QuotaExceededError', () => {
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      value: {
+        setItem: () => {
+          throw new DOMException('Storage quota exceeded', 'QuotaExceededError');
+        },
+      },
+      configurable: true,
+      writable: true,
     });
     expect(() => setSessionStorage('key', 'value')).not.toThrow();
     Object.defineProperty(globalThis, 'sessionStorage', {

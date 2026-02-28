@@ -1,5 +1,6 @@
 {
   "name": "@opentabs-dev/opentabs-plugin-slack",
+  "description": "OpenTabs plugin for Slack",
   "publishConfig": {
     "access": "restricted"
   },

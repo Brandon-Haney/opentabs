@@ -97,17 +97,20 @@ const whenReady = (fn: () => void, onTimeout: () => void): void => {
   const timer = setTimeout(() => {
     if (!settled) {
       settled = true;
+      pending.splice(pending.indexOf(entry), 1);
       onTimeout();
     }
   }, READY_TIMEOUT_MS);
 
-  pending.push(() => {
+  const entry = (): void => {
     if (!settled) {
       settled = true;
       clearTimeout(timer);
       fn();
     }
-  });
+  };
+
+  pending.push(entry);
 };
 
 /** Forward an HTTP request to the worker via node:http. */

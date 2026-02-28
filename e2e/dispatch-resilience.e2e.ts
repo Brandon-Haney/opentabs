@@ -23,6 +23,7 @@ import {
   waitForToolResult,
   setupToolTest,
   callToolExpectSuccess,
+  waitFor,
 } from './helpers.js';
 
 // ---------------------------------------------------------------------------
@@ -514,8 +515,18 @@ test.describe('Server-side dispatch timeout', () => {
     const start = Date.now();
     const toolCallPromise = timeoutClient.callTool('e2e-test_echo', { message: 'should-timeout' }, { timeout: 45_000 });
 
-    // Wait briefly for the dispatch to be sent over the WS before replacing it
-    await new Promise(r => setTimeout(r, 500));
+    // Poll the test server until the in-flight request arrives
+    await waitFor(
+      async () => {
+        const invocations = await testServer.invocations();
+        return invocations.some(
+          i => i.path === '/api/echo' && (i.body as Record<string, unknown>).message === 'should-timeout',
+        );
+      },
+      10_000,
+      200,
+      'in-flight echo tool call to reach test server',
+    );
 
     // Replace the extension's WebSocket with a fake client.
     // The server closes the old WS (triggering a close event), but since

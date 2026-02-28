@@ -598,8 +598,18 @@ test.describe('IIFE injection — plugin.update during active tool dispatch', ()
       // Start a slow tool call — takes ~3 seconds
       const slowCallPromise = ctx.client.callTool('e2e-test_echo', { message: 'in-flight' });
 
-      // Wait for the request to reach the test server
-      await new Promise(r => setTimeout(r, 500));
+      // Poll the test server until the in-flight request arrives
+      await waitFor(
+        async () => {
+          const invocations = await ctx.testServer.invocations();
+          return invocations.some(
+            i => i.path === '/api/echo' && (i.body as Record<string, unknown>).message === 'in-flight',
+          );
+        },
+        10_000,
+        200,
+        'in-flight echo tool call to reach test server',
+      );
 
       // Modify the IIFE to add a marker property (same pattern as re-injection test)
       const iifePath = path.join(ctx.pluginDir, 'dist', 'adapter.iife.js');

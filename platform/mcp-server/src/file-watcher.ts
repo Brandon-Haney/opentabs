@@ -434,6 +434,12 @@ const watchPendingPlugin = (
         }, 200),
       );
     });
+    distWatcher.on('error', err => {
+      log.warn(
+        `File watcher: Error on dist watcher for "${pluginDir}": ${err instanceof Error ? err.message : String(err)}`,
+      );
+      distWatcher.close();
+    });
     watchers.push(distWatcher);
   } catch {
     // dist/ may not exist yet — will be watched once plugin is rebuilt
@@ -492,6 +498,12 @@ const watchPlugin = (
         );
       }
     });
+    distWatcher.on('error', err => {
+      log.warn(
+        `File watcher: Error on dist watcher for "${pluginName}": ${err instanceof Error ? err.message : String(err)}`,
+      );
+      distWatcher.close();
+    });
     watchers.push(distWatcher);
   } catch (err) {
     log.warn(`File watcher: Could not watch dist dir at ${distDir}:`, err);
@@ -524,7 +536,7 @@ const startConfigWatching = (state: ServerState, callbacks: FileWatcherCallbacks
   fw.configLastSeenMtime = getFileMtimeMs(configPath);
 
   try {
-    fw.configWatcher = watch(configDir, (_eventType: string, filename: string | null) => {
+    const configWatcher = watch(configDir, (_eventType: string, filename: string | null) => {
       if (filename !== 'config.json') return;
 
       const key = 'config';
@@ -543,6 +555,14 @@ const startConfigWatching = (state: ServerState, callbacks: FileWatcherCallbacks
         }, 200),
       );
     });
+    configWatcher.on('error', err => {
+      log.warn(
+        `File watcher: Error on config watcher for "config": ${err instanceof Error ? err.message : String(err)}`,
+      );
+      configWatcher.close();
+      fw.configWatcher = null;
+    });
+    fw.configWatcher = configWatcher;
 
     log.info(`Config watcher: Watching ${configDir} for config.json changes`);
   } catch (err) {

@@ -1,7 +1,8 @@
 import { handleToolsJsonChange, startConfigWatching, startFileWatching, stopFileWatching } from './file-watcher.js';
+import { log } from './logger.js';
 import { buildRegistry } from './registry.js';
 import { createState } from './state.js';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -466,5 +467,46 @@ describe('handleToolsJsonChange', () => {
 
     // The embedded hash from the IIFE should be set
     expect(state.registry.plugins.get('test-plugin')?.adapterHash).toBe(EMBEDDED_HASH);
+  });
+});
+
+describe('FSWatcher error event handlers', () => {
+  let tmpDir: string;
+  let state: ServerState;
+
+  afterEach(() => {
+    stopFileWatching(state);
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('error event on dist watcher logs warning and does not throw', () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'fw-error-'));
+    const pluginDir = join(tmpDir, 'test-plugin');
+    mkdirSync(join(pluginDir, 'dist'), { recursive: true });
+    writeFileSync(join(pluginDir, 'dist', 'tools.json'), '[]');
+    writeFileSync(join(pluginDir, 'dist', 'adapter.iife.js'), '(function(){})()');
+
+    state = createState();
+    state.registry = buildRegistry([makePlugin({ sourcePath: pluginDir })], []);
+
+    startFileWatching(state, noopCallbacks);
+
+    const entry = state.fileWatching.entries[0];
+    // fs.watch() may fail with EMFILE when inotify instances are exhausted.
+    // If no watcher was created, skip — mtime polling handles that case.
+    if (!entry || entry.watchers.length === 0) return;
+
+    const watcher = entry.watchers[0];
+    if (!watcher) return;
+    const warnSpy = vi.spyOn(log, 'warn');
+
+    // Emitting an error event must NOT throw (i.e., must not crash the process)
+    expect(() => {
+      watcher.emit('error', new Error('EMFILE: too many open files'));
+    }).not.toThrow();
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Error on dist watcher'));
+
+    warnSpy.mockRestore();
   });
 });

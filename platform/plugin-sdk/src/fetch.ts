@@ -123,8 +123,8 @@ export const fetchJSONImpl = async (url: string, init?: FetchFromPageOptions, sc
 export interface FetchJSON {
   /** Fetch JSON and validate against a Zod schema. Returns the validated, typed result. */
   <T extends z.ZodType>(url: string, init: FetchFromPageOptions | undefined, schema: T): Promise<z.infer<T>>;
-  /** Fetch JSON with an unchecked cast to T (backward compatible). */
-  <T>(url: string, init?: FetchFromPageOptions): Promise<T>;
+  /** Fetch JSON with an unchecked cast to T. Returns undefined for 204 No Content responses. */
+  <T>(url: string, init?: FetchFromPageOptions): Promise<T | undefined>;
 }
 
 /**
@@ -147,8 +147,8 @@ export interface PostJSON {
     init: FetchFromPageOptions | undefined,
     schema: T,
   ): Promise<z.infer<T>>;
-  /** POST JSON with an unchecked cast to T (backward compatible). */
-  <T>(url: string, body: unknown, init?: FetchFromPageOptions): Promise<T>;
+  /** POST JSON with an unchecked cast to T. Returns undefined for 204 No Content responses. */
+  <T>(url: string, body: unknown, init?: FetchFromPageOptions): Promise<T | undefined>;
 }
 
 /**
@@ -187,8 +187,8 @@ export interface PostForm {
     init: FetchFromPageOptions | undefined,
     schema: T,
   ): Promise<z.infer<T>>;
-  /** POST URL-encoded form with an unchecked cast to T (backward compatible). */
-  <T>(url: string, body: Record<string, string>, init?: FetchFromPageOptions): Promise<T>;
+  /** POST URL-encoded form with an unchecked cast to T. Returns undefined for 204 No Content responses. */
+  <T>(url: string, body: Record<string, string>, init?: FetchFromPageOptions): Promise<T | undefined>;
 }
 
 /**
@@ -228,8 +228,8 @@ export interface PostFormData {
     init: FetchFromPageOptions | undefined,
     schema: T,
   ): Promise<z.infer<T>>;
-  /** POST multipart form data with an unchecked cast to T (backward compatible). */
-  <T>(url: string, body: FormData, init?: FetchFromPageOptions): Promise<T>;
+  /** POST multipart form data with an unchecked cast to T. Returns undefined for 204 No Content responses. */
+  <T>(url: string, body: FormData, init?: FetchFromPageOptions): Promise<T | undefined>;
 }
 
 /**
@@ -269,8 +269,8 @@ export interface PutJSON {
     init: FetchFromPageOptions | undefined,
     schema: T,
   ): Promise<z.infer<T>>;
-  /** PUT JSON with an unchecked cast to T (backward compatible). */
-  <T>(url: string, body: unknown, init?: FetchFromPageOptions): Promise<T>;
+  /** PUT JSON with an unchecked cast to T. Returns undefined for 204 No Content responses. */
+  <T>(url: string, body: unknown, init?: FetchFromPageOptions): Promise<T | undefined>;
 }
 
 /**
@@ -309,8 +309,8 @@ export interface PatchJSON {
     init: FetchFromPageOptions | undefined,
     schema: T,
   ): Promise<z.infer<T>>;
-  /** PATCH JSON with an unchecked cast to T (backward compatible). */
-  <T>(url: string, body: unknown, init?: FetchFromPageOptions): Promise<T>;
+  /** PATCH JSON with an unchecked cast to T. Returns undefined for 204 No Content responses. */
+  <T>(url: string, body: unknown, init?: FetchFromPageOptions): Promise<T | undefined>;
 }
 
 /**

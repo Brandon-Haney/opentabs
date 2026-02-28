@@ -1,4 +1,4 @@
-import { defineTool, fetchJSON } from '@opentabs-dev/plugin-sdk';
+import { defineTool, fetchJSON, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 
 export const sdkFetchJson = defineTool({
@@ -17,6 +17,9 @@ export const sdkFetchJson = defineTool({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
+    if (result === undefined) {
+      throw ToolError.validation('fetchJSON returned no content (204) but a JSON body was expected');
+    }
     return { ok: result.ok, data: result.data };
   },
 });

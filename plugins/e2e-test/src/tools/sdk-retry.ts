@@ -1,4 +1,4 @@
-import { defineTool, retry, fetchJSON } from '@opentabs-dev/plugin-sdk';
+import { defineTool, retry, fetchJSON, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 
 export const sdkRetry = defineTool({
@@ -22,6 +22,9 @@ export const sdkRetry = defineTool({
         }),
       { maxAttempts: 5, delay: 100 },
     );
+    if (result === undefined) {
+      throw ToolError.validation('fetchJSON returned no content (204) but a JSON body was expected');
+    }
     return { ok: result.ok, data: result.data, attempts: result.attempts };
   },
 });

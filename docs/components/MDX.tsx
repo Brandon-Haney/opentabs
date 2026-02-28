@@ -80,7 +80,12 @@ const docComponents = {
   },
   pre: CodeBlock,
   code: ({ className, children, ...props }: React.HTMLAttributes<HTMLElement>) => (
-    <code className={cn('bg-code-bg text-primary relative rounded-(--radius) p-1 text-sm', className)} {...props}>
+    <code
+      className={cn(
+        'bg-inline-code-bg text-inline-code-fg border-border/30 relative rounded-(--radius) border px-1.5 py-0.5 font-mono text-sm',
+        className,
+      )}
+      {...props}>
       {children}
     </code>
   ),

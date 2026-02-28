@@ -31,6 +31,8 @@
   --color-border: var(--border);
   --color-code-bg: var(--code-bg);
   --color-code-fg: var(--code-fg);
+  --color-inline-code-bg: var(--inline-code-bg);
+  --color-inline-code-fg: var(--inline-code-fg);
 }
 
 :root {
@@ -53,6 +55,8 @@
   --border: #000;
   --code-bg: #282a36;
   --code-fg: #f8f8f2;
+  --inline-code-bg: #f0ede6;
+  --inline-code-fg: #4a3f2f;
 }
 
 .dark {
@@ -74,6 +78,8 @@
   --border: #5c5c5c;
   --code-bg: #1e1e2e;
   --code-fg: #f8f8f2;
+  --inline-code-bg: #2a2a2a;
+  --inline-code-fg: #e0d8c8;
 }
 
 body {

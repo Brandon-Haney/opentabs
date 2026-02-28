@@ -13,6 +13,7 @@
  * documents do not have access to chrome.storage APIs.
  */
 
+import { isValidWsOrigin, wsToHttpBase } from './ws-utils.js';
 import {
   buildWsUrl,
   DEFAULT_SERVER_PORT,
@@ -45,38 +46,6 @@ const PONG_TIMEOUT_MS = 5_000; // Expect pong within 5s or connection is dead
  * truth for all recognized WebSocket methods.
  */
 const ALLOWED_METHODS = new Set<string>(ALL_ALLOWED_METHODS);
-
-/**
- * Validate that a WebSocket URL from /ws-info has the expected origin.
- * Rejects URLs with a different host than the source or non-WebSocket protocols.
- */
-const isValidWsOrigin = (wsUrl: string, httpBase: string): boolean => {
-  try {
-    const parsed = new URL(wsUrl);
-    if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
-      console.warn(`[opentabs:offscreen] Rejected wsUrl with invalid protocol: ${parsed.protocol}`);
-      return false;
-    }
-    const source = new URL(httpBase);
-    if (parsed.host !== source.host) {
-      console.warn(
-        `[opentabs:offscreen] Rejected wsUrl with mismatched host: ${parsed.host} (expected ${source.host})`,
-      );
-      return false;
-    }
-    if (parsed.pathname !== '/ws') {
-      console.warn(`[opentabs:offscreen] Rejected wsUrl with invalid path: ${parsed.pathname}`);
-      return false;
-    }
-    return true;
-  } catch {
-    console.warn('[opentabs:offscreen] Rejected wsUrl: failed to parse URL');
-    return false;
-  }
-};
-
-/** Convert a WebSocket URL to its HTTP base URL (e.g., ws://localhost:9515/ws → http://localhost:9515) */
-const wsToHttpBase = (wsUrl: string): string => wsUrl.replace(/^ws/, 'http').replace(/\/ws$/, '');
 
 /**
  * Fetch /ws-info from the MCP server with automatic 401 retry.

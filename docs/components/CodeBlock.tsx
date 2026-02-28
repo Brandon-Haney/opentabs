@@ -22,7 +22,7 @@ export const CodeBlock = ({ className, children, ...props }: React.HTMLAttribute
 
   return (
     <div className="relative my-6">
-      <pre className={cn('bg-code-bg overflow-x-auto rounded-(--radius) p-4', className)} {...props}>
+      <pre className={cn('bg-code-bg text-code-fg overflow-x-auto rounded-(--radius) p-4', className)} {...props}>
         <Button disabled={hasCopied} className="absolute top-4 right-4 z-10" size="sm" onClick={handleClickCopy}>
           {hasCopied ? 'Copied' : 'Copy'}
         </Button>

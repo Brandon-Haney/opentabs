@@ -141,10 +141,10 @@ Auto-generated on first run. Used for authentication across all transports:
 Retrieve it for MCP client configuration:
 
 ```bash
-opentabs config show --json | jq -r .secret
+opentabs config show --json --show-secret | jq -r .secret
 ```
 
-This works because `opentabs config show` merges the secret from auth.json into its output for convenience. The source of truth is always auth.json.
+The `--show-secret` flag is required to output the full secret value. Without it, the secret is truncated. The source of truth is always auth.json.
 
 ### browserToolPolicy
 

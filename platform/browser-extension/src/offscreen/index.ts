@@ -263,6 +263,7 @@ const connect = async (): Promise<void> => {
 
   connecting = true;
   try {
+    await bootstrapFromAuthFile();
     const reason = await refreshWsUrl();
     if (reason) {
       lastDisconnectReason = reason;

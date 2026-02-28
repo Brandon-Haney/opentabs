@@ -347,6 +347,48 @@ describe('validateInactiveIconColors', () => {
     const result = validateInactiveIconColors(svg);
     expect(result.valid).toBe(false);
   });
+
+  // -- Modern CSS Color Level 4 space-separated rgb() syntax --
+
+  test('fill="rgb(255 0 0)" (modern syntax, saturated red) fails', () => {
+    const svg = svgWrap('<rect fill="rgb(255 0 0)"/>');
+    const result = validateInactiveIconColors(svg);
+    expect(result.valid).toBe(false);
+  });
+
+  test('fill="rgb(128 128 128)" (modern syntax, achromatic) passes', () => {
+    const svg = svgWrap('<rect fill="rgb(128 128 128)"/>');
+    expect(validateInactiveIconColors(svg)).toEqual({ valid: true });
+  });
+
+  test('fill="rgb(255 0 0 / 0.5)" (modern syntax with alpha, saturated) fails', () => {
+    const svg = svgWrap('<rect fill="rgb(255 0 0 / 0.5)"/>');
+    const result = validateInactiveIconColors(svg);
+    expect(result.valid).toBe(false);
+  });
+
+  test('fill="rgba(255 0 0 / 0.5)" (modern rgba syntax, saturated) fails', () => {
+    const svg = svgWrap('<rect fill="rgba(255 0 0 / 0.5)"/>');
+    const result = validateInactiveIconColors(svg);
+    expect(result.valid).toBe(false);
+  });
+
+  test('fill="rgb(100% 0% 0%)" (modern percentage syntax, saturated) fails', () => {
+    const svg = svgWrap('<rect fill="rgb(100% 0% 0%)"/>');
+    const result = validateInactiveIconColors(svg);
+    expect(result.valid).toBe(false);
+  });
+
+  test('fill="rgb(100% 50% 0% / 0.5)" (modern percentage with alpha, saturated) fails', () => {
+    const svg = svgWrap('<rect fill="rgb(100% 50% 0% / 0.5)"/>');
+    const result = validateInactiveIconColors(svg);
+    expect(result.valid).toBe(false);
+  });
+
+  test('fill="rgb(50% 50% 50%)" (modern percentage, achromatic) passes', () => {
+    const svg = svgWrap('<rect fill="rgb(50% 50% 50%)"/>');
+    expect(validateInactiveIconColors(svg)).toEqual({ valid: true });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -743,5 +785,53 @@ describe('generateInactiveIcon', () => {
     const result = generateInactiveIcon(svg);
     expect(result).toContain('fill: #363636');
     expect(result).toContain('stroke="#b6b6b6"');
+  });
+
+  // -- Modern CSS Color Level 4 space-separated rgb() syntax --
+
+  test('fill="rgb(255 0 0)" (modern syntax) → #363636', () => {
+    const svg = svgWrap('<rect fill="rgb(255 0 0)"/>');
+    const result = generateInactiveIcon(svg);
+    expect(result).toContain('fill="#363636"');
+  });
+
+  test('fill="rgb(0 255 0)" (modern syntax, green) → #b6b6b6', () => {
+    const svg = svgWrap('<rect fill="rgb(0 255 0)"/>');
+    const result = generateInactiveIcon(svg);
+    expect(result).toContain('fill="#b6b6b6"');
+  });
+
+  test('fill="rgb(255 0 0 / 0.5)" (modern syntax with alpha) → rgba(54, 54, 54, 0.5)', () => {
+    const svg = svgWrap('<rect fill="rgb(255 0 0 / 0.5)"/>');
+    const result = generateInactiveIcon(svg);
+    expect(result).toContain('fill="rgba(54, 54, 54, 0.5)"');
+  });
+
+  test('fill="rgba(255 0 0 / 0.5)" (modern rgba syntax) → rgba(54, 54, 54, 0.5)', () => {
+    const svg = svgWrap('<rect fill="rgba(255 0 0 / 0.5)"/>');
+    const result = generateInactiveIcon(svg);
+    expect(result).toContain('fill="rgba(54, 54, 54, 0.5)"');
+  });
+
+  test('fill="rgb(100% 0% 0%)" (modern percentage syntax) → #363636', () => {
+    const svg = svgWrap('<rect fill="rgb(100% 0% 0%)"/>');
+    const result = generateInactiveIcon(svg);
+    expect(result).toContain('fill="#363636"');
+  });
+
+  test('fill="rgb(100% 50% 0% / 0.5)" (modern percentage with alpha) → rgba(145, 145, 145, 0.5)', () => {
+    // R=255, G=round(50*2.55)=127 (fp: 50*2.55=127.499...), B=0
+    // gray = round(0.2126*255 + 0.7152*127 + 0.0722*0) = round(54.213 + 90.830 + 0) = round(145.043) = 145
+    const svg = svgWrap('<rect fill="rgb(100% 50% 0% / 0.5)"/>');
+    const result = generateInactiveIcon(svg);
+    expect(result).toContain('fill="rgba(145, 145, 145, 0.5)"');
+  });
+
+  test('generateInactiveIcon output with modern syntax passes validateInactiveIconColors', () => {
+    const svg = svgWrap(
+      '<rect fill="rgb(255 0 0)"/>' + '<circle fill="rgb(0 255 0 / 0.8)"/>' + '<path stroke="rgb(100% 0% 0%)"/>',
+    );
+    const inactive = generateInactiveIcon(svg);
+    expect(validateInactiveIconColors(inactive)).toEqual({ valid: true });
   });
 });

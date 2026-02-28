@@ -33,6 +33,7 @@ import {
   E2E_TEST_PLUGIN_DIR,
 } from './fixtures.js';
 import {
+  waitFor,
   waitForLog,
   waitForExtensionConnected,
   parseToolResult,
@@ -530,17 +531,18 @@ test.describe.serial('Hot reload — new plugin callable from existing session',
     await page.goto(testServer.url, { waitUntil: 'load' });
 
     // Wait for adapter injection
-    const deadline = Date.now() + 20_000;
-    while (Date.now() < deadline) {
-      const injected = await page.evaluate(() => {
-        const ot = (globalThis as Record<string, unknown>).__openTabs as
-          | { adapters?: Record<string, unknown> }
-          | undefined;
-        return ot?.adapters?.['e2e-test'] !== undefined;
-      });
-      if (injected) break;
-      await new Promise(r => setTimeout(r, 500));
-    }
+    await waitFor(
+      () =>
+        page.evaluate(() => {
+          const ot = (globalThis as Record<string, unknown>).__openTabs as
+            | { adapters?: Record<string, unknown> }
+            | undefined;
+          return ot?.adapters?.['e2e-test'] !== undefined;
+        }),
+      20_000,
+      500,
+      'e2e-test adapter to be injected into tab',
+    );
 
     // Poll until the tool is callable (tab state = ready) instead of fixed sleep
     await waitForToolResult(mcpClient, 'e2e-test_get_status', {}, { isError: false }, 15_000);

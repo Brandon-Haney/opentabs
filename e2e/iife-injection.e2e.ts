@@ -420,66 +420,68 @@ fixtureTest.describe('IIFE injection — overlapping URL patterns', () => {
       const extraPluginDir = createMinimalPlugin(tmpDir, 'extra-plugin', [
         { name: 'noop', description: 'No-op tool for testing' },
       ]);
+      try {
+        // Add the second plugin to the config and enable its tool
+        const config = readTestConfig(mcpServer.configDir);
+        config.localPlugins.push(extraPluginDir);
+        config.tools['extra-plugin_noop'] = true;
+        writeTestConfig(mcpServer.configDir, config);
 
-      // Add the second plugin to the config and enable its tool
-      const config = readTestConfig(mcpServer.configDir);
-      config.localPlugins.push(extraPluginDir);
-      config.tools['extra-plugin_noop'] = true;
-      writeTestConfig(mcpServer.configDir, config);
+        // Trigger hot reload — server discovers both plugins, sends sync.full
+        mcpServer.logs.length = 0;
+        mcpServer.triggerHotReload();
 
-      // Trigger hot reload — server discovers both plugins, sends sync.full
-      mcpServer.logs.length = 0;
-      mcpServer.triggerHotReload();
+        await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+        await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
 
-      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
-      await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
+        // Wait for extra-plugin tools to appear in the MCP tool list
+        await waitForToolList(
+          mcpClient,
+          list => list.some(t => t.name === 'extra-plugin_noop'),
+          10_000,
+          300,
+          'extra-plugin_noop to appear in tool list',
+        );
 
-      // Wait for extra-plugin tools to appear in the MCP tool list
-      await waitForToolList(
-        mcpClient,
-        list => list.some(t => t.name === 'extra-plugin_noop'),
-        10_000,
-        300,
-        'extra-plugin_noop to appear in tool list',
-      );
+        // Wait for both adapters to be present in the page
+        await waitFor(
+          async () => {
+            const adapters = await page.evaluate(() => {
+              const ot = (globalThis as Record<string, unknown>).__openTabs as
+                | { adapters?: Record<string, unknown> }
+                | undefined;
+              return {
+                e2eTest: ot?.adapters?.['e2e-test'] !== undefined,
+                extraPlugin: ot?.adapters?.['extra-plugin'] !== undefined,
+              };
+            });
+            return adapters.e2eTest && adapters.extraPlugin;
+          },
+          15_000,
+          500,
+          'both e2e-test and extra-plugin adapters to be present',
+        );
 
-      // Wait for both adapters to be present in the page
-      await waitFor(
-        async () => {
-          const adapters = await page.evaluate(() => {
-            const ot = (globalThis as Record<string, unknown>).__openTabs as
-              | { adapters?: Record<string, unknown> }
-              | undefined;
-            return {
-              e2eTest: ot?.adapters?.['e2e-test'] !== undefined,
-              extraPlugin: ot?.adapters?.['extra-plugin'] !== undefined,
-            };
-          });
-          return adapters.e2eTest && adapters.extraPlugin;
-        },
-        15_000,
-        500,
-        'both e2e-test and extra-plugin adapters to be present',
-      );
+        // Verify both adapters are independently present
+        const adapters = await page.evaluate(() => {
+          const ot = (globalThis as Record<string, unknown>).__openTabs as
+            | { adapters?: Record<string, unknown> }
+            | undefined;
+          return Object.keys(ot?.adapters ?? {}).sort();
+        });
+        expect(adapters).toContain('e2e-test');
+        expect(adapters).toContain('extra-plugin');
 
-      // Verify both adapters are independently present
-      const adapters = await page.evaluate(() => {
-        const ot = (globalThis as Record<string, unknown>).__openTabs as
-          | { adapters?: Record<string, unknown> }
-          | undefined;
-        return Object.keys(ot?.adapters ?? {}).sort();
-      });
-      expect(adapters).toContain('e2e-test');
-      expect(adapters).toContain('extra-plugin');
+        // e2e-test tool dispatch still works with two adapters injected
+        const afterResult = await callToolExpectSuccess(mcpClient, mcpServer, 'e2e-test_echo', {
+          message: 'with-two-plugins',
+        });
+        expect(afterResult.message).toBe('with-two-plugins');
 
-      // e2e-test tool dispatch still works with two adapters injected
-      const afterResult = await callToolExpectSuccess(mcpClient, mcpServer, 'e2e-test_echo', {
-        message: 'with-two-plugins',
-      });
-      expect(afterResult.message).toBe('with-two-plugins');
-
-      await page.close();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+        await page.close();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
     },
   );
 
@@ -504,66 +506,68 @@ fixtureTest.describe('IIFE injection — overlapping URL patterns', () => {
         [{ name: 'noop', description: 'No-op tool for testing' }],
         ['*://localhost/*'],
       );
+      try {
+        // Add the second plugin to the config and enable its tool
+        const config = readTestConfig(mcpServer.configDir);
+        config.localPlugins.push(extraPluginDir);
+        config.tools['diff-pattern-plugin_noop'] = true;
+        writeTestConfig(mcpServer.configDir, config);
 
-      // Add the second plugin to the config and enable its tool
-      const config = readTestConfig(mcpServer.configDir);
-      config.localPlugins.push(extraPluginDir);
-      config.tools['diff-pattern-plugin_noop'] = true;
-      writeTestConfig(mcpServer.configDir, config);
+        // Trigger hot reload — server discovers both plugins, sends sync.full
+        mcpServer.logs.length = 0;
+        mcpServer.triggerHotReload();
 
-      // Trigger hot reload — server discovers both plugins, sends sync.full
-      mcpServer.logs.length = 0;
-      mcpServer.triggerHotReload();
+        await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+        await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
 
-      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
-      await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
+        // Wait for diff-pattern-plugin tools to appear in the MCP tool list
+        await waitForToolList(
+          mcpClient,
+          list => list.some(t => t.name === 'diff-pattern-plugin_noop'),
+          10_000,
+          300,
+          'diff-pattern-plugin_noop to appear in tool list',
+        );
 
-      // Wait for diff-pattern-plugin tools to appear in the MCP tool list
-      await waitForToolList(
-        mcpClient,
-        list => list.some(t => t.name === 'diff-pattern-plugin_noop'),
-        10_000,
-        300,
-        'diff-pattern-plugin_noop to appear in tool list',
-      );
+        // Wait for both adapters to be present in the page
+        await waitFor(
+          async () => {
+            const adapters = await page.evaluate(() => {
+              const ot = (globalThis as Record<string, unknown>).__openTabs as
+                | { adapters?: Record<string, unknown> }
+                | undefined;
+              return {
+                e2eTest: ot?.adapters?.['e2e-test'] !== undefined,
+                diffPattern: ot?.adapters?.['diff-pattern-plugin'] !== undefined,
+              };
+            });
+            return adapters.e2eTest && adapters.diffPattern;
+          },
+          15_000,
+          500,
+          'both e2e-test and diff-pattern-plugin adapters to be present',
+        );
 
-      // Wait for both adapters to be present in the page
-      await waitFor(
-        async () => {
-          const adapters = await page.evaluate(() => {
-            const ot = (globalThis as Record<string, unknown>).__openTabs as
-              | { adapters?: Record<string, unknown> }
-              | undefined;
-            return {
-              e2eTest: ot?.adapters?.['e2e-test'] !== undefined,
-              diffPattern: ot?.adapters?.['diff-pattern-plugin'] !== undefined,
-            };
-          });
-          return adapters.e2eTest && adapters.diffPattern;
-        },
-        15_000,
-        500,
-        'both e2e-test and diff-pattern-plugin adapters to be present',
-      );
+        // Verify both adapters are independently present
+        const adapters = await page.evaluate(() => {
+          const ot = (globalThis as Record<string, unknown>).__openTabs as
+            | { adapters?: Record<string, unknown> }
+            | undefined;
+          return Object.keys(ot?.adapters ?? {}).sort();
+        });
+        expect(adapters).toContain('e2e-test');
+        expect(adapters).toContain('diff-pattern-plugin');
 
-      // Verify both adapters are independently present
-      const adapters = await page.evaluate(() => {
-        const ot = (globalThis as Record<string, unknown>).__openTabs as
-          | { adapters?: Record<string, unknown> }
-          | undefined;
-        return Object.keys(ot?.adapters ?? {}).sort();
-      });
-      expect(adapters).toContain('e2e-test');
-      expect(adapters).toContain('diff-pattern-plugin');
+        // e2e-test tool dispatch still works with two adapters injected
+        const afterResult = await callToolExpectSuccess(mcpClient, mcpServer, 'e2e-test_echo', {
+          message: 'with-different-pattern-plugins',
+        });
+        expect(afterResult.message).toBe('with-different-pattern-plugins');
 
-      // e2e-test tool dispatch still works with two adapters injected
-      const afterResult = await callToolExpectSuccess(mcpClient, mcpServer, 'e2e-test_echo', {
-        message: 'with-different-pattern-plugins',
-      });
-      expect(afterResult.message).toBe('with-different-pattern-plugins');
-
-      await page.close();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+        await page.close();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
     },
   );
 });
@@ -594,8 +598,18 @@ test.describe('IIFE injection — plugin.update during active tool dispatch', ()
       // Start a slow tool call — takes ~3 seconds
       const slowCallPromise = ctx.client.callTool('e2e-test_echo', { message: 'in-flight' });
 
-      // Wait for the request to reach the test server
-      await new Promise(r => setTimeout(r, 500));
+      // Poll the test server until the in-flight request arrives
+      await waitFor(
+        async () => {
+          const invocations = await ctx.testServer.invocations();
+          return invocations.some(
+            i => i.path === '/api/echo' && (i.body as Record<string, unknown>).message === 'in-flight',
+          );
+        },
+        10_000,
+        200,
+        'in-flight echo tool call to reach test server',
+      );
 
       // Modify the IIFE to add a marker property (same pattern as re-injection test)
       const iifePath = path.join(ctx.pluginDir, 'dist', 'adapter.iife.js');

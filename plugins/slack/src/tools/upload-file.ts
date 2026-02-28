@@ -93,13 +93,29 @@ export const uploadFile = defineTool({
       throw ToolError.validation('Upload URL domain is not a trusted Slack domain');
     }
 
-    const uploadResult = await fetch(uploadResponse.upload_url, {
-      method: 'POST',
-      body: contentBytes,
-      credentials: 'include',
-      redirect: 'error',
-      signal: AbortSignal.timeout(30_000),
-    });
+    const uploadSignal = AbortSignal.timeout(30_000);
+    let uploadResult: Response;
+    try {
+      uploadResult = await fetch(uploadResponse.upload_url, {
+        method: 'POST',
+        body: contentBytes,
+        credentials: 'include',
+        redirect: 'error',
+        signal: uploadSignal,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'TimeoutError') {
+        throw ToolError.timeout('upload-file: file upload timed out after 30000ms');
+      }
+      if (uploadSignal.aborted) {
+        throw new ToolError('upload-file: file upload aborted', 'aborted');
+      }
+      throw new ToolError(
+        `upload-file: network error during file upload: ${error instanceof Error ? error.message : String(error)}`,
+        'network_error',
+        { category: 'internal', retryable: true },
+      );
+    }
     if (!uploadResult.ok) {
       throw ToolError.internal(`File upload HTTP ${uploadResult.status}`);
     }

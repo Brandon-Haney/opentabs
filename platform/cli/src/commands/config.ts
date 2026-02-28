@@ -577,7 +577,9 @@ const handleRotateSecret = async (options: RotateSecretOptions): Promise<void> =
   try {
     await writeAuthFile(newSecret);
   } catch (err) {
-    console.warn(pc.yellow(`Warning: Could not write auth.json: ${toErrorMessage(err)}`));
+    console.error(pc.red(`Failed to write auth.json: ${toErrorMessage(err)}`));
+    console.error('Secret was NOT rotated.');
+    process.exit(1);
   }
 
   // Notify the running server using the OLD secret so it reloads with the new one

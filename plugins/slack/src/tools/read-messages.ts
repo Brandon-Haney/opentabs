@@ -50,11 +50,11 @@ export const readMessages = defineTool({
       response_metadata?: { next_cursor: string };
     }>('conversations.history', body);
     return {
-      messages: data.messages.map(m => ({
-        type: m.type,
+      messages: (data.messages ?? []).map(m => ({
+        type: m.type ?? 'message',
         user: m.user,
-        text: m.text,
-        ts: m.ts,
+        text: m.text ?? '',
+        ts: m.ts ?? '',
       })),
       response_metadata: data.response_metadata,
     };

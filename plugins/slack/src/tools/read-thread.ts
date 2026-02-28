@@ -42,11 +42,11 @@ export const readThread = defineTool({
       cursor: params.cursor,
     });
     return {
-      messages: data.messages.map(m => ({
-        type: m.type,
+      messages: (data.messages ?? []).map(m => ({
+        type: m.type ?? 'message',
         user: m.user,
-        text: m.text,
-        ts: m.ts,
+        text: m.text ?? '',
+        ts: m.ts ?? '',
         thread_ts: m.thread_ts,
       })),
       has_more: data.has_more ?? false,

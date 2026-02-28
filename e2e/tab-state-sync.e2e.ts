@@ -72,7 +72,11 @@ test.describe('Tab state sync — navigate away', () => {
     // 3. Navigate the tab to a non-matching URL.
     // The e2e-test plugin matches http://localhost/* — navigating to a
     // different origin causes the extension to detect no matching tabs.
-    await page.goto('https://example.com', { waitUntil: 'load' });
+    // Use the test server via 127.0.0.1 instead of localhost so the plugin's
+    // URL match pattern does not match.
+    await page.goto(testServer.url.replace('localhost', '127.0.0.1') + '/non-matching', {
+      waitUntil: 'load',
+    });
 
     // 4. Poll /health until tabState becomes 'closed'
     await expect

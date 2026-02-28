@@ -275,12 +275,13 @@ test.describe('browser_list_tabs', () => {
 test.describe('browser_open_tab', () => {
   test('creates a new tab and returns its info', async ({
     mcpServer,
+    testServer,
     extensionContext: _extensionContext,
     mcpClient,
   }) => {
     await initAndListTools(mcpServer, mcpClient);
 
-    const result = await mcpClient.callTool('browser_open_tab', { url: 'https://example.com' });
+    const result = await mcpClient.callTool('browser_open_tab', { url: testServer.url });
     expect(result.isError).toBe(false);
 
     const tabInfo = parseToolResult(result.content);
@@ -303,13 +304,14 @@ test.describe('browser_open_tab', () => {
 test.describe('browser_close_tab', () => {
   test('closes a tab by ID and it disappears from tab list', async ({
     mcpServer,
+    testServer,
     extensionContext: _extensionContext,
     mcpClient,
   }) => {
     await initAndListTools(mcpServer, mcpClient);
 
     // Open a tab first
-    const openResult = await mcpClient.callTool('browser_open_tab', { url: 'https://example.com' });
+    const openResult = await mcpClient.callTool('browser_open_tab', { url: testServer.url });
     expect(openResult.isError).toBe(false);
     const tabInfo = parseToolResult(openResult.content);
     const tabId = tabInfo.id as number;
@@ -346,13 +348,14 @@ test.describe('browser_close_tab', () => {
 test.describe('browser_navigate_tab', () => {
   test('navigates an existing tab to a new URL', async ({
     mcpServer,
+    testServer,
     extensionContext: _extensionContext,
     mcpClient,
   }) => {
     await initAndListTools(mcpServer, mcpClient);
 
     // Open a tab
-    const openResult = await mcpClient.callTool('browser_open_tab', { url: 'https://example.com' });
+    const openResult = await mcpClient.callTool('browser_open_tab', { url: testServer.url });
     expect(openResult.isError).toBe(false);
     const tabInfo = parseToolResult(openResult.content);
     const tabId = tabInfo.id as number;
@@ -360,7 +363,7 @@ test.describe('browser_navigate_tab', () => {
     // Navigate it
     const navResult = await mcpClient.callTool('browser_navigate_tab', {
       tabId,
-      url: 'https://example.org',
+      url: testServer.url + '/non-matching',
     });
     expect(navResult.isError).toBe(false);
     const navData = parseToolResult(navResult.content);
@@ -938,14 +941,15 @@ test.describe('Browser tools — URL validation', () => {
     expect(result.content.toLowerCase()).toContain('url');
   });
 
-  test('browser_open_tab accepts valid https: URL', async ({
+  test('browser_open_tab accepts valid http: URL', async ({
     mcpServer,
+    testServer,
     extensionContext: _extensionContext,
     mcpClient,
   }) => {
     await initAndListTools(mcpServer, mcpClient);
 
-    const result = await mcpClient.callTool('browser_open_tab', { url: 'https://example.com' });
+    const result = await mcpClient.callTool('browser_open_tab', { url: testServer.url });
     expect(result.isError).toBe(false);
 
     const tabInfo = parseToolResult(result.content);
@@ -963,17 +967,18 @@ test.describe('Browser tools — URL validation', () => {
 test.describe('browser_focus_tab', () => {
   test('focuses a tab and verifies it becomes active', async ({
     mcpServer,
+    testServer,
     extensionContext: _extensionContext,
     mcpClient,
   }) => {
     await initAndListTools(mcpServer, mcpClient);
 
     // Open two tabs — the second one will be active after creation
-    const open1 = await mcpClient.callTool('browser_open_tab', { url: 'https://example.com' });
+    const open1 = await mcpClient.callTool('browser_open_tab', { url: testServer.url });
     expect(open1.isError).toBe(false);
     const tabId1 = parseToolResult(open1.content).id as number;
 
-    const open2 = await mcpClient.callTool('browser_open_tab', { url: 'https://example.org' });
+    const open2 = await mcpClient.callTool('browser_open_tab', { url: testServer.url + '/non-matching' });
     expect(open2.isError).toBe(false);
     const tabId2 = parseToolResult(open2.content).id as number;
 
@@ -1014,13 +1019,14 @@ test.describe('browser_focus_tab', () => {
 test.describe('browser_get_tab_info', () => {
   test('returns correct fields for an open tab', async ({
     mcpServer,
+    testServer,
     extensionContext: _extensionContext,
     mcpClient,
   }) => {
     await initAndListTools(mcpServer, mcpClient);
 
     // Open a tab (no need to wait for full page load — just need a valid tab ID)
-    const openResult = await mcpClient.callTool('browser_open_tab', { url: 'https://example.com' });
+    const openResult = await mcpClient.callTool('browser_open_tab', { url: testServer.url });
     expect(openResult.isError).toBe(false);
     const tabId = parseToolResult(openResult.content).id as number;
 
@@ -2069,7 +2075,7 @@ test.describe('Browser tools — resource inspection', () => {
 
     const result = await mcpClient.callTool('browser_get_resource_content', {
       tabId,
-      url: 'https://nonexistent.example.com/fake-resource.js',
+      url: testServer.url + '/nonexistent-resource.js',
     });
     expect(result.isError).toBe(true);
 
@@ -2085,7 +2091,7 @@ test.describe('Browser tools — resource inspection', () => {
 
     const result = await mcpClient.callTool('browser_get_resource_content', {
       tabId: 999999,
-      url: 'https://example.com/some-resource.js',
+      url: 'http://localhost/some-resource.js',
     });
     expect(result.isError).toBe(true);
   });

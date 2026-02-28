@@ -234,8 +234,11 @@ test.describe('Tab navigates away', () => {
     const okOutput = await callToolExpectSuccess(mcpClient, mcpServer, 'e2e-test_echo', { message: 'before-nav' });
     expect(okOutput.message).toBe('before-nav');
 
-    // Navigate the tab to a non-matching URL (example.com is not localhost)
-    await page.goto('https://example.com', { waitUntil: 'load', timeout: 15_000 });
+    // Navigate the tab to a non-matching URL (127.0.0.1 does not match the plugin's http://localhost/* pattern)
+    await page.goto(testServer.url.replace('localhost', '127.0.0.1') + '/non-matching', {
+      waitUntil: 'load',
+      timeout: 15_000,
+    });
 
     // Poll until the tool fails (tab no longer matches plugin URL pattern)
     const failResult = await waitForToolResult(
@@ -588,7 +591,7 @@ test.describe('Tool input validation', () => {
     // Send tabId as a string instead of a number — Zod validation fires server-side
     const result = await mcpClient.callTool('browser_navigate_tab', {
       tabId: 'not-a-number',
-      url: 'https://example.com',
+      url: 'http://localhost/',
     });
     expect(result.isError).toBe(true);
     expect(result.content.toLowerCase()).toContain('invalid');

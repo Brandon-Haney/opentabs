@@ -359,6 +359,25 @@ const SDK_TEST_HTML = `<!DOCTYPE html>
 </html>`;
 
 // ---------------------------------------------------------------------------
+// Non-matching page HTML — for E2E tests that need a page on a non-localhost
+// origin. The e2e-test plugin matches `http://localhost/*`, so accessing this
+// page via http://127.0.0.1:<port>/non-matching bypasses the match pattern.
+// ---------------------------------------------------------------------------
+
+const NON_MATCHING_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Non-Matching Page</title>
+</head>
+<body>
+  <h1>Non-Matching Page</h1>
+  <p>This page is served by the test server but accessed via 127.0.0.1 so it does not match the e2e-test plugin URL pattern.</p>
+</body>
+</html>`;
+
+// ---------------------------------------------------------------------------
 // Server
 // ---------------------------------------------------------------------------
 
@@ -429,6 +448,15 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
   if (path === '/sdk-test') {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(SDK_TEST_HTML);
+    return;
+  }
+
+  // --- Non-matching page (for adapter non-injection E2E tests) ---
+  // Access via http://127.0.0.1:<port>/non-matching to avoid matching
+  // the e2e-test plugin's `http://localhost/*` URL pattern.
+  if (path === '/non-matching') {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(NON_MATCHING_HTML);
     return;
   }
 

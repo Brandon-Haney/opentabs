@@ -610,10 +610,7 @@ test.describe('Adapter injection', () => {
     await waitForExtensionConnected(mcpServer);
 
     const page = await extensionContext.newPage();
-    await page.goto('https://example.com', {
-      waitUntil: 'load',
-      timeout: 15_000,
-    });
+    await page.goto('about:blank', { waitUntil: 'load' });
 
     // Negative assertion: adapter should NOT be injected into non-matching tabs.
     // Poll a few times over 2s to confirm it stays absent (injection happens

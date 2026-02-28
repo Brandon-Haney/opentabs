@@ -36,6 +36,7 @@ Object.assign(globalThis, {
       detach: vi.fn(),
       sendCommand: vi.fn(),
       onEvent: { addListener: vi.fn() },
+      onDetach: { addListener: vi.fn() },
     },
     tabs: {
       ...((globalThis as Record<string, unknown>).chrome as { tabs?: object } | undefined)?.tabs,

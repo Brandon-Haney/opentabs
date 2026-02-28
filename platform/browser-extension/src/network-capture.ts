@@ -332,6 +332,16 @@ chrome.tabs.onRemoved.addListener((tabId: number) => {
   }
 });
 
+// Clean up capture state when the debugger is externally detached
+// (e.g. user opens DevTools, Chrome terminates the debugger under memory pressure).
+// The debugger is already gone — do NOT call chrome.debugger.detach() here.
+chrome.debugger.onDetach.addListener((source: chrome.debugger.Debuggee, _reason: string) => {
+  const tabId = source.tabId;
+  if (tabId !== undefined) {
+    captures.delete(tabId);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------

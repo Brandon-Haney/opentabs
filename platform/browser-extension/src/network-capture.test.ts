@@ -4,12 +4,24 @@ import { describe, expect, vi, test } from 'vitest';
 // Chrome API stubs — network-capture.ts registers listeners at module level
 // ---------------------------------------------------------------------------
 
+let capturedOnDetachListener: ((source: { tabId?: number }, reason: string) => void) | undefined;
+
 (globalThis as Record<string, unknown>).chrome = {
-  debugger: { onEvent: { addListener: vi.fn() }, detach: vi.fn(() => Promise.resolve()) },
+  debugger: {
+    onEvent: { addListener: vi.fn() },
+    onDetach: {
+      addListener: vi.fn((cb: (source: { tabId?: number }, reason: string) => void) => {
+        capturedOnDetachListener = cb;
+      }),
+    },
+    attach: vi.fn(() => Promise.resolve()),
+    detach: vi.fn(() => Promise.resolve()),
+    sendCommand: vi.fn(() => Promise.resolve()),
+  },
   tabs: { onRemoved: { addListener: vi.fn() } },
 };
 
-const { scrubHeaders } = await import('./network-capture.js');
+const { scrubHeaders, startCapture, isCapturing, stopCapture } = await import('./network-capture.js');
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -121,5 +133,48 @@ describe('scrubHeaders', () => {
         'x-auth-token': '[REDACTED]',
       });
     });
+  });
+});
+
+describe('onDetach handler', () => {
+  test('cleans up capture state when the debugger is externally detached', async () => {
+    const tabId = 9901;
+    await startCapture(tabId);
+    expect(isCapturing(tabId)).toBe(true);
+
+    capturedOnDetachListener?.({ tabId }, 'canceled_by_user');
+
+    expect(isCapturing(tabId)).toBe(false);
+  });
+
+  test('startCapture succeeds for the same tab after external detach', async () => {
+    const tabId = 9902;
+    await startCapture(tabId);
+
+    capturedOnDetachListener?.({ tabId }, 'replaced_with_devtools');
+
+    // Must not throw 'Network capture already active'
+    await expect(startCapture(tabId)).resolves.toBeUndefined();
+    stopCapture(tabId);
+  });
+
+  test('does not call chrome.debugger.detach (debugger is already gone)', async () => {
+    const tabId = 9903;
+    await startCapture(tabId);
+    const chromeMock = (globalThis as Record<string, unknown>).chrome as {
+      debugger: { detach: ReturnType<typeof vi.fn> };
+    };
+    const detachMock = chromeMock.debugger.detach;
+    detachMock.mockClear();
+
+    capturedOnDetachListener?.({ tabId }, 'target_closed');
+
+    expect(detachMock).not.toHaveBeenCalled();
+  });
+
+  test('is a no-op for tabs not in captures', () => {
+    const tabId = 9904;
+    expect(() => capturedOnDetachListener?.({ tabId }, 'target_closed')).not.toThrow();
+    expect(isCapturing(tabId)).toBe(false);
   });
 });

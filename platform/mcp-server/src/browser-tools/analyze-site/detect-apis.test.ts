@@ -946,6 +946,28 @@ describe('detectApis', () => {
       expect(wsEp.wsFrameSamples).toEqual(['ws-msg']);
     });
 
+    test('attaches wss:// frame samples to https:// endpoint from HTTP upgrade request', () => {
+      // WebSocket endpoints detected via HTTP upgrade headers have https:// in their URL,
+      // but frame URLs reported by the browser use wss://. The scheme mismatch must be
+      // normalized so frame samples are correctly attached to the endpoint.
+      const upgradeRequest = req({
+        url: 'https://example.com/ws',
+        method: 'GET',
+        requestHeaders: { Upgrade: 'websocket', Connection: 'Upgrade' },
+        status: 101,
+      });
+      const wssFrame: WsFrame = {
+        url: 'wss://example.com/ws',
+        direction: 'received',
+        data: '{"type":"update","id":1}',
+        opcode: 1,
+        timestamp: Date.now(),
+      };
+      const result = detectApis([upgradeRequest], [wssFrame]);
+      const wsEp = findByProtocol(result.endpoints, 'websocket');
+      expect(wsEp.wsFrameSamples).toEqual(['{"type":"update","id":1}']);
+    });
+
     test('non-WebSocket endpoints have undefined wsFrameSamples', () => {
       const restRequest = req({
         url: 'https://api.example.com/v1/items',

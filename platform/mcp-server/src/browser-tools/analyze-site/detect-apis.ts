@@ -301,6 +301,27 @@ const classifyProtocol = (req: NetworkRequest): ApiProtocol | undefined => {
 };
 
 // ---------------------------------------------------------------------------
+// WebSocket URL normalization
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalizes a WebSocket URL for comparison by converting wss:// to https://
+ * and ws:// to http://, then returning origin + pathname (no query string).
+ * This allows matching frame URLs (wss://) against endpoint URLs derived from
+ * HTTP upgrade requests (https://).
+ */
+const normalizeWsUrl = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'wss:') parsed.protocol = 'https:';
+    else if (parsed.protocol === 'ws:') parsed.protocol = 'http:';
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return url;
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Grouping
 // ---------------------------------------------------------------------------
 
@@ -446,14 +467,7 @@ const detectApis = (requests: NetworkRequest[], wsFrames?: WsFrame[]): ApiAnalys
       for (const frame of wsFrames) {
         if (samples.length >= MAX_WS_FRAME_SAMPLES) break;
         if (frame.direction !== 'received' || frame.opcode !== 1) continue;
-        let normalizedFrameUrl: string;
-        try {
-          const parsedFrame = new URL(frame.url);
-          normalizedFrameUrl = `${parsedFrame.origin}${parsedFrame.pathname}`;
-        } catch {
-          normalizedFrameUrl = frame.url;
-        }
-        if (normalizedFrameUrl !== ep.url) continue;
+        if (normalizeWsUrl(frame.url) !== normalizeWsUrl(ep.url)) continue;
         const payload =
           frame.data.length > MAX_WS_FRAME_SAMPLE_LENGTH
             ? frame.data.slice(0, MAX_WS_FRAME_SAMPLE_LENGTH) + '...'

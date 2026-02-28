@@ -203,6 +203,7 @@ const notifyServer = async (): Promise<void> => {
     const res = await fetch(`http://localhost:${port}/reload`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${secret}` },
+      signal: AbortSignal.timeout(5_000),
     });
     if (res.ok) {
       console.log(pc.dim('Notified MCP server to reload plugins.'));

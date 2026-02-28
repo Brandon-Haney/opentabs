@@ -37,10 +37,10 @@ The extension connects to the server automatically.
 Get your auth secret:
 
 ```bash
-opentabs config show --json | jq -r .secret
+opentabs config show --json --show-secret | jq -r .secret
 ```
 
-Add the server to your MCP client. For Claude Code (`~/.claude.json` — merge into `"mcpServers"`):
+Add the server to your MCP client. For Claude Code (`~/.claude/settings/mcp.json` — merge into `"mcpServers"`):
 
 ```json
 {

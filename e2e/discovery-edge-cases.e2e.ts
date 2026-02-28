@@ -21,6 +21,7 @@ import {
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { McpServer, McpClient } from './fixtures.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,8 +58,9 @@ test.describe('Discovery edge cases — broken plugins', () => {
     const config = configWithPlugins([bogusPath]);
     writeTestConfig(configDir, config);
 
-    const server = await startMcpServer(configDir, true);
+    let server: McpServer | undefined;
     try {
+      server = await startMcpServer(configDir, true);
       const health = await server.waitForHealth(h => h.status === 'ok');
 
       const raw = await fetch(`http://localhost:${String(server.port)}/health`, {
@@ -86,7 +88,7 @@ test.describe('Discovery edge cases — broken plugins', () => {
       const e2ePlugin = health.pluginDetails?.find(p => p.name === 'e2e-test');
       expect(e2ePlugin).toBeDefined();
     } finally {
-      await server.kill();
+      await server?.kill();
       cleanupTestConfigDir(configDir);
     }
   });
@@ -118,8 +120,9 @@ test.describe('Discovery edge cases — broken plugins', () => {
     const config = configWithPlugins([path.resolve(pluginDir)]);
     writeTestConfig(configDir, config);
 
-    const server = await startMcpServer(configDir, true);
+    let server: McpServer | undefined;
     try {
+      server = await startMcpServer(configDir, true);
       await server.waitForHealth(h => h.status === 'ok');
 
       const raw = await fetch(`http://localhost:${String(server.port)}/health`, {
@@ -134,7 +137,7 @@ test.describe('Discovery edge cases — broken plugins', () => {
       expect(failure).toBeDefined();
       expect(failure?.error).toContain('tools.json');
     } finally {
-      await server.kill();
+      await server?.kill();
       cleanupTestConfigDir(configDir);
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -167,8 +170,9 @@ test.describe('Discovery edge cases — broken plugins', () => {
     const config = configWithPlugins([path.resolve(pluginDir)]);
     writeTestConfig(configDir, config);
 
-    const server = await startMcpServer(configDir, true);
+    let server: McpServer | undefined;
     try {
+      server = await startMcpServer(configDir, true);
       await server.waitForHealth(h => h.status === 'ok');
 
       const raw = await fetch(`http://localhost:${String(server.port)}/health`, {
@@ -183,7 +187,7 @@ test.describe('Discovery edge cases — broken plugins', () => {
       expect(failure).toBeDefined();
       expect(failure?.error).toContain('tools.json');
     } finally {
-      await server.kill();
+      await server?.kill();
       cleanupTestConfigDir(configDir);
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -219,8 +223,9 @@ test.describe('Discovery edge cases — broken plugins', () => {
     const config = configWithPlugins([path.resolve(pluginDir)]);
     writeTestConfig(configDir, config);
 
-    const server = await startMcpServer(configDir, true);
+    let server: McpServer | undefined;
     try {
+      server = await startMcpServer(configDir, true);
       await server.waitForHealth(h => h.status === 'ok');
 
       const raw = await fetch(`http://localhost:${String(server.port)}/health`, {
@@ -235,7 +240,7 @@ test.describe('Discovery edge cases — broken plugins', () => {
       expect(failure).toBeDefined();
       expect(failure?.error).toContain('Adapter IIFE');
     } finally {
-      await server.kill();
+      await server?.kill();
       cleanupTestConfigDir(configDir);
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -273,9 +278,11 @@ test.describe('Discovery edge cases — broken plugins', () => {
     });
     writeTestConfig(configDir, config);
 
-    const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port, server.secret);
+    let server: McpServer | undefined;
+    let client: McpClient | undefined;
     try {
+      server = await startMcpServer(configDir, true);
+      client = createMcpClient(server.port, server.secret);
       await client.initialize();
 
       const health = await server.waitForHealth(h => h.status === 'ok');
@@ -306,8 +313,8 @@ test.describe('Discovery edge cases — broken plugins', () => {
       expect(tools.some(t => t.name.startsWith('e2e-test_'))).toBe(true);
       expect(tools.some(t => t.name === 'valid-partial_ping')).toBe(true);
     } finally {
-      await client.close();
-      await server.kill();
+      await client?.close();
+      await server?.kill();
       cleanupTestConfigDir(configDir);
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -340,9 +347,11 @@ test.describe('Discovery edge cases — broken plugins', () => {
     const config = configWithPlugins([path.resolve(pluginDir)], { fixable_hello: true });
     writeTestConfig(configDir, config);
 
-    const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port, server.secret);
+    let server: McpServer | undefined;
+    let client: McpClient | undefined;
     try {
+      server = await startMcpServer(configDir, true);
+      client = createMcpClient(server.port, server.secret);
       await client.initialize();
       await server.waitForHealth(h => h.status === 'ok');
 
@@ -428,8 +437,8 @@ test.describe('Discovery edge cases — broken plugins', () => {
       const tools = await client.listTools();
       expect(tools.some(t => t.name === 'fixable_hello')).toBe(true);
     } finally {
-      await client.close();
-      await server.kill();
+      await client?.close();
+      await server?.kill();
       cleanupTestConfigDir(configDir);
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

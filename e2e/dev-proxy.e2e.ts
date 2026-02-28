@@ -16,10 +16,14 @@ import {
   createTestConfigDir,
   cleanupTestConfigDir,
   createMcpClient,
+  createMinimalPlugin,
   readPluginToolNames,
+  readTestConfig,
+  writeTestConfig,
 } from './fixtures.js';
-import { waitForLog, waitForExtensionConnected, parseToolResult, setupToolTest } from './helpers.js';
+import { waitForLog, waitForExtensionConnected, waitForToolList, parseToolResult, setupToolTest } from './helpers.js';
 import { execSync } from 'node:child_process';
+import fs from 'node:fs';
 
 test.describe('Dev proxy request buffering', () => {
   test('HTTP request during worker restart is buffered and succeeds after drain', async () => {
@@ -384,6 +388,88 @@ test.describe('Dev proxy 503 timeout', () => {
       // Allow margin for scheduling variance: at least 4s, at most 8s.
       expect(elapsed).toBeGreaterThanOrEqual(4_000);
       expect(elapsed).toBeLessThan(8_000);
+    } finally {
+      await server.kill();
+      cleanupTestConfigDir(configDir);
+    }
+  });
+});
+
+test.describe('POST /reload in non-hot (production) mode', () => {
+  test('config rediscovery adds new plugin tools after POST /reload', async () => {
+    const configDir = createTestConfigDir();
+    const server = await startMcpServer(configDir, false);
+
+    try {
+      // Verify server is healthy in non-hot mode
+      const initialHealth = await server.health();
+      expect(initialHealth).not.toBeNull();
+      if (!initialHealth) throw new Error('health returned null');
+      expect(initialHealth.status).toBe('ok');
+
+      // Create an MCP client and initialize a session
+      const client = createMcpClient(server.port, server.secret);
+      await client.initialize();
+
+      // Verify only the e2e-test plugin tools are registered initially
+      const toolsBefore = await client.listTools();
+      const expectedToolNames = readPluginToolNames();
+      for (const name of expectedToolNames) {
+        expect(toolsBefore.some(t => t.name === name)).toBe(true);
+      }
+
+      // Create a minimal plugin in a temp directory. The plugin has a single
+      // tool and is fully discoverable by the MCP server after config reload.
+      const pluginName = 'reload-test';
+      const pluginDir = createMinimalPlugin(configDir, pluginName, [{ name: 'ping', description: 'Returns pong' }]);
+
+      // Update config.json to include the new plugin in localPlugins and
+      // enable its tool in the tools map.
+      const config = readTestConfig(configDir);
+      config.localPlugins.push(pluginDir);
+      config.tools[`${pluginName}_ping`] = true;
+      writeTestConfig(configDir, config);
+
+      // Read the auth secret for the Bearer token
+      const authPath = `${configDir}/extension/auth.json`;
+      const authData = JSON.parse(fs.readFileSync(authPath, 'utf-8')) as { secret?: string };
+      const secret = authData.secret ?? '';
+
+      // POST /reload triggers performConfigReload(), which re-reads
+      // config.json, discovers the new plugin, and rebuilds the registry.
+      const reloadResponse = await fetch(`http://localhost:${server.port}/reload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${secret}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      expect(reloadResponse.ok).toBe(true);
+      const reloadBody = (await reloadResponse.json()) as { ok: boolean; plugins: number };
+      expect(reloadBody.ok).toBe(true);
+      // The reload should discover at least 2 plugins (e2e-test + reload-test)
+      expect(reloadBody.plugins).toBeGreaterThanOrEqual(2);
+
+      // After reload, tools/list should include the new plugin's tool.
+      // Use waitForToolList to poll until the tool appears (the MCP server
+      // sends a listChanged notification, but the client may need to
+      // re-initialize the session first).
+      const toolsAfter = await waitForToolList(
+        client,
+        tools => tools.some(t => t.name === `${pluginName}_ping`),
+        10_000,
+        300,
+        `${pluginName}_ping tool to appear`,
+      );
+
+      // Verify the new plugin's tool is present
+      expect(toolsAfter.some(t => t.name === `${pluginName}_ping`)).toBe(true);
+
+      // Verify the original e2e-test tools are still present
+      for (const name of expectedToolNames) {
+        expect(toolsAfter.some(t => t.name === name)).toBe(true);
+      }
+
+      await client.close();
     } finally {
       await server.kill();
       cleanupTestConfigDir(configDir);

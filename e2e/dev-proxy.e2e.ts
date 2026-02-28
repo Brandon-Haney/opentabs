@@ -18,7 +18,7 @@ import {
   createMcpClient,
   readPluginToolNames,
 } from './fixtures.js';
-import { waitForLog } from './helpers.js';
+import { waitForLog, waitForExtensionConnected, parseToolResult, setupToolTest } from './helpers.js';
 import { execSync } from 'node:child_process';
 
 test.describe('Dev proxy request buffering', () => {
@@ -387,6 +387,83 @@ test.describe('Dev proxy 503 timeout', () => {
     } finally {
       await server.kill();
       cleanupTestConfigDir(configDir);
+    }
+  });
+});
+
+test.describe.serial('Dev proxy SSE mid-stream worker restart', () => {
+  test('SSE tool call gets clean error or completes when worker restarts mid-stream', async ({
+    mcpServer,
+    testServer,
+    extensionContext,
+    mcpClient,
+  }) => {
+    test.slow();
+
+    const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
+
+    try {
+      // Baseline: verify the slow_with_progress tool works normally
+      const baseline = await mcpClient.callToolWithProgress(
+        'e2e-test_slow_with_progress',
+        { durationMs: 500, steps: 2 },
+        { timeout: 15_000 },
+      );
+      expect(baseline.isError).toBe(false);
+      const baselineOutput = parseToolResult(baseline.content);
+      expect(baselineOutput.completed).toBe(true);
+
+      // Start a slow tool call that produces an SSE stream with progress
+      // notifications over 5 seconds. The proxy pipes the response via
+      // proxyRes.pipe(res) — when the worker dies mid-stream, the pipe
+      // breaks and the client receives either a partial/error response
+      // or a connection reset.
+      const slowCallPromise = mcpClient.callToolWithProgress(
+        'e2e-test_slow_with_progress',
+        { durationMs: 5_000, steps: 10 },
+        { timeout: 30_000 },
+      );
+
+      // Wait for the request to reach the worker and start producing
+      // progress events, then trigger hot reload. The proxy kills the
+      // old worker with SIGTERM, severing the piped SSE connection.
+      await new Promise(r => setTimeout(r, 1_000));
+      mcpServer.logs.length = 0;
+      mcpServer.triggerHotReload();
+
+      // The SSE stream may complete successfully (if the tool finished
+      // before the worker was killed) or fail with 502/connection reset
+      // (if the pipe was severed mid-stream). Both outcomes are acceptable
+      // — the proxy should not hang indefinitely.
+      try {
+        const slowResult = await slowCallPromise;
+        // If it completed, verify the content is valid
+        if (!slowResult.isError) {
+          const output = parseToolResult(slowResult.content);
+          expect(output.completed).toBe(true);
+        }
+      } catch {
+        // 502 Bad Gateway, connection reset, or partial SSE stream — expected
+        // when the worker is killed mid-stream. The proxy's proxyRes.pipe(res)
+        // connection breaks when the upstream worker dies.
+      }
+
+      // Wait for the hot reload to complete
+      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+      // Wait for the extension to reconnect to the new worker. The proxy
+      // kills old WebSocket connections during restart, so the extension
+      // detects the close and reconnects.
+      await waitForExtensionConnected(mcpServer, 30_000);
+
+      // Verify subsequent tool calls work after the reload. The MCP client
+      // auto-reinitializes the session (new worker has no session memory).
+      const afterResult = await mcpClient.callTool('e2e-test_echo', { message: 'after-sse-reload' });
+      expect(afterResult.isError).toBe(false);
+      const afterOutput = parseToolResult(afterResult.content);
+      expect(afterOutput.message).toBe('after-sse-reload');
+    } finally {
+      await page.close();
     }
   });
 });

@@ -426,7 +426,7 @@ describe('fetchJSON', () => {
 
   test('returns unchecked cast when schema is omitted (backward compat)', async () => {
     const data = await fetchJSON<{ status: string }>(`${baseUrl}/ok`);
-    expect(data.status).toBe('success');
+    expect(data?.status).toBe('success');
   });
 
   test('returns undefined for 204 response when no schema is provided', async () => {
@@ -463,7 +463,7 @@ describe('postJSON', () => {
 
   test('sets Content-Type to application/json', async () => {
     const data = await postJSON<{ received: unknown }>(`${baseUrl}/echo-post`, { key: 'value' });
-    expect(data.received).toEqual({ key: 'value' });
+    expect(data?.received).toEqual({ key: 'value' });
   });
 
   test('allows additional headers via init', async () => {
@@ -472,7 +472,7 @@ describe('postJSON', () => {
       { data: 1 },
       { headers: { 'X-Custom': 'header' } },
     );
-    expect(data.received).toEqual({ data: 1 });
+    expect(data?.received).toEqual({ data: 1 });
   });
 
   test('propagates internal error on 500 status', async () => {
@@ -530,10 +530,10 @@ describe('postForm', () => {
       name: 'alice',
       age: '30',
     });
-    expect(data.method).toBe('POST');
-    expect(data.contentType).toBe('application/x-www-form-urlencoded');
-    expect(data.body).toContain('name=alice');
-    expect(data.body).toContain('age=30');
+    expect(data?.method).toBe('POST');
+    expect(data?.contentType).toBe('application/x-www-form-urlencoded');
+    expect(data?.body).toContain('name=alice');
+    expect(data?.body).toContain('age=30');
   });
 
   test('merges custom headers with Content-Type preserved', async () => {
@@ -542,7 +542,7 @@ describe('postForm', () => {
       { key: 'value' },
       { headers: { 'X-Custom': 'test' } },
     );
-    expect(data.contentType).toBe('application/x-www-form-urlencoded');
+    expect(data?.contentType).toBe('application/x-www-form-urlencoded');
   });
 
   test('returns parsed JSON response', async () => {
@@ -570,7 +570,7 @@ describe('postFormData', () => {
     formData.append('field', 'value');
     const data = await postFormData<{ contentType: string; hasCookies: boolean }>(`${baseUrl}/echo-headers`, formData);
     // The fetch API sets Content-Type to multipart/form-data with boundary automatically
-    expect(data.contentType).toMatch(/^multipart\/form-data/);
+    expect(data?.contentType).toMatch(/^multipart\/form-data/);
   });
 
   test('returns parsed JSON response', async () => {
@@ -591,9 +591,9 @@ describe('putJSON', () => {
       `${baseUrl}/echo-method`,
       { name: 'test' },
     );
-    expect(data.method).toBe('PUT');
-    expect(data.contentType).toBe('application/json');
-    expect(data.received).toEqual({ name: 'test' });
+    expect(data?.method).toBe('PUT');
+    expect(data?.contentType).toBe('application/json');
+    expect(data?.received).toEqual({ name: 'test' });
   });
 
   test('allows additional headers via init', async () => {
@@ -602,8 +602,8 @@ describe('putJSON', () => {
       { data: 1 },
       { headers: { 'X-Custom': 'header' } },
     );
-    expect(data.method).toBe('PUT');
-    expect(data.contentType).toBe('application/json');
+    expect(data?.method).toBe('PUT');
+    expect(data?.contentType).toBe('application/json');
   });
 
   test('validates response against Zod schema when provided', async () => {
@@ -623,9 +623,9 @@ describe('patchJSON', () => {
       `${baseUrl}/echo-method`,
       { value: 42 },
     );
-    expect(data.method).toBe('PATCH');
-    expect(data.contentType).toBe('application/json');
-    expect(data.received).toEqual({ value: 42 });
+    expect(data?.method).toBe('PATCH');
+    expect(data?.contentType).toBe('application/json');
+    expect(data?.received).toEqual({ value: 42 });
   });
 
   test('allows additional headers via init', async () => {
@@ -634,8 +634,8 @@ describe('patchJSON', () => {
       { data: 1 },
       { headers: { 'X-Custom': 'header' } },
     );
-    expect(data.method).toBe('PATCH');
-    expect(data.contentType).toBe('application/json');
+    expect(data?.method).toBe('PATCH');
+    expect(data?.contentType).toBe('application/json');
   });
 });
 

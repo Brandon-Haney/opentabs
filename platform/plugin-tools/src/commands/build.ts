@@ -23,7 +23,7 @@ import pc from 'picocolors';
 import { z } from 'zod';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, rmSync, statSync, watch } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, statSync, watch, writeFileSync } from 'node:fs';
 import { access, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve, join, relative, dirname } from 'node:path';
@@ -61,9 +61,14 @@ const STALE_LOCK_THRESHOLD_MS = 5 * 60 * 1_000;
  */
 const acquireConfigLock = async (configPath: string): Promise<() => void> => {
   const lockDir = configPath + '.lock';
-  for (let attempt = 0; attempt < CONFIG_LOCK_MAX_RETRIES; attempt++) {
+  const pidFile = join(lockDir, 'pid.txt');
+
+  // Atomically create the lock directory and write our PID. Returns a release
+  // function on success, or null if the directory already exists (EEXIST).
+  const tryAcquire = (): (() => void) | null => {
     try {
       mkdirSync(lockDir);
+      writeFileSync(pidFile, String(process.pid));
       return () => {
         try {
           rmSync(lockDir, { recursive: true });
@@ -73,29 +78,73 @@ const acquireConfigLock = async (configPath: string): Promise<() => void> => {
       };
     } catch (err: unknown) {
       if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'EEXIST') {
-        // Check for stale lock — if the lock directory is older than the
-        // threshold, the owning process likely crashed without releasing it.
-        try {
-          const lockStat = statSync(lockDir);
-          const ageMs = Date.now() - lockStat.mtimeMs;
-          if (ageMs > STALE_LOCK_THRESHOLD_MS) {
-            console.warn(
-              pc.yellow(
-                `Warning: Stale config lock detected (${Math.round(ageMs / 1_000)}s old). Removing and retrying.`,
-              ),
-            );
-            rmSync(lockDir, { recursive: true });
-            continue;
-          }
-        } catch {
-          // stat or rmSync failed — lock may have been released concurrently
-        }
-        // Lock held by another process — retry
-        await new Promise<void>(r => setTimeout(r, CONFIG_LOCK_RETRY_DELAY_MS));
-        continue;
+        return null;
       }
       throw err;
     }
+  };
+
+  for (let attempt = 0; attempt < CONFIG_LOCK_MAX_RETRIES; attempt++) {
+    const release = tryAcquire();
+    if (release) return release;
+
+    // Check for stale lock — if the lock directory is older than the threshold
+    // AND the holding process is no longer alive, remove it and re-acquire.
+    try {
+      const lockStat = statSync(lockDir);
+      const ageMs = Date.now() - lockStat.mtimeMs;
+      if (ageMs > STALE_LOCK_THRESHOLD_MS) {
+        // Verify whether the holding process is still alive.
+        let holderAlive = false;
+        try {
+          const pid = parseInt(readFileSync(pidFile, 'utf8'), 10);
+          if (!isNaN(pid)) {
+            try {
+              process.kill(pid, 0);
+              holderAlive = true;
+            } catch (killErr: unknown) {
+              // EPERM means the process exists but we lack permission to signal it.
+              if (
+                killErr instanceof Error &&
+                'code' in killErr &&
+                (killErr as NodeJS.ErrnoException).code === 'EPERM'
+              ) {
+                holderAlive = true;
+              }
+              // ESRCH means the process is gone — lock is truly stale.
+            }
+          }
+        } catch {
+          // pid.txt missing or unreadable — assume stale
+        }
+
+        if (!holderAlive) {
+          console.warn(
+            pc.yellow(
+              `Warning: Stale config lock detected (${Math.round(ageMs / 1_000)}s old). Removing and retrying.`,
+            ),
+          );
+          try {
+            rmSync(lockDir, { recursive: true });
+          } catch {
+            // Already removed by a concurrent process — benign
+          }
+          // Immediately try to re-acquire atomically. This closes the TOCTOU
+          // window: without this step, another process that also detected the
+          // stale lock could win mkdirSync between our rmSync and the next
+          // loop iteration.
+          const staleRelease = tryAcquire();
+          if (staleRelease) return staleRelease;
+          // Another process won the race — fall through to retry delay
+        }
+      }
+    } catch {
+      // stat failed — lock was released concurrently; retry immediately
+      continue;
+    }
+
+    // Lock held by another process — wait before retrying
+    await new Promise<void>(r => setTimeout(r, CONFIG_LOCK_RETRY_DELAY_MS));
   }
   throw new Error('Could not acquire config lock — another build may be running');
 };
@@ -645,10 +694,16 @@ import type { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 // Typed accessor for the globalThis.__openTabs runtime namespace, replacing
 // untyped \`(globalThis as any).__openTabs\` casts throughout the wrapper.
 interface LogEntry { level: string; message: string; data: unknown[]; ts: string }
+interface NavigationInterceptor {
+  callbacks: Map<string, () => void>;
+  origPushState: typeof history.pushState;
+  origReplaceState: typeof history.replaceState;
+}
 interface OpenTabsRuntime {
   adapters: Record<string, OpenTabsPlugin>;
   _setLogTransport?: (fn: (entry: LogEntry) => void) => () => void;
   _logNonce?: string;
+  _navigationInterceptor?: NavigationInterceptor;
 }
 declare global {
   var __openTabs: OpenTabsRuntime | undefined;
@@ -715,9 +770,8 @@ const restoreTransport = setLogTransport ? setLogTransport(logTransport) : undef
 
 const existing = adapters[${name}];
 if (existing) {
-  if (typeof existing.onDeactivate === 'function') {
-    try { existing.onDeactivate(); } catch (e) { console.warn('[OpenTabs] onDeactivate failed for ' + ${name} + ':', e); }
-  }
+  // teardown() calls onDeactivate() as its first step, so invoking teardown()
+  // is sufficient — calling onDeactivate() here too would fire it twice.
   if (typeof existing.teardown === 'function') {
     try { existing.teardown(); } catch (e) { console.warn('[OpenTabs] teardown failed for ' + ${name} + ':', e); }
   }
@@ -778,7 +832,10 @@ if (typeof plugin.onActivate === 'function') {
   try { plugin.onActivate(); } catch (e) { console.warn('[OpenTabs] onActivate failed for ' + ${name} + ':', e); }
 }
 
-// Wire onNavigate — intercept history methods and listen for popstate/hashchange
+// Wire onNavigate — use a shared interceptor so multiple plugins can coexist.
+// A single monkey-patch of history.pushState/replaceState dispatches to all
+// registered callbacks. Each plugin registers/unregisters its callback. When
+// the last callback is removed, the original methods are restored.
 if (typeof plugin.onNavigate === 'function') {
   let lastUrl = location.href;
   const checkUrl = () => {
@@ -788,28 +845,49 @@ if (typeof plugin.onNavigate === 'function') {
       try { plugin.onNavigate!(newUrl); } catch (e) { console.warn('[OpenTabs] onNavigate failed:', e); }
     }
   };
-  const origPushState = history.pushState.bind(history);
-  const origReplaceState = history.replaceState.bind(history);
-  history.pushState = function(...args: Parameters<typeof history.pushState>) {
-    origPushState(...args);
-    checkUrl();
-  };
-  history.replaceState = function(...args: Parameters<typeof history.replaceState>) {
-    origReplaceState(...args);
-    checkUrl();
-  };
+
+  const ot = globalThis.__openTabs!;
+  if (!ot._navigationInterceptor) {
+    // First plugin to need navigation — install the shared interceptor
+    const origPushState = history.pushState.bind(history);
+    const origReplaceState = history.replaceState.bind(history);
+    const callbacks = new Map<string, () => void>();
+    ot._navigationInterceptor = { callbacks, origPushState, origReplaceState };
+    history.pushState = function(...args: Parameters<typeof history.pushState>) {
+      origPushState(...args);
+      for (const cb of callbacks.values()) { cb(); }
+    };
+    history.replaceState = function(...args: Parameters<typeof history.replaceState>) {
+      origReplaceState(...args);
+      for (const cb of callbacks.values()) { cb(); }
+    };
+  }
+
+  const interceptor = ot._navigationInterceptor;
+  interceptor.callbacks.set(${name}, checkUrl);
+
+  // popstate/hashchange use addEventListener which safely supports multiple listeners
   window.addEventListener('popstate', checkUrl);
   window.addEventListener('hashchange', checkUrl);
 
-  // Wrap teardown to restore navigation listeners when this adapter is later replaced
+  // Wrap teardown to unregister this plugin's navigation callback
   const origTeardown = typeof plugin.teardown === 'function' ? plugin.teardown.bind(plugin) : undefined;
   const origOnDeactivate = typeof plugin.onDeactivate === 'function' ? plugin.onDeactivate.bind(plugin) : undefined;
   plugin.teardown = function() {
     if (origOnDeactivate) {
       try { origOnDeactivate(); } catch (e) { console.warn('[OpenTabs] onDeactivate failed for ' + ${name} + ':', e); }
     }
-    history.pushState = origPushState;
-    history.replaceState = origReplaceState;
+    // Unregister this plugin's callback from the shared interceptor
+    const nav = globalThis.__openTabs?._navigationInterceptor;
+    if (nav) {
+      nav.callbacks.delete(${name});
+      if (nav.callbacks.size === 0) {
+        // Last plugin removed — restore original history methods
+        history.pushState = nav.origPushState;
+        history.replaceState = nav.origReplaceState;
+        delete globalThis.__openTabs!._navigationInterceptor;
+      }
+    }
     window.removeEventListener('popstate', checkUrl);
     window.removeEventListener('hashchange', checkUrl);
     // Flush remaining logs and tear down log transport
@@ -985,10 +1063,16 @@ const runBuild = async (projectDir: string): Promise<void> => {
   mkdirSync(distDir, { recursive: true });
 
   await bundleIIFE(sourceEntry, distDir, plugin.name);
-  // Read the bundled IIFE and compute its SHA-256 hash. The hash is computed
-  // from the core IIFE content (before the __adapterHash setter is appended).
+  // Read the bundled IIFE. esbuild appends a //# sourceMappingURL= comment at
+  // the end when sourcemap:'linked' is used. Strip it so we can move it to the
+  // very end of the file (after hashAndFreeze), keeping the source map reference
+  // valid and the source map's line mappings correct for the IIFE code.
   const iifePath = join(distDir, ADAPTER_FILENAME);
-  const iifeContent = await readFile(iifePath, 'utf-8');
+  const iifeRaw = await readFile(iifePath, 'utf-8');
+  const sourceMappingUrlMatch = /\n\/\/# sourceMappingURL=[^\n]+\n?$/.exec(iifeRaw);
+  const sourceMappingUrlSuffix = sourceMappingUrlMatch ? sourceMappingUrlMatch[0] : '';
+  const iifeContent = sourceMappingUrlSuffix ? iifeRaw.slice(0, -sourceMappingUrlSuffix.length) : iifeRaw;
+  // Hash only the core IIFE content (without the source map reference comment).
   const adapterHash = createHash('sha256').update(iifeContent).digest('hex');
 
   // Append a self-contained snippet that sets the adapter hash and then freezes
@@ -1001,10 +1085,12 @@ const runBuild = async (projectDir: string): Promise<void> => {
   // Re-injection and cleanup are handled by the IIFE wrapper and the
   // extension's cleanup script, which rebuild the adapters container on
   // globalThis when deletion of a non-configurable property fails.
+  // The sourceMappingURL comment is placed last so source map tooling finds it
+  // at the end of the file, as required by the source map specification.
   const hashAndFreeze = `
 (function(){var o=(globalThis).__openTabs;if(o&&o.adapters&&o.adapters[${JSON.stringify(plugin.name)}]){var a=o.adapters[${JSON.stringify(plugin.name)}];a.__adapterHash=${JSON.stringify(adapterHash)};if(a.tools&&Array.isArray(a.tools)){for(var i=0;i<a.tools.length;i++){Object.freeze(a.tools[i]);}Object.freeze(a.tools);}Object.freeze(a);Object.defineProperty(o.adapters,${JSON.stringify(plugin.name)},{value:a,writable:false,configurable:false,enumerable:true});Object.defineProperty(o,"adapters",{value:o.adapters,writable:false,configurable:false});}})();
 `;
-  await writeFile(iifePath, iifeContent + hashAndFreeze, 'utf-8');
+  await writeFile(iifePath, iifeContent + hashAndFreeze + sourceMappingUrlSuffix, 'utf-8');
   if (
     await access(iifePath).then(
       () => true,

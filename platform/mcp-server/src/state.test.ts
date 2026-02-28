@@ -2,11 +2,13 @@ import {
   createState,
   getNextRequestId,
   isBrowserToolEnabled,
+  isSessionAllowed,
   isToolEnabled,
   prefixedToolName,
   STATE_SCHEMA_VERSION,
 } from './state.js';
 import { describe, expect, test } from 'vitest';
+import type { SessionPermissionRule } from './state.js';
 
 describe('createState', () => {
   test('returns state with correct defaults', () => {
@@ -127,5 +129,45 @@ describe('isBrowserToolEnabled', () => {
     const state = createState();
     state.browserToolPolicy = { browser_execute_script: false };
     expect(isBrowserToolEnabled(state, 'browser_list_tabs')).toBe(true);
+  });
+});
+
+describe('isSessionAllowed', () => {
+  test('domain_all with null domain matches calls with null domain', () => {
+    const rules: SessionPermissionRule[] = [{ tool: null, domain: null, scope: 'domain_all' }];
+    expect(isSessionAllowed(rules, 'slack_send_message', null)).toBe(true);
+  });
+
+  test('domain_all with null domain matches calls with a specific domain', () => {
+    const rules: SessionPermissionRule[] = [{ tool: null, domain: null, scope: 'domain_all' }];
+    expect(isSessionAllowed(rules, 'slack_send_message', 'example.com')).toBe(true);
+  });
+
+  test('domain_all with a non-null domain only matches calls with that same domain', () => {
+    const rules: SessionPermissionRule[] = [{ tool: null, domain: 'example.com', scope: 'domain_all' }];
+    expect(isSessionAllowed(rules, 'slack_send_message', 'example.com')).toBe(true);
+    expect(isSessionAllowed(rules, 'slack_send_message', 'other.com')).toBe(false);
+    expect(isSessionAllowed(rules, 'slack_send_message', null)).toBe(false);
+  });
+
+  test('tool_domain matches only when both tool and domain match', () => {
+    const rules: SessionPermissionRule[] = [
+      { tool: 'slack_send_message', domain: 'example.com', scope: 'tool_domain' },
+    ];
+    expect(isSessionAllowed(rules, 'slack_send_message', 'example.com')).toBe(true);
+    expect(isSessionAllowed(rules, 'slack_send_message', 'other.com')).toBe(false);
+    expect(isSessionAllowed(rules, 'slack_read_messages', 'example.com')).toBe(false);
+  });
+
+  test('tool_all matches any domain for the specific tool', () => {
+    const rules: SessionPermissionRule[] = [{ tool: 'slack_send_message', domain: null, scope: 'tool_all' }];
+    expect(isSessionAllowed(rules, 'slack_send_message', null)).toBe(true);
+    expect(isSessionAllowed(rules, 'slack_send_message', 'example.com')).toBe(true);
+    expect(isSessionAllowed(rules, 'slack_read_messages', null)).toBe(false);
+  });
+
+  test('returns false when no rules match', () => {
+    const rules: SessionPermissionRule[] = [];
+    expect(isSessionAllowed(rules, 'slack_send_message', 'example.com')).toBe(false);
   });
 });

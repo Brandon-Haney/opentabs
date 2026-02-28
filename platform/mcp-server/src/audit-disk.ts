@@ -21,6 +21,12 @@ const MAX_AUDIT_FILE_SIZE = 10 * 1024 * 1024;
 /** globalThis key for persisting the initialized flag across hot reloads */
 const INITIALIZED_KEY = '__opentabs_audit_initialized__' as const;
 
+/** globalThis key for persisting the write counter across hot reloads */
+const WRITE_COUNT_KEY = '__opentabs_audit_write_count__' as const;
+
+/** Check rotation every N writes to avoid per-write stat() syscalls */
+const ROTATION_CHECK_INTERVAL = 100;
+
 /**
  * Rotate the audit log if it exceeds MAX_AUDIT_FILE_SIZE.
  * Renames audit.log → audit.log.1, deleting any existing audit.log.1 first.
@@ -53,21 +59,28 @@ const getAuditLogPath = (): string => join(getConfigDir(), 'audit.log');
  * Append an audit entry to the disk-based audit log.
  *
  * Fire-and-forget: errors are caught and logged, never thrown.
- * Rotation is checked before each write for simplicity.
+ * Rotation is checked once every ROTATION_CHECK_INTERVAL writes to avoid per-write stat() overhead.
  */
 const appendAuditEntryToDisk = async (entry: AuditEntry): Promise<void> => {
   try {
     const auditPath = getAuditLogPath();
     const line = JSON.stringify(entry) + '\n';
 
-    // Rotate if the file exceeds the size limit
-    await rotateIfNeeded(auditPath);
+    const g = globalThis as Record<string, unknown>;
+    const count = (g[WRITE_COUNT_KEY] as number | undefined) ?? 0;
+
+    // Rotate if the file exceeds the size limit — checked every ROTATION_CHECK_INTERVAL writes
+    if (count % ROTATION_CHECK_INTERVAL === 0) {
+      await rotateIfNeeded(auditPath);
+    }
+
+    // Increment counter after the rotation check so count=0 always checks on the first write
+    g[WRITE_COUNT_KEY] = count + 1;
 
     // Append the entry
     await appendFile(auditPath, line, { mode: 0o600 });
 
     // Set permissions on first write this session (survives hot reloads)
-    const g = globalThis as Record<string, unknown>;
     if (!g[INITIALIZED_KEY]) {
       await safeChmod(auditPath, 0o600);
       g[INITIALIZED_KEY] = true;
@@ -77,9 +90,11 @@ const appendAuditEntryToDisk = async (entry: AuditEntry): Promise<void> => {
   }
 };
 
-/** Reset initialized state (for testing) */
+/** Reset initialized state and write counter (for testing) */
 const _resetInitialized = (): void => {
-  (globalThis as Record<string, unknown>)[INITIALIZED_KEY] = false;
+  const g = globalThis as Record<string, unknown>;
+  g[INITIALIZED_KEY] = false;
+  g[WRITE_COUNT_KEY] = 0;
 };
 
 export { appendAuditEntryToDisk, getAuditLogPath, _resetInitialized };

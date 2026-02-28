@@ -72,7 +72,7 @@ const installShutdownHandlers = (getState: () => ServerState): void => {
     }
 
     log.info('Shutdown complete');
-    process.exit(0);
+    setTimeout(() => process.exit(0), 150);
   };
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));

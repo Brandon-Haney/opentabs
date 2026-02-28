@@ -220,7 +220,7 @@ export const isSessionAllowed = (rules: SessionPermissionRule[], toolName: strin
       case 'tool_all':
         return rule.tool === toolName;
       case 'domain_all':
-        return rule.domain !== null && rule.domain === domain;
+        return rule.domain === null || rule.domain === domain;
       default:
         return false;
     }

@@ -13,14 +13,17 @@ import { fileURLToPath } from 'node:url';
 
 let sdkVersion = '0.0.0';
 
+const sdkPkgPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'plugin-sdk', 'package.json');
+
 try {
-  const sdkPkgPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'plugin-sdk', 'package.json');
   const pkgJson: unknown = JSON.parse(await readFile(sdkPkgPath, 'utf-8'));
   if (pkgJson !== null && typeof pkgJson === 'object' && 'version' in pkgJson && typeof pkgJson.version === 'string') {
     sdkVersion = pkgJson.version;
   }
 } catch {
-  // plugin-sdk package.json missing or unreadable — use fallback version
+  console.error(
+    `[sdk-version] Failed to read ${sdkPkgPath} — falling back to '0.0.0'. All plugins with a declared sdkVersion will fail compatibility checks.`,
+  );
 }
 
 export { sdkVersion };

@@ -579,6 +579,15 @@ describe('postFormData', () => {
     const data = await postFormData<{ contentType: string; hasCookies: boolean }>(`${baseUrl}/echo-headers`, formData);
     expect(data).toHaveProperty('contentType');
   });
+
+  test('validates response against Zod schema when provided', async () => {
+    const formData = new FormData();
+    formData.append('field', 'value');
+    const schema = z.object({ contentType: z.string(), hasCookies: z.boolean() });
+    const data = await postFormData(`${baseUrl}/echo-headers`, formData, undefined, schema);
+    expect(data.contentType).toMatch(/^multipart\/form-data/);
+    expect(data.hasCookies).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

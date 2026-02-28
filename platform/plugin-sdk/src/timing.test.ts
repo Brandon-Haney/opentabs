@@ -211,6 +211,26 @@ describe('retry', () => {
       expect((error as DOMException).name).toBe('AbortError');
     }
   });
+
+  test('rejects promptly when AbortSignal is aborted during inter-retry sleep', async () => {
+    const controller = new AbortController();
+    const start = performance.now();
+    const retryPromise = retry(() => Promise.reject(new Error('fail')), {
+      maxAttempts: 10,
+      delay: 5_000,
+      signal: controller.signal,
+    });
+    setTimeout(() => controller.abort(new Error('cancel during sleep')), 50);
+    try {
+      await retryPromise;
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe('cancel during sleep');
+    }
+    const elapsed = performance.now() - start;
+    expect(elapsed).toBeLessThan(2_000);
+  });
 });
 
 // ---------------------------------------------------------------------------

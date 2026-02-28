@@ -389,6 +389,31 @@ describe('validateInactiveIconColors', () => {
     const svg = svgWrap('<rect fill="rgb(50% 50% 50%)"/>');
     expect(validateInactiveIconColors(svg)).toEqual({ valid: true });
   });
+
+  // -- Modern CSS4 space-separated HSL syntax --
+
+  test('fill="hsl(120 50% 50%)" (modern HSL, nonzero saturation) fails', () => {
+    const svg = svgWrap('<rect fill="hsl(120 50% 50%)"/>');
+    const result = validateInactiveIconColors(svg);
+    expect(result.valid).toBe(false);
+  });
+
+  test('fill="hsl(0 0% 50%)" (modern HSL, zero saturation) passes', () => {
+    const svg = svgWrap('<rect fill="hsl(0 0% 50%)"/>');
+    expect(validateInactiveIconColors(svg)).toEqual({ valid: true });
+  });
+
+  test('fill="hsla(120 50% 50% / 0.5)" (modern HSLA, nonzero saturation) fails', () => {
+    const svg = svgWrap('<rect fill="hsla(120 50% 50% / 0.5)"/>');
+    const result = validateInactiveIconColors(svg);
+    expect(result.valid).toBe(false);
+  });
+
+  test('fill="hsl(120 50% 50% / 1)" (modern HSL with alpha, nonzero saturation) fails', () => {
+    const svg = svgWrap('<rect fill="hsl(120 50% 50% / 1)"/>');
+    const result = validateInactiveIconColors(svg);
+    expect(result.valid).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -830,6 +855,42 @@ describe('generateInactiveIcon', () => {
   test('generateInactiveIcon output with modern syntax passes validateInactiveIconColors', () => {
     const svg = svgWrap(
       '<rect fill="rgb(255 0 0)"/>' + '<circle fill="rgb(0 255 0 / 0.8)"/>' + '<path stroke="rgb(100% 0% 0%)"/>',
+    );
+    const inactive = generateInactiveIcon(svg);
+    expect(validateInactiveIconColors(inactive)).toEqual({ valid: true });
+  });
+
+  // -- Modern CSS4 space-separated HSL syntax --
+
+  test('fill="hsl(120 50% 50%)" (modern HSL, chromatic) → saturation set to 0%', () => {
+    const svg = svgWrap('<rect fill="hsl(120 50% 50%)"/>');
+    const result = generateInactiveIcon(svg);
+    expect(result).toContain('fill="hsl(120 0% 50%)"');
+  });
+
+  test('fill="hsl(0 0% 50%)" (modern HSL, already achromatic) → unchanged saturation', () => {
+    const svg = svgWrap('<rect fill="hsl(0 0% 50%)"/>');
+    const result = generateInactiveIcon(svg);
+    expect(result).toContain('fill="hsl(0 0% 50%)"');
+  });
+
+  test('fill="hsla(120 50% 50% / 0.5)" (modern HSLA) → saturation set to 0%, alpha preserved', () => {
+    const svg = svgWrap('<rect fill="hsla(120 50% 50% / 0.5)"/>');
+    const result = generateInactiveIcon(svg);
+    expect(result).toContain('fill="hsla(120 0% 50% / 0.5)"');
+  });
+
+  test('fill="hsl(120 50% 50% / 1)" (modern HSL with alpha) → saturation set to 0%', () => {
+    const svg = svgWrap('<rect fill="hsl(120 50% 50% / 1)"/>');
+    const result = generateInactiveIcon(svg);
+    expect(result).toContain('fill="hsl(120 0% 50% / 1)"');
+  });
+
+  test('generateInactiveIcon output with modern HSL syntax passes validateInactiveIconColors', () => {
+    const svg = svgWrap(
+      '<rect fill="hsl(120 50% 50%)"/>' +
+        '<circle fill="hsla(240 100% 40% / 0.8)"/>' +
+        '<path stroke="hsl(0 0% 50%)"/>',
     );
     const inactive = generateInactiveIcon(svg);
     expect(validateInactiveIconColors(inactive)).toEqual({ valid: true });

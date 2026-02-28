@@ -1098,17 +1098,8 @@ const runBuild = async (projectDir: string): Promise<void> => {
   // finds it at the end of the file, as required by the source map spec.
   const hashAndFreeze = `(function(){var o=(globalThis).__openTabs;if(o&&o.adapters&&o.adapters[${JSON.stringify(plugin.name)}]){var a=o.adapters[${JSON.stringify(plugin.name)}];a.__adapterHash=${JSON.stringify(adapterHash)};if(a.tools&&Array.isArray(a.tools)){for(var i=0;i<a.tools.length;i++){Object.freeze(a.tools[i]);}Object.freeze(a.tools);}Object.freeze(a);Object.defineProperty(o.adapters,${JSON.stringify(plugin.name)},{value:a,writable:false,configurable:false,enumerable:true});Object.defineProperty(o,"adapters",{value:o.adapters,writable:false,configurable:false});}})();`;
   await writeFile(iifePath, iifeContent + hashAndFreeze + sourceMappingUrlSuffix, 'utf-8');
-  if (
-    await access(iifePath).then(
-      () => true,
-      () => false,
-    )
-  ) {
-    const iifeSize = (await stat(iifePath)).size;
-    console.log(`  Written: ${pc.bold(`dist/${ADAPTER_FILENAME}`)} (${formatBytes(iifeSize)})`);
-  } else {
-    console.log(pc.dim(`  dist/${ADAPTER_FILENAME} not generated`));
-  }
+  const iifeSize = (await stat(iifePath)).size;
+  console.log(`  Written: ${pc.bold(`dist/${ADAPTER_FILENAME}`)} (${formatBytes(iifeSize)})`);
 
   const sourceMapPath = join(distDir, ADAPTER_SOURCE_MAP_FILENAME);
   if (

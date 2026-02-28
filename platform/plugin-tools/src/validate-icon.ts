@@ -243,10 +243,20 @@ const parseColor = (value: string): [number, number, number] | null => {
     ];
   }
 
-  // hsl()/hsla()
+  // hsl()/hsla() — comma-separated (legacy): hsl(H, S%, L%)
   const hslMatch = lowerValue.match(/^hsla?\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%/);
   if (hslMatch) {
     return hslToRgb(parseFloat(hslMatch[1] ?? '0'), parseFloat(hslMatch[2] ?? '0'), parseFloat(hslMatch[3] ?? '0'));
+  }
+
+  // hsl()/hsla() — space-separated (CSS4): hsl(H S% L%) or hsl(H S% L% / A)
+  const modernHslMatch = lowerValue.match(/^hsla?\(\s*([\d.]+)\s+([\d.]+)%\s+([\d.]+)%(?:\s*\/\s*[\d.]+%?)?\s*\)$/);
+  if (modernHslMatch) {
+    return hslToRgb(
+      parseFloat(modernHslMatch[1] ?? '0'),
+      parseFloat(modernHslMatch[2] ?? '0'),
+      parseFloat(modernHslMatch[3] ?? '0'),
+    );
   }
 
   // Named colors
@@ -267,8 +277,8 @@ const isAchromaticColor = (value: string): boolean => {
   if (normalizedValue.startsWith('url(')) return true;
   if (ACHROMATIC_NAMES.has(normalizedValue)) return true;
 
-  // hsl/hsla — check saturation is 0
-  const hslMatch = normalizedValue.match(/^hsla?\(\s*[\d.]+\s*,\s*([\d.]+)%/);
+  // hsl/hsla — check saturation is 0 (handles both comma-separated and space-separated syntax)
+  const hslMatch = normalizedValue.match(/^hsla?\(\s*[\d.]+[\s,]+([\d.]+)%/);
   if (hslMatch) return parseFloat(hslMatch[1] ?? '0') === 0;
 
   const rgb = parseColor(normalizedValue);
@@ -407,7 +417,7 @@ const convertColorToGray = (value: string): string => {
   if (PASSTHROUGH_VALUES.has(lowerValue)) return trimmedValue;
   if (lowerValue.startsWith('url(')) return trimmedValue;
 
-  // hsl/hsla — set saturation to 0, preserve everything else
+  // hsl/hsla — comma-separated (legacy): set saturation to 0, preserve everything else
   const hslaMatch = lowerValue.match(/^(hsla?)\(\s*([\d.]+)\s*,\s*[\d.]+%\s*,\s*([\d.]+%)\s*(?:,\s*([\d.]+))?\s*\)/);
   if (hslaMatch) {
     const fn = hslaMatch[1] ?? 'hsl';
@@ -418,6 +428,16 @@ const convertColorToGray = (value: string): string => {
       return `${fn}(${hue}, 0%, ${lightness}, ${alpha})`;
     }
     return `${fn}(${hue}, 0%, ${lightness})`;
+  }
+
+  // hsl/hsla — space-separated (CSS4): set saturation to 0, preserve hue, lightness, and optional alpha
+  const modernHslaMatch = lowerValue.match(/^(hsla?)\(\s*([\d.]+)\s+[\d.]+%\s+([\d.]+)%(.*)\)$/);
+  if (modernHslaMatch) {
+    const fn = modernHslaMatch[1] ?? 'hsl';
+    const hue = modernHslaMatch[2] ?? '0';
+    const lightness = modernHslaMatch[3] ?? '50';
+    const rest = modernHslaMatch[4] ?? '';
+    return `${fn}(${hue} 0% ${lightness}%${rest})`;
   }
 
   // rgba — convert and preserve alpha

@@ -30,6 +30,7 @@
  */
 
 import './orphan-guard.js';
+import { WebSocketServer } from 'ws';
 import http from 'node:http';
 import type { Invocation } from './test-server-utils.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -431,6 +432,32 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
     return;
   }
 
+  // --- WebSocket test page (for browser_get_websocket_frames E2E tests) ---
+  if (path === '/ws-test') {
+    const addr = server.address();
+    const wsPort = typeof addr === 'object' && addr !== null ? addr.port : PORT;
+    const wsTestHtml = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><title>WebSocket Test</title></head>
+<body>
+  <p id="status">connecting...</p>
+  <script>
+    const ws = new WebSocket('ws://localhost:${String(wsPort)}/ws');
+    ws.addEventListener('open', () => {
+      document.getElementById('status').textContent = 'connected';
+      ws.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
+    });
+    ws.addEventListener('message', (event) => {
+      document.getElementById('status').textContent = 'received: ' + event.data;
+    });
+  </script>
+</body>
+</html>`;
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(wsTestHtml);
+    return;
+  }
+
   // =======================================================================
   // Control endpoints (called by the test harness, not by the plugin)
   // =======================================================================
@@ -687,6 +714,29 @@ const server = http.createServer((req, res) => {
   });
 });
 
+// WebSocket server for the /ws endpoint (used by browser_get_websocket_frames E2E tests)
+const wss = new WebSocketServer({ noServer: true });
+
+wss.on('connection', ws => {
+  ws.send(JSON.stringify({ type: 'hello', message: 'ws-test-server' }));
+
+  ws.on('message', (raw: Buffer | string) => {
+    const text = typeof raw === 'string' ? raw : raw.toString();
+    ws.send(JSON.stringify({ type: 'echo', original: text }));
+  });
+});
+
+server.on('upgrade', (req, socket, head) => {
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  if (url.pathname === '/ws') {
+    wss.handleUpgrade(req, socket, head, ws => {
+      wss.emit('connection', ws, req);
+    });
+  } else {
+    socket.destroy();
+  }
+});
+
 server.listen(PORT, () => {
   const addr = server.address();
   const actualPort = typeof addr === 'object' && addr !== null ? addr.port : PORT;
@@ -696,6 +746,7 @@ server.listen(PORT, () => {
 // Ensure the process exits on SIGTERM/SIGINT so parent kill() calls
 // reliably terminate the subprocess.
 const shutdown = () => {
+  wss.close();
   server.close();
   process.exit(0);
 };

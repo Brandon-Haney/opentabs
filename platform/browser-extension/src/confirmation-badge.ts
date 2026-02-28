@@ -17,6 +17,12 @@ const confirmationTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
  */
 const CONFIRMATION_BACKGROUND_TIMEOUT_BUFFER_MS = 2000;
 
+/**
+ * Fallback timeout (ms) used when the server sends timeoutMs=0 or omits it.
+ * Ensures the badge always self-clears even if no explicit timeout was provided.
+ */
+const CONFIRMATION_FALLBACK_TIMEOUT_MS = 30_000;
+
 /** Update the extension badge to show pending confirmation count */
 const updateConfirmationBadge = (): void => {
   if (pendingConfirmationCount > 0) {
@@ -44,14 +50,14 @@ const notifyConfirmationRequest = (params: Record<string, unknown>): void => {
 
   // Set a background timeout slightly longer than the server-side timeout so
   // the badge clears automatically when the side panel is closed and cannot
-  // send sp:confirmationResponse or sp:confirmationTimeout.
-  if (timeoutMs > 0) {
-    const bgTimeoutId = setTimeout(() => {
-      confirmationTimeouts.delete(id);
-      clearConfirmationBadge();
-    }, timeoutMs + CONFIRMATION_BACKGROUND_TIMEOUT_BUFFER_MS);
-    confirmationTimeouts.set(id, bgTimeoutId);
-  }
+  // send sp:confirmationResponse or sp:confirmationTimeout. Uses a fallback
+  // when the server omits or sends timeoutMs=0.
+  const effectiveTimeoutMs = timeoutMs > 0 ? timeoutMs : CONFIRMATION_FALLBACK_TIMEOUT_MS;
+  const bgTimeoutId = setTimeout(() => {
+    confirmationTimeouts.delete(id);
+    clearConfirmationBadge();
+  }, effectiveTimeoutMs + CONFIRMATION_BACKGROUND_TIMEOUT_BUFFER_MS);
+  confirmationTimeouts.set(id, bgTimeoutId);
 
   chrome.notifications
     .create(`opentabs-confirm-${id}`, {

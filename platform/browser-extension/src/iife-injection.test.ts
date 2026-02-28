@@ -40,8 +40,7 @@ const mockExecuteScript = vi.fn<(injection: unknown) => Promise<Array<{ result?:
 };
 
 // Import after mocking
-const { isSafePluginName, queryMatchingTabIds, verifyAdapterVersion, teardownAdapterInTab } =
-  await import('./iife-injection.js');
+const { isSafePluginName, queryMatchingTabIds, verifyAdapterVersion } = await import('./iife-injection.js');
 
 // ---------------------------------------------------------------------------
 // isSafePluginName
@@ -196,36 +195,5 @@ describe('verifyAdapterVersion', () => {
 
     const result = await verifyAdapterVersion(1, 'slack', '2.0.0');
     expect(result).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// teardownAdapterInTab
-// ---------------------------------------------------------------------------
-
-describe('teardownAdapterInTab', () => {
-  beforeEach(() => {
-    mockExecuteScript.mockReset();
-  });
-
-  test('calls executeScript for teardown', async () => {
-    mockExecuteScript.mockResolvedValue([{ result: undefined }]);
-
-    await teardownAdapterInTab(42, 'slack');
-    expect(mockExecuteScript).toHaveBeenCalledTimes(1);
-
-    const call = mockExecuteScript.mock.calls[0] as [Record<string, unknown>];
-    const injection = call[0] as { target: { tabId: number }; world: string; args: string[] };
-    expect(injection.target.tabId).toBe(42);
-    expect(injection.world).toBe('MAIN');
-    expect(injection.args).toEqual(['slack']);
-  });
-
-  test('does not throw when executeScript fails', async () => {
-    mockExecuteScript.mockRejectedValue(new Error('Tab not found'));
-
-    await teardownAdapterInTab(99, 'slack');
-    // If we reach this point, the function did not throw
-    expect(true).toBe(true);
   });
 });

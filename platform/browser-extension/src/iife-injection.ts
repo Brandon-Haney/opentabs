@@ -253,35 +253,6 @@ const queryMatchingTabIds = async (urlPatterns: string[]): Promise<number[]> => 
 };
 
 /**
- * Call an adapter's teardown() function in a tab via chrome.scripting.executeScript.
- * Swallows errors — the injection pipeline continues regardless of teardown outcome.
- */
-const teardownAdapterInTab = async (tabId: number, pluginName: string): Promise<void> => {
-  await chrome.scripting
-    .executeScript({
-      target: { tabId },
-      world: 'MAIN',
-      func: (pName: string) => {
-        const ot = (globalThis as Record<string, unknown>).__openTabs as
-          | { adapters?: Record<string, { teardown?: () => void }> }
-          | undefined;
-        const adapter = ot?.adapters?.[pName];
-        if (adapter && typeof adapter.teardown === 'function') {
-          try {
-            adapter.teardown();
-          } catch (e) {
-            console.warn('[opentabs] teardown error:', e);
-          }
-        }
-      },
-      args: [pluginName],
-    })
-    .catch((err: unknown) => {
-      console.warn(`[opentabs] adapter teardown script failed for ${pluginName}:`, err);
-    });
-};
-
-/**
  * Replace a tab's frozen `__openTabs` container with a mutable copy,
  * preserving all adapter entries (including the one about to be re-injected).
  *
@@ -376,7 +347,7 @@ const injectPluginIntoMatchingTabs = async (
       // Replace frozen __openTabs/adapters with mutable copies so the new
       // IIFE can initialize. The IIFE wrapper handles its own teardown
       // lifecycle (onDeactivate → teardown → delete → install new adapter)
-      // in the correct order, so we do NOT call teardownAdapterInTab here.
+      // in the correct order before installing the new adapter.
       if (forceReinject) {
         await prepareForReinjection(tabId);
       }
@@ -544,6 +515,5 @@ export {
   isSafePluginName,
   queryMatchingTabIds,
   reinjectStoredPlugins,
-  teardownAdapterInTab,
   verifyAdapterVersion,
 };

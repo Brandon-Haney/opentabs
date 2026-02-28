@@ -123,13 +123,17 @@ describe('notifyConfirmationRequest', () => {
     expect(mockSetBadgeText).toHaveBeenCalledWith({ text: '' });
   });
 
-  test('does not set timeout when timeoutMs is zero', () => {
+  test('uses fallback timeout when timeoutMs is zero so badge always self-clears', () => {
     notifyConfirmationRequest({ id: 'req-1', timeoutMs: 0 });
     mockSetBadgeText.mockClear();
 
-    vi.advanceTimersByTime(999_999);
-
+    // Advance to just before the fallback fires (30_000 + 2_000 buffer)
+    vi.advanceTimersByTime(31_999);
     expect(mockSetBadgeText).not.toHaveBeenCalled();
+
+    // Advance past the fallback timeout — badge must clear
+    vi.advanceTimersByTime(1);
+    expect(mockSetBadgeText).toHaveBeenCalledWith({ text: '' });
   });
 });
 

@@ -113,8 +113,13 @@ const waitForExecFileCleanup = async (mcpServer: McpServer, timeoutMs = 5_000): 
   const adaptersDir = path.join(mcpServer.configDir, 'extension', 'adapters');
   await waitFor(
     () => {
-      const files = fs.readdirSync(adaptersDir);
-      return files.filter(f => f.startsWith('__exec-') && f.endsWith('.js')).length === 0;
+      try {
+        const files = fs.readdirSync(adaptersDir);
+        return files.filter(f => f.startsWith('__exec-') && f.endsWith('.js')).length === 0;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return true;
+        throw err;
+      }
     },
     timeoutMs,
     200,

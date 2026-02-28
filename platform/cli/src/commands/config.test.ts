@@ -1,4 +1,4 @@
-import { levenshtein, maskSecret, resolveStoredPluginPath, suggestKey } from './config.js';
+import { applyPolicyEntry, levenshtein, maskSecret, resolveStoredPluginPath, suggestKey } from './config.js';
 import { describe, expect, test } from 'vitest';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
@@ -149,5 +149,42 @@ describe('resolveStoredPluginPath', () => {
 
   test.runIf(process.platform === 'win32')('Windows drive-letter paths are returned as-is', () => {
     expect(resolveStoredPluginPath('C:\\plugins\\foo', configDir)).toBe('C:\\plugins\\foo');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyPolicyEntry
+// ---------------------------------------------------------------------------
+
+describe('applyPolicyEntry', () => {
+  test('setting enabled removes the key from the map (default state not persisted)', () => {
+    const map: Record<string, boolean> = { browser_execute_script: false };
+    applyPolicyEntry(map, 'browser_execute_script', true);
+    expect(Object.hasOwn(map, 'browser_execute_script')).toBe(false);
+  });
+
+  test('setting disabled adds the key with value false', () => {
+    const map: Record<string, boolean> = {};
+    applyPolicyEntry(map, 'browser_execute_script', false);
+    expect(map['browser_execute_script']).toBe(false);
+  });
+
+  test('setting enabled on a key that does not exist leaves the map unchanged', () => {
+    const map: Record<string, boolean> = {};
+    applyPolicyEntry(map, 'browser_screenshot', true);
+    expect(Object.hasOwn(map, 'browser_screenshot')).toBe(false);
+  });
+
+  test('setting disabled on a key already set to false keeps it false', () => {
+    const map: Record<string, boolean> = { browser_execute_script: false };
+    applyPolicyEntry(map, 'browser_execute_script', false);
+    expect(map['browser_execute_script']).toBe(false);
+  });
+
+  test('does not affect other keys in the map', () => {
+    const map: Record<string, boolean> = { tool_a: false, tool_b: false };
+    applyPolicyEntry(map, 'tool_a', true);
+    expect(Object.hasOwn(map, 'tool_a')).toBe(false);
+    expect(map['tool_b']).toBe(false);
   });
 });

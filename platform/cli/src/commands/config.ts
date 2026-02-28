@@ -270,6 +270,20 @@ const handleListTools = async (options: { port?: number }): Promise<void> => {
   console.log(pc.dim('Usage: opentabs config set tool.<name> enabled|disabled'));
 };
 
+/**
+ * Apply an enabled/disabled change to a policy map.
+ * When enabled (the default), the entry is removed so defaults are not persisted.
+ * When disabled, the entry is explicitly set to false.
+ * Returns whether the entry was removed (true) or set to false (false).
+ */
+const applyPolicyEntry = (map: Record<string, boolean>, key: string, enabled: boolean): void => {
+  if (enabled) {
+    Reflect.deleteProperty(map, key);
+  } else {
+    map[key] = false;
+  }
+};
+
 const handleSetTool = async (key: string, value: string, options: { port?: number }): Promise<void> => {
   const toolName = key.slice(TOOL_PREFIX.length);
   if (!toolName || !toolName.includes('_')) {
@@ -292,7 +306,10 @@ const handleSetTool = async (key: string, value: string, options: { port?: numbe
   }
   const tools = config.tools as Record<string, boolean>;
   const enabled = value === 'enabled';
-  tools[toolName] = enabled;
+  applyPolicyEntry(tools, toolName, enabled);
+  if (Object.keys(tools).length === 0) {
+    delete config.tools;
+  }
 
   await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
 
@@ -338,7 +355,10 @@ const handleSetBrowserTool = async (key: string, value: string, options: { port?
   }
   const policy = config.browserToolPolicy as Record<string, boolean>;
   const enabled = value === 'enabled';
-  policy[toolName] = enabled;
+  applyPolicyEntry(policy, toolName, enabled);
+  if (Object.keys(policy).length === 0) {
+    delete config.browserToolPolicy;
+  }
 
   await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
 
@@ -356,7 +376,11 @@ const handleSetPort = async (value: string, options: { port?: number }): Promise
   }
 
   const { config, configPath } = await loadConfig();
-  config.port = newPort;
+  if (newPort === DEFAULT_PORT) {
+    delete config.port;
+  } else {
+    config.port = newPort;
+  }
 
   await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
   console.log(`port: ${pc.cyan(String(newPort))}`);
@@ -696,4 +720,12 @@ Examples:
     );
 };
 
-export { registerConfigCommand, maskSecret, resolveStoredPluginPath, levenshtein, suggestKey, KNOWN_KEYS };
+export {
+  registerConfigCommand,
+  maskSecret,
+  resolveStoredPluginPath,
+  levenshtein,
+  suggestKey,
+  KNOWN_KEYS,
+  applyPolicyEntry,
+};

@@ -51,6 +51,22 @@ const colorTabState = (tabState: string): string => {
 
 const isTimeout = (err: unknown): boolean => err instanceof DOMException && err.name === 'TimeoutError';
 
+/**
+ * Returns true when a non-2xx HTTP response likely indicates the port is running
+ * a different service rather than an OpenTabs server.
+ *
+ * - 4xx (excluding 401, which is handled separately): a different service responded.
+ * - Non-JSON content type (e.g., text/html from Next.js): not OpenTabs.
+ */
+const isNonOpenTabsHttpError = (status: number, contentType: string | null): boolean => {
+  // 4xx except 401 (401 means the server IS OpenTabs but auth failed): likely a different service
+  if (status >= 400 && status < 500 && status !== 401) return true;
+  // Non-JSON content type (e.g., text/html from Next.js) strongly indicates not OpenTabs
+  if (contentType !== null && !contentType.includes('application/json') && !contentType.includes('text/plain'))
+    return true;
+  return false;
+};
+
 const handleStatus = async (options: StatusOptions): Promise<void> => {
   const port = resolvePort(options);
   const url = `http://localhost:${port}/health`;
@@ -74,11 +90,22 @@ const handleStatus = async (options: StatusOptions): Promise<void> => {
     }
 
     if (!res.ok) {
-      console.error(pc.red(`Error: MCP server returned HTTP ${res.status}.`));
-      console.error('The server may be misconfigured. Check the server logs for details.');
+      const contentType = res.headers.get('content-type');
+      if (isNonOpenTabsHttpError(res.status, contentType)) {
+        console.error(pc.red(`No OpenTabs server found on port ${port}.`));
+        console.error(pc.dim('The port may be in use by another service.'));
+      } else {
+        console.error(pc.red(`Error: MCP server returned HTTP ${res.status}.`));
+        console.error(pc.dim('The server may be misconfigured. Check the server logs for details.'));
+      }
       process.exit(1);
     }
     const data = (await res.json()) as Record<string, unknown>;
+    if (typeof data.status !== 'string') {
+      console.error(pc.red(`No OpenTabs server found on port ${port}.`));
+      console.error(pc.dim('The port may be in use by another service.'));
+      process.exit(1);
+    }
     if (options.json) {
       console.log(JSON.stringify(data, null, 2));
     } else {
@@ -186,4 +213,4 @@ Examples:
     .action((_options: StatusOptions, command: Command) => handleStatus(command.optsWithGlobals()));
 };
 
-export { colorTabState, formatUptime, handleStatus, isTimeout, registerStatusCommand };
+export { colorTabState, formatUptime, handleStatus, isNonOpenTabsHttpError, isTimeout, registerStatusCommand };

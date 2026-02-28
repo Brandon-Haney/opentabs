@@ -1,4 +1,4 @@
-import { colorTabState, formatUptime, isTimeout } from './status.js';
+import { colorTabState, formatUptime, isNonOpenTabsHttpError, isTimeout } from './status.js';
 import { describe, expect, test } from 'vitest';
 
 // ---------------------------------------------------------------------------
@@ -115,5 +115,51 @@ describe('isTimeout', () => {
     expect(isTimeout(null)).toBe(false);
     expect(isTimeout(undefined)).toBe(false);
     expect(isTimeout(42)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isNonOpenTabsHttpError
+// ---------------------------------------------------------------------------
+
+describe('isNonOpenTabsHttpError', () => {
+  test('returns true for 404 (not found — different service on port)', () => {
+    expect(isNonOpenTabsHttpError(404, 'application/json')).toBe(true);
+  });
+
+  test('returns true for 403 (forbidden — 4xx non-401)', () => {
+    expect(isNonOpenTabsHttpError(403, 'application/json')).toBe(true);
+  });
+
+  test('returns true for 400 (bad request)', () => {
+    expect(isNonOpenTabsHttpError(400, 'application/json')).toBe(true);
+  });
+
+  test('returns false for 401 (authentication error — handled separately)', () => {
+    expect(isNonOpenTabsHttpError(401, 'application/json')).toBe(false);
+  });
+
+  test('returns false for 500 with JSON content type (misconfigured OpenTabs server)', () => {
+    expect(isNonOpenTabsHttpError(500, 'application/json')).toBe(false);
+  });
+
+  test('returns true for 500 with text/html content type (non-OpenTabs server)', () => {
+    expect(isNonOpenTabsHttpError(500, 'text/html')).toBe(true);
+  });
+
+  test('returns true for 500 with text/html; charset=utf-8 content type', () => {
+    expect(isNonOpenTabsHttpError(500, 'text/html; charset=utf-8')).toBe(true);
+  });
+
+  test('returns false for 500 with text/plain content type', () => {
+    expect(isNonOpenTabsHttpError(500, 'text/plain')).toBe(false);
+  });
+
+  test('returns false for 500 with null content type', () => {
+    expect(isNonOpenTabsHttpError(500, null)).toBe(false);
+  });
+
+  test('returns false for 502 with application/json content type', () => {
+    expect(isNonOpenTabsHttpError(502, 'application/json; charset=utf-8')).toBe(false);
   });
 });

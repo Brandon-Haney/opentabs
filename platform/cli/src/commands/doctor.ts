@@ -95,7 +95,7 @@ const checkServerHealth = async (
     const portSuffix = port !== 9515 ? ` --port ${port}` : '';
     const hint = `Start it with: opentabs start${portSuffix}`;
     return {
-      result: fail('MCP server', 'not reachable', hint),
+      result: warn('MCP server', 'not reachable', hint),
       data: null,
     };
   }
@@ -229,7 +229,9 @@ interface McpClientLocation {
 
 const defaultMcpClientLocations = (): McpClientLocation[] => [
   { name: 'Claude Code', path: join(homedir(), '.claude', 'settings', 'mcp.json') },
+  { name: 'Cursor', path: join(homedir(), '.cursor', 'mcp.json') },
   { name: 'Cursor', path: join(process.cwd(), '.cursor', 'mcp.json') },
+  { name: 'OpenCode', path: join(homedir(), '.config', 'opencode', 'opencode.json') },
   { name: 'OpenCode', path: join(process.cwd(), 'opencode.json') },
   { name: 'Windsurf', path: join(homedir(), '.codeium', 'windsurf', 'mcp_config.json') },
 ];
@@ -261,10 +263,17 @@ const checkMcpClientConfig = async (
     }
   }
 
+  const home = homedir();
+  const checkedPaths = clients
+    .map(c => {
+      const displayPath = c.path.startsWith(home) ? c.path.replace(home, '~') : c.path;
+      return `${displayPath} (${c.name})`;
+    })
+    .join(', ');
   return warn(
     'MCP client config',
     'no MCP client configured for OpenTabs',
-    'Add an "opentabs" entry to ~/.claude/settings/mcp.json (Claude Code), .cursor/mcp.json (Cursor), opencode.json (OpenCode), or ~/.codeium/windsurf/mcp_config.json (Windsurf)',
+    `Add an "opentabs" entry to one of: ${checkedPaths}`,
   );
 };
 

@@ -175,10 +175,10 @@ describe('checkServerHealth', () => {
     }
   });
 
-  test('returns fail when server is not reachable', async () => {
+  test('returns warn when server is not reachable', async () => {
     const { result, data } = await checkServerHealth(19999);
     expect(result.ok).toBe(false);
-    expect(result.fatal).toBe(true);
+    expect(result.fatal).toBe(false);
     expect(result.detail).toContain('not reachable');
     expect(data).toBeNull();
   });

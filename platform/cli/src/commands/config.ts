@@ -643,7 +643,7 @@ Examples:
     .alias('get')
     .description('Show config contents')
     .option('--json', 'Output config as JSON')
-    .option('--show-secret', 'Display the full authentication secret')
+    .option('--show-secret', 'Display the full authentication secret and MCP client configurations')
     .addHelpText(
       'after',
       `

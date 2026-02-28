@@ -24,6 +24,8 @@ import { waitForExtensionConnected, waitForLog, openSidePanel, setupAdapterSymli
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { McpServer } from './fixtures.js';
+import type { BrowserContext } from '@playwright/test';
 
 /**
  * POST /reload to the MCP server. Triggers a full config rediscovery and
@@ -47,11 +49,16 @@ test.describe('Empty states', () => {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-empty-fresh-'));
     writeTestConfig(configDir, { localPlugins: [], tools: {} });
 
-    const server = await startMcpServer(configDir, true);
-    const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port, server.secret);
-    setupAdapterSymlink(configDir, extensionDir);
-
+    let server: McpServer | undefined;
+    let context: BrowserContext | undefined;
+    let cleanupDir = '';
     try {
+      server = await startMcpServer(configDir, true);
+      const ext = await launchExtensionContext(server.port, server.secret);
+      context = ext.context;
+      cleanupDir = ext.cleanupDir;
+      setupAdapterSymlink(configDir, ext.extensionDir);
+
       await waitForExtensionConnected(server);
 
       // Open the side panel
@@ -65,9 +72,9 @@ test.describe('Empty states', () => {
 
       await sidePanelPage.close();
     } finally {
-      await context.close();
-      await server.kill();
-      fs.rmSync(cleanupDir, { recursive: true, force: true });
+      await context?.close();
+      await server?.kill();
+      if (cleanupDir) fs.rmSync(cleanupDir, { recursive: true, force: true });
       cleanupTestConfigDir(configDir);
     }
   });
@@ -77,11 +84,16 @@ test.describe('Empty states', () => {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-empty-transition-'));
     writeTestConfig(configDir, { localPlugins: [], tools: {} });
 
-    const server = await startMcpServer(configDir, true);
-    const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port, server.secret);
-    setupAdapterSymlink(configDir, extensionDir);
-
+    let server: McpServer | undefined;
+    let context: BrowserContext | undefined;
+    let cleanupDir = '';
     try {
+      server = await startMcpServer(configDir, true);
+      const ext = await launchExtensionContext(server.port, server.secret);
+      context = ext.context;
+      cleanupDir = ext.cleanupDir;
+      setupAdapterSymlink(configDir, ext.extensionDir);
+
       await waitForExtensionConnected(server);
       await waitForLog(server, 'Config watcher: Watching', 10_000);
 
@@ -110,9 +122,9 @@ test.describe('Empty states', () => {
 
       await sidePanelPage.close();
     } finally {
-      await context.close();
-      await server.kill();
-      fs.rmSync(cleanupDir, { recursive: true, force: true });
+      await context?.close();
+      await server?.kill();
+      if (cleanupDir) fs.rmSync(cleanupDir, { recursive: true, force: true });
       cleanupTestConfigDir(configDir);
     }
   });
@@ -122,11 +134,16 @@ test.describe('Empty states', () => {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-empty-disconnect-'));
     writeTestConfig(configDir, { localPlugins: [], tools: {} });
 
-    const server = await startMcpServer(configDir, true);
-    const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port, server.secret);
-    setupAdapterSymlink(configDir, extensionDir);
-
+    let server: McpServer | undefined;
+    let context: BrowserContext | undefined;
+    let cleanupDir = '';
     try {
+      server = await startMcpServer(configDir, true);
+      const ext = await launchExtensionContext(server.port, server.secret);
+      context = ext.context;
+      cleanupDir = ext.cleanupDir;
+      setupAdapterSymlink(configDir, ext.extensionDir);
+
       await waitForExtensionConnected(server);
 
       // Open the side panel and verify no-plugins state
@@ -142,8 +159,9 @@ test.describe('Empty states', () => {
 
       await sidePanelPage.close();
     } finally {
-      await context.close();
-      fs.rmSync(cleanupDir, { recursive: true, force: true });
+      await context?.close();
+      await server?.kill();
+      if (cleanupDir) fs.rmSync(cleanupDir, { recursive: true, force: true });
       cleanupTestConfigDir(configDir);
     }
   });
@@ -160,11 +178,16 @@ test.describe('Empty states', () => {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-empty-remove-'));
     writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
 
-    const server = await startMcpServer(configDir, true);
-    const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port, server.secret);
-    setupAdapterSymlink(configDir, extensionDir);
-
+    let server: McpServer | undefined;
+    let context: BrowserContext | undefined;
+    let cleanupDir = '';
     try {
+      server = await startMcpServer(configDir, true);
+      const ext = await launchExtensionContext(server.port, server.secret);
+      context = ext.context;
+      cleanupDir = ext.cleanupDir;
+      setupAdapterSymlink(configDir, ext.extensionDir);
+
       await waitForExtensionConnected(server);
       await waitForLog(server, 'Config watcher: Watching', 10_000);
 
@@ -184,9 +207,9 @@ test.describe('Empty states', () => {
 
       await sidePanelPage.close();
     } finally {
-      await context.close();
-      await server.kill();
-      fs.rmSync(cleanupDir, { recursive: true, force: true });
+      await context?.close();
+      await server?.kill();
+      if (cleanupDir) fs.rmSync(cleanupDir, { recursive: true, force: true });
       cleanupTestConfigDir(configDir);
     }
   });

@@ -59,20 +59,8 @@ const writeAdapterFile = async (pluginName: string, iife: string, sourceMap?: st
   const contentHash = createHash('sha256').update(iife).digest('hex').slice(0, 8);
   const baseName = `${pluginName}-${contentHash}`;
 
-  // Clean up old hashed versions of the same plugin before writing the new one
-  let entries: string[];
-  try {
-    entries = await readdir(adaptersDir);
-  } catch {
-    entries = [];
-  }
-  // Match only files for this exact plugin: {pluginName}-{8hexchars}.js or .js.map
-  // Using a regex prevents prefix collisions (e.g., plugin 'foo' must not delete
-  // files for plugin 'foo-bar').
-  const pluginFileRegex = new RegExp(`^${escapeRegex(pluginName)}-[0-9a-f]{8}\\.js(\\.map)?$`);
-  const oldFiles = entries.filter(f => pluginFileRegex.test(f) && f !== `${baseName}.js` && f !== `${baseName}.js.map`);
-  await Promise.allSettled(oldFiles.map(f => unlink(join(adaptersDir, f))));
-
+  // Write the new adapter file before deleting old versions so there is always
+  // at least one valid adapter file on disk for this plugin.
   let content = iife;
   if (sourceMap) {
     // Rewrite sourceMappingURL to use the per-plugin hashed filename
@@ -84,6 +72,20 @@ const writeAdapterFile = async (pluginName: string, iife: string, sourceMap?: st
   }
 
   await atomicWrite(join(adaptersDir, `${baseName}.js`), content);
+
+  // Clean up old hashed versions of the same plugin now that the new file is on disk.
+  // Using a regex prevents prefix collisions (e.g., plugin 'foo' must not delete
+  // files for plugin 'foo-bar').
+  let entries: string[];
+  try {
+    entries = await readdir(adaptersDir);
+  } catch {
+    entries = [];
+  }
+  const pluginFileRegex = new RegExp(`^${escapeRegex(pluginName)}-[0-9a-f]{8}\\.js(\\.map)?$`);
+  const oldFiles = entries.filter(f => pluginFileRegex.test(f) && f !== `${baseName}.js` && f !== `${baseName}.js.map`);
+  await Promise.allSettled(oldFiles.map(f => unlink(join(adaptersDir, f))));
+
   return `adapters/${baseName}.js`;
 };
 

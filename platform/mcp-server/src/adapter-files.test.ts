@@ -8,11 +8,38 @@ import {
 } from './adapter-files.js';
 import { getAdaptersDir } from './config.js';
 import { createState } from './state.js';
-import { afterAll, beforeEach, describe, expect, test } from 'vitest';
+import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
+import * as nodeFsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+// ─── Unlink spy for atomicity test ──────────────────────────────────────────
+// vi.hoisted ensures both values exist before the vi.mock factory runs, avoiding
+// TDZ errors from plain `let` declarations used inside a hoisted factory.
+
+const { mockUnlink, unlinkCapture } = vi.hoisted(() => ({
+  mockUnlink: vi.fn<typeof nodeFsPromises.unlink>(),
+  unlinkCapture: { realFn: null as null | typeof nodeFsPromises.unlink },
+}));
+
+vi.mock('node:fs/promises', async importOriginal => {
+  const actual = await importOriginal<typeof nodeFsPromises>();
+  unlinkCapture.realFn = actual.unlink;
+  return { ...actual, unlink: mockUnlink };
+});
+
+// Reset to real call-through before each test so existing tests are unaffected.
+beforeEach(() => {
+  mockUnlink.mockReset();
+  // unlinkCapture.realFn is populated by vi.mock factory before any test runs
+  mockUnlink.mockImplementation(path => {
+    const fn = unlinkCapture.realFn;
+    if (!fn) throw new Error('unlinkCapture.realFn not initialized');
+    return fn(path);
+  });
+});
 
 // Override OPENTABS_CONFIG_DIR for test isolation.
 const TEST_BASE_DIR = mkdtempSync(join(tmpdir(), 'opentabs-adapter-files-test-'));
@@ -202,6 +229,31 @@ describe('writeAdapterFile', () => {
     // Only the new hashed file should remain
     expect(files).toHaveLength(1);
     expect(files[0]).toBe(path2.replace('adapters/', ''));
+  });
+
+  test('new adapter file is on disk when old versions are unlinked', async () => {
+    const adaptersDir = getAdaptersDir();
+    const iife1 = '(function(){console.log("atom-v1")})();';
+    const iife2 = '(function(){console.log("atom-v2")})();';
+
+    // Write initial version so there is an old file to clean up
+    await writeAdapterFile('atom-test', iife1);
+
+    // Capture directory contents the first time unlink is called (old file deletion)
+    let entriesAtFirstUnlink: string[] = [];
+    mockUnlink.mockImplementationOnce(async path => {
+      entriesAtFirstUnlink = await nodeFsPromises.readdir(adaptersDir);
+      const fn = unlinkCapture.realFn;
+      if (!fn) throw new Error('unlinkCapture.realFn not initialized');
+      return fn(path);
+    });
+
+    const path2 = await writeAdapterFile('atom-test', iife2);
+    const newFile = path2.replace('adapters/', '');
+
+    // The new file must already exist on disk when unlink is called for old files,
+    // ensuring there is no window where zero adapter files exist for this plugin.
+    expect(entriesAtFirstUnlink).toContain(newFile);
   });
 });
 

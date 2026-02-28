@@ -155,6 +155,8 @@ class MyPlugin extends OpenTabsPlugin {
 }
 ```
 
+`override` is required because `resources` is an optional property with a default value on the base class — TypeScript's `noImplicitOverride` rule enforces it. Omitting `override` causes a TS4114 type error at build time.
+
 ### How Resources Are Exposed to AI Agents
 
 The platform prefixes resource URIs to prevent collisions between plugins. Your resource URI `slack://channels` becomes:
@@ -370,6 +372,8 @@ class MyPlugin extends OpenTabsPlugin {
   // ... tools, resources, isReady, etc.
 }
 ```
+
+`override` is required because `prompts` is an optional property with a default value on the base class — TypeScript's `noImplicitOverride` rule enforces it. Omitting `override` causes a TS4114 type error at build time.
 
 ### How Prompts Are Exposed to AI Agents
 

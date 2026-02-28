@@ -91,6 +91,8 @@ Here's what each field does:
 - **`tools`** — array of tool definitions (covered below).
 - **`isReady()`** — return `true` when the user is authenticated. The extension calls this to determine whether the plugin's tab is ready for tool dispatch.
 
+Beyond tools, your plugin can also declare `resources` (read-only data the agent can browse) and `prompts` (reusable message templates). Both require the `override` keyword because they are optional properties with default values on the base class — `tools` is abstract and does not require `override`. See [Resources & Prompts](/docs/guides/resources-prompts) for the full guide.
+
 ### Implementing isReady()
 
 `isReady()` runs in the page context, so you have access to the DOM, localStorage, and cookies. Common patterns:

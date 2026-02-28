@@ -289,7 +289,7 @@ class SlackPlugin extends OpenTabsPlugin {
   readonly name = 'slack';
   // ... other properties
   readonly tools: ToolDefinition[] = [sendMessage];
-  readonly prompts: PromptDefinition[] = [composeMessage];
+  override readonly prompts: PromptDefinition[] = [composeMessage];
 
   async isReady(): Promise<boolean> {
     // ...

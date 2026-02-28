@@ -134,13 +134,18 @@ test.describe('Side panel data flow — tab state changes', () => {
       await expect
         .poll(
           async () => {
-            const res = await fetch(`http://localhost:${server.port}/health`, {
-              headers: { Authorization: `Bearer ${server.secret ?? ''}` },
-            });
-            const body = (await res.json()) as {
-              pluginDetails?: Array<{ name: string; tabState: string }>;
-            };
-            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            try {
+              const res = await fetch(`http://localhost:${server.port}/health`, {
+                headers: { Authorization: `Bearer ${server.secret ?? ''}` },
+                signal: AbortSignal.timeout(3_000),
+              });
+              const body = (await res.json()) as {
+                pluginDetails?: Array<{ name: string; tabState: string }>;
+              };
+              return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            } catch {
+              return undefined;
+            }
           },
           { timeout: 30_000, message: 'Server tab state for e2e-test did not become ready' },
         )
@@ -165,13 +170,18 @@ test.describe('Side panel data flow — tab state changes', () => {
       await expect
         .poll(
           async () => {
-            const res = await fetch(`http://localhost:${server.port}/health`, {
-              headers: { Authorization: `Bearer ${server.secret ?? ''}` },
-            });
-            const body = (await res.json()) as {
-              pluginDetails?: Array<{ name: string; tabState: string }>;
-            };
-            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            try {
+              const res = await fetch(`http://localhost:${server.port}/health`, {
+                headers: { Authorization: `Bearer ${server.secret ?? ''}` },
+                signal: AbortSignal.timeout(3_000),
+              });
+              const body = (await res.json()) as {
+                pluginDetails?: Array<{ name: string; tabState: string }>;
+              };
+              return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            } catch {
+              return undefined;
+            }
           },
           { timeout: 15_000, message: 'Server tab state for e2e-test did not return to closed' },
         )
@@ -231,13 +241,18 @@ test.describe('Side panel data flow — tab state changes', () => {
       await expect
         .poll(
           async () => {
-            const res = await fetch(`http://localhost:${server.port}/health`, {
-              headers: { Authorization: `Bearer ${server.secret ?? ''}` },
-            });
-            const body = (await res.json()) as {
-              pluginDetails?: Array<{ name: string; tabState: string }>;
-            };
-            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            try {
+              const res = await fetch(`http://localhost:${server.port}/health`, {
+                headers: { Authorization: `Bearer ${server.secret ?? ''}` },
+                signal: AbortSignal.timeout(3_000),
+              });
+              const body = (await res.json()) as {
+                pluginDetails?: Array<{ name: string; tabState: string }>;
+              };
+              return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            } catch {
+              return undefined;
+            }
           },
           { timeout: 30_000, message: 'Server tab state for e2e-test did not become ready' },
         )
@@ -263,13 +278,18 @@ test.describe('Side panel data flow — tab state changes', () => {
       await expect
         .poll(
           async () => {
-            const res = await fetch(`http://localhost:${server.port}/health`, {
-              headers: { Authorization: `Bearer ${server.secret ?? ''}` },
-            });
-            const body = (await res.json()) as {
-              pluginDetails?: Array<{ name: string; tabState: string }>;
-            };
-            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            try {
+              const res = await fetch(`http://localhost:${server.port}/health`, {
+                headers: { Authorization: `Bearer ${server.secret ?? ''}` },
+                signal: AbortSignal.timeout(3_000),
+              });
+              const body = (await res.json()) as {
+                pluginDetails?: Array<{ name: string; tabState: string }>;
+              };
+              return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            } catch {
+              return undefined;
+            }
           },
           { timeout: 30_000, message: 'Server tab state for e2e-test did not become unavailable' },
         )
@@ -291,13 +311,18 @@ test.describe('Side panel data flow — tab state changes', () => {
       await expect
         .poll(
           async () => {
-            const res = await fetch(`http://localhost:${server.port}/health`, {
-              headers: { Authorization: `Bearer ${server.secret ?? ''}` },
-            });
-            const body = (await res.json()) as {
-              pluginDetails?: Array<{ name: string; tabState: string }>;
-            };
-            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            try {
+              const res = await fetch(`http://localhost:${server.port}/health`, {
+                headers: { Authorization: `Bearer ${server.secret ?? ''}` },
+                signal: AbortSignal.timeout(3_000),
+              });
+              const body = (await res.json()) as {
+                pluginDetails?: Array<{ name: string; tabState: string }>;
+              };
+              return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            } catch {
+              return undefined;
+            }
           },
           { timeout: 30_000, message: 'Server tab state for e2e-test did not return to ready' },
         )
@@ -358,13 +383,18 @@ test.describe('Side panel data flow — tool invocation animation', () => {
       await expect
         .poll(
           async () => {
-            const res = await fetch(`http://localhost:${server.port}/health`, {
-              headers: { Authorization: `Bearer ${server.secret ?? ''}` },
-            });
-            const body = (await res.json()) as {
-              pluginDetails?: Array<{ name: string; tabState: string }>;
-            };
-            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            try {
+              const res = await fetch(`http://localhost:${server.port}/health`, {
+                headers: { Authorization: `Bearer ${server.secret ?? ''}` },
+                signal: AbortSignal.timeout(3_000),
+              });
+              const body = (await res.json()) as {
+                pluginDetails?: Array<{ name: string; tabState: string }>;
+              };
+              return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            } catch {
+              return undefined;
+            }
           },
           { timeout: 30_000, message: 'Server tab state for e2e-test did not become ready' },
         )

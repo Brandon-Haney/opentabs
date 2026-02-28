@@ -50,15 +50,20 @@ test.describe('Tab state sync — navigate away', () => {
     await expect
       .poll(
         async () => {
-          const pollHeaders: Record<string, string> = {};
-          if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
-          const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
-            headers: pollHeaders,
-          });
-          const body = (await res.json()) as {
-            pluginDetails?: Array<{ name: string; tabState: string }>;
-          };
-          return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+          try {
+            const pollHeaders: Record<string, string> = {};
+            if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+            const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
+              headers: pollHeaders,
+              signal: AbortSignal.timeout(3_000),
+            });
+            const body = (await res.json()) as {
+              pluginDetails?: Array<{ name: string; tabState: string }>;
+            };
+            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+          } catch {
+            return undefined;
+          }
         },
         { timeout: 15_000, message: 'Server tab state for e2e-test should be ready' },
       )
@@ -73,15 +78,20 @@ test.describe('Tab state sync — navigate away', () => {
     await expect
       .poll(
         async () => {
-          const pollHeaders: Record<string, string> = {};
-          if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
-          const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
-            headers: pollHeaders,
-          });
-          const body = (await res.json()) as {
-            pluginDetails?: Array<{ name: string; tabState: string }>;
-          };
-          return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+          try {
+            const pollHeaders: Record<string, string> = {};
+            if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+            const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
+              headers: pollHeaders,
+              signal: AbortSignal.timeout(3_000),
+            });
+            const body = (await res.json()) as {
+              pluginDetails?: Array<{ name: string; tabState: string }>;
+            };
+            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+          } catch {
+            return undefined;
+          }
         },
         {
           timeout: 30_000,
@@ -122,15 +132,20 @@ test.describe('Tab state sync — multi-tab resilience', () => {
     await expect
       .poll(
         async () => {
-          const pollHeaders: Record<string, string> = {};
-          if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
-          const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
-            headers: pollHeaders,
-          });
-          const body = (await res.json()) as {
-            pluginDetails?: Array<{ name: string; tabState: string }>;
-          };
-          return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+          try {
+            const pollHeaders: Record<string, string> = {};
+            if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+            const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
+              headers: pollHeaders,
+              signal: AbortSignal.timeout(3_000),
+            });
+            const body = (await res.json()) as {
+              pluginDetails?: Array<{ name: string; tabState: string }>;
+            };
+            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+          } catch {
+            return undefined;
+          }
         },
         { timeout: 15_000, message: 'Server tab state for e2e-test should be ready with two tabs' },
       )
@@ -144,15 +159,20 @@ test.describe('Tab state sync — multi-tab resilience', () => {
     await expect
       .poll(
         async () => {
-          const pollHeaders: Record<string, string> = {};
-          if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
-          const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
-            headers: pollHeaders,
-          });
-          const body = (await res.json()) as {
-            pluginDetails?: Array<{ name: string; tabState: string }>;
-          };
-          return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+          try {
+            const pollHeaders: Record<string, string> = {};
+            if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+            const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
+              headers: pollHeaders,
+              signal: AbortSignal.timeout(3_000),
+            });
+            const body = (await res.json()) as {
+              pluginDetails?: Array<{ name: string; tabState: string }>;
+            };
+            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+          } catch {
+            return undefined;
+          }
         },
         { timeout: 15_000, message: 'Server tab state for e2e-test should still be ready after closing one tab' },
       )
@@ -169,15 +189,20 @@ test.describe('Tab state sync — multi-tab resilience', () => {
     await expect
       .poll(
         async () => {
-          const pollHeaders: Record<string, string> = {};
-          if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
-          const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
-            headers: pollHeaders,
-          });
-          const body = (await res.json()) as {
-            pluginDetails?: Array<{ name: string; tabState: string }>;
-          };
-          return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+          try {
+            const pollHeaders: Record<string, string> = {};
+            if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+            const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
+              headers: pollHeaders,
+              signal: AbortSignal.timeout(3_000),
+            });
+            const body = (await res.json()) as {
+              pluginDetails?: Array<{ name: string; tabState: string }>;
+            };
+            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+          } catch {
+            return undefined;
+          }
         },
         {
           timeout: 30_000,
@@ -206,15 +231,20 @@ test.describe('Tab state sync — rapid close and reopen', () => {
     await expect
       .poll(
         async () => {
-          const pollHeaders: Record<string, string> = {};
-          if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
-          const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
-            headers: pollHeaders,
-          });
-          const body = (await res.json()) as {
-            pluginDetails?: Array<{ name: string; tabState: string }>;
-          };
-          return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+          try {
+            const pollHeaders: Record<string, string> = {};
+            if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+            const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
+              headers: pollHeaders,
+              signal: AbortSignal.timeout(3_000),
+            });
+            const body = (await res.json()) as {
+              pluginDetails?: Array<{ name: string; tabState: string }>;
+            };
+            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+          } catch {
+            return undefined;
+          }
         },
         { timeout: 15_000, message: 'Server tab state for e2e-test should be ready' },
       )
@@ -232,15 +262,20 @@ test.describe('Tab state sync — rapid close and reopen', () => {
     await expect
       .poll(
         async () => {
-          const pollHeaders: Record<string, string> = {};
-          if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
-          const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
-            headers: pollHeaders,
-          });
-          const body = (await res.json()) as {
-            pluginDetails?: Array<{ name: string; tabState: string }>;
-          };
-          return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+          try {
+            const pollHeaders: Record<string, string> = {};
+            if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+            const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
+              headers: pollHeaders,
+              signal: AbortSignal.timeout(3_000),
+            });
+            const body = (await res.json()) as {
+              pluginDetails?: Array<{ name: string; tabState: string }>;
+            };
+            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+          } catch {
+            return undefined;
+          }
         },
         {
           timeout: 30_000,
@@ -295,13 +330,18 @@ test.describe('Tab state sync — server restart reconnect', () => {
       await expect
         .poll(
           async () => {
-            const res = await fetch(`http://localhost:${serverPort}/health`, {
-              headers: { Authorization: `Bearer ${server1.secret ?? ''}` },
-            });
-            const body = (await res.json()) as {
-              pluginDetails?: Array<{ name: string; tabState: string }>;
-            };
-            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            try {
+              const res = await fetch(`http://localhost:${serverPort}/health`, {
+                headers: { Authorization: `Bearer ${server1.secret ?? ''}` },
+                signal: AbortSignal.timeout(3_000),
+              });
+              const body = (await res.json()) as {
+                pluginDetails?: Array<{ name: string; tabState: string }>;
+              };
+              return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            } catch {
+              return undefined;
+            }
           },
           { timeout: 30_000, message: 'Server tab state for e2e-test did not become ready' },
         )
@@ -325,13 +365,18 @@ test.describe('Tab state sync — server restart reconnect', () => {
         await expect
           .poll(
             async () => {
-              const res = await fetch(`http://localhost:${serverPort}/health`, {
-                headers: { Authorization: `Bearer ${server2.secret ?? ''}` },
-              });
-              const body = (await res.json()) as {
-                pluginDetails?: Array<{ name: string; tabState: string }>;
-              };
-              return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+              try {
+                const res = await fetch(`http://localhost:${serverPort}/health`, {
+                  headers: { Authorization: `Bearer ${server2.secret ?? ''}` },
+                  signal: AbortSignal.timeout(3_000),
+                });
+                const body = (await res.json()) as {
+                  pluginDetails?: Array<{ name: string; tabState: string }>;
+                };
+                return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+              } catch {
+                return undefined;
+              }
             },
             {
               timeout: 30_000,

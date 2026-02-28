@@ -81,13 +81,18 @@ test.describe('Side panel — plugin list rendering', () => {
       await expect
         .poll(
           async () => {
-            const res = await fetch(`http://localhost:${server.port}/health`, {
-              headers: { Authorization: `Bearer ${server.secret ?? ''}` },
-            });
-            const body = (await res.json()) as {
-              pluginDetails?: Array<{ name: string; tabState: string }>;
-            };
-            return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            try {
+              const res = await fetch(`http://localhost:${server.port}/health`, {
+                headers: { Authorization: `Bearer ${server.secret ?? ''}` },
+                signal: AbortSignal.timeout(3_000),
+              });
+              const body = (await res.json()) as {
+                pluginDetails?: Array<{ name: string; tabState: string }>;
+              };
+              return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            } catch {
+              return undefined;
+            }
           },
           { timeout: 30_000, message: 'Server tab state for e2e-test did not become ready' },
         )

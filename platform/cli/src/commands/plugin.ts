@@ -556,7 +556,7 @@ const handlePluginList = async (options: PluginListOptions): Promise<void> => {
       const failedPlugins = Array.isArray(data.failedPlugins) ? (data.failedPlugins as HealthFailedPlugin[]) : [];
 
       if (options.json) {
-        console.log(JSON.stringify({ plugins: pluginDetails, failedPlugins }, null, 2));
+        console.log(JSON.stringify({ plugins: pluginDetails, failedPlugins, serverRunning: true }, null, 2));
         return;
       }
 
@@ -635,7 +635,7 @@ const handlePluginList = async (options: PluginListOptions): Promise<void> => {
   const deduped = [...localEntries, ...npmEntries.filter(e => !seenNames.has(e.name))];
 
   if (options.json) {
-    console.log(JSON.stringify({ plugins: deduped, serverRunning: false }, null, 2));
+    console.log(JSON.stringify({ plugins: deduped, failedPlugins: [], serverRunning: false }, null, 2));
     return;
   }
 

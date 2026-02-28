@@ -157,11 +157,12 @@ const indent = (json: string, prefix: string): string =>
     .map(line => `${prefix}${line}`)
     .join('\n');
 
-const printMcpClientConfigs = (mcpUrl: string, secret: string | null): void => {
-  const pad = '     ';
+const getMcpClientConfigs = (
+  mcpUrl: string,
+  secret: string | null,
+): Array<{ label: string; file: string; json: Record<string, unknown> }> => {
   const authHeaders = secret ? { Authorization: `Bearer ${secret}` } : undefined;
-
-  const configs: Array<{ label: string; file: string; json: Record<string, unknown> }> = [
+  return [
     {
       label: 'Claude Code',
       file: '~/.claude/settings/mcp.json',
@@ -193,6 +194,11 @@ const printMcpClientConfigs = (mcpUrl: string, secret: string | null): void => {
       },
     },
   ];
+};
+
+const printMcpClientConfigs = (mcpUrl: string, secret: string | null): void => {
+  const pad = '     ';
+  const configs = getMcpClientConfigs(mcpUrl, secret);
 
   for (const { label, file, json } of configs) {
     console.log(pc.dim(`${pad}${pc.bold(label)} (${file}):`));
@@ -321,4 +327,4 @@ Examples:
     .action((_options: StartOptions, command: Command) => handleStart(command.optsWithGlobals()));
 };
 
-export { printMcpClientConfigs, registerStartCommand };
+export { getMcpClientConfigs, printMcpClientConfigs, registerStartCommand };

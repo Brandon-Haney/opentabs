@@ -2,7 +2,7 @@
  * `opentabs config` command — view and manage configuration.
  */
 
-import { printMcpClientConfigs } from './start.js';
+import { getMcpClientConfigs, printMcpClientConfigs } from './start.js';
 import {
   atomicWriteConfig,
   getConfigPath,
@@ -54,7 +54,19 @@ const handleConfigShow = async (options: ConfigShowOptions): Promise<void> => {
   const displaySecret = secret ? (options.showSecret ? secret : maskSecret(secret)) : null;
 
   if (options.json) {
-    const output = { ...config, ...(displaySecret ? { secret: displaySecret } : {}) };
+    let mcpClients: Record<string, { name: string; file: string; json: Record<string, unknown> }> | undefined;
+    if (options.showSecret) {
+      const port = typeof config.port === 'number' ? config.port : DEFAULT_PORT;
+      const mcpUrl = `http://127.0.0.1:${port}/mcp`;
+      mcpClients = Object.fromEntries(
+        getMcpClientConfigs(mcpUrl, secret).map(({ label, file, json }) => [label, { name: label, file, json }]),
+      );
+    }
+    const output = {
+      ...config,
+      ...(displaySecret ? { secret: displaySecret } : {}),
+      ...(mcpClients !== undefined ? { mcpClients } : {}),
+    };
     console.log(JSON.stringify(output, null, 2));
   } else {
     console.log(pc.bold('OpenTabs Config'));

@@ -336,6 +336,19 @@ describe('fetchFromPage', () => {
     }
   });
 
+  test('throws TIMEOUT ToolError when timeout fires before user signal is aborted', async () => {
+    const controller = new AbortController();
+    try {
+      await fetchFromPage(`${baseUrl}/slow`, { signal: controller.signal, timeout: 100 });
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ToolError);
+      const toolError = error as ToolError;
+      expect(toolError.code).toBe('TIMEOUT');
+      expect(toolError.category).toBe('timeout');
+    }
+  });
+
   test('throws ToolError with aborted code when signal is aborted with non-DOMException reason', async () => {
     const controller = new AbortController();
     controller.abort(new Error('custom abort reason'));

@@ -170,6 +170,13 @@ describe('safe serialization', () => {
     expect(entries[0]?.data).toEqual(['[Symbol: mySymbol]']);
   });
 
+  test('serializes Symbol() without description as empty description string', () => {
+    const entries = collect();
+    log.info('test', Symbol());
+
+    expect(entries[0]?.data).toEqual(['[Symbol: ]']);
+  });
+
   test('serializes bigints as descriptive strings', () => {
     const entries = collect();
     log.info('test', BigInt(123));

@@ -294,6 +294,19 @@ describe('waitUntil', () => {
     expect(count).toBeGreaterThanOrEqual(3);
   });
 
+  test('keeps polling when async predicate rejects', async () => {
+    let count = 0;
+    await waitUntil(
+      async () => {
+        count++;
+        if (count < 3) return Promise.reject(new Error('async fail'));
+        return true;
+      },
+      { interval: 20, timeout: 2_000 },
+    );
+    expect(count).toBeGreaterThanOrEqual(3);
+  });
+
   test('uses default interval of 200ms and timeout of 10000ms', async () => {
     const start = performance.now();
     let count = 0;

@@ -220,6 +220,36 @@ describe('observeDOM', () => {
     expect(() => observeDOM('[invalid', () => {})).toThrow('observeDOM: invalid CSS selector "[invalid"');
   });
 
+  test('respects custom options — fires on attribute changes but not child additions', async () => {
+    document.body.innerHTML = '<div id="attr-container"></div>';
+    let callCount = 0;
+    const disconnect = observeDOM(
+      '#attr-container',
+      () => {
+        callCount++;
+      },
+      { attributes: true, childList: false },
+    );
+
+    const container = document.querySelector('#attr-container');
+
+    // Change an attribute — should trigger callback (attributes: true)
+    if (container) {
+      container.setAttribute('data-test', 'value');
+    }
+    await new Promise<void>(resolve => setTimeout(resolve, 50));
+    expect(callCount).toBe(1);
+
+    // Add a child — should NOT trigger callback (childList: false)
+    if (container) {
+      container.appendChild(document.createElement('span'));
+    }
+    await new Promise<void>(resolve => setTimeout(resolve, 50));
+    expect(callCount).toBe(1);
+
+    disconnect();
+  });
+
   test('does not call callback after cleanup function is invoked', async () => {
     document.body.innerHTML = '<div id="cleanup-container"></div>';
     let callCount = 0;

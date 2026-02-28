@@ -1,6 +1,6 @@
 import { detectApis } from './detect-apis.js';
 import { describe, expect, test } from 'vitest';
-import type { ApiEndpoint, ApiProtocol } from './detect-apis.js';
+import type { ApiEndpoint, ApiProtocol, WsFrame } from './detect-apis.js';
 import type { NetworkRequest } from './detect-auth.js';
 
 /** Build a minimal network request with defaults. */
@@ -813,6 +813,111 @@ describe('detectApis', () => {
       ]);
       expect(result.endpoints).toHaveLength(1);
       expect(result.endpoints[0]?.protocol).toBe('grpc-web');
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // WebSocket frame samples
+  // -----------------------------------------------------------------------
+
+  describe('WebSocket frame samples', () => {
+    const wsRequest = req({
+      url: 'wss://example.com/realtime',
+      method: 'GET',
+      status: 101,
+    });
+
+    const frame = (overrides: Partial<WsFrame> = {}): WsFrame => ({
+      url: 'wss://example.com/realtime',
+      direction: 'received',
+      data: '{"type":"message","payload":"hello"}',
+      opcode: 1,
+      timestamp: Date.now(),
+      ...overrides,
+    });
+
+    test('attaches frame samples to WebSocket endpoints', () => {
+      const result = detectApis([wsRequest], [frame()]);
+      const wsEp = findByProtocol(result.endpoints, 'websocket');
+      expect(wsEp.wsFrameSamples).toEqual(['{"type":"message","payload":"hello"}']);
+    });
+
+    test('only includes received text frames (opcode 1)', () => {
+      const frames: WsFrame[] = [
+        frame({ direction: 'sent', data: 'sent-data' }),
+        frame({ direction: 'received', opcode: 2, data: 'binary-data' }),
+        frame({ direction: 'received', opcode: 1, data: 'text-data' }),
+      ];
+      const result = detectApis([wsRequest], frames);
+      const wsEp = findByProtocol(result.endpoints, 'websocket');
+      expect(wsEp.wsFrameSamples).toEqual(['text-data']);
+    });
+
+    test('limits to 5 unique frame samples', () => {
+      const frames: WsFrame[] = Array.from({ length: 10 }, (_, i) => frame({ data: `message-${i}` }));
+      const result = detectApis([wsRequest], frames);
+      const wsEp = findByProtocol(result.endpoints, 'websocket');
+      expect(wsEp.wsFrameSamples).toHaveLength(5);
+    });
+
+    test('deduplicates frame payloads', () => {
+      const frames: WsFrame[] = [frame({ data: 'duplicate' }), frame({ data: 'duplicate' }), frame({ data: 'unique' })];
+      const result = detectApis([wsRequest], frames);
+      const wsEp = findByProtocol(result.endpoints, 'websocket');
+      expect(wsEp.wsFrameSamples).toEqual(['duplicate', 'unique']);
+    });
+
+    test('truncates long frame payloads to 500 chars', () => {
+      const longPayload = 'x'.repeat(600);
+      const result = detectApis([wsRequest], [frame({ data: longPayload })]);
+      const wsEp = findByProtocol(result.endpoints, 'websocket');
+      const samples = wsEp.wsFrameSamples;
+      if (!samples || samples.length === 0) throw new Error('Expected wsFrameSamples');
+      const sample = samples[0];
+      if (!sample) throw new Error('Expected at least one sample');
+      expect(sample.length).toBeLessThanOrEqual(503); // 500 + "..."
+      expect(sample.endsWith('...')).toBe(true);
+    });
+
+    test('returns undefined wsFrameSamples when no frames provided', () => {
+      const result = detectApis([wsRequest]);
+      const wsEp = findByProtocol(result.endpoints, 'websocket');
+      expect(wsEp.wsFrameSamples).toBeUndefined();
+    });
+
+    test('returns undefined wsFrameSamples when frames array is empty', () => {
+      const result = detectApis([wsRequest], []);
+      const wsEp = findByProtocol(result.endpoints, 'websocket');
+      expect(wsEp.wsFrameSamples).toBeUndefined();
+    });
+
+    test('matches frames to endpoints by URL', () => {
+      const otherWsRequest = req({
+        url: 'wss://other.example.com/ws',
+        method: 'GET',
+        status: 101,
+      });
+      const frames: WsFrame[] = [
+        frame({ url: 'wss://example.com/realtime', data: 'realtime-msg' }),
+        frame({ url: 'wss://other.example.com/ws', data: 'other-msg' }),
+      ];
+      const result = detectApis([wsRequest, otherWsRequest], frames);
+      const realtimeEp = findByUrl(result.endpoints, 'realtime');
+      const otherEp = findByUrl(result.endpoints, 'other.example.com');
+      expect(realtimeEp.wsFrameSamples).toEqual(['realtime-msg']);
+      expect(otherEp.wsFrameSamples).toEqual(['other-msg']);
+    });
+
+    test('non-WebSocket endpoints have undefined wsFrameSamples', () => {
+      const restRequest = req({
+        url: 'https://api.example.com/v1/items',
+        method: 'GET',
+        mimeType: 'application/json',
+        status: 200,
+      });
+      const result = detectApis([restRequest, wsRequest], [frame()]);
+      const restEp = findByProtocol(result.endpoints, 'rest');
+      expect(restEp.wsFrameSamples).toBeUndefined();
     });
   });
 

@@ -14,7 +14,7 @@ import { detectFramework } from './detect-framework.js';
 import { detectGlobals } from './detect-globals.js';
 import { detectStorage } from './detect-storage.js';
 import { dispatchToExtension, writeExecFile, deleteExecFile } from '../../extension-protocol.js';
-import type { ApiAnalysis, ApiEndpoint } from './detect-apis.js';
+import type { ApiAnalysis, ApiEndpoint, WsFrame } from './detect-apis.js';
 import type {
   AuthAnalysis,
   CookieEntry,
@@ -963,6 +963,18 @@ const analyzeSite = async (
       }
     }
 
+    // Get captured WebSocket frames
+    let wsFrames: WsFrame[] = [];
+    try {
+      const wsResult = (await dispatchToExtension(state, 'browser.getWebSocketFrames', {
+        tabId,
+        clear: true,
+      })) as { frames: WsFrame[] } | WsFrame[];
+      wsFrames = Array.isArray(wsResult) ? wsResult : ((wsResult as { frames?: WsFrame[] }).frames ?? []);
+    } catch {
+      // Partial analysis: WebSocket frames unavailable
+    }
+
     // Get cookies via extension API (includes HttpOnly cookies)
     let cookies: CookieEntry[] = [];
     try {
@@ -984,7 +996,7 @@ const analyzeSite = async (
       windowGlobals: globalsAuth,
     });
 
-    const apis = detectApis(networkRequests);
+    const apis = detectApis(networkRequests, wsFrames);
 
     const frameworkAnalysis = detectFramework({
       frameworkProbes,

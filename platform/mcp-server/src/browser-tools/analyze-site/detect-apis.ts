@@ -15,6 +15,15 @@ import type { NetworkRequest } from './detect-auth.js';
 /** Supported API protocol classifications for captured network requests. */
 type ApiProtocol = 'rest' | 'graphql' | 'grpc-web' | 'jsonrpc' | 'trpc' | 'websocket' | 'sse' | 'form-submission';
 
+/** A captured WebSocket frame from the network capture engine. */
+interface WsFrame {
+  url: string;
+  direction: 'sent' | 'received';
+  data: string;
+  opcode: number;
+  timestamp: number;
+}
+
 /** A single detected API endpoint with its protocol, auth info, and call frequency. */
 interface ApiEndpoint {
   url: string;
@@ -25,6 +34,7 @@ interface ApiEndpoint {
   requestBodySample: string | undefined;
   responseStatus: number | undefined;
   callCount: number;
+  wsFrameSamples: string[] | undefined;
 }
 
 /** Result of API pattern detection: classified endpoints and the primary API base URL. */
@@ -369,30 +379,27 @@ const detectPrimaryApiBaseUrl = (endpoints: ApiEndpoint[]): string | undefined =
 
 const MAX_BODY_SAMPLE_LENGTH = 500;
 
+/** Maximum number of WebSocket frame samples to include per endpoint. */
+const MAX_WS_FRAME_SAMPLES = 5;
+
+/** Maximum length per WebSocket frame sample payload. */
+const MAX_WS_FRAME_SAMPLE_LENGTH = 500;
+
 /**
  * Analyze captured network requests and detect API patterns.
  *
- * This is a pure function: takes an array of captured network requests,
- * classifies by protocol, groups by endpoint, and filters noise.
+ * This is a pure function: takes an array of captured network requests and
+ * optionally captured WebSocket frames, classifies by protocol, groups by
+ * endpoint, and filters noise. When WebSocket frames are provided, the first
+ * few unique received text frame payloads are attached to WebSocket endpoints
+ * as wsFrameSamples.
  */
-const detectApis = (requests: NetworkRequest[]): ApiAnalysis => {
+const detectApis = (requests: NetworkRequest[], wsFrames?: WsFrame[]): ApiAnalysis => {
   // Phase 1: Filter noise
   const apiRequests = requests.filter(req => !isNoise(req));
 
   // Phase 2: Classify and group
-  const groups = new Map<
-    string,
-    {
-      url: string;
-      method: string;
-      contentType: string | undefined;
-      protocol: ApiProtocol;
-      authHeader: string | undefined;
-      requestBodySample: string | undefined;
-      responseStatus: number | undefined;
-      callCount: number;
-    }
-  >();
+  const groups = new Map<string, ApiEndpoint>();
 
   for (const req of apiRequests) {
     const protocol = classifyProtocol(req);
@@ -422,11 +429,38 @@ const detectApis = (requests: NetworkRequest[]): ApiAnalysis => {
         requestBodySample: truncateBody(req.requestBody, MAX_BODY_SAMPLE_LENGTH),
         responseStatus: req.status,
         callCount: 1,
+        wsFrameSamples: undefined,
       });
     }
   }
 
   const endpoints = [...groups.values()];
+
+  // Enrich WebSocket endpoints with frame samples when frames are available
+  if (wsFrames && wsFrames.length > 0) {
+    for (const ep of endpoints) {
+      if (ep.protocol !== 'websocket') continue;
+
+      // Collect unique received text frames (opcode 1) for this endpoint URL
+      const seen = new Set<string>();
+      const samples: string[] = [];
+      for (const frame of wsFrames) {
+        if (samples.length >= MAX_WS_FRAME_SAMPLES) break;
+        if (frame.direction !== 'received' || frame.opcode !== 1) continue;
+        if (frame.url !== ep.url) continue;
+        const payload =
+          frame.data.length > MAX_WS_FRAME_SAMPLE_LENGTH
+            ? frame.data.slice(0, MAX_WS_FRAME_SAMPLE_LENGTH) + '...'
+            : frame.data;
+        if (seen.has(payload)) continue;
+        seen.add(payload);
+        samples.push(payload);
+      }
+      if (samples.length > 0) {
+        ep.wsFrameSamples = samples;
+      }
+    }
+  }
 
   return {
     endpoints,
@@ -435,4 +469,4 @@ const detectApis = (requests: NetworkRequest[]): ApiAnalysis => {
 };
 
 export { detectApis };
-export type { ApiProtocol, ApiEndpoint, ApiAnalysis };
+export type { ApiProtocol, ApiEndpoint, ApiAnalysis, WsFrame };

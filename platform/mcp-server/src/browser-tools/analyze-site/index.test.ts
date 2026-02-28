@@ -32,6 +32,7 @@ const endpoint = (overrides: Partial<ApiEndpoint> & { url: string; method: strin
   requestBodySample: undefined,
   responseStatus: 200,
   callCount: 1,
+  wsFrameSamples: undefined,
   ...overrides,
 });
 

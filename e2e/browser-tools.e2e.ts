@@ -1767,6 +1767,167 @@ test.describe('Browser tools — network capture lifecycle', () => {
     const result = await mcpClient.callTool('browser_enable_network_capture', { tabId: 999999 });
     expect(result.isError).toBe(true);
   });
+
+  test('export_har returns valid HAR 1.2 JSON with entries', async ({
+    mcpServer,
+    testServer,
+    extensionContext: _extensionContext,
+    mcpClient,
+  }) => {
+    await initAndListTools(mcpServer, mcpClient);
+    const tabId = await openTestServerTab(mcpClient, testServer);
+
+    // Enable network capture
+    const enableResult = await mcpClient.callTool('browser_enable_network_capture', { tabId });
+    expect(enableResult.isError).toBe(false);
+
+    // Navigate to generate HTTP traffic
+    await mcpClient.callTool('browser_navigate_tab', {
+      tabId,
+      url: testServer.url + '/interactive',
+    });
+
+    // Wait until requests are captured
+    await waitForNetworkRequests(mcpClient, tabId);
+
+    // Export HAR
+    const harResult = await mcpClient.callTool('browser_export_har', { tabId });
+    expect(harResult.isError).toBe(false);
+    const data = parseToolResult(harResult.content);
+    const harJson = JSON.parse(data.har as string) as {
+      log: {
+        version: string;
+        entries: Array<{ request: { url: string; method: string }; response: { status: number } }>;
+      };
+    };
+
+    // Verify HAR 1.2 structure
+    expect(harJson.log.version).toBe('1.2');
+    expect(harJson.log.entries.length).toBeGreaterThan(0);
+    const firstEntry = harJson.log.entries[0];
+    if (!firstEntry) throw new Error('Expected at least one HAR entry');
+    expect(typeof firstEntry.request.url).toBe('string');
+    expect(typeof firstEntry.request.method).toBe('string');
+    expect(typeof firstEntry.response.status).toBe('number');
+
+    // Clean up
+    await mcpClient.callTool('browser_disable_network_capture', { tabId });
+    await mcpClient.callTool('browser_close_tab', { tabId });
+  });
+
+  test('export_har with includeWebSocketFrames includes WebSocket synthetic entries', async ({
+    mcpServer,
+    testServer,
+    extensionContext: _extensionContext,
+    mcpClient,
+  }) => {
+    await initAndListTools(mcpServer, mcpClient);
+    const tabId = await openTestServerTab(mcpClient, testServer);
+
+    // Enable network capture before navigating to the WebSocket test page
+    await mcpClient.callTool('browser_enable_network_capture', { tabId });
+
+    // Navigate to WebSocket test page — opens a WS connection and sends a ping
+    await mcpClient.callTool('browser_navigate_tab', {
+      tabId,
+      url: testServer.url + '/ws-test',
+    });
+
+    // Wait until WebSocket frames are captured
+    await waitForWebSocketFrames(mcpClient, tabId);
+
+    // Export HAR with WebSocket frames included
+    const harResult = await mcpClient.callTool('browser_export_har', {
+      tabId,
+      includeWebSocketFrames: true,
+    });
+    expect(harResult.isError).toBe(false);
+    const data = parseToolResult(harResult.content);
+    const harJson = JSON.parse(data.har as string) as {
+      log: {
+        entries: Array<{
+          request: { headers: Array<{ name: string; value: string }> };
+          response: { status: number };
+        }>;
+      };
+    };
+
+    // Verify WebSocket synthetic entries (status 101) are present
+    const wsEntries = harJson.log.entries.filter(e => e.response.status === 101);
+    expect(wsEntries.length).toBeGreaterThan(0);
+
+    // Verify the Upgrade: websocket header is present on WS entries
+    const firstWsEntry = wsEntries[0];
+    if (!firstWsEntry) throw new Error('Expected at least one WebSocket HAR entry');
+    const upgradeHeader = firstWsEntry.request.headers.find(h => h.name === 'Upgrade');
+    expect(upgradeHeader).toBeDefined();
+    expect(upgradeHeader?.value).toBe('websocket');
+
+    // Clean up
+    await mcpClient.callTool('browser_disable_network_capture', { tabId });
+    await mcpClient.callTool('browser_close_tab', { tabId });
+  });
+
+  test('export_har with clear=true empties the capture buffer', async ({
+    mcpServer,
+    testServer,
+    extensionContext: _extensionContext,
+    mcpClient,
+  }) => {
+    await initAndListTools(mcpServer, mcpClient);
+    const tabId = await openTestServerTab(mcpClient, testServer);
+
+    // Enable capture and navigate to generate traffic
+    await mcpClient.callTool('browser_enable_network_capture', { tabId });
+    await mcpClient.callTool('browser_navigate_tab', {
+      tabId,
+      url: testServer.url + '/interactive',
+    });
+    await waitForNetworkRequests(mcpClient, tabId);
+
+    // Export HAR with clear=true
+    const harResult = await mcpClient.callTool('browser_export_har', { tabId, clear: true });
+    expect(harResult.isError).toBe(false);
+    const data = parseToolResult(harResult.content);
+    const harJson = JSON.parse(data.har as string) as { log: { entries: unknown[] } };
+    expect(harJson.log.entries.length).toBeGreaterThan(0);
+
+    // Poll until the network buffer is fully drained (in-flight requests may still arrive)
+    await waitFor(
+      async () => {
+        const result = await mcpClient.callTool('browser_get_network_requests', { tabId, clear: true });
+        if (result.isError) return false;
+        const d = parseToolResult(result.content);
+        return (d.requests as Array<unknown>).length === 0;
+      },
+      5_000,
+      200,
+      'network buffer drained after export_har clear',
+    );
+
+    // Clean up
+    await mcpClient.callTool('browser_disable_network_capture', { tabId });
+    await mcpClient.callTool('browser_close_tab', { tabId });
+  });
+
+  test('export_har returns error when network capture is not active', async ({
+    mcpServer,
+    testServer,
+    extensionContext: _extensionContext,
+    mcpClient,
+  }) => {
+    await initAndListTools(mcpServer, mcpClient);
+
+    // Open a tab WITHOUT enabling network capture
+    const tabId = await openTestServerTab(mcpClient, testServer);
+
+    // Attempting to export HAR should fail since capture is not active
+    const harResult = await mcpClient.callTool('browser_export_har', { tabId });
+    expect(harResult.isError).toBe(true);
+
+    // Clean up
+    await mcpClient.callTool('browser_close_tab', { tabId });
+  });
 });
 
 // ---------------------------------------------------------------------------

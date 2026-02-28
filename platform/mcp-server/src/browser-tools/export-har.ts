@@ -191,6 +191,10 @@ const exportHar = defineBrowserTool({
       .describe('Include captured WebSocket frames as synthetic HAR entries — defaults to false'),
   }),
   handler: async (args, state) => {
+    if (!state.activeNetworkCaptures.has(args.tabId)) {
+      throw new Error(`Network capture is not active on tab ${args.tabId}. Call browser_enable_network_capture first.`);
+    }
+
     const requestsResult = (await dispatchToExtension(state, 'browser.getNetworkRequests', {
       tabId: args.tabId,
       ...(args.clear !== undefined ? { clear: args.clear } : {}),

@@ -318,6 +318,8 @@ export interface ServerState {
   endpointCallTimestamps: Map<string, number[]>;
   /** Whether the extension adapters/ directory has been created (cached to avoid repeated mkdir calls) */
   adaptersDirReady: boolean;
+  /** Set of tab IDs that currently have active network capture (browser_enable_network_capture called, not yet disabled) */
+  activeNetworkCaptures: Set<number>;
 }
 
 /** Increment when changing the type of an existing ServerState field */
@@ -382,6 +384,7 @@ export const createState = (): ServerState => ({
   pendingExtensionReload: false,
   endpointCallTimestamps: new Map(),
   adaptersDirReady: false,
+  activeNetworkCaptures: new Set(),
 });
 
 /** Generate a cryptographically random JSON-RPC request ID */

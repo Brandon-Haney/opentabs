@@ -13,7 +13,11 @@ const disableNetworkCapture = defineBrowserTool({
   input: z.object({
     tabId: z.number().int().positive().describe('Tab ID to stop capturing for'),
   }),
-  handler: async (args, state) => dispatchToExtension(state, 'browser.disableNetworkCapture', { tabId: args.tabId }),
+  handler: async (args, state) => {
+    const result = await dispatchToExtension(state, 'browser.disableNetworkCapture', { tabId: args.tabId });
+    state.activeNetworkCaptures.delete(args.tabId);
+    return result;
+  },
 });
 
 export { disableNetworkCapture };

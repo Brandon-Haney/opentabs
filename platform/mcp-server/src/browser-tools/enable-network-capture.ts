@@ -41,14 +41,17 @@ const enableNetworkCapture = defineBrowserTool({
       .optional()
       .describe('Maximum WebSocket frames to buffer before dropping oldest — defaults to 200'),
   }),
-  handler: async (args, state) =>
-    dispatchToExtension(state, 'browser.enableNetworkCapture', {
+  handler: async (args, state) => {
+    const result = await dispatchToExtension(state, 'browser.enableNetworkCapture', {
       tabId: args.tabId,
       ...(args.maxRequests !== undefined ? { maxRequests: args.maxRequests } : {}),
       ...(args.urlFilter !== undefined ? { urlFilter: args.urlFilter } : {}),
       ...(args.maxConsoleLogs !== undefined ? { maxConsoleLogs: args.maxConsoleLogs } : {}),
       ...(args.maxWsFrames !== undefined ? { maxWsFrames: args.maxWsFrames } : {}),
-    }),
+    });
+    state.activeNetworkCaptures.add(args.tabId);
+    return result;
+  },
 });
 
 export { enableNetworkCapture };

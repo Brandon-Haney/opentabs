@@ -28,22 +28,22 @@ import type React from 'react';
 
 const docComponents = {
   h1: (props: HTMLAttributes<HTMLHeadingElement>) => (
-    <Text as="h1" className="mt-10 mb-4 [&:first-child]:mt-0" {...props} />
+    <Text as="h1" className="mt-10 mb-4 scroll-mt-20 [&:first-child]:mt-0" {...props} />
   ),
   h2: (props: HTMLAttributes<HTMLHeadingElement>) => (
-    <Text as="h2" className="mt-10 mb-6 border-b pb-1 [&:first-child]:mt-0" {...props} />
+    <Text as="h2" className="mt-10 mb-6 scroll-mt-20 border-b pb-1 [&:first-child]:mt-0" {...props} />
   ),
   h3: (props: HTMLAttributes<HTMLHeadingElement>) => (
-    <Text as="h3" className="mt-8 mb-3 [&:first-child]:mt-0" {...props} />
+    <Text as="h3" className="mt-8 mb-3 scroll-mt-20 [&:first-child]:mt-0" {...props} />
   ),
   h4: (props: HTMLAttributes<HTMLHeadingElement>) => (
-    <Text as="h4" className="mt-6 mb-2 [&:first-child]:mt-0" {...props} />
+    <Text as="h4" className="mt-6 mb-2 scroll-mt-20 [&:first-child]:mt-0" {...props} />
   ),
   h5: (props: HTMLAttributes<HTMLHeadingElement>) => (
-    <Text as="h5" className="mt-4 mb-1 [&:first-child]:mt-0" {...props} />
+    <Text as="h5" className="mt-4 mb-1 scroll-mt-20 [&:first-child]:mt-0" {...props} />
   ),
   h6: (props: HTMLAttributes<HTMLHeadingElement>) => (
-    <Text as="h6" className="mt-4 mb-1 [&:first-child]:mt-0" {...props} />
+    <Text as="h6" className="mt-4 mb-1 scroll-mt-20 [&:first-child]:mt-0" {...props} />
   ),
   p: (props: HTMLAttributes<HTMLParagraphElement>) => <Text className="mb-4 leading-relaxed" {...props} />,
   ul: (props: HTMLAttributes<HTMLUListElement>) => <ul className="mb-4 ml-6 list-disc space-y-1.5" {...props} />,

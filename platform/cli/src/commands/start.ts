@@ -346,7 +346,7 @@ const handleStart = async (options: StartOptions): Promise<void> => {
   }
 
   await Promise.all([stdoutPipe, stderrPipe]);
-  logStream.end();
+  await new Promise<void>(resolve => logStream.end(() => resolve()));
 
   const exitCode = await proc.exited;
   console.log(pc.dim('Server stopped.'));

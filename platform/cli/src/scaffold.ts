@@ -47,6 +47,9 @@ const toTitleCase = (name: string): string =>
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 
+/** Wrap a string value in a single-quoted TypeScript string literal with proper escaping. */
+const singleQuote = (value: string): string => `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+
 // --- Template generation ---
 
 /**
@@ -348,11 +351,11 @@ import { exampleTool } from './tools/example.js';
 import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
 
 class ${toPascalCase(args.name)}Plugin extends OpenTabsPlugin {
-  readonly name = ${JSON.stringify(args.name)};
+  readonly name = ${singleQuote(args.name)};
   readonly version = '0.0.1';
-  readonly description = ${JSON.stringify(desc)};
-  override readonly displayName = ${JSON.stringify(displayName)};
-  readonly urlPatterns = [${JSON.stringify(urlPattern)}];
+  readonly description = ${singleQuote(desc)};
+  override readonly displayName = ${singleQuote(displayName)};
+  readonly urlPatterns = [${singleQuote(urlPattern)}];
   readonly tools: ToolDefinition[] = [exampleTool];
 
   // IMPORTANT: Implement this method to check if the user is authenticated.
@@ -373,7 +376,7 @@ export default new ${toPascalCase(args.name)}Plugin();
 const generateExampleTool = (args: ScaffoldArgs): string => {
   const displayName = args.display ?? toTitleCase(args.name);
 
-  const escaped = JSON.stringify(displayName);
+  const escaped = singleQuote(displayName);
 
   return `import { z } from 'zod';
 import { defineTool } from '@opentabs-dev/plugin-sdk';
@@ -389,7 +392,7 @@ export const exampleTool = defineTool({
   output: z.object({
     result: z.string().describe('The result of the example operation'),
   }),
-  handle: async (params) => {
+  handle: async params => {
     return { result: 'Hello from ' + ${escaped} + ': ' + params.message };
   },
 });
@@ -421,7 +424,7 @@ const promptForMissingArgs = async (partial: PartialScaffoldArgs): Promise<Scaff
   if (!process.stdin.isTTY) {
     const missing = [!name && 'name', !domain && '--domain'].filter(Boolean);
     throw new ScaffoldError(
-      `Missing required arguments: ${missing.join(', ')}. Provide them as flags or run interactively.`,
+      `Missing required arguments: ${missing.join(', ')}.\n\nUsage: opentabs plugin create <name> --domain <domain>\nExample: opentabs plugin create my-app --domain .example.com --display "My App"`,
     );
   }
 

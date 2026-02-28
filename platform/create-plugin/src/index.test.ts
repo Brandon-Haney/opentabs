@@ -83,7 +83,7 @@ describe('create-opentabs-plugin CLI', () => {
 
       const indexContent = await readFile(join(tmpDir, 'my-plugin', 'src', 'index.ts'), 'utf-8');
       expect(indexContent).toContain('class MyPluginPlugin');
-      expect(indexContent).toContain('"*://example.com/*"');
+      expect(indexContent).toContain("'*://example.com/*'");
       expect(indexContent).toContain('export default new MyPluginPlugin()');
     });
 
@@ -121,7 +121,7 @@ describe('create-opentabs-plugin CLI', () => {
       runCli(['my-app', '--domain', 'example.com', '--display', 'My App'], { cwd: tmpDir, configDir });
 
       const indexContent = await readFile(join(tmpDir, 'my-app', 'src', 'index.ts'), 'utf-8');
-      expect(indexContent).toContain('"My App"');
+      expect(indexContent).toContain("'My App'");
 
       const toolContent = await readFile(join(tmpDir, 'my-app', 'src', 'tools', 'example.ts'), 'utf-8');
       expect(toolContent).toContain('My App');

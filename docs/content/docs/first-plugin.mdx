@@ -65,10 +65,10 @@ class MyAppPlugin extends OpenTabsPlugin {
   readonly urlPatterns = ['*://*.example.com/*'];
   readonly tools: ToolDefinition[] = [getPageTitle];
 
-  // IMPORTANT: Implement this method to check if the user is authenticated.
-  // The plugin reports 'unavailable' until this returns true.
   async isReady(): Promise<boolean> {
-    return false;
+    // For production plugins, check if the user is authenticated.
+    // Example: return document.querySelector('.logged-in-indicator') !== null;
+    return true;
   }
 }
 

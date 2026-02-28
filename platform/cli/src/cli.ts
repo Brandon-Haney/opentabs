@@ -26,13 +26,21 @@ const program = new Command('opentabs')
   .option('--port <number>', 'MCP server port (env: OPENTABS_PORT, default: 9515)', parsePort)
   .showSuggestionAfterError()
   .showHelpAfterError()
+  .allowExcessArguments(true)
   .addHelpText(
     'after',
     `\nEnvironment:
   OPENTABS_PORT         MCP server port (overridden by --port)
   OPENTABS_CONFIG_DIR   Config directory (default: ~/.opentabs)`,
   )
-  .action((_options, command: Command) => handleStatus(command.optsWithGlobals()));
+  .action((_options, command: Command) => {
+    if (command.args.length > 0) {
+      // Unknown subcommand typed (e.g. opentabs typo) — delegate to Commander's
+      // unknownCommand() to get proper error formatting and did-you-mean suggestion.
+      (command as unknown as { unknownCommand: () => never }).unknownCommand();
+    }
+    return handleStatus(command.optsWithGlobals());
+  });
 
 registerStartCommand(program);
 registerStatusCommand(program);

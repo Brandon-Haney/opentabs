@@ -183,6 +183,25 @@ const clickAllowOnce = async (sidePanel: Page): Promise<void> => {
   await sidePanel.getByRole('button', { name: 'Allow Once' }).click();
 };
 
+/**
+ * Click the "Deny" button in the confirmation dialog.
+ */
+const clickDeny = async (sidePanel: Page): Promise<void> => {
+  await waitForConfirmationDialog(sidePanel);
+  await sidePanel.getByRole('button', { name: 'Deny' }).click();
+};
+
+/**
+ * Click the "Allow Always" dropdown and select "For this tool on this domain".
+ */
+const clickAllowAlwaysToolDomain = async (sidePanel: Page): Promise<void> => {
+  await waitForConfirmationDialog(sidePanel);
+  // Click the "Allow Always" dropdown trigger button
+  await sidePanel.getByRole('button', { name: 'Allow Always' }).click();
+  // Select the "For this tool on this domain" menu item
+  await sidePanel.getByRole('menuitem', { name: 'For this tool on this domain' }).click();
+};
+
 // ---------------------------------------------------------------------------
 // Confirmation dialog — Allow Once flow
 // ---------------------------------------------------------------------------
@@ -249,6 +268,65 @@ test.describe('Confirmation dialog — Allow Once', () => {
       mcpClient.callTool('browser_get_cookies', { url: nonTrustedUrl }, { timeout: 35_000 }),
       clickAllowOnce(sidePanel),
     ]);
+    expect(secondResult.isError).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Confirmation dialog — Deny flow
+// ---------------------------------------------------------------------------
+
+test.describe('Confirmation dialog — Deny', () => {
+  test('Deny returns PERMISSION_DENIED error', async ({ mcpServer, testServer, extensionContext, mcpClient }) => {
+    await waitForExtensionConnected(mcpServer);
+    await waitForLog(mcpServer, 'tab.syncAll received');
+
+    const sidePanel = await openSidePanel(extensionContext);
+    const nonTrustedUrl = testServer.url.replace('localhost', '127.0.0.2');
+
+    // Call a sensitive-tier tool on a non-trusted domain. Concurrently,
+    // click "Deny" in the confirmation dialog.
+    const [result] = await Promise.all([
+      mcpClient.callTool('browser_get_cookies', { url: nonTrustedUrl }, { timeout: 35_000 }),
+      clickDeny(sidePanel),
+    ]);
+
+    // The tool should return an error with PERMISSION_DENIED.
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('PERMISSION_DENIED');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Confirmation dialog — Allow Always (tool_domain scope) session persistence
+// ---------------------------------------------------------------------------
+
+test.describe('Confirmation dialog — Allow Always', () => {
+  test('Allow Always (tool_domain) grants permission and persists for session', async ({
+    mcpServer,
+    testServer,
+    extensionContext,
+    mcpClient,
+  }) => {
+    await waitForExtensionConnected(mcpServer);
+    await waitForLog(mcpServer, 'tab.syncAll received');
+
+    const sidePanel = await openSidePanel(extensionContext);
+    const nonTrustedUrl = testServer.url.replace('localhost', '127.0.0.2');
+
+    // First call: click "Allow Always" → "For this tool on this domain"
+    const [firstResult] = await Promise.all([
+      mcpClient.callTool('browser_get_cookies', { url: nonTrustedUrl }, { timeout: 35_000 }),
+      clickAllowAlwaysToolDomain(sidePanel),
+    ]);
+
+    // The tool should complete successfully.
+    expect(firstResult.isError).toBe(false);
+
+    // Second call: same tool, same domain — should succeed immediately
+    // without triggering a new confirmation dialog because "Allow Always"
+    // persists the permission for the session.
+    const secondResult = await mcpClient.callTool('browser_get_cookies', { url: nonTrustedUrl }, { timeout: 10_000 });
     expect(secondResult.isError).toBe(false);
   });
 });

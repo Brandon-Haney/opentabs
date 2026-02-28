@@ -495,18 +495,15 @@ const isDispatchError = (
   (err as { name: unknown }).name === 'DispatchError';
 
 /**
- * Send extension.reload JSON-RPC request to trigger chrome.runtime.reload()
+ * Send extension.reload JSON-RPC notification to trigger chrome.runtime.reload()
  * in the connected extension. Used when the server detects that the managed
  * extension files were updated (version change).
  */
-const sendExtensionReload = (state: ServerState): boolean => {
-  const id = getNextRequestId();
-  return sendToExtension(state, {
+const sendExtensionReload = (state: ServerState): boolean =>
+  sendToExtension(state, {
     jsonrpc: '2.0',
     method: 'extension.reload',
-    id,
   });
-};
 
 export type { McpCallbacks };
 export {

@@ -9,7 +9,6 @@
  */
 
 import { defineBrowserTool } from './definition.js';
-import { getNextRequestId } from '../state.js';
 import { z } from 'zod';
 
 const reloadExtension = defineBrowserTool({
@@ -21,9 +20,8 @@ const reloadExtension = defineBrowserTool({
     if (!state.extensionWs) {
       return Promise.resolve({ ok: false, error: 'Extension not connected' });
     }
-    const id = getNextRequestId();
     try {
-      state.extensionWs.send(JSON.stringify({ jsonrpc: '2.0', method: 'extension.reload', id }));
+      state.extensionWs.send(JSON.stringify({ jsonrpc: '2.0', method: 'extension.reload' }));
     } catch {
       return Promise.resolve({
         ok: false,

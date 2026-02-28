@@ -12,7 +12,7 @@ describe('reloadExtension handler', () => {
     expect(result).toEqual({ ok: false, error: 'Extension not connected' });
   });
 
-  test('sends JSON-RPC extension.reload message and returns success', async () => {
+  test('sends JSON-RPC extension.reload notification and returns success', async () => {
     const state = createState();
     const sent: string[] = [];
     state.extensionWs = {
@@ -24,10 +24,10 @@ describe('reloadExtension handler', () => {
 
     expect(result).toEqual({ ok: true, message: 'Reload signal sent to extension' });
     expect(sent).toHaveLength(1);
-    const msg = JSON.parse(sent[0] as string) as { jsonrpc: string; method: string; id: string };
+    const msg = JSON.parse(sent[0] as string) as { jsonrpc: string; method: string; id?: unknown };
     expect(msg.jsonrpc).toBe('2.0');
     expect(msg.method).toBe('extension.reload');
-    expect(typeof msg.id).toBe('string');
+    expect(msg.id).toBeUndefined();
   });
 
   test('returns error when ws.send throws', async () => {
@@ -47,7 +47,7 @@ describe('reloadExtension handler', () => {
     });
   });
 
-  test('uses a UUID string id from getNextRequestId in the message', async () => {
+  test('sends a notification with no id field (fire-and-forget)', async () => {
     const state = createState();
     let captured = '';
     state.extensionWs = {
@@ -59,8 +59,7 @@ describe('reloadExtension handler', () => {
 
     await reloadExtension.handler({}, state);
 
-    const msg = JSON.parse(captured) as { id: string };
-    expect(typeof msg.id).toBe('string');
-    expect(msg.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    const msg = JSON.parse(captured) as Record<string, unknown>;
+    expect('id' in msg).toBe(false);
   });
 });

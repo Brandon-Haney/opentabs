@@ -65,15 +65,15 @@ The scaffolder also auto-registers the plugin in `~/.opentabs/config.json` so th
 Open `src/index.ts`. Every plugin extends `OpenTabsPlugin` and exports a default instance:
 
 ```typescript
-import { OpenTabsPlugin, type ToolDefinition } from "@opentabs-dev/plugin-sdk";
-import { exampleTool } from "./tools/example.js";
+import { OpenTabsPlugin, type ToolDefinition } from '@opentabs-dev/plugin-sdk';
+import { exampleTool } from './tools/example.js';
 
 class MyAppPlugin extends OpenTabsPlugin {
-  readonly name = "my-app";
-  readonly version = "0.0.1";
-  readonly description = "OpenTabs plugin for My App";
-  readonly displayName = "My App";
-  readonly urlPatterns = ["*://*.example.com/*"];
+  readonly name = 'my-app';
+  readonly version = '0.0.1';
+  readonly description = 'OpenTabs plugin for My App';
+  readonly displayName = 'My App';
+  readonly urlPatterns = ['*://*.example.com/*'];
   readonly tools: ToolDefinition[] = [exampleTool];
 
   async isReady(): Promise<boolean> {

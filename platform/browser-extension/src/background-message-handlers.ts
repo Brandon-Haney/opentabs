@@ -69,7 +69,6 @@ const handleOffscreenGetUrl: MessageHandler = (_message, sendResponse) => {
 
 /** Handle ws:state — WebSocket connection state changed */
 const handleWsState: MessageHandler = (message, sendResponse) => {
-  const wasConnected = wsConnected;
   const nowConnected = message.connected as boolean;
   persistWsConnected(nowConnected);
   lastDisconnectReason = nowConnected ? undefined : (message.disconnectReason as DisconnectReason | undefined);
@@ -80,7 +79,7 @@ const handleWsState: MessageHandler = (message, sendResponse) => {
       disconnectReason: lastDisconnectReason,
     },
   });
-  if (!nowConnected && wasConnected) {
+  if (!nowConnected) {
     clearTabStateCache();
     clearAllConfirmationBadges();
   }

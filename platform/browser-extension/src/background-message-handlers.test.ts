@@ -149,11 +149,30 @@ describe('handleWsState', () => {
     expect(mockClearAllConfirmationBadges).toHaveBeenCalledOnce();
   });
 
-  test('disconnect when already disconnected: does NOT call clearTabStateCache', () => {
+  test('disconnect when already disconnected: still calls clearTabStateCache', () => {
+    // wsConnected is already false from beforeEach (simulates race where ws:state
+    // arrives before restoreWsConnectedState completes — cleanup must always run)
+    handleWsState({ connected: false }, () => {});
+
+    expect(mockClearTabStateCache).toHaveBeenCalledOnce();
+  });
+
+  test('disconnect when already disconnected: still calls clearAllConfirmationBadges', () => {
     // wsConnected is already false from beforeEach
     handleWsState({ connected: false }, () => {});
 
-    expect(mockClearTabStateCache).not.toHaveBeenCalled();
+    expect(mockClearAllConfirmationBadges).toHaveBeenCalledOnce();
+  });
+
+  test('service worker wake race: cleanup runs even when ws:state arrives before restoreWsConnectedState', () => {
+    // Simulate the race condition: service worker wakes with wsConnected=false (default),
+    // restoreWsConnectedState has not yet completed (storage read still pending),
+    // and the offscreen document sends ws:state connected=false.
+    // Old code skipped cleanup because wasConnected was false; new code always cleans up.
+    handleWsState({ connected: false, disconnectReason: 'server_shutdown' }, () => {});
+
+    expect(mockClearTabStateCache).toHaveBeenCalledOnce();
+    expect(mockClearAllConfirmationBadges).toHaveBeenCalledOnce();
   });
 
   test('disconnect with disconnectReason: forwards reason to side panel', () => {

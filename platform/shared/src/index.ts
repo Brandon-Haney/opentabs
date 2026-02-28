@@ -388,7 +388,7 @@ export const validatePluginName = (name: string): string | null => {
  * Validates a Chrome match pattern.
  * Valid formats: <scheme>://<host>/<path>
  * scheme: *, http, https (Chrome removed FTP support)
- * host: *, *.example.com, example.com
+ * host: *.example.com, example.com (bare '*' is rejected as too broad)
  * path: any string starting with /
  *
  * Returns an error message string, or null if valid.
@@ -418,11 +418,15 @@ export const validateUrlPattern = (pattern: string): string | null => {
     return `URL pattern "${pattern}" is too broad — "${host}" matches all domains under a TLD. Use a more specific domain (e.g., *.example.com)`;
   }
 
-  // Host must be *, *.domain, a specific domain, or localhost (with optional port).
+  // Reject bare wildcard host '*' — matches every domain, equivalent to <all_urls>.
+  if (host === '*') {
+    return `URL pattern "${pattern}" is too broad — "*" matches all domains. Use a specific domain or wildcard subdomain (e.g., *.example.com)`;
+  }
+
+  // Host must be *.domain, a specific domain, or localhost (with optional port).
   // Chrome match patterns natively support localhost — essential for local development
   // and E2E testing where plugins target local web servers.
   if (
-    host !== '*' &&
     !/^localhost(:\d+)?$/.test(host) &&
     !/^\d{1,3}(\.\d{1,3}){3}(:\d+)?$/.test(host) &&
     !/^(\*\.)?[a-z0-9]+([-.][a-z0-9]+)*\.[a-z]{2,}$/i.test(host)

@@ -182,11 +182,28 @@ describe('validateUrlPattern', () => {
       expect(validateUrlPattern('*://*.example.co.uk/*')).toBeNull();
     });
 
-    test('accepts wildcard host *', () => {
-      // When host is just *, it's caught by the overly-broad check
-      // since the full pattern becomes *://*/* which is <all_urls>-equivalent
-      // But *://*/specific-path is valid:
-      expect(validateUrlPattern('https://*/api')).toBeNull();
+    test('rejects bare wildcard host *', () => {
+      const error = validateUrlPattern('https://*/api');
+      expect(error).not.toBeNull();
+      expect(error).toContain('too broad');
+    });
+
+    test('rejects https://*/* (wildcard host with wildcard path)', () => {
+      const error = validateUrlPattern('https://*/*');
+      expect(error).not.toBeNull();
+      expect(error).toContain('too broad');
+    });
+
+    test('rejects http://*/* (wildcard host with wildcard path)', () => {
+      const error = validateUrlPattern('http://*/*');
+      expect(error).not.toBeNull();
+      expect(error).toContain('too broad');
+    });
+
+    test('rejects *://*/path (any-scheme wildcard host)', () => {
+      const error = validateUrlPattern('*://*/some-path');
+      expect(error).not.toBeNull();
+      expect(error).toContain('too broad');
     });
   });
 

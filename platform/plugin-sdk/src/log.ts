@@ -22,6 +22,7 @@ type LogTransport = (entry: LogEntry) => void;
 
 const MAX_DATA_LENGTH = 10;
 const MAX_STRING_LENGTH = 4096;
+const MAX_SERIALIZED_SIZE = 64 * 1024; // 64 KB per serialized argument
 
 /**
  * Produces a JSON-safe representation of a single argument.
@@ -97,6 +98,9 @@ const safeSerializeArg = (value: unknown): unknown => {
         if (typeof SharedArrayBuffer !== 'undefined' && v instanceof SharedArrayBuffer) return '[SharedArrayBuffer]';
         return v;
       });
+      if (json.length > MAX_SERIALIZED_SIZE) {
+        return `[Object truncated: ${json.length} chars]`;
+      }
       return JSON.parse(json) as unknown;
     } catch {
       return `[Unserializable: ${typeof value}]`;

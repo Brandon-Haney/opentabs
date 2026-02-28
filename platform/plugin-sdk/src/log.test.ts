@@ -205,6 +205,20 @@ describe('safe serialization', () => {
     expect(result?.endsWith('…')).toBe(true);
   });
 
+  test('truncates large nested objects that exceed MAX_SERIALIZED_SIZE', () => {
+    const entries = collect();
+    // Build a large object whose JSON representation exceeds 64 KB
+    const hugeObj: Record<string, string> = {};
+    for (let i = 0; i < 2000; i++) {
+      hugeObj[`key${i}`] = 'x'.repeat(40);
+    }
+    log.info('test', hugeObj);
+
+    const result = entries[0]?.data[0];
+    expect(typeof result).toBe('string');
+    expect(result as string).toMatch(/^\[Object truncated: \d+ chars\]$/);
+  });
+
   test('caps data array at 10 items', () => {
     const entries = collect();
     log.info('test', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);

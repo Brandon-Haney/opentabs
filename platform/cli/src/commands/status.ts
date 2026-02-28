@@ -140,6 +140,13 @@ const handleStatus = async (options: StatusOptions): Promise<void> => {
       }
       console.log(`${pad('Plugin reloads')}${String(data.reloadCount)}`);
 
+      if (mcpClients === 0) {
+        console.log('');
+        console.log(
+          pc.dim('  No MCP clients connected. Run opentabs config show --show-secret for setup instructions.'),
+        );
+      }
+
       if (pluginDetails.length > 0) {
         console.log('');
         console.log(pc.bold('  Plugins'));

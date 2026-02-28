@@ -53,4 +53,8 @@ registerPluginCommand(program);
 registerConfigCommand(program);
 registerUpdateCommand(program);
 
-await program.parseAsync();
+await program.parseAsync().catch(() => {
+  // Action handlers print their own errors and call process.exit(1).
+  // Swallow the rejected promise so Commander does not re-print the output.
+  process.exitCode ??= 1;
+});

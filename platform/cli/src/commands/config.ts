@@ -668,7 +668,7 @@ Examples:
   $ opentabs config set tool.                              List available tools
   $ opentabs config set tool.slack_send_message disabled
   $ opentabs config set tool.slack_send_message enabled
-  $ opentabs config set browser-tool.execute_script disabled
+  $ opentabs config set browser-tool.browser_execute_script disabled
   $ opentabs config set browser-tool.browser_execute_script enabled
   $ opentabs config set port 9515
   $ opentabs config set localPlugins.add /path/to/plugin

@@ -9,18 +9,7 @@
  */
 
 import { test, expect } from './fixtures.js';
-import { setupToolTest } from './helpers.js';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Extract the machine-readable JSON block from a structured error response. */
-const parseErrorJson = (content: string): Record<string, unknown> => {
-  const match = content.match(/```json\n(.+?)\n```/s);
-  if (!match?.[1]) throw new Error(`No JSON block found in error response:\n${content}`);
-  return JSON.parse(match[1]) as Record<string, unknown>;
-};
+import { setupToolTest, parseErrorJson } from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // fetchFromPage error categorization — full stack

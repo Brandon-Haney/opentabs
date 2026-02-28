@@ -200,6 +200,13 @@ export const waitForToolList = async (
 export const parseToolResult = (content: string): Record<string, unknown> =>
   JSON.parse(content) as Record<string, unknown>;
 
+/** Extract the machine-readable JSON block from a structured error response. */
+export const parseErrorJson = (content: string): Record<string, unknown> => {
+  const match = content.match(/```json\n(.+?)\n```/s);
+  if (!match?.[1]) throw new Error(`No JSON block found in error response:\n${content}`);
+  return JSON.parse(match[1]) as Record<string, unknown>;
+};
+
 // ---------------------------------------------------------------------------
 // Browser tool names
 // ---------------------------------------------------------------------------

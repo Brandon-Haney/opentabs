@@ -616,4 +616,4 @@ Examples:
     );
 };
 
-export { registerConfigCommand };
+export { registerConfigCommand, maskSecret, resolveStoredPluginPath, levenshtein, suggestKey, KNOWN_KEYS };

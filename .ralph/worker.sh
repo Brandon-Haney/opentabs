@@ -5,11 +5,13 @@
 # in ralph.sh as the execute_prd_in_worktree function. It runs inside a
 # Docker container with the git worktree bind-mounted at /workspace.
 #
-# Arguments (passed as environment variables by ralph.sh):
-#   WORKER_TOOL       — "claude" or "amp"
-#   WORKER_MODEL      — optional model override for claude
-#   WORKER_PRD_FILE   — basename of the PRD file (e.g., prd-..~running.json)
-#   WORKER_RESULT_FILE — path to result file inside container
+# Arguments (passed as environment variables by consumer.sh):
+#   WORKER_TOOL            — "claude" or "amp"
+#   WORKER_PRD_FILE        — basename of the PRD file (e.g., prd-..~running.json)
+#   WORKER_RESULT_FILE     — path to result file inside container
+#   WORKER_TAG             — worker tag for log prefixing (e.g., "W0:my-feature")
+#   WORKER_MODEL_SONNET    — model name for sonnet stories (default: claude-sonnet)
+#   WORKER_MODEL_OPUS      — model name for opus stories (default: claude-opus)
 #
 # The container's /workspace is the git worktree (bind-mounted from host).
 # All output goes to stdout/stderr and is captured by `docker logs -f`

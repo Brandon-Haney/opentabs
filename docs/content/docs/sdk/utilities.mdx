@@ -432,7 +432,16 @@ const result = await deleteJSON<{ ok: boolean }>('/api/users/123');
 
 ### `httpStatusToToolError(response, message)`
 
-Maps an HTTP error response to a `ToolError` with the appropriate category. Automatically classifies status codes: 401/403 → `auth`, 404 → `not_found`, 429 → `rate_limit` (with `Retry-After` header parsing), everything else → `internal`.
+Maps an HTTP error response to a `ToolError` with the appropriate category. Status code mapping:
+
+| Status | Category | `retryable` | Notes |
+| --- | --- | --- | --- |
+| 401, 403 | `auth` | — | |
+| 404 | `not_found` | — | |
+| 429 | `rate_limit` | — | Parses `Retry-After` header into `retryAfterMs` |
+| 503 | `internal` | `true` | Parses `Retry-After` header into `retryAfterMs` |
+| 5xx (other) | `internal` | `true` | Server errors are retryable |
+| Other | `internal` | — | Not retryable |
 
 ```typescript
 function httpStatusToToolError(response: Response, message: string): ToolError;

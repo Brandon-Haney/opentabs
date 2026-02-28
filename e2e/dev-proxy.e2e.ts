@@ -224,6 +224,113 @@ test.describe('Dev proxy graceful shutdown', () => {
   });
 });
 
+test.describe('Dev proxy health during worker restart window', () => {
+  test('health returns degraded state during restart, then 200 after worker is ready', async () => {
+    const configDir = createTestConfigDir();
+    const server = await startMcpServer(configDir, true);
+
+    try {
+      // Verify server is healthy before the restart transition
+      const initialHealth = await server.health();
+      expect(initialHealth).not.toBeNull();
+      if (!initialHealth) throw new Error('health returned null');
+      expect(initialHealth.status).toBe('ok');
+
+      const proxyPid = server.proc.pid;
+      if (proxyPid === undefined) throw new Error('proxy PID is undefined');
+
+      // Find the worker child process. Killing it directly (not via SIGUSR1)
+      // lets us control the timing: the proxy detects the death and sets
+      // workerPort = null, but during the brief window before the exit handler
+      // runs, proxyHttp forwards to the dead port → 502.
+      const pgrepOutput = execSync(`pgrep -P ${proxyPid}`, { encoding: 'utf-8' }).trim();
+      const workerPids = pgrepOutput
+        .split('\n')
+        .map(s => Number(s.trim()))
+        .filter(n => !Number.isNaN(n) && n > 0);
+      expect(workerPids.length).toBeGreaterThan(0);
+
+      // Start a rapid poll loop. We collect all HTTP status codes returned
+      // by /health during the transition. An AbortController signals when
+      // to stop polling.
+      const statusCodes: number[] = [];
+      const stopPolling = new AbortController();
+
+      const headers: Record<string, string> = {};
+      if (server.secret) headers['Authorization'] = `Bearer ${server.secret}`;
+
+      const pollLoop = (async () => {
+        while (!stopPolling.signal.aborted) {
+          try {
+            const res = await fetch(`http://localhost:${server.port}/health`, {
+              headers,
+              signal: AbortSignal.timeout(6_000),
+            });
+            statusCodes.push(res.status);
+          } catch {
+            // Connection refused or timeout — record as 0 for tracking
+            statusCodes.push(0);
+          }
+          // Tight polling: 10ms between requests to maximize the chance of
+          // hitting the window where the worker is dead but workerPort is set
+          await new Promise(r => setTimeout(r, 10));
+        }
+      })();
+
+      // Give the poll loop a moment to start firing requests
+      await new Promise(r => setTimeout(r, 50));
+
+      // Kill the worker directly with SIGKILL. The proxy's exit handler fires
+      // asynchronously and clears workerPort. Requests arriving between the
+      // kill and the exit handler are forwarded to the dead port → 502.
+      for (const pid of workerPids) {
+        process.kill(pid, 'SIGKILL');
+      }
+
+      // Wait for the proxy to detect the worker exit
+      await waitForLog(server, 'Worker exited', 5_000);
+
+      // Trigger a hot reload so a new worker starts. Requests that were
+      // buffered via whenReady() (after workerPort became null) will be
+      // drained once the new worker reports ready.
+      server.triggerHotReload();
+
+      // Wait for the new worker to be ready
+      await waitForLog(server, 'Hot reload complete', 15_000);
+
+      // Give the poll loop a few more iterations to capture 200s from the
+      // new worker, then stop polling.
+      await new Promise(r => setTimeout(r, 200));
+      stopPolling.abort();
+      await pollLoop;
+
+      // Verify at least one poll returned a non-200 status during the
+      // transition (502 from forwarding to the dead worker, 503 from
+      // whenReady timeout, or 0 from connection failure).
+      const nonOk = statusCodes.filter(s => s !== 200);
+      expect(nonOk.length).toBeGreaterThan(0);
+
+      // Verify every non-200 is a recognized degraded status
+      for (const code of nonOk) {
+        expect([0, 502, 503]).toContain(code);
+      }
+
+      // Verify the final polls returned 200 (the new worker is healthy)
+      const lastFew = statusCodes.slice(-3);
+      expect(lastFew.every(s => s === 200)).toBe(true);
+
+      // Confirm the server is fully healthy after the transition
+      const finalHealth = await server.health();
+      expect(finalHealth).not.toBeNull();
+      if (!finalHealth) throw new Error('health returned null after transition');
+      expect(finalHealth.status).toBe('ok');
+    } finally {
+      await server.kill();
+      cleanupTestConfigDir(configDir);
+    }
+  });
+});
+
 test.describe('Dev proxy 503 timeout', () => {
   test('returns 503 when worker is dead and no restart is triggered', async () => {
     const configDir = createTestConfigDir();

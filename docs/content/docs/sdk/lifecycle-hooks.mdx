@@ -4,7 +4,7 @@ description: API reference for plugin lifecycle hooks — onActivate, onDeactiva
 lastUpdated: 2026-02-21
 ---
 
-Lifecycle hooks let plugins respond to adapter registration, navigation, and tool execution events. All hooks are optional methods on the `OpenTabsPlugin` base class — implement only the ones you need.
+Lifecycle hooks let plugins respond to adapter registration, navigation, and tool execution events. All hooks are optional methods on the `OpenTabsPlugin` base class — implement only the ones you need. Because the scaffolded `tsconfig.json` enables `noImplicitOverride`, implementations must use the `override` keyword — omitting it causes a TS4114 type error at build time.
 
 ## Import
 
@@ -71,7 +71,7 @@ onActivate?(): void;
 class MyPlugin extends OpenTabsPlugin {
   private cleanup?: () => void;
 
-  onActivate() {
+  override onActivate() {
     // Set up a keyboard shortcut listener
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -82,7 +82,7 @@ class MyPlugin extends OpenTabsPlugin {
     this.cleanup = () => document.removeEventListener('keydown', handler);
   }
 
-  onDeactivate() {
+  override onDeactivate() {
     this.cleanup?.();
   }
 
@@ -129,7 +129,7 @@ onNavigate?(url: string): void;
 class MyPlugin extends OpenTabsPlugin {
   private currentProjectId: string | null = null;
 
-  onNavigate(url: string) {
+  override onNavigate(url: string) {
     // Track which project the user is viewing
     const match = url.match(/\/projects\/(\w+)/);
     this.currentProjectId = match?.[1] ?? null;
@@ -166,7 +166,7 @@ onToolInvocationStart?(toolName: string): void;
 
 ```typescript
 class MyPlugin extends OpenTabsPlugin {
-  onToolInvocationStart(toolName: string) {
+  override onToolInvocationStart(toolName: string) {
     log.info(`Starting tool: ${toolName}`);
   }
 
@@ -211,7 +211,7 @@ onToolInvocationEnd?(toolName: string, success: boolean, durationMs: number): vo
 
 ```typescript
 class MyPlugin extends OpenTabsPlugin {
-  onToolInvocationEnd(toolName: string, success: boolean, durationMs: number) {
+  override onToolInvocationEnd(toolName: string, success: boolean, durationMs: number) {
     if (!success) {
       log.warn(`Tool ${toolName} failed after ${durationMs}ms`);
     } else if (durationMs > 5000) {
@@ -246,28 +246,28 @@ class AnalyticsPlugin extends OpenTabsPlugin {
     return document.querySelector('.app-loaded') !== null;
   }
 
-  onActivate() {
+  override onActivate() {
     log.info('Analytics adapter activated');
     this.currentPage = window.location.pathname;
   }
 
-  onDeactivate() {
+  override onDeactivate() {
     log.info('Analytics adapter deactivated', {
       totalToolCalls: this.toolCount,
     });
   }
 
-  onNavigate(url: string) {
+  override onNavigate(url: string) {
     const path = new URL(url).pathname;
     log.debug('Navigated', { from: this.currentPage, to: path });
     this.currentPage = path;
   }
 
-  onToolInvocationStart(toolName: string) {
+  override onToolInvocationStart(toolName: string) {
     log.debug(`Tool starting: ${toolName}`, { page: this.currentPage });
   }
 
-  onToolInvocationEnd(toolName: string, success: boolean, durationMs: number) {
+  override onToolInvocationEnd(toolName: string, success: boolean, durationMs: number) {
     this.toolCount++;
     log.info(`Tool completed: ${toolName}`, { success, durationMs });
   }

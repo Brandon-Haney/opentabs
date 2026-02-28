@@ -421,7 +421,9 @@ const handlePluginSearch = (query?: string): void => {
       : '';
     const author = pkg.publisher?.username ?? 'unknown';
 
-    console.log(`  ${label} ${pc.bold(pkg.name)} ${pc.dim(`v${pkg.version}`)} — ${desc} ${pc.dim(`by ${author}`)}`);
+    console.log(
+      `  ${label} ${pc.bold(pkg.name)} ${pc.dim(`v${pkg.version}`)}${desc ? ` — ${desc}` : ''} ${pc.dim(`by ${author}`)}`,
+    );
   }
   console.log();
   console.log(`Install a plugin: ${pc.cyan('opentabs plugin install <name>')}`);

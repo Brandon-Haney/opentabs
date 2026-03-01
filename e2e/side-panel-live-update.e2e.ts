@@ -90,7 +90,7 @@ test.describe('Side panel live-update — plugins.changed notification', () => {
 
       // 5. Verify the side panel DOM updates to show the new plugin.
       await expect(sidePanelPage.locator('text=No Plugins Installed')).toBeHidden({ timeout: 30_000 });
-      await expect(sidePanelPage.locator('button[aria-expanded]')).toBeVisible({ timeout: 10_000 });
+      await expect(sidePanelPage.locator('button[data-radix-collection-item]')).toBeVisible({ timeout: 10_000 });
       await expect(sidePanelPage.locator('text=E2E Test')).toBeVisible({ timeout: 5_000 });
 
       await sidePanelPage.close();

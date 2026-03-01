@@ -117,7 +117,7 @@ test.describe('Empty states', () => {
 
       // Verify the no-plugins view disappears and the plugin list appears
       await expect(sidePanelPage.locator('text=No Plugins Installed')).toBeHidden({ timeout: 30_000 });
-      await expect(sidePanelPage.locator('button[aria-expanded]')).toBeVisible({ timeout: 10_000 });
+      await expect(sidePanelPage.locator('button[data-radix-collection-item]')).toBeVisible({ timeout: 10_000 });
       await expect(sidePanelPage.locator('text=E2E Test')).toBeVisible({ timeout: 5_000 });
 
       await sidePanelPage.close();

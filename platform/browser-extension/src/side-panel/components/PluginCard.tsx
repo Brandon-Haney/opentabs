@@ -12,7 +12,7 @@ import { ERROR_DISPLAY_DURATION_MS } from '../constants.js';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import { ChevronDown } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
-import type { PluginState } from '../bridge.js';
+import type { PluginState, WireToolDef } from '../bridge.js';
 import type { Dispatch, SetStateAction } from 'react';
 
 const PluginCard = ({
@@ -46,13 +46,15 @@ const PluginCard = ({
     errorTimerRef.current = setTimeout(() => setToggleError(null), ERROR_DISPLAY_DURATION_MS);
   };
 
-  const updatePluginTools = (updater: (tools: PluginState['tools']) => PluginState['tools']) =>
-    setPlugins(prev => prev.map(p => (p.name === plugin.name ? { ...p, tools: updater(p.tools) } : p)));
+  const pluginTools = plugin.tools ?? [];
 
-  const allEnabled = plugin.tools.length > 0 && plugin.tools.every(t => t.enabled);
+  const updatePluginTools = (updater: (tools: WireToolDef[]) => WireToolDef[]) =>
+    setPlugins(prev => prev.map(p => (p.name === plugin.name ? { ...p, tools: updater(p.tools ?? []) } : p)));
+
+  const allEnabled = pluginTools.length > 0 && pluginTools.every(t => t.enabled);
 
   const handleToggleAll = (checked: boolean) => {
-    const originalTools = plugin.tools;
+    const originalTools = pluginTools;
     const myVersion = ++toggleCounter.current;
     updatePluginTools(tools => tools.map(t => ({ ...t, enabled: checked })));
     void setAllToolsEnabled(plugin.name, checked).catch(() => {
@@ -64,7 +66,7 @@ const PluginCard = ({
   };
 
   const handleToggleTool = (toolName: string, currentEnabled: boolean) => {
-    const originalTools = plugin.tools;
+    const originalTools = pluginTools;
     const myVersion = ++toggleCounter.current;
     const newEnabled = !currentEnabled;
     updatePluginTools(tools => tools.map(t => (t.name === toolName ? { ...t, enabled: newEnabled } : t)));
@@ -77,7 +79,7 @@ const PluginCard = ({
   };
 
   const filterLower = toolFilter?.toLowerCase() ?? '';
-  const visibleTools = filterLower ? plugin.tools.filter(t => matchesTool(t, filterLower)) : plugin.tools;
+  const visibleTools = filterLower ? pluginTools.filter(t => matchesTool(t, filterLower)) : pluginTools;
 
   return (
     <Accordion.Item
@@ -159,7 +161,7 @@ const PluginCard = ({
       <Accordion.Content className="border-border border-t">
         {toolFilter && (
           <div className="text-muted-foreground mb-1 px-3 pt-2 text-xs">
-            {visibleTools.length} of {plugin.tools.length} tools
+            {visibleTools.length} of {pluginTools.length} tools
           </div>
         )}
         {visibleTools.map(tool => (

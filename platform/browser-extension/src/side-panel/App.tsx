@@ -63,7 +63,7 @@ const App = () => {
     lastFetchRef.current = now;
     return fetchConfigState()
       .then(result => {
-        let updatedPlugins = result.plugins;
+        let updatedPlugins = result.plugins ?? [];
         if (pendingTabStates.current.size > 0) {
           updatedPlugins = updatedPlugins.map(p => {
             const buffered = pendingTabStates.current.get(p.name);
@@ -73,8 +73,8 @@ const App = () => {
         }
         setPluginsLoaded(true);
         setPlugins(updatedPlugins);
-        setFailedPlugins(result.failedPlugins);
-        setBrowserTools(result.browserTools);
+        setFailedPlugins(result.failedPlugins ?? []);
+        setBrowserTools(result.browserTools ?? []);
         setActiveTools(prev => {
           const next = new Set<string>();
           for (const key of prev) {

@@ -13,7 +13,7 @@ import {
   updatePlugin,
 } from './bridge.js';
 import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
-import type { PluginState } from './bridge.js';
+import type { PluginState, WireToolDef } from './bridge.js';
 
 /** Captured sendMessage calls. Each entry has the message object passed to sendMessage. */
 let sendMessageCalls: Array<{ message: unknown }> = [];
@@ -336,7 +336,7 @@ describe('getConnectionState', () => {
 
 // --- Helper to create a minimal PluginState for testing ---
 
-const tool = (overrides?: Partial<PluginState['tools'][number]>): PluginState['tools'][number] => ({
+const tool = (overrides?: Partial<WireToolDef>): WireToolDef => ({
   name: 'send_message',
   displayName: 'Send Message',
   description: 'Send a message to a Slack channel',

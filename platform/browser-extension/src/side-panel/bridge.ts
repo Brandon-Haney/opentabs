@@ -16,10 +16,11 @@ import type {
   ConfigStateFailedPlugin,
   ConfigStatePlugin,
   ConfigStateResult,
+  WireToolDef,
 } from '@opentabs-dev/shared';
 
-/** Plugin state as displayed in the side panel (matches config.getState response) */
-type PluginState = ConfigStatePlugin;
+/** Plugin state as displayed in the side panel. tools is optional to reflect that the server response may omit it. */
+type PluginState = Omit<ConfigStatePlugin, 'tools'> & { tools?: WireToolDef[] };
 
 /** Failed plugin state as displayed in the side panel */
 type FailedPluginState = ConfigStateFailedPlugin;
@@ -48,7 +49,7 @@ interface PluginInstallResult {
 }
 
 /** Returns true if a tool's displayName, name, or description matches the filter string */
-const matchesTool = (tool: PluginState['tools'][number], filterLower: string): boolean =>
+const matchesTool = (tool: WireToolDef, filterLower: string): boolean =>
   tool.displayName.toLowerCase().includes(filterLower) ||
   tool.name.toLowerCase().includes(filterLower) ||
   tool.description.toLowerCase().includes(filterLower);
@@ -59,7 +60,7 @@ const matchesTool = (tool: PluginState['tools'][number], filterLower: string): b
 const matchesPlugin = (plugin: PluginState, filterLower: string): boolean =>
   plugin.displayName.toLowerCase().includes(filterLower) ||
   plugin.name.toLowerCase().includes(filterLower) ||
-  plugin.tools.some(
+  (plugin.tools ?? []).some(
     tool => tool.displayName.toLowerCase().includes(filterLower) || tool.name.toLowerCase().includes(filterLower),
   );
 
@@ -177,7 +178,7 @@ const getConnectionState = (): Promise<ConnectionStateResult> =>
   });
 
 /** Request full state from MCP server via config.getState */
-const fetchConfigState = () => sendRequest('config.getState') as Promise<ConfigStateResult>;
+const fetchConfigState = () => sendRequest('config.getState') as Promise<Partial<ConfigStateResult>>;
 
 /** Toggle a single tool's enabled state */
 const setToolEnabled = (plugin: string, tool: string, enabled: boolean): Promise<unknown> =>
@@ -223,7 +224,7 @@ const sendConfirmationResponse = (
     });
 };
 
-export type { BrowserToolState, FailedPluginState, PluginInstallResult, PluginSearchResult, PluginState };
+export type { BrowserToolState, FailedPluginState, PluginInstallResult, PluginSearchResult, PluginState, WireToolDef };
 export {
   getConnectionState,
   fetchConfigState,

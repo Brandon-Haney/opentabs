@@ -26,7 +26,9 @@ const PluginList = ({
 }) => {
   const filterLower = toolFilter.toLowerCase();
 
-  const visiblePlugins = filterLower ? plugins.filter(p => p.tools.some(t => matchesTool(t, filterLower))) : plugins;
+  const visiblePlugins = filterLower
+    ? plugins.filter(p => (p.tools ?? []).some(t => matchesTool(t, filterLower)))
+    : plugins;
 
   // Hide failed plugins when filtering tools
   const visibleFailed = filterLower ? [] : failedPlugins;

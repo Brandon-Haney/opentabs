@@ -1,4 +1,5 @@
 import { BrowserToolsMenu } from './BrowserToolsMenu.js';
+import { ChromeIcon } from './ChromeIcon.js';
 import { Accordion } from './retro/Accordion.js';
 import { Alert } from './retro/Alert.js';
 import { Badge } from './retro/Badge.js';
@@ -7,7 +8,7 @@ import { ToolRow } from './ToolRow.js';
 import { setBrowserToolEnabled, setAllBrowserToolsEnabled } from '../bridge.js';
 import { ERROR_DISPLAY_DURATION_MS } from '../constants.js';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
-import { ChevronDown, Globe } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import type { BrowserToolState } from '../bridge.js';
 
@@ -92,7 +93,7 @@ const BrowserToolsCard = ({
       <AccordionPrimitive.Header className="flex">
         <AccordionPrimitive.Trigger className="font-head flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-3 py-2 focus:outline-hidden [&[data-state=open]>svg.chevron]:rotate-180">
           <div className="border-border bg-muted/50 flex h-8 w-8 shrink-0 items-center justify-center rounded border-2">
-            <Globe className="text-muted-foreground h-4 w-4" />
+            <ChromeIcon className="h-4 w-4" />
           </div>
           <div className="font-head text-foreground flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm">
             Browser
@@ -132,7 +133,7 @@ const BrowserToolsCard = ({
             name={tool.name}
             displayName={toDisplayName(tool.name)}
             description={tool.description}
-            icon="globe"
+            icon={tool.icon ?? 'globe'}
             enabled={tool.enabled}
             active={activeTools.has(`browser:${tool.name}`)}
             onToggle={() => handleToggleTool(tool.name, tool.enabled)}

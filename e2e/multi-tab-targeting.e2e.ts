@@ -533,6 +533,93 @@ test.describe('Multi-tab targeting — mixed readiness', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Test 10: Concurrent targeted dispatches to different tabs
+// ---------------------------------------------------------------------------
+
+test.describe('Multi-tab targeting — concurrent targeted dispatches', () => {
+  test('two concurrent tool calls targeting different tabs via tabId both return the correct marker', async ({
+    mcpServer,
+    testServer,
+    extensionContext,
+    mcpClient,
+  }) => {
+    test.slow();
+
+    // Open first tab and wait for ready
+    const page1 = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
+
+    // Set a unique marker on page1
+    await page1.evaluate(() => {
+      (globalThis as Record<string, unknown>).__tabMarker = 'alpha';
+    });
+
+    // Open second tab
+    const page2 = await openTestAppTab(extensionContext, testServer.url, mcpServer, testServer);
+
+    // Set a different marker on page2
+    await page2.evaluate(() => {
+      (globalThis as Record<string, unknown>).__tabMarker = 'beta';
+    });
+
+    // Wait for both tabs to be tracked
+    const plugins = await waitForTabCount(mcpClient.callTool.bind(mcpClient), 2);
+
+    const entry = plugins[0];
+    if (!entry) throw new Error('Expected plugin entry in plugin_list_tabs response');
+    expect(entry.tabs.length).toBe(2);
+
+    const firstTab = entry.tabs[0];
+    const secondTab = entry.tabs[1];
+    if (!firstTab || !secondTab) throw new Error('Expected two tab entries');
+
+    // Read marker from firstTab to identify which tabId maps to which marker
+    const marker1Result = await mcpClient.callTool('browser_execute_script', {
+      tabId: firstTab.tabId,
+      code: 'return globalThis.__tabMarker',
+    });
+    expect(marker1Result.isError).toBe(false);
+    const marker1Data = parseToolResult(marker1Result.content);
+    const marker1Nested = marker1Data.value as Record<string, unknown>;
+    const marker1Value = marker1Nested.value as string;
+
+    // Determine which tabId is 'alpha' and which is 'beta'
+    let tabAlphaId: number;
+    let tabBetaId: number;
+    if (marker1Value === 'alpha') {
+      tabAlphaId = firstTab.tabId;
+      tabBetaId = secondTab.tabId;
+    } else {
+      tabAlphaId = secondTab.tabId;
+      tabBetaId = firstTab.tabId;
+    }
+
+    // Launch two concurrent tool calls targeting different tabs
+    const [alphaResult, betaResult] = await Promise.all([
+      mcpClient.callTool('e2e-test_sdk_get_page_global', {
+        path: '__tabMarker',
+        tabId: tabAlphaId,
+      }),
+      mcpClient.callTool('e2e-test_sdk_get_page_global', {
+        path: '__tabMarker',
+        tabId: tabBetaId,
+      }),
+    ]);
+
+    // Verify each result has the correct marker — no cross-talk
+    expect(alphaResult.isError).toBe(false);
+    const alphaParsed = parseToolResult(alphaResult.content);
+    expect(alphaParsed.value).toBe('alpha');
+
+    expect(betaResult.isError).toBe(false);
+    const betaParsed = parseToolResult(betaResult.content);
+    expect(betaParsed.value).toBe('beta');
+
+    await page1.close();
+    await page2.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Test 9: Targeted dispatch to tab that closes mid-execution
 // ---------------------------------------------------------------------------
 

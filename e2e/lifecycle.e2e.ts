@@ -764,12 +764,7 @@ test.describe('URL change reconnection', () => {
     const dead = await mcpServer.health();
     expect(dead).toBeNull();
 
-    // 3. Wait for extension to detect the disconnect and exhaust initial
-    //    reconnect attempts. The backoff starts at 1s and doubles (1→2→4s),
-    //    so after 5s the extension has failed several reconnects.
-    await new Promise(r => setTimeout(r, 5_000));
-
-    // 4. Start a NEW server B on a DIFFERENT port with the same plugin config
+    // 3. Start a NEW server B on a DIFFERENT port with the same plugin config
     const configDirB = createTestConfigDir();
     let serverB: McpServer | null = null;
 
@@ -805,24 +800,24 @@ test.describe('URL change reconnection', () => {
       // fetch of chrome.runtime.getURL('auth.json').
       await new Promise(r => setTimeout(r, 500));
 
-      // 5. Change serverPort in chrome.storage.local to point to server B.
+      // 4. Change serverPort in chrome.storage.local to point to server B.
       //    The background script's chrome.storage.onChanged listener constructs
       //    a ws:// URL and relays ws:setUrl to the offscreen document, which
       //    calls connect() even when ws is null and no reconnect timer is pending.
       await setServerPort(extensionContext, serverBPort);
 
-      // 6. Wait for extension to connect to server B
+      // 5. Wait for extension to connect to server B
       await waitForExtensionConnected(serverB, 45_000);
       await waitForLog(serverB, 'tab.syncAll received', 15_000);
 
-      // 7. Verify server B shows the extension connected
+      // 6. Verify server B shows the extension connected
       const h = await serverB.health();
       expect(h).not.toBeNull();
       if (!h) throw new Error('health returned null');
       expect(h.status).toBe('ok');
       expect(h.extensionConnected).toBe(true);
 
-      // 8. Verify tool dispatch works through server B
+      // 7. Verify tool dispatch works through server B
       const clientB = createMcpClient(serverBPort, serverB.secret);
       await clientB.initialize();
 

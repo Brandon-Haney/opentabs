@@ -159,8 +159,8 @@ Pass `Authorization: Bearer <secret>` to get the full payload:
     }
   ],
   "failedPlugins": [],
-  "toolCount": 58,
-  "browserToolCount": 39,
+  "toolCount": 59,
+  "browserToolCount": 40,
   "pluginToolCount": 19,
   "disabledBrowserTools": ["browser_execute_script"],
   "confirmationBypassed": false,
@@ -212,7 +212,7 @@ Key fields:
 Returns the WebSocket URL for the Chrome extension to connect. Requires Bearer token authentication.
 
 ```bash
-curl -s http://localhost:9515/ws-info \
+curl -s http://127.0.0.1:9515/ws-info \
   -H "Authorization: Bearer <secret>"
 ```
 
@@ -220,7 +220,7 @@ Response:
 
 ```json
 {
-  "wsUrl": "ws://localhost:9515/ws"
+  "wsUrl": "ws://127.0.0.1:9515/ws"
 }
 ```
 
@@ -233,7 +233,7 @@ The extension uses this URL to establish the WebSocket connection. The `wsUrl` i
 Returns tool invocations as a JSON array, newest first. Requires Bearer token authentication. The server maintains a circular buffer of the last 500 entries. Entries are also persisted to `~/.opentabs/audit.log` as NDJSON with automatic rotation at 10 MB (keeping `audit.log` and `audit.log.1`). Use `opentabs audit --file` to query the full disk-based log, which survives server restarts.
 
 ```bash
-curl -s http://localhost:9515/audit \
+curl -s http://127.0.0.1:9515/audit \
   -H "Authorization: Bearer <secret>" | jq
 ```
 
@@ -294,7 +294,7 @@ Both require Bearer token authentication and are rate-limited to 10 requests/min
 `/reload` triggers config reload and plugin rediscovery. It is available in both production and dev mode. The `opentabs-plugin build` command calls this endpoint automatically after each build.
 
 ```bash
-curl -X POST http://localhost:9515/reload \
+curl -X POST http://127.0.0.1:9515/reload \
   -H "Authorization: Bearer <secret>"
 ```
 
@@ -307,7 +307,7 @@ Response:
 `/extension/reload` signals the Chrome extension to reload. Returns 503 if the extension is not connected.
 
 ```bash
-curl -X POST http://localhost:9515/extension/reload \
+curl -X POST http://127.0.0.1:9515/extension/reload \
   -H "Authorization: Bearer <secret>"
 ```
 

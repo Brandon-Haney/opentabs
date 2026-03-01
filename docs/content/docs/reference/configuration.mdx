@@ -1,7 +1,7 @@
 ---
 title: Configuration
 description: Reference for the ~/.opentabs/config.json configuration file, environment variables, and directory structure.
-lastUpdated: 2026-02-28
+lastUpdated: 2026-03-01
 ---
 
 ## Config file location
@@ -47,6 +47,12 @@ Override the config directory with the `OPENTABS_CONFIG_DIR` environment variabl
       <Table.Cell className="*:text-xs">`object`</Table.Cell>
       <Table.Cell className="*:text-xs">_(see below)_</Table.Cell>
       <Table.Cell>Permission configuration for the browser tool confirmation system. Controls which tools require human approval and on which domains.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`port`</Table.Cell>
+      <Table.Cell className="*:text-xs">`number`</Table.Cell>
+      <Table.Cell className="*:text-xs">`9515`</Table.Cell>
+      <Table.Cell>MCP server port, persisted by `opentabs config set port`. Used by CLI commands (`status`, `audit`, `logs`) to know which port to connect to.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`skipConfirmation`</Table.Cell>

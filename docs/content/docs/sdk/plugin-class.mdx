@@ -1,7 +1,7 @@
 ---
 title: Plugin Class
 description: API reference for OpenTabsPlugin — the abstract base class every plugin extends.
-lastUpdated: 2026-02-21
+lastUpdated: 2026-03-01
 ---
 
 Every OpenTabs plugin extends `OpenTabsPlugin` from the SDK. This class defines your plugin's identity, URL matching, readiness probe, and tool/resource/prompt registrations.
@@ -17,9 +17,9 @@ import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 ```typescript
 abstract class OpenTabsPlugin {
   abstract readonly name: string;
+  abstract readonly displayName: string;
   abstract readonly version: string;
   abstract readonly description: string;
-  abstract readonly displayName: string;
   abstract readonly urlPatterns: string[];
   abstract readonly tools: ToolDefinition[];
   readonly resources?: ResourceDefinition[];

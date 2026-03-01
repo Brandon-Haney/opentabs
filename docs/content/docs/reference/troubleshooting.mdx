@@ -28,7 +28,7 @@ If the server isn't running, start it with `opentabs start`.
 2. **Correct port?** — Default is 9515. If using a custom port, make sure the extension is configured for the same one.
 3. **Extension loaded?** — Open `chrome://extensions` and verify OpenTabs is loaded and enabled. Click any error link for details.
 4. **Version mismatch?** — Run `opentabs doctor`. A mismatch between the installed extension and CLI version can cause failures. Restart `opentabs start` to auto-update the extension files, then reload the extension from `chrome://extensions`.
-5. **Stale secret?** — The extension reads the auth secret from `~/.opentabs/extension/auth.json` (written by the server on startup). If the secret changed (e.g., after deleting `config.json`), restart the server with `opentabs start` to regenerate the file, then reload the extension from `chrome://extensions`.
+5. **Stale secret?** — The extension reads the auth secret from `~/.opentabs/extension/auth.json` (written by the server on startup). If the secret changed (e.g., after deleting `auth.json` or rotating the secret with `opentabs config rotate-secret --confirm`), restart the server with `opentabs start` to regenerate the file, then reload the extension from `chrome://extensions`.
 
 ## Extension reconnection delays
 
@@ -99,7 +99,7 @@ Use `opentabs audit` to see recent tool invocations with their durations and err
 
 **Symptom**: Claude Code, Cursor, or another MCP client reports a connection or authentication error.
 
-1. **Server running?** — `opentabs status` or `curl http://localhost:9515/health`
+1. **Server running?** — `opentabs status` or `curl http://127.0.0.1:9515/health`
 2. **Correct URL** — The endpoint is `http://localhost:9515/mcp` (not `/ws` or `/`)
 3. **Auth token** — `Authorization: Bearer <secret>` must match the `secret` in `~/.opentabs/extension/auth.json`. Get it with:
    ```bash
@@ -120,7 +120,7 @@ The `opentabs-plugin build` command calls `POST /reload` automatically. If the s
 2. **Check server logs** — `opentabs logs` shows recent server activity, including reload events.
 3. **Manual reload** — Call the reload endpoint directly:
    ```bash
-   curl -X POST http://localhost:9515/reload \
+   curl -X POST http://127.0.0.1:9515/reload \
      -H "Authorization: Bearer $(opentabs config show --json --show-secret | jq -r .secret)"
    ```
 4. **Verify via status** — `opentabs status` shows the current plugin list and tool counts.
@@ -220,7 +220,7 @@ The Chrome extension does not auto-reload. After rebuilding:
       <Table.Cell>View current configuration (secret redacted).</Table.Cell>
     </Table.Row>
     <Table.Row>
-      <Table.Cell className="font-medium">`curl http://localhost:9515/health`</Table.Cell>
+      <Table.Cell className="font-medium">`curl http://127.0.0.1:9515/health`</Table.Cell>
       <Table.Cell>Direct health check (no CLI needed). Without a Bearer token, returns only `{"status": "ok"}`. Pass `-H "Authorization: Bearer <secret>"` for the full payload including `version` and `extensionConnected`.</Table.Cell>
     </Table.Row>
   </Table.Body>

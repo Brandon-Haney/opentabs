@@ -669,20 +669,20 @@ export const QuickStartFlow = () => (
 export const ConfigDirectory = () => (
   <div className="my-8">
     <svg
-      viewBox="0 0 520 300"
+      viewBox="0 0 520 326"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className="w-full max-w-lg"
       aria-hidden="true">
       {/* ── Main box ──────────────────────────────────────── */}
       {/* Shadow */}
-      <rect x="8" y="8" width="508" height="288" fill="var(--color-foreground)" />
+      <rect x="8" y="8" width="508" height="314" fill="var(--color-foreground)" />
       {/* Body */}
       <rect
         x="4"
         y="4"
         width="508"
-        height="288"
+        height="314"
         fill="var(--color-background)"
         stroke="var(--color-foreground)"
         strokeWidth="3"
@@ -747,13 +747,27 @@ export const ConfigDirectory = () => (
         Server output (written by opentabs start)
       </text>
 
+      {/* server.pid */}
+      <text x="28" y="146" fontSize="12" fontFamily="var(--font-mono), monospace" fill="var(--color-foreground)">
+        server.pid
+      </text>
+      <text
+        x="220"
+        y="146"
+        fontSize="10"
+        fontFamily="var(--font-mono), monospace"
+        fill="var(--color-foreground)"
+        opacity="0.45">
+        Server process ID
+      </text>
+
       {/* Divider */}
-      <line x1="20" y1="136" x2="500" y2="136" stroke="var(--color-foreground)" strokeWidth="1" opacity="0.15" />
+      <line x1="20" y1="162" x2="500" y2="162" stroke="var(--color-foreground)" strokeWidth="1" opacity="0.15" />
 
       {/* extension/ directory */}
       <text
         x="28"
-        y="160"
+        y="186"
         fontSize="12"
         fontFamily="var(--font-mono), monospace"
         fill="var(--color-primary)"
@@ -762,7 +776,7 @@ export const ConfigDirectory = () => (
       </text>
       <text
         x="220"
-        y="160"
+        y="186"
         fontSize="10"
         fontFamily="var(--font-mono), monospace"
         fill="var(--color-foreground)"
@@ -771,14 +785,14 @@ export const ConfigDirectory = () => (
       </text>
 
       {/* extension/manifest.json */}
-      <text x="62" y="186" fontSize="12" fontFamily="var(--font-mono), monospace" fill="var(--color-foreground)">
+      <text x="62" y="212" fontSize="12" fontFamily="var(--font-mono), monospace" fill="var(--color-foreground)">
         manifest.json
       </text>
 
       {/* extension/dist/ */}
       <text
         x="62"
-        y="212"
+        y="238"
         fontSize="12"
         fontFamily="var(--font-mono), monospace"
         fill="var(--color-primary)"
@@ -787,7 +801,7 @@ export const ConfigDirectory = () => (
       </text>
       <text
         x="220"
-        y="212"
+        y="238"
         fontSize="10"
         fontFamily="var(--font-mono), monospace"
         fill="var(--color-foreground)"
@@ -796,12 +810,12 @@ export const ConfigDirectory = () => (
       </text>
 
       {/* extension/auth.json */}
-      <text x="62" y="238" fontSize="12" fontFamily="var(--font-mono), monospace" fill="var(--color-foreground)">
+      <text x="62" y="264" fontSize="12" fontFamily="var(--font-mono), monospace" fill="var(--color-foreground)">
         auth.json
       </text>
       <text
         x="220"
-        y="238"
+        y="264"
         fontSize="10"
         fontFamily="var(--font-mono), monospace"
         fill="var(--color-foreground)"
@@ -812,7 +826,7 @@ export const ConfigDirectory = () => (
       {/* extension/adapters/ */}
       <text
         x="62"
-        y="264"
+        y="290"
         fontSize="12"
         fontFamily="var(--font-mono), monospace"
         fill="var(--color-primary)"
@@ -821,7 +835,7 @@ export const ConfigDirectory = () => (
       </text>
       <text
         x="220"
-        y="264"
+        y="290"
         fontSize="10"
         fontFamily="var(--font-mono), monospace"
         fill="var(--color-foreground)"
@@ -832,7 +846,7 @@ export const ConfigDirectory = () => (
       {/* extension/.opentabs-version */}
       <text
         x="62"
-        y="286"
+        y="312"
         fontSize="12"
         fontFamily="var(--font-mono), monospace"
         fill="var(--color-foreground)"

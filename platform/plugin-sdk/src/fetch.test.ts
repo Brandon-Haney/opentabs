@@ -10,7 +10,7 @@ import {
   deleteJSON,
   parseRetryAfterMs,
 } from './fetch.js';
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { z } from 'zod';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -112,6 +112,12 @@ beforeAll(
         if (url.pathname === '/error-413') {
           res.writeHead(413);
           res.end('Payload Too Large');
+          return;
+        }
+
+        if (url.pathname === '/error-500-large') {
+          res.writeHead(500);
+          res.end('x'.repeat(10_000));
           return;
         }
 
@@ -492,6 +498,40 @@ describe('fetchFromPage', () => {
       expect(toolError.code).toBe('network_error');
       expect(toolError.category).toBe('internal');
       expect(toolError.retryable).toBe(true);
+    }
+  });
+
+  test('truncates large error response body to 512 characters with ellipsis', async () => {
+    try {
+      await fetchFromPage(`${baseUrl}/error-500-large`);
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ToolError);
+      const toolError = error as ToolError;
+      expect(toolError.message).toContain('HTTP 500');
+      // The body is 10,000 'x' chars — should be truncated to 512 + '…'
+      expect(toolError.message).toContain('x'.repeat(512) + '…');
+      expect(toolError.message).not.toContain('x'.repeat(513));
+    }
+  });
+
+  test('falls back to statusText when response.text() rejects', async () => {
+    const errorStream = new ReadableStream({
+      start(controller) {
+        controller.error(new Error('stream error'));
+      },
+    });
+    const mockResponse = new Response(errorStream, { status: 500, statusText: 'Internal Server Error' });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(mockResponse);
+    try {
+      await fetchFromPage('http://example.com/test');
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ToolError);
+      const toolError = error as ToolError;
+      expect(toolError.message).toContain('Internal Server Error');
+    } finally {
+      fetchSpy.mockRestore();
     }
   });
 });

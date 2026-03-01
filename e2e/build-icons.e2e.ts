@@ -51,11 +51,11 @@ const runBuild = (pluginDir: string): { exitCode: number; stdout: string; stderr
   try {
     execSync('npx tsc', opts);
   } catch (err: unknown) {
-    const e = err as { status: number; stdout: Buffer; stderr: Buffer };
+    const e = err as { status: number | null; stdout: Buffer | null; stderr: Buffer | null };
     return {
-      exitCode: e.status,
-      stdout: e.stdout.toString(),
-      stderr: `tsc failed: ${e.stderr.toString()}`,
+      exitCode: e.status ?? 1,
+      stdout: e.stdout?.toString() ?? '',
+      stderr: `tsc failed: ${e.stderr?.toString() ?? ''}`,
     };
   }
 
@@ -64,11 +64,11 @@ const runBuild = (pluginDir: string): { exitCode: number; stdout: string; stderr
     const stdout = execSync(`node ${CLI_PATH} build`, opts);
     return { exitCode: 0, stdout: stdout.toString(), stderr: '' };
   } catch (err: unknown) {
-    const e = err as { status: number; stdout: Buffer; stderr: Buffer };
+    const e = err as { status: number | null; stdout: Buffer | null; stderr: Buffer | null };
     return {
-      exitCode: e.status,
-      stdout: e.stdout.toString(),
-      stderr: e.stderr.toString(),
+      exitCode: e.status ?? 1,
+      stdout: e.stdout?.toString() ?? '',
+      stderr: e.stderr?.toString() ?? '',
     };
   }
 };

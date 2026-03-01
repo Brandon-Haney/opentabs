@@ -482,10 +482,10 @@ const createItem = defineTool({
     url: z.string(),
   }),
   async handle(params) {
-    const item = await fetchJSON<{ id: string; title: string; url: string }>(
-      '/api/items',
-      { method: 'POST', body: JSON.stringify(params) },
-    );
+    const item = await fetchJSON<{ id: string; title: string; url: string }>('/api/items', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
     if (!item) {
       throw ToolError.internal('Failed to create item');
     }

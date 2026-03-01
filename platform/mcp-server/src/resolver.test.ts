@@ -1,16 +1,15 @@
 import { discoverGlobalNpmPlugins, isAllowedPluginPath, resetGlobalPathsCache, resolvePluginPath } from './resolver.js';
 import { isErr, isOk } from '@opentabs-dev/shared';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { SpawnSyncReturns } from 'node:child_process';
 import type * as ChildProcess from 'node:child_process';
 
 vi.mock('node:child_process', async importOriginal => {
   const actual = await importOriginal<typeof ChildProcess>();
-  return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
+  return { ...actual, execFile: vi.fn(actual.execFile) };
 });
 
 /**
@@ -379,13 +378,16 @@ describe('isAllowedPluginPath', () => {
 describe('discoverGlobalNpmPlugins', () => {
   let tempDir: string;
 
-  /** Type for the spawnSync mock — simplified to the overload signature resolver.ts uses */
-  type SpawnSyncFn = (command: string, args: string[], options: object) => SpawnSyncReturns<Buffer>;
-  const mockedSpawnSync = spawnSync as unknown as ReturnType<typeof vi.fn<SpawnSyncFn>>;
+  /** Type for the execFile mock — simplified to the overload signature resolver.ts uses */
+  type ExecFileFn = (
+    file: string,
+    args: string[],
+    callback: (err: Error | null, stdout: string, stderr: string) => void,
+  ) => void;
+  const mockedExecFile = execFile as unknown as ReturnType<typeof vi.fn<ExecFileFn>>;
 
-  /** Mock result matching the shape returned by node:child_process spawnSync */
-  const spawnResult = (status: number, stdout: string): SpawnSyncReturns<Buffer> =>
-    ({ status, stdout: Buffer.from(stdout), stderr: Buffer.from(''), error: undefined }) as SpawnSyncReturns<Buffer>;
+  /** Mock result shape for handler functions */
+  const execResult = (status: number, stdout: string): { status: number; stdout: string } => ({ status, stdout });
 
   /** Write a valid opentabs plugin package.json */
   const writePluginPkgJson = (dir: string, name: string): void => {
@@ -407,20 +409,29 @@ describe('discoverGlobalNpmPlugins', () => {
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version: '1.0.0' }));
   };
 
-  /** Install a mock for node:child_process spawnSync that delegates to the given handler.
+  /** Install a mock for node:child_process execFile that delegates to the given handler.
    *  The handler receives `[command, ...args]` to match the test's existing cmd-array pattern. */
-  const mockSpawnSync = (handler: (cmd: string[]) => SpawnSyncReturns<Buffer>): void => {
-    mockedSpawnSync.mockImplementation((command: string, args: string[]) => handler([command, ...args]));
+  const mockExecFile = (handler: (cmd: string[]) => { status: number; stdout: string }): void => {
+    mockedExecFile.mockImplementation(
+      (command: string, args: string[], callback: (err: Error | null, stdout: string, stderr: string) => void) => {
+        const result = handler([command, ...args]);
+        if (result.status === 0) {
+          callback(null, result.stdout, '');
+        } else {
+          callback(Object.assign(new Error('Command failed'), { code: result.status }), '', '');
+        }
+      },
+    );
   };
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'opentabs-resolver-npm-'));
-    mockedSpawnSync.mockReset();
+    mockedExecFile.mockReset();
     resetGlobalPathsCache();
   });
 
   afterEach(() => {
-    mockedSpawnSync.mockRestore();
+    mockedExecFile.mockRestore();
     resetGlobalPathsCache();
     rmSync(tempDir, { recursive: true, force: true });
   });
@@ -429,9 +440,9 @@ describe('discoverGlobalNpmPlugins', () => {
     const globalDir = join(tempDir, 'node_modules');
     writePluginPkgJson(join(globalDir, 'opentabs-plugin-slack'), 'opentabs-plugin-slack');
 
-    mockSpawnSync(cmd => {
-      if (cmd[0] === 'npm' && cmd[1] === 'root') return spawnResult(0, globalDir);
-      return spawnResult(1, '');
+    mockExecFile(cmd => {
+      if (cmd[0] === 'npm' && cmd[1] === 'root') return execResult(0, globalDir);
+      return execResult(1, '');
     });
 
     const { dirs, errors } = await discoverGlobalNpmPlugins();
@@ -445,9 +456,9 @@ describe('discoverGlobalNpmPlugins', () => {
     const globalDir = join(tempDir, 'node_modules');
     writePluginPkgJson(join(globalDir, '@myorg', 'opentabs-plugin-foo'), '@myorg/opentabs-plugin-foo');
 
-    mockSpawnSync(cmd => {
-      if (cmd[0] === 'npm' && cmd[1] === 'root') return spawnResult(0, globalDir);
-      return spawnResult(1, '');
+    mockExecFile(cmd => {
+      if (cmd[0] === 'npm' && cmd[1] === 'root') return execResult(0, globalDir);
+      return execResult(1, '');
     });
 
     const { dirs, errors } = await discoverGlobalNpmPlugins();
@@ -462,9 +473,9 @@ describe('discoverGlobalNpmPlugins', () => {
     writePluginPkgJson(join(globalDir, 'opentabs-plugin-valid'), 'opentabs-plugin-valid');
     writeNonPluginPkgJson(join(globalDir, 'opentabs-plugin-no-field'), 'opentabs-plugin-no-field');
 
-    mockSpawnSync(cmd => {
-      if (cmd[0] === 'npm' && cmd[1] === 'root') return spawnResult(0, globalDir);
-      return spawnResult(1, '');
+    mockExecFile(cmd => {
+      if (cmd[0] === 'npm' && cmd[1] === 'root') return execResult(0, globalDir);
+      return execResult(1, '');
     });
 
     const { dirs } = await discoverGlobalNpmPlugins();
@@ -479,9 +490,9 @@ describe('discoverGlobalNpmPlugins', () => {
     writeNonPluginPkgJson(join(globalDir, 'lodash'), 'lodash');
     writePluginPkgJson(join(globalDir, 'opentabs-plugin-only'), 'opentabs-plugin-only');
 
-    mockSpawnSync(cmd => {
-      if (cmd[0] === 'npm' && cmd[1] === 'root') return spawnResult(0, globalDir);
-      return spawnResult(1, '');
+    mockExecFile(cmd => {
+      if (cmd[0] === 'npm' && cmd[1] === 'root') return execResult(0, globalDir);
+      return execResult(1, '');
     });
 
     const { dirs } = await discoverGlobalNpmPlugins();
@@ -490,7 +501,7 @@ describe('discoverGlobalNpmPlugins', () => {
   });
 
   test('returns empty when no global paths are available', async () => {
-    mockSpawnSync(() => spawnResult(1, ''));
+    mockExecFile(() => execResult(1, ''));
 
     const { dirs, errors } = await discoverGlobalNpmPlugins();
 
@@ -499,9 +510,9 @@ describe('discoverGlobalNpmPlugins', () => {
   });
 
   test('returns empty when global directory does not exist', async () => {
-    mockSpawnSync(cmd => {
-      if (cmd[0] === 'npm' && cmd[1] === 'root') return spawnResult(0, join(tempDir, 'nonexistent'));
-      return spawnResult(1, '');
+    mockExecFile(cmd => {
+      if (cmd[0] === 'npm' && cmd[1] === 'root') return execResult(0, join(tempDir, 'nonexistent'));
+      return execResult(1, '');
     });
 
     const { dirs, errors } = await discoverGlobalNpmPlugins();
@@ -529,22 +540,29 @@ describe('discoverGlobalNpmPlugins', () => {
     // First call: npm fails (empty result, no path recorded)
     // Second call: npm succeeds
     let callCount = 0;
-    mockedSpawnSync.mockImplementation((command: string, args: string[]) => {
-      if (command === 'npm' && args[0] === 'root') {
-        callCount++;
-        return callCount === 1 ? spawnResult(1, '') : spawnResult(0, globalDir);
-      }
-      return spawnResult(1, '');
-    });
+    mockedExecFile.mockImplementation(
+      (command: string, args: string[], callback: (err: Error | null, stdout: string, stderr: string) => void) => {
+        if (command === 'npm' && args[0] === 'root') {
+          callCount++;
+          if (callCount === 1) {
+            callback(Object.assign(new Error('Command failed'), { code: 1 }), '', '');
+          } else {
+            callback(null, globalDir, '');
+          }
+        } else {
+          callback(Object.assign(new Error('Command failed'), { code: 1 }), '', '');
+        }
+      },
+    );
 
     const first = await discoverGlobalNpmPlugins();
     expect(first.dirs).toHaveLength(0);
 
-    const spawnCallsAfterFirst = mockedSpawnSync.mock.calls.length;
+    const execFileCallsAfterFirst = mockedExecFile.mock.calls.length;
 
     const second = await discoverGlobalNpmPlugins();
-    // Second call must invoke spawnSync again — empty result was not cached
-    expect(mockedSpawnSync.mock.calls.length).toBeGreaterThan(spawnCallsAfterFirst);
+    // Second call must invoke execFile again — empty result was not cached
+    expect(mockedExecFile.mock.calls.length).toBeGreaterThan(execFileCallsAfterFirst);
     expect(second.dirs).toHaveLength(1);
     expect(second.dirs[0]).toBe(join(globalDir, 'opentabs-plugin-slack'));
   });
@@ -553,16 +571,21 @@ describe('discoverGlobalNpmPlugins', () => {
     const globalDir = join(tempDir, 'node_modules');
     mkdirSync(globalDir, { recursive: true });
 
-    mockedSpawnSync.mockImplementation((command: string, args: string[]) => {
-      if (command === 'npm' && args[0] === 'root') return spawnResult(0, globalDir);
-      return spawnResult(1, '');
-    });
+    mockedExecFile.mockImplementation(
+      (command: string, args: string[], callback: (err: Error | null, stdout: string, stderr: string) => void) => {
+        if (command === 'npm' && args[0] === 'root') {
+          callback(null, globalDir, '');
+        } else {
+          callback(Object.assign(new Error('Command failed'), { code: 1 }), '', '');
+        }
+      },
+    );
 
     await discoverGlobalNpmPlugins();
-    const firstCallCount = mockedSpawnSync.mock.calls.length;
+    const firstCallCount = mockedExecFile.mock.calls.length;
 
     await discoverGlobalNpmPlugins();
-    // Second call should not invoke spawnSync again due to caching
-    expect(mockedSpawnSync.mock.calls.length).toBe(firstCallCount);
+    // Second call should not invoke execFile again due to caching
+    expect(mockedExecFile.mock.calls.length).toBe(firstCallCount);
   });
 });

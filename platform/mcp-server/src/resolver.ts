@@ -11,7 +11,7 @@
 
 import { log } from './logger.js';
 import { ok, err, PLUGIN_PREFIX, platformExec, toErrorMessage } from '@opentabs-dev/shared';
-import { spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
@@ -152,7 +152,7 @@ const setCachedGlobalPaths = (paths: string[] | null): void => {
  * Results are cached on globalThis so the shell command runs at most once
  * per process lifetime.
  */
-const getGlobalNodeModulesPaths = (): string[] => {
+const getGlobalNodeModulesPaths = async (): Promise<string[]> => {
   const cached = getCachedGlobalPaths();
   if (cached !== null) return cached;
 
@@ -160,11 +160,15 @@ const getGlobalNodeModulesPaths = (): string[] => {
 
   // npm global node_modules
   try {
-    const result = spawnSync(platformExec('npm'), ['root', '-g'], { stdio: ['ignore', 'pipe', 'pipe'] });
-    if (!result.error && result.status === 0) {
-      const npmPath = result.stdout.toString().trim();
-      if (npmPath.length > 0) paths.push(npmPath);
-    }
+    const npmPath = await new Promise<string>((resolve, reject) => {
+      execFile(platformExec('npm'), ['root', '-g'], (err, stdout) => {
+        // ExecFileException is an intersection type that doesn't satisfy the Error
+        // assignability check statically, but it IS an Error instance at runtime.
+        if (err) reject(err as Error);
+        else resolve(stdout.trim());
+      });
+    });
+    if (npmPath.length > 0) paths.push(npmPath);
   } catch (e) {
     log.debug(`npm root -g failed: ${toErrorMessage(e)}`);
   }
@@ -263,7 +267,7 @@ const discoverGlobalNpmPlugins = async (): Promise<{ dirs: string[]; errors: str
     return { dirs: [], errors: [] };
   }
 
-  const globalPaths = getGlobalNodeModulesPaths();
+  const globalPaths = await getGlobalNodeModulesPaths();
   const errors: string[] = [];
 
   if (globalPaths.length === 0) {

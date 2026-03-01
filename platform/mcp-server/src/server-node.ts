@@ -65,10 +65,13 @@ const sendResponse = (webResponse: Response, res: ServerResponse): void => {
   nodeStream.pipe(res);
   nodeStream.on('error', err => {
     log.warn('Response stream error:', err);
+    nodeStream.destroy();
     if (!res.headersSent) {
       res.writeHead(500);
+      res.end();
+    } else {
+      res.destroy();
     }
-    res.end();
   });
   res.on('close', () => nodeStream.destroy());
 };

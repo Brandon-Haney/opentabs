@@ -3,7 +3,36 @@
 // require Chrome 141+. On older versions (114–140), the toggle-to-close behavior
 // is unavailable and the action click always opens the side panel.
 
+import { SIDE_PANEL_OPEN_WINDOWS_KEY } from './constants.js';
+
 const openWindows = new Set<number>();
+
+/** Persist openWindows to chrome.storage.session (best-effort) */
+const persistOpenWindows = (): void => {
+  chrome.storage.session.set({ [SIDE_PANEL_OPEN_WINDOWS_KEY]: Array.from(openWindows) }).catch(() => {});
+};
+
+/**
+ * Restore openWindows from chrome.storage.session on service worker wake.
+ * Follows the same pattern as restoreWsConnectedState in background-message-handlers.ts.
+ */
+const restoreOpenWindows = (): void => {
+  chrome.storage.session
+    .get(SIDE_PANEL_OPEN_WINDOWS_KEY)
+    .then(data => {
+      const stored = data[SIDE_PANEL_OPEN_WINDOWS_KEY];
+      if (Array.isArray(stored)) {
+        for (const id of stored) {
+          if (typeof id === 'number') {
+            openWindows.add(id);
+          }
+        }
+      }
+    })
+    .catch(() => {
+      // storage.session may not be available in all contexts
+    });
+};
 
 /** Initialize side panel toggle behavior and register Chrome event listeners */
 export const initSidePanelToggle = (): void => {
@@ -16,16 +45,23 @@ export const initSidePanelToggle = (): void => {
   const canToggle = 'onOpened' in chrome.sidePanel;
 
   if (canToggle) {
+    // Restore persisted open-window state so the toggle works correctly after
+    // the MV3 service worker suspends and wakes (module state is wiped on wake).
+    restoreOpenWindows();
+
     chrome.sidePanel.onOpened.addListener(({ windowId }) => {
       openWindows.add(windowId);
+      persistOpenWindows();
     });
 
     chrome.sidePanel.onClosed.addListener(({ windowId }) => {
       openWindows.delete(windowId);
+      persistOpenWindows();
     });
 
     chrome.windows.onRemoved.addListener(windowId => {
       openWindows.delete(windowId);
+      persistOpenWindows();
     });
   }
 
@@ -38,6 +74,7 @@ export const initSidePanelToggle = (): void => {
           await chrome.windows.get(windowId);
         } catch {
           openWindows.delete(windowId);
+          persistOpenWindows();
           await chrome.sidePanel.open({ windowId }).catch(() => {});
           return;
         }

@@ -57,7 +57,7 @@ const PluginMenu = ({ plugin, onUpdate, onRemove, updating, removing, className 
               Update to v{plugin.update.latestVersion}
             </Menu.Item>
           )}
-          {plugin.update && <div className="bg-border mx-1 my-1 h-px" />}
+          {plugin.update && <Menu.Separator />}
           <Menu.Item
             onClick={handleUninstallClick}
             className="text-destructive hover:text-destructive data-[highlighted]:text-destructive flex items-center gap-2">

@@ -56,5 +56,23 @@ const Disabled: Story = {
   ),
 };
 
+const WithSeparator: Story = {
+  render: () => (
+    <Menu>
+      <Menu.Trigger asChild>
+        <Button size="sm">Open Menu</Button>
+      </Menu.Trigger>
+      <Menu.Content>
+        <Menu.Item>Edit</Menu.Item>
+        <Menu.Item>Duplicate</Menu.Item>
+        <Menu.Separator />
+        <Menu.Item className="text-destructive hover:text-destructive data-[highlighted]:text-destructive">
+          Delete
+        </Menu.Item>
+      </Menu.Content>
+    </Menu>
+  ),
+};
+
 export default meta;
-export { Default, TopAligned, Disabled };
+export { Default, Disabled, TopAligned, WithSeparator };

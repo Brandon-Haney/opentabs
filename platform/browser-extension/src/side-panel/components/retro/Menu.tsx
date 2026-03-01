@@ -36,10 +36,19 @@ const MenuItem = React.forwardRef<
 ));
 MenuItem.displayName = DropdownMenuPrimitive.Item.displayName;
 
+const MenuSeparator = React.forwardRef<
+  React.ComponentRef<typeof DropdownMenuPrimitive.Separator>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Separator>
+>(({ className, ...props }, ref) => (
+  <DropdownMenuPrimitive.Separator ref={ref} className={cn('bg-border -mx-1 my-1 h-px', className)} {...props} />
+));
+MenuSeparator.displayName = DropdownMenuPrimitive.Separator.displayName;
+
 const MenuObject = Object.assign(Menu, {
   Trigger: MenuTrigger,
   Content: MenuContent,
   Item: MenuItem,
+  Separator: MenuSeparator,
 });
 
 export { MenuObject as Menu };

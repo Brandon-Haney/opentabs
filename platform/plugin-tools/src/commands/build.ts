@@ -1030,9 +1030,9 @@ const runBuild = async (projectDir: string): Promise<void> => {
   }
 
   // Step 2: Dynamically import the plugin module (cache-bust for watch mode rebuilds)
-  // Monotonically increasing key ensures each rebuild gets a unique URL, preventing Node.js
-  // from returning stale cached modules on the 3rd+ rebuild.
-  pluginCacheKey++;
+  // Alternates between 0 and 1 so the ESM module cache holds at most 2 entries for the
+  // plugin entry point, preventing Node.js from returning stale cached modules on rebuild.
+  pluginCacheKey = 1 - pluginCacheKey;
   console.log(pc.dim('Loading plugin module...'));
   const mod = (await import(`${entryPoint}?t=${String(pluginCacheKey)}`)) as { default?: OpenTabsPlugin };
   const defaultExport = mod.default;

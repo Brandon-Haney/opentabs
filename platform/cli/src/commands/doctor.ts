@@ -90,8 +90,15 @@ const checkServerHealth = async (
       };
     }
     const data = (await res.json()) as Record<string, unknown>;
-    const version = typeof data.version === 'string' ? data.version : 'unknown';
-    return { result: pass('MCP server', `running (v${version}) on port ${port}`), data };
+    if (typeof data.version !== 'string' || typeof data.toolCount !== 'number') {
+      const portSuffix = port !== 9515 ? ` --port ${port}` : '';
+      const hint = `Start it with: opentabs start${portSuffix}`;
+      return {
+        result: warn('MCP server', `another service is running on port ${port} (not OpenTabs)`, hint),
+        data: null,
+      };
+    }
+    return { result: pass('MCP server', `running (v${data.version}) on port ${port}`), data };
   } catch {
     const portSuffix = port !== 9515 ? ` --port ${port}` : '';
     const hint = `Start it with: opentabs start${portSuffix}`;

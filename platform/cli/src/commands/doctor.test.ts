@@ -114,7 +114,7 @@ describe('checkServerHealth', () => {
     const server = await createTestServer((req, res) => {
       receivedAuth = req.headers['authorization'] ?? '';
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', version: '1.0.0' }));
+      res.end(JSON.stringify({ status: 'ok', version: '1.0.0', toolCount: 5 }));
     });
     const port = server.port;
     try {
@@ -131,7 +131,7 @@ describe('checkServerHealth', () => {
     const server = await createTestServer((req, res) => {
       receivedAuth = req.headers['authorization'];
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', version: '1.0.0' }));
+      res.end(JSON.stringify({ status: 'ok', version: '1.0.0', toolCount: 5 }));
     });
     const port = server.port;
     try {
@@ -148,7 +148,7 @@ describe('checkServerHealth', () => {
     const server = await createTestServer((req, res) => {
       receivedAuth = req.headers['authorization'];
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', version: '1.0.0' }));
+      res.end(JSON.stringify({ status: 'ok', version: '1.0.0', toolCount: 5 }));
     });
     const port = server.port;
     try {
@@ -188,14 +188,65 @@ describe('checkServerHealth', () => {
   test('returns health data on success', async () => {
     const server = await createTestServer((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', version: '2.0.0', extensionConnected: true }));
+      res.end(JSON.stringify({ status: 'ok', version: '2.0.0', toolCount: 3, extensionConnected: true }));
     });
     const port = server.port;
     try {
       const { result, data } = await checkServerHealth(port);
       expect(result.ok).toBe(true);
       expect(result.detail).toContain('v2.0.0');
-      expect(data).toEqual({ status: 'ok', version: '2.0.0', extensionConnected: true });
+      expect(data).toEqual({ status: 'ok', version: '2.0.0', toolCount: 3, extensionConnected: true });
+    } finally {
+      await server.close();
+    }
+  });
+
+  test('returns warn when server responds with non-OpenTabs JSON (missing version and toolCount)', async () => {
+    const server = await createTestServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok' }));
+    });
+    const port = server.port;
+    try {
+      const { result, data } = await checkServerHealth(port);
+      expect(result.ok).toBe(false);
+      expect(result.fatal).toBe(false);
+      expect(result.detail).toContain('not OpenTabs');
+      expect(data).toBeNull();
+    } finally {
+      await server.close();
+    }
+  });
+
+  test('returns warn when server responds with missing toolCount', async () => {
+    const server = await createTestServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', version: '1.0.0' }));
+    });
+    const port = server.port;
+    try {
+      const { result, data } = await checkServerHealth(port);
+      expect(result.ok).toBe(false);
+      expect(result.fatal).toBe(false);
+      expect(result.detail).toContain('not OpenTabs');
+      expect(data).toBeNull();
+    } finally {
+      await server.close();
+    }
+  });
+
+  test('returns warn when server responds with missing version', async () => {
+    const server = await createTestServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', toolCount: 5 }));
+    });
+    const port = server.port;
+    try {
+      const { result, data } = await checkServerHealth(port);
+      expect(result.ok).toBe(false);
+      expect(result.fatal).toBe(false);
+      expect(result.detail).toContain('not OpenTabs');
+      expect(data).toBeNull();
     } finally {
       await server.close();
     }

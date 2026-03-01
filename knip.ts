@@ -44,8 +44,6 @@ const config: KnipConfig = {
       ignoreDependencies: [
         // CSS-only dependency imported via @import in styles.css (knip cannot trace CSS imports)
         'tw-animate-css',
-        // Vite plugin used in .storybook/main.ts via dynamic import (knip cannot trace dynamic imports)
-        '@vitejs/plugin-react',
       ],
     },
     'platform/create-plugin': {},

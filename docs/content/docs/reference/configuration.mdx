@@ -52,7 +52,7 @@ Override the config directory with the `OPENTABS_CONFIG_DIR` environment variabl
       <Table.Cell className="font-medium">`port`</Table.Cell>
       <Table.Cell className="*:text-xs">`number`</Table.Cell>
       <Table.Cell className="*:text-xs">`9515`</Table.Cell>
-      <Table.Cell>MCP server port, persisted by `opentabs config set port`. Used by CLI commands (`status`, `audit`, `logs`) to know which port to connect to.</Table.Cell>
+      <Table.Cell>CLI-side port setting, persisted by `opentabs config set port`. Used as a fallback by CLI commands when neither `--port` nor `OPENTABS_PORT` is set. The MCP server itself reads its port from the `PORT` environment variable, set by `opentabs start`.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`skipConfirmation`</Table.Cell>

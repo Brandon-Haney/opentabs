@@ -96,7 +96,7 @@ const handleStop = async (options: StopOptions): Promise<void> => {
       const data = (await res.json()) as Record<string, unknown>;
       if (typeof data.status === 'string' && typeof data.version === 'string') {
         console.log(
-          `Server is running but was not started with --background.\n  - If running in a terminal: press Ctrl+C\n  - Otherwise: find the process with \`lsof -i :${port}\` and kill it`,
+          `Server is running but was not started with --background.\n  - If running in a terminal: press Ctrl+C\n  - Otherwise (macOS): kill $(lsof -ti :${port})\n  - Otherwise (Linux):  fuser -k ${port}/tcp\n  - Tip: use opentabs start --background next time to enable opentabs stop`,
         );
         return;
       }

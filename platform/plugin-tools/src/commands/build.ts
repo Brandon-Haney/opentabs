@@ -203,7 +203,11 @@ const registerInConfig = async (projectDir: string): Promise<boolean> => {
       return false;
     }
 
-    if (!Array.isArray(config.localPlugins)) config.localPlugins = [];
+    if (!Array.isArray(config.localPlugins)) {
+      config.localPlugins = [];
+    } else {
+      config.localPlugins = (config.localPlugins as unknown[]).filter((p): p is string => typeof p === 'string');
+    }
     const plugins = config.localPlugins as string[];
 
     const absolutePath = resolve(projectDir);

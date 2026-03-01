@@ -10,12 +10,12 @@ export const CodeBlock = ({
   className,
   children,
   'data-language': language,
-  'data-nocopy': nocopy,
+  'data-copy': forceCopy,
   ...props
-}: HTMLAttributes<HTMLPreElement> & { 'data-language'?: string; 'data-nocopy'?: string }) => {
+}: HTMLAttributes<HTMLPreElement> & { 'data-language'?: string; 'data-copy'?: string }) => {
   const [hasCopied, setHasCopied] = useState(false);
   const preRef = useRef<HTMLPreElement>(null);
-  const showCopy = nocopy === undefined;
+  const showCopy = (language !== undefined && language !== '') || forceCopy !== undefined;
 
   const handleClickCopy = () => {
     const code = preRef.current?.textContent;

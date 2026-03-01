@@ -1057,7 +1057,7 @@ const runBuild = async (projectDir: string): Promise<void> => {
     if (!ready) {
       console.warn(
         pc.yellow(
-          'Warning: isReady() returned false. The plugin will report as "unavailable" until isReady() is implemented.',
+          'Warning: isReady() returned false — the plugin will report as "unavailable" in the browser. Update isReady() with a real authentication check (e.g., check for session cookies, a DOM element, or a page global).',
         ),
       );
     }

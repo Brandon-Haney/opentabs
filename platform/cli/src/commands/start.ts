@@ -149,7 +149,7 @@ const printFirstTimeInstructions = (extensionDest: string, port: number, secret:
   console.log('');
   console.log('  2. Configure your MCP client:');
   console.log('');
-  printMcpClientConfigs(mcpUrl, secret, true);
+  printMcpClientConfigs(mcpUrl, secret, false);
 };
 
 const indent = (json: string, prefix: string): string =>

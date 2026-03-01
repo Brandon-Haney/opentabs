@@ -508,7 +508,7 @@ const createItem = defineTool({
   },
 });
 
-export default class TrackerPlugin extends OpenTabsPlugin {
+class TrackerPlugin extends OpenTabsPlugin {
   readonly name = 'tracker';
   readonly version = '1.0.0';
   override readonly displayName = 'Project Tracker';
@@ -522,6 +522,8 @@ export default class TrackerPlugin extends OpenTabsPlugin {
     return document.querySelector('.app-loaded') !== null;
   }
 }
+
+export default new TrackerPlugin();
 ```
 
 The AI agent can now:

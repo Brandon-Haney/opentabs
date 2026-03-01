@@ -24,7 +24,7 @@ import {
   readPluginToolNames,
   E2E_TEST_PLUGIN_DIR,
 } from './fixtures.js';
-import { waitForLog, waitForToolList, BROWSER_TOOL_NAMES } from './helpers.js';
+import { waitForLog, waitFor, waitForToolList, BROWSER_TOOL_NAMES } from './helpers.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -219,16 +219,28 @@ test.describe('Config watcher — auto-discovery', () => {
       // Wait for config watcher to be set up
       await waitForLog(server, 'Config watcher: Watching', 10_000);
 
-      // Trigger a hot reload (this restarts all file watchers including config watcher)
-      server.logs.length = 0;
+      // Trigger a hot reload (this restarts all file watchers including config watcher).
+      // Count existing occurrences first so we can detect NEW log lines rather than
+      // truncating the log array (truncation races with log lines arriving mid-reload).
+      const hotReloadCountBefore = server.logs.filter(l => l.includes('Hot reload complete')).length;
       server.triggerHotReload();
-      await waitForLog(server, 'Hot reload complete', 20_000);
+      await waitFor(
+        () => server.logs.filter(l => l.includes('Hot reload complete')).length > hotReloadCountBefore,
+        20_000,
+        200,
+        'Hot reload complete',
+      );
 
       // Verify config watcher was restarted after hot reload
-      await waitForLog(server, 'Config watcher: Watching', 10_000);
+      const watcherCountBefore = server.logs.filter(l => l.includes('Config watcher: Watching')).length;
+      await waitFor(
+        () => server.logs.filter(l => l.includes('Config watcher: Watching')).length > watcherCountBefore,
+        10_000,
+        200,
+        'Config watcher: Watching',
+      );
 
       // Now write a config.json change — the restarted config watcher should detect it
-      server.logs.length = 0;
       const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
       const prefixedToolNames = readPluginToolNames();
       const tools: Record<string, boolean> = {};

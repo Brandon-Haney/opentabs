@@ -12,6 +12,84 @@ vi.mock('../extension-protocol.js', () => ({
 const { exportHar } = await import('./export-har.js');
 const { createState } = await import('../state.js');
 
+describe('exportHar clear-after-fetch ordering', () => {
+  beforeEach(() => {
+    mockDispatchToExtension.mockReset();
+  });
+
+  test('HTTP request buffer is not cleared when WebSocket frame fetch fails', async () => {
+    const state = createState();
+    state.activeNetworkCaptures.add(10);
+
+    const request = { url: 'https://example.com', method: 'GET', timestamp: 1000 };
+    // First call: getNetworkRequests fetch (no clear) — succeeds
+    mockDispatchToExtension.mockResolvedValueOnce([request]);
+    // Second call: getWebSocketFrames fetch (no clear) — fails
+    mockDispatchToExtension.mockRejectedValueOnce(new Error('WebSocket fetch failed'));
+
+    await expect(exportHar.handler({ tabId: 10, clear: true, includeWebSocketFrames: true }, state)).rejects.toThrow(
+      'WebSocket fetch failed',
+    );
+
+    // Only two dispatches should have been made (the two fetches) — no clear dispatches
+    expect(mockDispatchToExtension).toHaveBeenCalledTimes(2);
+    expect(mockDispatchToExtension).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'browser.getNetworkRequests',
+      expect.objectContaining({ clear: true }),
+    );
+  });
+
+  test('both buffers are cleared after all fetches succeed when clear: true with WebSocket frames', async () => {
+    const state = createState();
+    state.activeNetworkCaptures.add(11);
+
+    const request = { url: 'https://example.com', method: 'GET', timestamp: 1000 };
+    mockDispatchToExtension.mockResolvedValueOnce([request]); // getNetworkRequests fetch
+    mockDispatchToExtension.mockResolvedValueOnce({ frames: [] }); // getWebSocketFrames fetch
+    mockDispatchToExtension.mockResolvedValueOnce([]); // getNetworkRequests clear
+    mockDispatchToExtension.mockResolvedValueOnce({ frames: [] }); // getWebSocketFrames clear
+
+    await exportHar.handler({ tabId: 11, clear: true, includeWebSocketFrames: true }, state);
+
+    expect(mockDispatchToExtension).toHaveBeenCalledTimes(4);
+    expect(mockDispatchToExtension).toHaveBeenNthCalledWith(1, expect.anything(), 'browser.getNetworkRequests', {
+      tabId: 11,
+    });
+    expect(mockDispatchToExtension).toHaveBeenNthCalledWith(2, expect.anything(), 'browser.getWebSocketFrames', {
+      tabId: 11,
+    });
+    expect(mockDispatchToExtension).toHaveBeenNthCalledWith(3, expect.anything(), 'browser.getNetworkRequests', {
+      tabId: 11,
+      clear: true,
+    });
+    expect(mockDispatchToExtension).toHaveBeenNthCalledWith(4, expect.anything(), 'browser.getWebSocketFrames', {
+      tabId: 11,
+      clear: true,
+    });
+  });
+
+  test('HTTP buffer is cleared after fetch succeeds when clear: true without WebSocket frames', async () => {
+    const state = createState();
+    state.activeNetworkCaptures.add(12);
+
+    const request = { url: 'https://example.com', method: 'GET', timestamp: 1000 };
+    mockDispatchToExtension.mockResolvedValueOnce([request]); // fetch without clear
+    mockDispatchToExtension.mockResolvedValueOnce([]); // clear
+
+    await exportHar.handler({ tabId: 12, clear: true }, state);
+
+    expect(mockDispatchToExtension).toHaveBeenCalledTimes(2);
+    expect(mockDispatchToExtension).toHaveBeenNthCalledWith(1, expect.anything(), 'browser.getNetworkRequests', {
+      tabId: 12,
+    });
+    expect(mockDispatchToExtension).toHaveBeenNthCalledWith(2, expect.anything(), 'browser.getNetworkRequests', {
+      tabId: 12,
+      clear: true,
+    });
+  });
+});
+
 describe('exportHar HAR body size fields', () => {
   beforeEach(() => {
     mockDispatchToExtension.mockReset();

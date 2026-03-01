@@ -196,9 +196,11 @@ const exportHar = defineBrowserTool({
       throw new Error(`Network capture is not active on tab ${args.tabId}. Call browser_enable_network_capture first.`);
     }
 
+    // Fetch without clearing first. If includeWebSocketFrames is true and the second
+    // fetch fails, the HTTP request data would already be lost if we cleared during the
+    // first fetch. Only issue the clear commands after all fetches succeed.
     const requestsRaw = (await dispatchToExtension(state, 'browser.getNetworkRequests', {
       tabId: args.tabId,
-      ...(args.clear !== undefined ? { clear: args.clear } : {}),
     })) as { requests: CapturedRequest[] } | CapturedRequest[];
     const requests = Array.isArray(requestsRaw)
       ? requestsRaw
@@ -209,7 +211,6 @@ const exportHar = defineBrowserTool({
     if (args.includeWebSocketFrames) {
       const framesRaw = (await dispatchToExtension(state, 'browser.getWebSocketFrames', {
         tabId: args.tabId,
-        ...(args.clear !== undefined ? { clear: args.clear } : {}),
       })) as { frames: CapturedWsFrame[] } | CapturedWsFrame[];
       const frames = Array.isArray(framesRaw)
         ? framesRaw
@@ -217,6 +218,14 @@ const exportHar = defineBrowserTool({
 
       const wsEntries = frames.map(wsFrameToHarEntry);
       entries.push(...wsEntries);
+    }
+
+    // All fetches succeeded — now clear the buffers if requested.
+    if (args.clear) {
+      await dispatchToExtension(state, 'browser.getNetworkRequests', { tabId: args.tabId, clear: true });
+      if (args.includeWebSocketFrames) {
+        await dispatchToExtension(state, 'browser.getWebSocketFrames', { tabId: args.tabId, clear: true });
+      }
     }
 
     // Sort all entries by startedDateTime for chronological order

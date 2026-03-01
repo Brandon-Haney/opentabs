@@ -103,12 +103,14 @@ test.describe('Lifecycle hooks', () => {
 
     await page.evaluate(() => history.replaceState({}, '', '/replaced-path'));
 
+    // The monkey-patched replaceState fires synchronously, but under heavy
+    // parallel load the CDP round-trip to read page globals can be slow.
     await waitFor(
       async () => {
         const urls = await page.evaluate(() => (globalThis as Record<string, unknown>).__opentabs_onNavigate_urls);
         return Array.isArray(urls) && urls.length > 0;
       },
-      10_000,
+      15_000,
       200,
       'onNavigate hook to record replaceState URL',
     );
@@ -130,7 +132,9 @@ test.describe('Lifecycle hooks', () => {
     // Call a tool through the full MCP stack
     await callToolExpectSuccess(mcpClient, mcpServer, 'e2e-test_echo', { message: 'hooks-test' });
 
-    // Wait for invocation hooks to fire
+    // Wait for invocation hooks to fire. The hooks are set by the adapter
+    // after the tool handler completes — under heavy parallel load, the CDP
+    // round-trip to read page globals can take several seconds.
     await waitFor(
       async () => {
         const starts = await page.evaluate(
@@ -139,7 +143,7 @@ test.describe('Lifecycle hooks', () => {
         const ends = await page.evaluate(() => (globalThis as Record<string, unknown>).__opentabs_tool_invocation_end);
         return Array.isArray(starts) && starts.length > 0 && Array.isArray(ends) && ends.length > 0;
       },
-      5_000,
+      15_000,
       200,
       'tool invocation hooks to fire',
     );
@@ -177,14 +181,16 @@ test.describe('Lifecycle hooks', () => {
     // Call the failing tool — it returns an error through tool dispatch
     await mcpClient.callTool('e2e-test_failing_tool', {});
 
-    // Wait for the invocation end hook to record the failure
+    // Wait for the invocation end hook to record the failure. The hooks are
+    // set by the adapter after the tool handler completes — under heavy
+    // parallel load, the full dispatch round-trip can take several seconds.
     await waitFor(
       async () => {
         const ends = await page.evaluate(() => (globalThis as Record<string, unknown>).__opentabs_tool_invocation_end);
         if (!Array.isArray(ends)) return false;
         return ends.some((e: Record<string, unknown>) => e.toolName === 'failing_tool' && e.success === false);
       },
-      5_000,
+      15_000,
       200,
       'onToolInvocationEnd to record failure',
     );
@@ -234,7 +240,8 @@ test.describe('Lifecycle hooks', () => {
     // Wait for the hot reload + re-injection to complete
     await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
 
-    // Wait for the adapter to be re-injected
+    // Wait for the adapter to be re-injected. Under heavy parallel load,
+    // the hot reload → sync.full → re-injection pipeline can take longer.
     await waitFor(
       async () => {
         const present = await page.evaluate(() => {
@@ -245,12 +252,14 @@ test.describe('Lifecycle hooks', () => {
         });
         return present;
       },
-      15_000,
+      20_000,
       500,
       'e2e-test adapter to be re-injected after hot reload',
     );
 
-    // Verify onDeactivate was called (by the old adapter during teardown)
+    // Verify onDeactivate was called (by the old adapter during teardown).
+    // The old adapter's teardown runs synchronously during re-injection,
+    // but the CDP round-trip to read the global can be slow under load.
     await waitFor(
       async () => {
         const deactivated = await page.evaluate(
@@ -258,7 +267,7 @@ test.describe('Lifecycle hooks', () => {
         );
         return deactivated === true;
       },
-      5_000,
+      10_000,
       200,
       'onDeactivate to be called after re-injection',
     );

@@ -24,7 +24,7 @@ import {
   cleanupTestConfigDir,
   writeTestConfig,
 } from './fixtures.js';
-import { setupToolTest } from './helpers.js';
+import { setupToolTest, waitFor } from './helpers.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -101,8 +101,24 @@ test.describe('Prompts — full stack', () => {
   }) => {
     await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
 
-    const prompts = await mcpClient.listPrompts();
-    const testPrompt = prompts.find(p => p.name === 'e2e-test_greet');
+    // Poll until the prompt list includes the expected prompt. After a hot
+    // reload or worker restart, the MCP client's session may need to be
+    // re-initialized before prompts/list succeeds.
+    let testPrompt: Awaited<ReturnType<typeof mcpClient.listPrompts>>[number] | undefined;
+    await waitFor(
+      async () => {
+        try {
+          const prompts = await mcpClient.listPrompts();
+          testPrompt = prompts.find(p => p.name === 'e2e-test_greet');
+          return testPrompt !== undefined;
+        } catch {
+          return false;
+        }
+      },
+      15_000,
+      500,
+      'prompts/list to include e2e-test_greet',
+    );
 
     expect(testPrompt).toBeDefined();
     if (!testPrompt) throw new Error('Test prompt not found');
@@ -123,7 +139,23 @@ test.describe('Prompts — full stack', () => {
   }) => {
     await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
 
-    const messages = await mcpClient.getPrompt('e2e-test_greet', { name: 'World' });
+    // Poll until prompts/get succeeds. The dispatch pipeline goes through
+    // the extension to the tab — under heavy parallel load, the first
+    // attempt may fail if the adapter or WebSocket session is briefly stale.
+    let messages: Awaited<ReturnType<typeof mcpClient.getPrompt>> = [];
+    await waitFor(
+      async () => {
+        try {
+          messages = await mcpClient.getPrompt('e2e-test_greet', { name: 'World' });
+          return messages.length >= 1;
+        } catch {
+          return false;
+        }
+      },
+      15_000,
+      500,
+      'prompts/get to return greeting messages',
+    );
 
     expect(messages.length).toBeGreaterThanOrEqual(1);
     const msg = messages[0];

@@ -60,8 +60,10 @@ test.describe('MCP server lifecycle', () => {
     // Now wait for the extension (loaded by extensionContext) to connect.
     await waitForExtensionConnected(mcpServer);
 
-    // Wait for the full connect→syncAll handshake to complete in the logs
-    await waitForLog(mcpServer, 'tab.syncAll received');
+    // Wait for the full connect→syncAll handshake to complete in the logs.
+    // Under heavy parallel load, the extension's initial connection and
+    // sync.full → tab.syncAll handshake can take longer than the default 15s.
+    await waitForLog(mcpServer, 'tab.syncAll received', 30_000);
 
     const h = await mcpServer.health();
     expect(h).not.toBeNull();

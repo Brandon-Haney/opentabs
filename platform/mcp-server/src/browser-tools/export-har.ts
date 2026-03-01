@@ -221,10 +221,31 @@ const exportHar = defineBrowserTool({
     }
 
     // All fetches succeeded — now clear the buffers if requested.
+    // The clearing fetch returns the complete buffer (initial entries plus any new entries
+    // that arrived between the first fetch and now), so we replace the initial results
+    // with the clearing fetch's response to avoid losing those in-flight requests.
     if (args.clear) {
-      await dispatchToExtension(state, 'browser.getNetworkRequests', { tabId: args.tabId, clear: true });
+      const clearRequestsRaw = (await dispatchToExtension(state, 'browser.getNetworkRequests', {
+        tabId: args.tabId,
+        clear: true,
+      })) as { requests: CapturedRequest[] } | CapturedRequest[];
+      const clearRequests = Array.isArray(clearRequestsRaw)
+        ? clearRequestsRaw
+        : ((clearRequestsRaw as { requests?: CapturedRequest[] }).requests ?? []);
+
+      entries.length = 0;
+      entries.push(...clearRequests.map(requestToHarEntry));
+
       if (args.includeWebSocketFrames) {
-        await dispatchToExtension(state, 'browser.getWebSocketFrames', { tabId: args.tabId, clear: true });
+        const clearFramesRaw = (await dispatchToExtension(state, 'browser.getWebSocketFrames', {
+          tabId: args.tabId,
+          clear: true,
+        })) as { frames: CapturedWsFrame[] } | CapturedWsFrame[];
+        const clearFrames = Array.isArray(clearFramesRaw)
+          ? clearFramesRaw
+          : ((clearFramesRaw as { frames?: CapturedWsFrame[] }).frames ?? []);
+
+        entries.push(...clearFrames.map(wsFrameToHarEntry));
       }
     }
 

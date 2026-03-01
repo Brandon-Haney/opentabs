@@ -135,6 +135,9 @@ const channelList = defineResource({
 
   async read(): Promise<ResourceContent> {
     const data = await fetchJSON<{ channels: { id: string; name: string }[] }>('/api/channels');
+    if (!data) {
+      return { uri: 'myapp://channels', text: '[]', mimeType: 'application/json' };
+    }
     return { uri: 'myapp://channels', text: JSON.stringify(data), mimeType: 'application/json' };
   },
 });
@@ -346,6 +349,9 @@ const statusReport = definePrompt({
   async render(args) {
     // args is typed as { project: string; format: 'brief' | 'detailed' }
     const data = await fetchJSON<{ items: { title: string; status: string }[] }>('/api/items');
+    if (!data) {
+      throw new Error('Failed to load items');
+    }
     const summary = data.items.map(item => `- [${item.status}] ${item.title}`).join('\n');
 
     return [
@@ -435,6 +441,9 @@ const itemList = defineResource({
     const data = await fetchJSON<{ items: { id: string; title: string; status: string }[] }>(
       '/api/items'
     );
+    if (!data) {
+      return { uri: 'tracker://items', text: '[]', mimeType: 'application/json' };
+    }
     return {
       uri: 'tracker://items',
       text: JSON.stringify(data.items),
@@ -454,6 +463,9 @@ const statusReport = definePrompt({
     const data = await fetchJSON<{ items: { title: string; status: string }[] }>(
       '/api/items'
     );
+    if (!data) {
+      throw ToolError.internal('Failed to load items');
+    }
     const summary = data.items
       .map(item => `- [${item.status}] ${item.title}`)
       .join('\n');
@@ -488,6 +500,9 @@ const createItem = defineTool({
       '/api/items',
       { method: 'POST', body: JSON.stringify(params) }
     );
+    if (!item) {
+      throw ToolError.internal('Failed to create item');
+    }
     log.info('Created item', { id: item.id, title: item.title });
     return item;
   },

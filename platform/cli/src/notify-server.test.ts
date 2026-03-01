@@ -137,6 +137,18 @@ describe('notifyServer', () => {
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Server notified.'));
   });
 
+  test('logs custom successMessage instead of "Server notified." when successMessage is provided', async () => {
+    fetchMock.mockResolvedValueOnce(opentabsHealthResponse());
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 200 }));
+
+    await notifyServer({ successMessage: 'Server running on port 9515. Restart to apply port change.' });
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Server running on port 9515. Restart to apply port change.'),
+    );
+    expect(consoleSpy).not.toHaveBeenCalledWith(expect.stringContaining('Server notified.'));
+  });
+
   test('logs failure message when /reload returns non-ok status', async () => {
     fetchMock.mockResolvedValueOnce(opentabsHealthResponse());
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 401 }));

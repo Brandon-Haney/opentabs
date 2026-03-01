@@ -12,6 +12,8 @@ interface NotifyOptions {
   port?: number;
   /** When true, prints a dim hint when the server is not running. */
   warnIfNotRunning?: boolean;
+  /** Custom message to print when the server is successfully reached. Defaults to 'Server notified.' */
+  successMessage?: string;
 }
 
 /**
@@ -51,7 +53,7 @@ const notifyServer = async (options: NotifyOptions): Promise<void> => {
     });
 
     if (res.ok) {
-      console.log(pc.dim('Server notified.'));
+      console.log(options.successMessage ?? pc.dim('Server notified.'));
     } else {
       console.log(pc.dim(`Could not notify server (HTTP ${res.status}). Restart the server to pick up changes.`));
     }

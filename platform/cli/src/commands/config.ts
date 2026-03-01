@@ -461,6 +461,8 @@ const handleSetPort = async (value: string, options: { port?: number }): Promise
   }
 
   const { config, configPath } = await loadConfig();
+  const oldPort = typeof config.port === 'number' ? config.port : DEFAULT_PORT;
+
   if (newPort === DEFAULT_PORT) {
     delete config.port;
   } else {
@@ -469,8 +471,19 @@ const handleSetPort = async (value: string, options: { port?: number }): Promise
 
   await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
   console.log(`port: ${pc.cyan(String(newPort))}`);
-  console.log(pc.yellow('Restart the MCP server for the port change to take effect.'));
-  await notifyServer({ port: options.port, warnIfNotRunning: true });
+
+  if (newPort !== oldPort) {
+    // Port is changing: notify the server on the old (currently running) port.
+    // If reached, show a restart reminder mentioning the old port.
+    await notifyServer({
+      port: options.port ?? oldPort,
+      warnIfNotRunning: true,
+      successMessage: pc.yellow(`Server running on port ${oldPort}. Restart to apply port change.`),
+    });
+  } else {
+    console.log(pc.yellow('Restart the MCP server for the port change to take effect.'));
+    await notifyServer({ port: options.port, warnIfNotRunning: true });
+  }
 };
 
 /**

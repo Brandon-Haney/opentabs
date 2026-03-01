@@ -440,6 +440,37 @@ describe('performConfigReload', () => {
     expect(notifyCalled).toBeGreaterThanOrEqual(1);
   });
 
+  test('state fields are not mutated when rebuildCachedBrowserTools throws', async () => {
+    const pluginDir = createPluginDir(configDir, 'my-plugin');
+    writeConfig(configDir, [pluginDir]);
+
+    // Install a browser tool whose .input getter throws, simulating a schema build failure.
+    // rebuildCachedBrowserTools maps over state.browserTools and accesses bt.input for each.
+    const badBrowserTool: Record<string, unknown> = {
+      name: 'bad_tool',
+      description: 'bad',
+      handler: () => Promise.resolve([]),
+    };
+    Object.defineProperty(badBrowserTool, 'input', {
+      get() {
+        throw new Error('intentional schema build failure');
+      },
+      enumerable: true,
+    });
+    state.browserTools = [badBrowserTool as unknown as (typeof state.browserTools)[0]];
+
+    const initialRegistry = state.registry;
+    const initialToolConfig = state.toolConfig;
+
+    // performConfigReload catches the error from rebuildCachedBrowserTools and logs it.
+    // State must retain all previous values — no partial mutation should have occurred.
+    await performConfigReload(state, [], emptyTransports());
+
+    expect(state.registry).toBe(initialRegistry);
+    expect(state.registry.plugins.has('my-plugin')).toBe(false);
+    expect(state.toolConfig).toBe(initialToolConfig);
+  });
+
   test('concurrent config reloads both complete successfully', async () => {
     const transports = emptyTransports();
 

@@ -33,7 +33,7 @@ import { isCliSkipConfirmation } from './skip-confirmation.js';
 import { prefixedToolName } from './state.js';
 import { checkForUpdates } from './version-check.js';
 import type { McpServerInstance } from './mcp-setup.js';
-import type { ServerState } from './state.js';
+import type { CachedBrowserTool, ServerState } from './state.js';
 import type { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 
 /** Metadata from a completed reload, stored on HotState for the /health endpoint */
@@ -192,13 +192,22 @@ const reloadCore = async ({ state, sessionServers, transports }: ReloadCoreArgs)
     const configDir = getConfigDir();
     const { registry, errors } = await discoverPlugins(config.localPlugins, configDir);
 
-    state.registry = registry;
-    state.toolConfig = { ...config.tools };
-    state.browserToolPolicy = { ...config.browserToolPolicy };
-    state.pluginPaths = [...config.localPlugins];
-    state.discoveryErrors = errors;
-    state.permissions = config.permissions;
-    state.skipConfirmation = isCliSkipConfirmation() || config.skipConfirmation === true;
+    // Compute all new state values locally before touching state.
+    // This ensures an atomic swap: if any step throws, state retains its previous values.
+    const newRegistry = registry;
+    const newToolConfig = { ...config.tools };
+    const newBrowserToolPolicy = { ...config.browserToolPolicy };
+    const newPluginPaths = [...config.localPlugins];
+    const newDiscoveryErrors = errors;
+    const newPermissions = config.permissions;
+    const newSkipConfirmation = isCliSkipConfirmation() || config.skipConfirmation === true;
+
+    // Build the new cached browser tools on a staging object so a throw here
+    // does not partially update state. rebuildCachedBrowserTools only reads
+    // .browserTools and writes .cachedBrowserTools.
+    const stagingForCache = { browserTools: state.browserTools, cachedBrowserTools: [] as CachedBrowserTool[] };
+    rebuildCachedBrowserTools(stagingForCache as unknown as ServerState);
+    const newCachedBrowserTools = stagingForCache.cachedBrowserTools;
 
     if (errors.length > 0) {
       log.warn(`${errors.length} plugin(s) failed to load:`);
@@ -211,7 +220,17 @@ const reloadCore = async ({ state, sessionServers, transports }: ReloadCoreArgs)
       `Config loaded: ${config.localPlugins.length} local plugin path(s), ${Object.keys(config.tools).length} tool setting(s)`,
     );
 
-    rebuildCachedBrowserTools(state);
+    // All preparation succeeded — swap all state fields atomically.
+    state.registry = newRegistry;
+    state.toolConfig = newToolConfig;
+    state.browserToolPolicy = newBrowserToolPolicy;
+    state.pluginPaths = newPluginPaths;
+    state.discoveryErrors = newDiscoveryErrors;
+    state.permissions = newPermissions;
+    state.skipConfirmation = newSkipConfirmation;
+    state.cachedBrowserTools = newCachedBrowserTools;
+
+    // Prune stale entries against the updated registry.
     pruneStaleState(state);
   } catch (err) {
     log.error('Reload failed, keeping previous state:', err);

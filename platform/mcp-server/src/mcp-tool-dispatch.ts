@@ -319,8 +319,9 @@ const handlePluginToolCall = async (
   // Extract platform-injected tabId before validation — the plugin's own
   // schema doesn't know about tabId, so it must be stripped before Ajv runs
   // (otherwise plugins with additionalProperties: false would reject it).
-  const tabId = typeof args.tabId === 'number' ? args.tabId : undefined;
-  delete args.tabId;
+  // Use destructuring instead of delete to avoid mutating the caller's object.
+  const { tabId: rawTabId, ...pluginArgs } = args;
+  const tabId = typeof rawTabId === 'number' ? rawTabId : undefined;
 
   // Validate args against the tool's JSON Schema before dispatching.
   // The validator is pre-compiled at discovery time for performance.
@@ -344,7 +345,7 @@ const handlePluginToolCall = async (
   // microseconds; this guard catches the unexpected edge case.
   let valid: boolean;
   try {
-    valid = lookup.validate(args);
+    valid = lookup.validate(pluginArgs);
   } catch (err) {
     log.warn(`Schema validation threw for tool "${toolName}":`, err);
     return {
@@ -427,7 +428,7 @@ const handlePluginToolCall = async (
     const result = await dispatchToExtension(
       state,
       'tool.dispatch',
-      { plugin: pluginName, tool: toolBaseName, input: args, ...(tabId !== undefined && { tabId }) },
+      { plugin: pluginName, tool: toolBaseName, input: pluginArgs, ...(tabId !== undefined && { tabId }) },
       { label: `${pluginName}/${toolBaseName}`, progressToken, onProgress },
     );
     const rawOutput = (result as Record<string, unknown>).output ?? result;

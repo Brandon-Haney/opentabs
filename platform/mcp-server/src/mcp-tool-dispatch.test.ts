@@ -1133,10 +1133,32 @@ describe('handlePluginToolCall', () => {
       extra,
     );
 
-    // Non-numeric tabId is deleted from args before validation (delete is unconditional after extract)
-    // but the extract yields undefined, so tabId is not sent to extension
+    // Non-numeric tabId is excluded from pluginArgs via destructuring, so tabId is not sent to extension
     const dispatchCall = vi.mocked(dispatchToExtension).mock.calls[0];
     const dispatchParams = dispatchCall?.[2] as Record<string, unknown>;
     expect(dispatchParams).not.toHaveProperty('tabId');
+  });
+
+  test('original args object is not mutated', async () => {
+    vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
+    const state = createMockState();
+    const lookup = createMockLookup();
+    const extra = createMockExtra();
+
+    const originalArgs: Record<string, unknown> = { channel: '#general', tabId: 42 };
+
+    await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      originalArgs,
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+    );
+
+    // The caller's args object must not be modified — tabId should still be present
+    expect(originalArgs).toHaveProperty('tabId', 42);
+    expect(originalArgs).toHaveProperty('channel', '#general');
   });
 });

@@ -79,9 +79,16 @@ const resolveServerEntry = (): string => {
 };
 
 const isPortInUse = (port: number): Promise<boolean> =>
-  new Promise(resolve => {
+  new Promise<boolean>((resolve, reject) => {
     const server = net.createServer();
-    server.once('error', () => resolve(true));
+    server.once('error', (err: NodeJS.ErrnoException) => {
+      server.close();
+      if (err.code === 'EADDRINUSE') {
+        resolve(true);
+      } else {
+        reject(err);
+      }
+    });
     server.once('listening', () => {
       server.close(() => resolve(false));
     });
@@ -281,7 +288,20 @@ const handleStart = async (options: StartOptions): Promise<void> => {
     process.exit(0);
   }
 
-  if (await isPortInUse(port)) {
+  let portInUse: boolean;
+  try {
+    portInUse = await isPortInUse(port);
+  } catch (err: unknown) {
+    const errnoErr = err as NodeJS.ErrnoException;
+    if (errnoErr.code === 'EACCES') {
+      console.error(pc.red(`Error: Permission denied: port ${port} requires elevated privileges.`));
+    } else {
+      console.error(pc.red(`Error: Failed to check port ${port}: ${toErrorMessage(err)}`));
+    }
+    process.exit(1);
+  }
+
+  if (portInUse) {
     console.error(pc.red(`Error: Port ${port} is already in use.`));
     console.error(
       port === 9515

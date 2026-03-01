@@ -22,7 +22,7 @@ const config: Linter.Config[] = [
   // fixture API that triggers false positives from the hooks plugin.
   {
     files: ['**/*.tsx'],
-    ...fixupConfigRules(new FlatCompat().extends('plugin:react-hooks/recommended') as FixupConfigArray)[0],
+    ...fixupConfigRules(new FlatCompat().extends('plugin:react-hooks/recommended-latest') as FixupConfigArray)[0],
   },
   {
     files: ['**/*.{ts,tsx}'],

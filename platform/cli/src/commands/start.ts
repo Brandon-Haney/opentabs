@@ -380,7 +380,7 @@ const handleStart = async (options: StartOptions): Promise<void> => {
     }
 
     try {
-      await writeFile(getPidFilePath(), String(pid), { mode: 0o600 });
+      await writeFile(getPidFilePath(), JSON.stringify({ pid, port }), { mode: 0o600 });
     } catch (err) {
       console.error(pc.red(`Error: Failed to write PID file: ${toErrorMessage(err)}`));
       process.exit(1);

@@ -345,3 +345,88 @@ test.describe('Multi-tab targeting — readiness info', () => {
     await page.close();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Test 7: Targeted dispatch to unavailable (not-ready) tab
+// ---------------------------------------------------------------------------
+
+test.describe('Multi-tab targeting — targeted dispatch to unavailable tab', () => {
+  test('tool call with tabId targeting an unavailable tab returns -32002 error with no fallback', async ({
+    mcpServer,
+    testServer,
+    extensionContext,
+    mcpClient,
+  }) => {
+    test.slow();
+
+    // Open a matching tab and wait for ready
+    const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
+
+    // Get the tab's ID via plugin_list_tabs
+    const plugins = await waitForTabCount(mcpClient.callTool.bind(mcpClient), 1);
+    const entry = plugins[0];
+    if (!entry) throw new Error('Expected plugin entry in plugin_list_tabs response');
+    const tab = entry.tabs[0];
+    if (!tab) throw new Error('Expected at least one tab entry');
+    const targetTabId = tab.tabId;
+    expect(targetTabId).toBeGreaterThan(0);
+
+    // Toggle auth off — this makes isReady() return false
+    await testServer.setAuth(false);
+
+    // Reload the page to trigger adapter re-injection and readiness re-probe.
+    // After reload, the extension re-probes isReady() which calls /api/auth.check
+    // and gets { ok: false }, so the tab transitions to unavailable.
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(
+      () => {
+        const ot = (globalThis as Record<string, unknown>).__openTabs as
+          | { adapters?: Record<string, unknown> }
+          | undefined;
+        return ot?.adapters?.['e2e-test'] !== undefined;
+      },
+      { timeout: 10_000 },
+    );
+
+    // Wait for the tab state to become unavailable by polling plugin_list_tabs
+    await waitFor(
+      async () => {
+        const result = await mcpClient.callTool('plugin_list_tabs', { plugin: 'e2e-test' });
+        if (result.isError) return false;
+        const data = JSON.parse(result.content) as PluginTabsEntry[];
+        const e2eEntry = data[0];
+        if (!e2eEntry) return false;
+        const targetTab = e2eEntry.tabs.find(t => t.tabId === targetTabId);
+        return targetTab !== undefined && !targetTab.ready;
+      },
+      15_000,
+      500,
+      'tab to become unavailable (ready:false)',
+    );
+
+    // Reset invocations to get a clean baseline for verifying no fallback
+    await testServer.reset();
+    // Restore auth=false after reset (reset sets auth=true)
+    await testServer.setAuth(false);
+
+    // Call a plugin tool with the explicit tabId of the unavailable tab
+    const result = await mcpClient.callTool('e2e-test_echo', {
+      message: 'should-fail-unavailable',
+      tabId: targetTabId,
+    });
+
+    // Expect isError:true with content mentioning 'unavailable'
+    expect(result.isError).toBe(true);
+    expect(result.content.toLowerCase()).toContain('unavailable');
+
+    // Verify no fallback: the test server should have received zero echo
+    // invocations (only auth.check calls from isReady probes)
+    const invocations = await testServer.invocations();
+    const echoInvocations = invocations.filter(i => i.path === '/api/echo');
+    expect(echoInvocations.length).toBe(0);
+
+    // Clean up: restore auth
+    await testServer.setAuth(true);
+    await page.close();
+  });
+});

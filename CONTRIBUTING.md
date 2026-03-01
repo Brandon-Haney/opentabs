@@ -99,7 +99,7 @@ npm run check:everything   # everything above + E2E tests + docs checks + plugin
 | `npm run build:force`      | Full clean rebuild (non-incremental)                            |
 | `npm run build:docs`       | Build docs site                                                 |
 | `npm run build:plugins`    | Build all plugins (install + build each)                        |
-| `npm run type-check`       | TypeScript type checking (--noEmit, no file emission)           |
+| `npm run type-check`       | Incremental TypeScript compilation (tsc --build)                |
 | `npm run lint`             | ESLint                                                          |
 | `npm run format:check`     | Prettier formatting                                             |
 | `npm run knip`             | Unused exports and dependencies                                 |

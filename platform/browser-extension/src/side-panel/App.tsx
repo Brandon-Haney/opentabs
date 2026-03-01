@@ -46,6 +46,7 @@ const App = () => {
   const connectedRef = useRef(connected);
   const loadingRef = useRef(loading);
   const pluginsRef = useRef(plugins);
+  const [pluginsLoaded, setPluginsLoaded] = useState(false);
 
   useEffect(() => {
     connectedRef.current = connected;
@@ -53,11 +54,11 @@ const App = () => {
     pluginsRef.current = plugins;
   }, [connected, loading, plugins]);
 
-  const loadPlugins = useCallback(() => {
+  const loadPlugins = useCallback((): Promise<void> => {
     const now = Date.now();
-    if (now - lastFetchRef.current < 200) return;
+    if (now - lastFetchRef.current < 200) return Promise.resolve();
     lastFetchRef.current = now;
-    fetchConfigState()
+    return fetchConfigState()
       .then(result => {
         let updatedPlugins = result.plugins;
         if (pendingTabStates.current.size > 0) {
@@ -67,6 +68,7 @@ const App = () => {
           });
           pendingTabStates.current.clear();
         }
+        setPluginsLoaded(true);
         setPlugins(updatedPlugins);
         setFailedPlugins(result.failedPlugins);
         setActiveTools(prev => {
@@ -170,11 +172,11 @@ const App = () => {
 
   useEffect(() => {
     void getConnectionState()
-      .then(result => {
+      .then(async result => {
         setConnected(result.connected);
         setDisconnectReason(result.disconnectReason);
         if (result.connected) {
-          loadPlugins();
+          await loadPlugins();
         }
         setLoading(false);
       })
@@ -208,8 +210,10 @@ const App = () => {
         setConnected(isConnected);
         setDisconnectReason(isConnected ? undefined : message.data.disconnectReason);
         if (isConnected) {
-          loadPlugins();
+          // Keep stale plugin list visible while fresh data loads (prevents flash of empty state)
+          void loadPlugins();
         } else {
+          setPluginsLoaded(false);
           setPlugins([]);
           setFailedPlugins([]);
           setActiveTools(new Set());
@@ -230,7 +234,7 @@ const App = () => {
         }
 
         if (data.method === 'plugins.changed') {
-          loadPlugins();
+          void loadPlugins();
           sendResponse({ ok: true });
           return true;
         }
@@ -243,7 +247,7 @@ const App = () => {
       if (message.type === 'ws:message') {
         const wsData = message.data as Record<string, unknown> | undefined;
         if (wsData?.method === 'sync.full') {
-          loadPlugins();
+          void loadPlugins();
         }
         return false;
       }
@@ -279,6 +283,7 @@ const App = () => {
   const hasContent = plugins.length > 0 || failedPlugins.length > 0;
   const showPlugins = !loading && connected && (hasContent || !!searchQuery);
   const showSearchBar = connected && !loading;
+  const showNoPlugins = pluginsLoaded && !hasContent && !searchQuery;
 
   return (
     <Tooltip.Provider>
@@ -317,7 +322,7 @@ const App = () => {
             <LoadingState />
           ) : !connected ? (
             <DisconnectedState reason={disconnectReason} />
-          ) : !hasContent && !searchQuery ? (
+          ) : showNoPlugins ? (
             <NoPluginsState />
           ) : searchQuery ? (
             <SearchResults
@@ -335,7 +340,7 @@ const App = () => {
               onRemove={handleRemove}
               removingPlugins={removingPlugins}
             />
-          ) : (
+          ) : hasContent ? (
             <PluginList
               plugins={plugins}
               failedPlugins={failedPlugins}
@@ -346,7 +351,7 @@ const App = () => {
               onRemove={handleRemove}
               removingPlugins={removingPlugins}
             />
-          )}
+          ) : null}
         </main>
         <Footer />
       </div>

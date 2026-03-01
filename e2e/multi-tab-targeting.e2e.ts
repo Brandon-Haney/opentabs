@@ -11,7 +11,14 @@
  */
 
 import { test, expect } from './fixtures.js';
-import { openTestAppTab, parseToolResult, waitForToolResult, setupToolTest, waitFor } from './helpers.js';
+import {
+  openTestAppTab,
+  parseToolResult,
+  waitForToolResult,
+  setupToolTest,
+  waitFor,
+  callToolExpectSuccess,
+} from './helpers.js';
 
 /** Shape of plugin_list_tabs response entries. */
 interface PluginTabsEntry {
@@ -521,6 +528,138 @@ test.describe('Multi-tab targeting — mixed readiness', () => {
     }
 
     await page1.close();
+    await page2.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 9: Targeted dispatch to tab that closes mid-execution
+// ---------------------------------------------------------------------------
+
+test.describe('Multi-tab targeting — tab closes mid-execution', () => {
+  test('targeted dispatch to a tab that closes during execution returns clean error with no fallback', async ({
+    mcpServer,
+    testServer,
+    extensionContext,
+    mcpClient,
+  }) => {
+    test.slow();
+
+    // Open first tab and wait for ready
+    const page1 = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
+
+    // Open second tab
+    const page2 = await openTestAppTab(extensionContext, testServer.url, mcpServer, testServer);
+
+    // Wait for both tabs to be tracked
+    const plugins = await waitForTabCount(mcpClient.callTool.bind(mcpClient), 2);
+
+    const entry = plugins[0];
+    if (!entry) throw new Error('Expected plugin entry in plugin_list_tabs response');
+    expect(entry.tabs.length).toBe(2);
+
+    const firstTab = entry.tabs[0];
+    const secondTab = entry.tabs[1];
+    if (!firstTab || !secondTab) throw new Error('Expected two tab entries');
+
+    // Set unique markers on each page to identify which tabId maps to which page
+    await page1.evaluate(() => {
+      (globalThis as Record<string, unknown>).__tabMarker = 'page-one';
+    });
+    await page2.evaluate(() => {
+      (globalThis as Record<string, unknown>).__tabMarker = 'page-two';
+    });
+
+    // Identify which tabId maps to page1 vs page2
+    const marker1Result = await mcpClient.callTool('browser_execute_script', {
+      tabId: firstTab.tabId,
+      code: 'return globalThis.__tabMarker',
+    });
+    expect(marker1Result.isError).toBe(false);
+    const marker1Data = parseToolResult(marker1Result.content);
+    const marker1Nested = marker1Data.value as Record<string, unknown>;
+    const marker1Value = marker1Nested.value as string;
+
+    let pageOneTabId: number;
+    let pageTwoTabId: number;
+    if (marker1Value === 'page-one') {
+      pageOneTabId = firstTab.tabId;
+      pageTwoTabId = secondTab.tabId;
+    } else {
+      pageOneTabId = secondTab.tabId;
+      pageTwoTabId = firstTab.tabId;
+    }
+
+    // Verify tools work normally before adding the delay
+    const okOutput = await callToolExpectSuccess(mcpClient, mcpServer, 'e2e-test_echo', {
+      message: 'pre-close',
+    });
+    expect(okOutput.message).toBe('pre-close');
+
+    // Set test server delay to 10s — long enough to close the tab while the
+    // adapter is blocked in a fetch, short enough to be well under the 25s
+    // SCRIPT_TIMEOUT_MS.
+    await testServer.setSlow(10_000);
+
+    // Reset invocations to get a clean baseline for verifying no fallback
+    await testServer.reset();
+    // Restore slow mode after reset (reset clears it)
+    await testServer.setSlow(10_000);
+
+    // Fire the tool call targeting page1's tab — it will block in the adapter's
+    // fetch for 10s.
+    const start = Date.now();
+    const toolCallPromise = mcpClient.callTool('e2e-test_echo', {
+      message: 'should-fail-close',
+      tabId: pageOneTabId,
+    });
+
+    // Wait until the request actually reaches the test server before closing the tab
+    await waitFor(
+      async () => {
+        const invocations = await testServer.invocations();
+        return invocations.some(
+          i => i.path === '/api/echo' && (i.body as Record<string, unknown>).message === 'should-fail-close',
+        );
+      },
+      10_000,
+      200,
+      'echo request to reach test server',
+    );
+
+    // Close page1 — this causes chrome.scripting.executeScript to reject,
+    // triggering the catch block in tool-dispatch.ts that returns an error.
+    await page1.close();
+
+    // Await the tool call result — should be a clean error, not a 30s timeout
+    const result = await toolCallPromise;
+    const elapsed = Date.now() - start;
+
+    expect(result.isError).toBe(true);
+
+    // The error should come back quickly (well under the 25s script timeout)
+    expect(elapsed).toBeLessThan(15_000);
+
+    // Verify the other tab (page2) was NOT used as a fallback. Only one echo
+    // invocation should exist (the one sent to page1 that was interrupted).
+    const invocations = await testServer.invocations();
+    const echoInvocations = invocations.filter(
+      i => i.path === '/api/echo' && (i.body as Record<string, unknown>).message === 'should-fail-close',
+    );
+    expect(echoInvocations.length).toBe(1);
+
+    // Reset slow mode for clean teardown
+    await testServer.setSlow(0);
+
+    // Verify the second tab is still functional (no cross-contamination)
+    const page2Result = await mcpClient.callTool('e2e-test_echo', {
+      message: 'page2-still-works',
+      tabId: pageTwoTabId,
+    });
+    expect(page2Result.isError).toBe(false);
+    const page2Parsed = parseToolResult(page2Result.content);
+    expect(page2Parsed.message).toBe('page2-still-works');
+
     await page2.close();
   });
 });

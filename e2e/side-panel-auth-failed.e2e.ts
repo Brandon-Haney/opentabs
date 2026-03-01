@@ -33,21 +33,19 @@ test.describe('Side panel auth failed', () => {
       cleanupDir = extCleanupDir;
 
       try {
-        // Wait for the extension to attempt connection and fail.
-        // With a wrong secret, /ws-info returns 401 → auth_failed.
-        await new Promise(r => setTimeout(r, 3_000));
+        // Open the side panel and wait for "Authentication Failed" to appear.
+        // This is the polling wait — the side panel only shows this state after
+        // the extension has actually attempted /ws-info and received a 401
+        // rejection. Waiting here is both faster and more reliable than a
+        // fixed sleep.
+        const sidePanelPage = await openSidePanel(context);
+        await expect(sidePanelPage.getByText('Authentication Failed')).toBeVisible({ timeout: 15_000 });
 
-        // Verify the extension is NOT connected
+        // Verify the extension is NOT connected (meaningful now — auth rejection confirmed)
         const health = await server.health();
         expect(health).not.toBeNull();
         if (!health) throw new Error('health returned null');
         expect(health.extensionConnected).toBe(false);
-
-        // Open the side panel and verify the auth-failed state
-        const sidePanelPage = await openSidePanel(context);
-
-        // The side panel should show "Authentication Failed"
-        await expect(sidePanelPage.getByText('Authentication Failed')).toBeVisible({ timeout: 15_000 });
 
         // It should NOT show the other disconnect states
         await expect(sidePanelPage.getByText('Cannot Reach MCP Server')).not.toBeVisible();

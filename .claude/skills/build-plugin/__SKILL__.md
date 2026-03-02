@@ -476,12 +476,127 @@ npm run check        # build + type-check + lint + format:check
 
 ---
 
+## Token Persistence Pattern
+
+The adapter IIFE is re-executed when the Chrome extension reloads (e.g., during development, updates, or hot reload). Module-level variables like `let cachedAuth = null` are reset to their initial values on re-injection. If the host app has already deleted the token from localStorage by this point, the plugin becomes unavailable.
+
+**Solution**: Persist auth tokens to `globalThis.__openTabs.tokenCache.<pluginName>` which survives adapter re-injection (the page itself isn't reloaded, only the IIFE is re-executed).
+
+```typescript
+// Persist token to globalThis (survives adapter re-injection)
+const getPersistedToken = (): string | null => {
+  try {
+    const ns = (globalThis as Record<string, unknown>).__openTabs as Record<string, unknown> | undefined;
+    const cache = ns?.tokenCache as Record<string, string | undefined> | undefined;
+    return cache?.myPlugin ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const setPersistedToken = (token: string): void => {
+  try {
+    const ns = ((globalThis as Record<string, unknown>).__openTabs ??= {}) as Record<string, unknown>;
+    const cache = (ns.tokenCache ??= {}) as Record<string, string | undefined>;
+    cache.myPlugin = token;
+  } catch {}
+};
+
+const clearPersistedToken = (): void => {
+  try {
+    const ns = (globalThis as Record<string, unknown>).__openTabs as Record<string, unknown> | undefined;
+    const cache = ns?.tokenCache as Record<string, string | undefined> | undefined;
+    if (cache) cache.myPlugin = undefined;
+  } catch {}
+};
+
+// In getAuth():
+const getAuth = (): Auth | null => {
+  const persisted = getPersistedToken();
+  if (persisted) return { token: persisted };
+
+  const raw = readLocalStorage('token');
+  if (!raw) return null;
+  // ... parse token ...
+  setPersistedToken(token);
+  return { token };
+};
+```
+
+Always clear the persisted token on 401 responses to handle token rotation.
+
+---
+
+## Adapter Injection Timing
+
+Adapters are injected at **two points** during page load:
+
+1. **`status: 'loading'`** — before page JavaScript runs. The adapter IIFE registers on `globalThis.__openTabs` and can read localStorage/cookies before the host app modifies them.
+2. **`status: 'complete'`** — after page is fully loaded. The adapter is re-injected (idempotent) and `isReady()` is probed to determine tab state.
+
+This means:
+
+- `isReady()` may be called twice — once at loading time (when page globals don't exist yet) and once at complete time (when everything is ready). The polling pattern handles this naturally.
+- Auth tokens read from localStorage at loading time are available before the host app can delete them. Cache them immediately.
+
+---
+
+## Error Classification Best Practices
+
+**Parse the API response body for error codes before classifying by HTTP status.** Many web apps reuse HTTP status codes for different error types:
+
+```typescript
+// BAD: classify by HTTP status only
+if (response.status === 403) throw ToolError.auth('...'); // Wrong for permission errors!
+
+// GOOD: parse body first, fall back to HTTP status
+const errorBody = await response.text();
+let apiCode: number | undefined;
+try {
+  apiCode = (JSON.parse(errorBody) as { code?: number }).code;
+} catch {}
+
+if (apiCode !== undefined) {
+  if (VALIDATION_ERRORS.has(apiCode)) throw ToolError.validation('...');
+  if (NOT_FOUND_ERRORS.has(apiCode)) throw ToolError.notFound('...');
+  if (AUTH_ERRORS.has(apiCode)) throw ToolError.auth('...');
+}
+// Fall back to HTTP status
+if (response.status === 401 || response.status === 403) throw ToolError.auth('...');
+```
+
+---
+
+## Testing Checklist
+
+After implementing all tools, test these scenarios:
+
+1. **Fresh page load** — verify `isReady()` returns true and all tools work
+2. **Wait for host app initialization** — verify tools still work after the host app finishes its boot process (some apps delete localStorage, modify globals, etc.)
+3. **Extension reload** — reload the Chrome extension (`opentabs_extension_reload`), then verify the plugin stays ready and tools still work (tests globalThis token persistence)
+4. **Multiple extension reloads** — verify consistency across repeated re-injections
+5. **Full page reload** — verify the clean path works (fresh token from localStorage)
+6. **Error cases** — test with invalid IDs, missing permissions, rate limiting
+
+### Browser Tool Confirmations
+
+When using browser tools during testing (like `browser_navigate_tab`, `browser_execute_script`), these require **human approval** in the Chrome extension side panel. The confirmation dialog times out after 30 seconds. Plan for this:
+
+- Use `opentabs_plugin_list_tabs` (no confirmation needed) to check plugin state
+- Ask the user to watch the side panel when you need to call browser tools
+- If a tool times out with `CONFIRMATION_TIMEOUT`, ask the user to approve and retry
+
+---
+
 ## Common Gotchas
 
 1. **All plugin code runs in the browser** — no Node.js APIs, no filesystem, no server-side logic
 2. **SPAs hydrate asynchronously** — `isReady()` must poll, not just check once (500ms interval, 3-5s max wait)
 3. **Some apps delete browser APIs** — Discord deletes `window.localStorage`; use iframe fallback when `typeof window.localStorage === 'undefined'`
-4. **API responses may return arrays** — when the generic type expects `Record<string, unknown>` but the endpoint returns an array, use `Array.isArray(data) ? (data as T[]).map(...) : []`
-5. **Icons must be valid Lucide names** — TypeScript catches invalid ones at build time
-6. **Prettier formatting** — always run `npm run format` after writing code; the project's config may differ from your defaults
-7. **The `opentabs` field in `package.json`** is how the platform discovers plugin metadata — `displayName`, `description`, and `urlPatterns` must be there
+4. **Tokens must persist on globalThis** — module-level variables are reset when the extension reloads and re-injects the adapter. Use `globalThis.__openTabs.tokenCache.<pluginName>` instead.
+5. **API responses may return arrays** — when the generic type expects `Record<string, unknown>` but the endpoint returns an array, use `Array.isArray(data) ? (data as T[]).map(...) : []`
+6. **Parse error response bodies before HTTP status** — web apps reuse 403 for both auth and permission errors. The error code in the body distinguishes them.
+7. **Icons must be valid Lucide names** — TypeScript catches invalid ones at build time
+8. **Prettier formatting** — always run `npm run format` after writing code; the project's config may differ from your defaults
+9. **The `opentabs` field in `package.json`** is how the platform discovers plugin metadata — `displayName`, `description`, and `urlPatterns` must be there
+10. **Browser tools require human approval** — `browser_navigate_tab`, `browser_execute_script`, etc. show a confirmation dialog that times out in 30 seconds

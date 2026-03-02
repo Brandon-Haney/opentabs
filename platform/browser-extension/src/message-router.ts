@@ -281,7 +281,7 @@ const handleSyncFull = async (params: Record<string, unknown>): Promise<void> =>
   // Using allSettled so one failed injection does not block tab state sync.
   const injectionResults = await Promise.allSettled(
     metas.map(meta =>
-      injectPluginIntoMatchingTabs(meta.name, meta.urlPatterns, true, meta.version, meta.adapterHash, meta.adapterFile),
+      injectPluginIntoMatchingTabs(meta.name, meta.urlPatterns, true, meta.adapterHash, meta.adapterFile),
     ),
   );
   for (const result of injectionResults) {
@@ -311,14 +311,7 @@ const handlePluginUpdate = async (params: Record<string, unknown>): Promise<void
   // Force re-injection so the new IIFE overwrites the stale adapter code
   // already present in matching tabs. Without this, injectPluginIntoMatchingTabs
   // skips tabs where the adapter is already injected, leaving old code running.
-  await injectPluginIntoMatchingTabs(
-    meta.name,
-    meta.urlPatterns,
-    true,
-    meta.version,
-    meta.adapterHash,
-    meta.adapterFile,
-  );
+  await injectPluginIntoMatchingTabs(meta.name, meta.urlPatterns, true, meta.adapterHash, meta.adapterFile);
 
   // Report updated tab state to the server after re-injection so the MCP
   // server's tabMapping reflects the new adapter's readiness immediately.

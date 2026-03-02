@@ -30,39 +30,6 @@ const isAdapterPresent = async (tabId: number, pluginName: string): Promise<bool
   }
 };
 
-/**
- * Verify that the injected adapter reports the expected version.
- * Returns true if versions match, false on mismatch or failure.
- * Logs a warning on mismatch so the injection pipeline continues.
- */
-const verifyAdapterVersion = async (tabId: number, pluginName: string, expectedVersion: string): Promise<boolean> => {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'MAIN',
-      func: (pName: string) => {
-        const ot = (globalThis as Record<string, unknown>).__openTabs as
-          | { adapters?: Record<string, { version?: string }> }
-          | undefined;
-        return ot?.adapters?.[pName]?.version;
-      },
-      args: [pluginName],
-    });
-    const first = results[0] as { result?: unknown } | undefined;
-    const version = first?.result;
-    if (version !== expectedVersion) {
-      console.warn(
-        `[opentabs] Adapter version mismatch for ${pluginName}: expected ${expectedVersion}, got ${String(version)}`,
-      );
-      return false;
-    }
-    return true;
-  } catch {
-    console.warn(`[opentabs] Failed to verify adapter version for ${pluginName}`);
-    return false;
-  }
-};
-
 /** Read the adapter hash from the page for a given plugin. Returns undefined on failure. */
 const readAdapterHash = async (tabId: number, pluginName: string): Promise<string | undefined> => {
   try {
@@ -180,7 +147,6 @@ const injectLogRelay = async (tabId: number): Promise<void> => {
 const injectAdapterFile = async (
   tabId: number,
   pluginName: string,
-  version?: string,
   adapterHash?: string,
   adapterFilePath?: string,
 ): Promise<void> => {
@@ -199,10 +165,6 @@ const injectAdapterFile = async (
     throw new Error(`Failed to inject adapter file '${adapterFile}' into tab ${String(tabId)}: ${toErrorMessage(err)}`);
   }
 
-  if (version) {
-    await verifyAdapterVersion(tabId, pluginName, version);
-  }
-
   if (adapterHash) {
     const hashMatched = await verifyAdapterHash(tabId, pluginName, adapterHash);
     if (!hashMatched) {
@@ -218,9 +180,6 @@ const injectAdapterFile = async (
         throw new Error(
           `Failed to re-inject adapter file '${adapterFile}' into tab ${String(tabId)}: ${toErrorMessage(err)}`,
         );
-      }
-      if (version) {
-        await verifyAdapterVersion(tabId, pluginName, version);
       }
 
       const retryMatched = await verifyAdapterHash(tabId, pluginName, adapterHash);
@@ -320,7 +279,6 @@ const prepareForReinjection = async (tabId: number): Promise<void> => {
  * @param forceReinject - When `true`, re-inject even if the adapter is already
  *   present (used by plugin.update to overwrite stale adapter code). When `false`
  *   (default), tabs that already have the adapter are skipped.
- * @param version - Expected adapter version string for post-injection verification
  * @param adapterHash - Expected content hash for post-injection integrity check
  * @param adapterFile - Relative path to the content-hashed adapter file (e.g., "adapters/my-plugin-a1b2c3d4.js")
  * @returns Tab IDs where injection succeeded
@@ -329,7 +287,6 @@ const injectPluginIntoMatchingTabs = async (
   pluginName: string,
   urlPatterns: string[],
   forceReinject = false,
-  version?: string,
   adapterHash?: string,
   adapterFile?: string,
 ): Promise<number[]> => {
@@ -355,7 +312,7 @@ const injectPluginIntoMatchingTabs = async (
         await prepareForReinjection(tabId);
       }
 
-      await injectAdapterFile(tabId, pluginName, version, adapterHash, adapterFile);
+      await injectAdapterFile(tabId, pluginName, adapterHash, adapterFile);
       return tabId;
     }),
   );
@@ -409,7 +366,7 @@ const injectPluginsIntoTab = async (tabId: number, tabUrl: string): Promise<void
   await Promise.allSettled(
     needsInjection.map(async plugin => {
       try {
-        await injectAdapterFile(tabId, plugin.name, plugin.version, plugin.adapterHash, plugin.adapterFile);
+        await injectAdapterFile(tabId, plugin.name, plugin.adapterHash, plugin.adapterFile);
       } catch (err) {
         console.warn(`[opentabs] Injection failed for tab ${String(tabId)}, plugin ${plugin.name}:`, err);
       }
@@ -492,14 +449,7 @@ const reinjectStoredPlugins = async (): Promise<void> => {
 
   const results = await Promise.allSettled(
     plugins.map(plugin =>
-      injectPluginIntoMatchingTabs(
-        plugin.name,
-        plugin.urlPatterns,
-        false,
-        plugin.version,
-        plugin.adapterHash,
-        plugin.adapterFile,
-      ),
+      injectPluginIntoMatchingTabs(plugin.name, plugin.urlPatterns, false, plugin.adapterHash, plugin.adapterFile),
     ),
   );
   for (let i = 0; i < results.length; i++) {
@@ -518,5 +468,4 @@ export {
   isSafePluginName,
   queryMatchingTabIds,
   reinjectStoredPlugins,
-  verifyAdapterVersion,
 };

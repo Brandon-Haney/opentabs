@@ -40,8 +40,7 @@ const mockExecuteScript = vi.fn<(injection: unknown) => Promise<Array<{ result?:
 };
 
 // Import after mocking
-const { isSafePluginName, queryMatchingTabIds, verifyAdapterVersion, injectPluginIntoMatchingTabs } =
-  await import('./iife-injection.js');
+const { isSafePluginName, queryMatchingTabIds, injectPluginIntoMatchingTabs } = await import('./iife-injection.js');
 
 // ---------------------------------------------------------------------------
 // isSafePluginName
@@ -151,51 +150,6 @@ describe('queryMatchingTabIds', () => {
 
     const result = await queryMatchingTabIds(['bad-pattern', '*://good.com/*']);
     expect(result).toEqual([5]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// verifyAdapterVersion
-// ---------------------------------------------------------------------------
-
-describe('verifyAdapterVersion', () => {
-  beforeEach(() => {
-    mockExecuteScript.mockReset();
-  });
-
-  test('returns true when adapter version matches', async () => {
-    mockExecuteScript.mockResolvedValue([{ result: '2.0.0' }]);
-
-    const result = await verifyAdapterVersion(1, 'slack', '2.0.0');
-    expect(result).toBe(true);
-  });
-
-  test('returns false when adapter version does not match', async () => {
-    mockExecuteScript.mockResolvedValue([{ result: '1.0.0' }]);
-
-    const result = await verifyAdapterVersion(1, 'slack', '2.0.0');
-    expect(result).toBe(false);
-  });
-
-  test('returns false when adapter has no version', async () => {
-    mockExecuteScript.mockResolvedValue([{ result: undefined }]);
-
-    const result = await verifyAdapterVersion(1, 'slack', '2.0.0');
-    expect(result).toBe(false);
-  });
-
-  test('returns false when executeScript returns empty results', async () => {
-    mockExecuteScript.mockResolvedValue([]);
-
-    const result = await verifyAdapterVersion(1, 'slack', '2.0.0');
-    expect(result).toBe(false);
-  });
-
-  test('returns false when executeScript throws', async () => {
-    mockExecuteScript.mockRejectedValue(new Error('No tab with id: 1'));
-
-    const result = await verifyAdapterVersion(1, 'slack', '2.0.0');
-    expect(result).toBe(false);
   });
 });
 

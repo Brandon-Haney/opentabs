@@ -196,7 +196,6 @@ vi.mock('./iife-injection.js', () => ({
   syncAdaptersForPlugins: vi.fn(() => Promise.resolve()),
   isSafePluginName: vi.fn(() => true),
   queryMatchingTabIds: vi.fn(() => Promise.resolve([])),
-  verifyAdapterVersion: vi.fn(() => Promise.resolve(true)),
 }));
 
 vi.mock('./tab-state.js', () => ({

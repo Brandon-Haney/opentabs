@@ -10,6 +10,7 @@ import { getAllPluginMeta } from './plugin-storage.js';
 import { rejectAllPendingServerRequests, sendServerRequest } from './server-request.js';
 import {
   clearServerStateCache,
+  getCachesInitialized,
   getServerStateCache,
   loadServerStateCacheFromSession,
   updateServerStateCache,
@@ -132,7 +133,10 @@ const handleBgGetFullState: MessageHandler = (_message, sendResponse) => {
     // Wake detection: if the service worker was suspended, in-memory caches
     // are empty but wsConnected may still be true (restored from session storage).
     // Reload caches from session storage before merging.
-    if (wsConnected && tabStates.size === 0 && serverCache.plugins.length === 0) {
+    // The cachesInitialized check distinguishes "woke from suspension" (true)
+    // from "connected but sync.full has not arrived yet" (false). Without it,
+    // stale session data would be restored during the connect-to-sync.full gap.
+    if (wsConnected && getCachesInitialized() && tabStates.size === 0 && serverCache.plugins.length === 0) {
       await Promise.all([loadLastKnownStateFromSession(), loadServerStateCacheFromSession()]);
       tabStates = getLastKnownStates();
       serverCache = getServerStateCache();

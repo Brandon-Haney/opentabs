@@ -22,7 +22,9 @@ const mockStorageSessionRemove = vi.fn<(keys: string | string[]) => Promise<void
 
 // Import after mocking
 const {
+  getCachesInitialized,
   getServerStateCache,
+  setCachesInitialized,
   updateServerStateCache,
   clearServerStateCache,
   flushServerStateCacheToSession,
@@ -134,8 +136,8 @@ describe('debounced session storage writes', () => {
     vi.advanceTimersByTime(500);
     expect(mockStorageSessionSet).not.toHaveBeenCalled();
 
-    // But session remove was called
-    expect(mockStorageSessionRemove).toHaveBeenCalledWith('serverStateCache');
+    // But session remove was called (removes both cache and cachesInitialized)
+    expect(mockStorageSessionRemove).toHaveBeenCalledWith(['serverStateCache', 'cachesInitialized']);
   });
 });
 
@@ -262,5 +264,88 @@ describe('flushServerStateCacheToSession', () => {
     // Advance past the debounce window — no second write should fire
     vi.advanceTimersByTime(500);
     expect(mockStorageSessionSet).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cachesInitialized flag
+// ---------------------------------------------------------------------------
+
+describe('cachesInitialized flag', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    clearServerStateCache();
+    mockStorageSessionSet.mockClear();
+    mockStorageSessionGet.mockClear();
+    mockStorageSessionRemove.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test('getCachesInitialized returns false initially', () => {
+    expect(getCachesInitialized()).toBe(false);
+  });
+
+  test('setCachesInitialized sets the flag to true', () => {
+    setCachesInitialized(true);
+    expect(getCachesInitialized()).toBe(true);
+  });
+
+  test('clearServerStateCache resets cachesInitialized to false', () => {
+    setCachesInitialized(true);
+    clearServerStateCache();
+    expect(getCachesInitialized()).toBe(false);
+  });
+
+  test('clearServerStateCache removes cachesInitialized from session storage', () => {
+    setCachesInitialized(true);
+    clearServerStateCache();
+    expect(mockStorageSessionRemove).toHaveBeenCalledWith(['serverStateCache', 'cachesInitialized']);
+  });
+
+  test('flushServerStateCacheToSession persists cachesInitialized alongside the cache', () => {
+    setCachesInitialized(true);
+    updateServerStateCache({ serverVersion: '1.0.0' });
+    flushServerStateCacheToSession();
+
+    expect(mockStorageSessionSet).toHaveBeenCalledTimes(1);
+    const written = mockStorageSessionSet.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(written).toHaveProperty('cachesInitialized', true);
+  });
+
+  test('loadServerStateCacheFromSession restores cachesInitialized from session storage', async () => {
+    mockStorageSessionGet.mockResolvedValue({
+      serverStateCache: {
+        plugins: [],
+        failedPlugins: [],
+        browserTools: [],
+        serverVersion: '1.0.0',
+      },
+      cachesInitialized: true,
+    });
+
+    await loadServerStateCacheFromSession();
+
+    expect(getCachesInitialized()).toBe(true);
+  });
+
+  test('loadServerStateCacheFromSession defaults cachesInitialized to false when not in session', async () => {
+    setCachesInitialized(true);
+    // Session storage has no cachesInitialized key — clear first to reset
+    clearServerStateCache();
+    mockStorageSessionGet.mockClear();
+    mockStorageSessionGet.mockResolvedValue({
+      serverStateCache: {
+        plugins: [],
+        failedPlugins: [],
+        browserTools: [],
+      },
+    });
+
+    await loadServerStateCacheFromSession();
+
+    expect(getCachesInitialized()).toBe(false);
   });
 });

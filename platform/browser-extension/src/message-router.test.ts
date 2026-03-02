@@ -189,6 +189,7 @@ vi.mock('./server-state-cache.js', () => ({
   updateServerStateCache: mockUpdateServerStateCache,
   getServerStateCache: mockGetServerStateCache,
   flushServerStateCacheToSession: vi.fn(),
+  setCachesInitialized: vi.fn(),
 }));
 
 vi.mock('./confirmation-badge.js', () => ({

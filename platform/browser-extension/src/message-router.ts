@@ -45,7 +45,12 @@ import { getAllPluginMeta, removePlugin, removePluginsBatch, storePluginsBatch }
 import { checkRateLimit } from './rate-limiter.js';
 import { handleResourceRead, handlePromptGet } from './resource-prompt-dispatch.js';
 import { consumeServerResponse } from './server-request.js';
-import { flushServerStateCacheToSession, getServerStateCache, updateServerStateCache } from './server-state-cache.js';
+import {
+  flushServerStateCacheToSession,
+  getServerStateCache,
+  setCachesInitialized,
+  updateServerStateCache,
+} from './server-state-cache.js';
 import {
   clearPluginTabState,
   computePluginTabState,
@@ -366,8 +371,14 @@ const handleSyncFull = async (params: Record<string, unknown>): Promise<void> =>
     ...(rawServerVersion !== undefined ? { serverVersion: rawServerVersion } : {}),
   });
 
+  // Mark caches as initialized so the bg:getFullState wake detection
+  // heuristic can distinguish "woke from suspension" (cachesInitialized=true)
+  // from "connected but sync.full has not arrived yet" (cachesInitialized=false).
+  setCachesInitialized(true);
+
   // Flush server state to session storage immediately so critical state
-  // survives MV3 service worker suspension during the sendTabSyncAll window.
+  // (including cachesInitialized) survives MV3 service worker suspension
+  // during the sendTabSyncAll window.
   flushServerStateCacheToSession();
 
   // Notify the side panel immediately so it renders plugin cards from the

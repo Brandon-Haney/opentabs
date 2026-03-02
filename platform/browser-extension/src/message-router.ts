@@ -487,6 +487,19 @@ const handlePluginUninstall = async (params: Record<string, unknown>, id: string
 
   await removePlugin(pluginName);
   clearPluginTabState(pluginName);
+
+  // Remove the uninstalled plugin from the cache so bg:getFullState returns
+  // fresh state immediately, without waiting for the server's plugins.changed.
+  const existingCache = getServerStateCache();
+  updateServerStateCache({ plugins: existingCache.plugins.filter(p => p.name !== pluginName) });
+
+  // Notify the side panel so it removes the plugin card without waiting for
+  // the server's own plugins.changed (which arrives after the success response).
+  forwardToSidePanel({
+    type: 'sp:serverMessage',
+    data: { jsonrpc: '2.0', method: 'plugins.changed' },
+  });
+
   sendToServer({
     jsonrpc: '2.0',
     result: { success: true },

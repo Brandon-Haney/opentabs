@@ -35,22 +35,53 @@ const readLocalStorage = (key: string): string | null => {
 };
 
 /**
- * Module-level token cache. The adapter is injected at `status: 'loading'`
- * (before Discord's JavaScript runs), so localStorage still has the token.
- * Once read, the token is cached here so subsequent tool calls work even
- * after Discord deletes the localStorage entry during initialization.
+ * Persistent token cache stored on `globalThis.__openTabs` so it survives
+ * adapter re-injection (extension reloads re-execute the IIFE, which creates
+ * new module-level variables — but globalThis persists across injections).
  */
-let cachedAuth: DiscordAuth | null = null;
+const getPersistedToken = (): string | null => {
+  try {
+    const ns = (globalThis as Record<string, unknown>).__openTabs as Record<string, unknown> | undefined;
+    const cache = ns?.tokenCache as Record<string, string | undefined> | undefined;
+    return cache?.discord ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const setPersistedToken = (token: string): void => {
+  try {
+    const ns = ((globalThis as Record<string, unknown>).__openTabs ??= {}) as Record<string, unknown>;
+    const cache = (ns.tokenCache ??= {}) as Record<string, string | undefined>;
+    cache.discord = token;
+  } catch {
+    // globalThis access failed — nothing to persist
+  }
+};
+
+const clearPersistedToken = (): void => {
+  try {
+    const ns = (globalThis as Record<string, unknown>).__openTabs as Record<string, unknown> | undefined;
+    const cache = ns?.tokenCache as Record<string, string | undefined> | undefined;
+    if (cache) cache.discord = undefined;
+  } catch {
+    // ignore
+  }
+};
 
 /**
- * Extract auth token from Discord. Checks two sources:
- * 1. Module-level cache (fastest, survives localStorage deletion)
+ * Extract auth token from Discord. Checks three sources in order:
+ * 1. Persisted cache on globalThis (survives adapter re-injection)
  * 2. localStorage via direct access or iframe fallback
  *
- * Discord stores the token as a JSON-encoded string (double-quoted) under the key "token".
+ * The adapter is injected at `status: 'loading'` (before Discord's JavaScript
+ * runs), so localStorage still has the token on first injection. Once read,
+ * the token is persisted on globalThis so it survives both Discord's
+ * localStorage deletion and extension-triggered adapter re-injection.
  */
 const getAuth = (): DiscordAuth | null => {
-  if (cachedAuth) return cachedAuth;
+  const persisted = getPersistedToken();
+  if (persisted) return { token: persisted };
 
   const raw = readLocalStorage('token');
   if (!raw) return null;
@@ -58,8 +89,8 @@ const getAuth = (): DiscordAuth | null => {
   try {
     const token = JSON.parse(raw) as unknown;
     if (typeof token !== 'string' || token.length === 0) return null;
-    cachedAuth = { token };
-    return cachedAuth;
+    setPersistedToken(token);
+    return { token };
   } catch {
     return null;
   }
@@ -67,7 +98,7 @@ const getAuth = (): DiscordAuth | null => {
 
 /** Clear the cached auth token — called on 401 responses to handle token rotation. */
 const clearAuthCache = (): void => {
-  cachedAuth = null;
+  clearPersistedToken();
 };
 
 export const isDiscordAuthenticated = (): boolean => getAuth() !== null;

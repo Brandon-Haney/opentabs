@@ -21,7 +21,7 @@ import {
 import { spawn } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import type { ServerState, RegisteredPlugin } from './state.js';
 
 // ---------------------------------------------------------------------------
@@ -423,7 +423,7 @@ const removeLocalPlugin = async (state: { configWriteMutex: Promise<void> }, plu
       const resolvedPath = pluginPath.startsWith('~/')
         ? join(homedir(), pluginPath.slice(2))
         : resolve(configDir, pluginPath);
-      const dirName = resolvedPath.split('/').pop() ?? '';
+      const dirName = basename(resolvedPath);
 
       // Check if the directory name matches the plugin name
       if (dirName === pluginName || dirName === `opentabs-plugin-${pluginName}`) {

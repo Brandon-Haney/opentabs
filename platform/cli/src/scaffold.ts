@@ -314,6 +314,27 @@ export const myTool = defineTool({
 
 Then register it in \`src/index.ts\` by adding it to the \`tools\` array.
 
+## Authentication
+
+Plugin tools run in the browser tab context, so they can read auth tokens directly from the page. The SDK provides utilities for the most common patterns:
+
+\`\`\`ts
+import { getLocalStorage, getCookie, getPageGlobal } from '@opentabs-dev/plugin-sdk';
+
+// localStorage — most common
+const token = getLocalStorage('token');
+
+// Cookies — session tokens, JWTs
+const session = getCookie('session_id');
+
+// Page globals — SPA boot data (e.g., window.__APP_STATE__)
+const appState = getPageGlobal('__APP_STATE__');
+\`\`\`
+
+**Iframe fallback:** Some apps (e.g., Discord) delete \`window.localStorage\` after boot. \`getLocalStorage\` automatically tries a hidden same-origin iframe fallback before returning \`null\`, so you don't need to handle this case manually.
+
+**SPA hydration:** Auth tokens may not be available immediately on page load. Implement polling in \`isReady()\` to wait until the app has hydrated before your tools run. See the comments in \`src/index.ts\` for an example polling pattern.
+
 ## Shared Schemas
 
 When 3 or more tools share the same input or output shape, extract common Zod schemas into a shared file to avoid duplication:

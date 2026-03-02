@@ -18,7 +18,6 @@ import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 abstract class OpenTabsPlugin {
   abstract readonly name: string;
   abstract readonly displayName: string;
-  abstract readonly version: string;
   abstract readonly description: string;
   abstract readonly urlPatterns: string[];
   abstract readonly tools: ToolDefinition[];
@@ -54,11 +53,6 @@ These properties are required — your subclass must define them.
       <Table.Cell className="font-medium">`name`</Table.Cell>
       <Table.Cell>`string`</Table.Cell>
       <Table.Cell>Unique identifier. Lowercase alphanumeric with hyphens (e.g., `'my-app'`). Used as the tool name prefix and config key.</Table.Cell>
-    </Table.Row>
-    <Table.Row>
-      <Table.Cell className="font-medium">`version`</Table.Cell>
-      <Table.Cell>`string`</Table.Cell>
-      <Table.Cell>Semver version string (e.g., `'1.0.0'`). Shown in the side panel and health endpoint.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`description`</Table.Cell>

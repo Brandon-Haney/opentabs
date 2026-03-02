@@ -21,9 +21,31 @@ const serializeTabState = (info: PluginTabStateInfo): string => JSON.stringify({
  * The cache is populated by sendTabSyncAll (called after sync.full) and
  * updated on every state change notification sent to the server.
  * It is cleared on disconnect and repopulated when sync.full arrives on
- * the next connection.
+ * the next connection. Persists to chrome.storage.session (debounced 500ms)
+ * so state survives MV3 service worker suspension.
  */
 const lastKnownState = new Map<string, string>();
+
+const LAST_KNOWN_STATE_SESSION_KEY = 'lastKnownState';
+
+/** Debounce timer for session storage writes. */
+let lastKnownStatePersistTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Write the current lastKnownState Map to chrome.storage.session. */
+const persistLastKnownStateToSession = (): void => {
+  chrome.storage.session.set({ [LAST_KNOWN_STATE_SESSION_KEY]: Object.fromEntries(lastKnownState) }).catch(() => {
+    // Best-effort persistence — session storage may not be available
+  });
+};
+
+/** Schedule a debounced write to session storage (500ms). */
+const scheduleLastKnownStatePersist = (): void => {
+  if (lastKnownStatePersistTimer !== undefined) clearTimeout(lastKnownStatePersistTimer);
+  lastKnownStatePersistTimer = setTimeout(() => {
+    lastKnownStatePersistTimer = undefined;
+    persistLastKnownStateToSession();
+  }, 500);
+};
 
 /**
  * Per-plugin promise chain for serializing state computations. Concurrent
@@ -167,17 +189,21 @@ const sendTabSyncAll = async (): Promise<void> => {
       pluginNamesInSync.add(pluginName);
       return withPluginLock(pluginName, () => {
         lastKnownState.set(pluginName, serializeTabState(stateInfo));
+        scheduleLastKnownStatePersist();
         return Promise.resolve();
       });
     }),
   );
   // Remove entries for plugins no longer in the index
+  let removedStale = false;
   for (const key of lastKnownState.keys()) {
     if (!pluginNamesInSync.has(key)) {
       lastKnownState.delete(key);
       pluginLocks.delete(key);
+      removedStale = true;
     }
   }
+  if (removedStale) scheduleLastKnownStatePersist();
 
   sendToServer({
     jsonrpc: '2.0',
@@ -206,6 +232,13 @@ const sendTabSyncAll = async (): Promise<void> => {
 const clearTabStateCache = (): void => {
   lastKnownState.clear();
   pluginLocks.clear();
+  if (lastKnownStatePersistTimer !== undefined) {
+    clearTimeout(lastKnownStatePersistTimer);
+    lastKnownStatePersistTimer = undefined;
+  }
+  chrome.storage.session.remove(LAST_KNOWN_STATE_SESSION_KEY).catch(() => {
+    // Best-effort removal
+  });
 };
 
 /**
@@ -214,8 +247,10 @@ const clearTabStateCache = (): void => {
  * unboundedly during long-running sessions.
  */
 const clearPluginTabState = (pluginName: string): void => {
+  const had = lastKnownState.has(pluginName);
   lastKnownState.delete(pluginName);
   pluginLocks.delete(pluginName);
+  if (had) scheduleLastKnownStatePersist();
 };
 
 /**
@@ -227,6 +262,7 @@ const clearPluginTabState = (pluginName: string): void => {
 const updateLastKnownState = (pluginName: string, stateInfo: PluginTabStateInfo): Promise<void> =>
   withPluginLock(pluginName, () => {
     lastKnownState.set(pluginName, serializeTabState(stateInfo));
+    scheduleLastKnownStatePersist();
     return Promise.resolve();
   });
 
@@ -236,6 +272,27 @@ const updateLastKnownState = (pluginName: string, stateInfo: PluginTabStateInfo)
  * just the aggregate TabState should parse the JSON and extract `.state`.
  */
 const getLastKnownStates = (): ReadonlyMap<string, string> => lastKnownState;
+
+/**
+ * Load the lastKnownState cache from chrome.storage.session and populate the
+ * in-memory Map. Called on service worker wake to restore state that was
+ * persisted before suspension.
+ */
+const loadLastKnownStateFromSession = async (): Promise<void> => {
+  try {
+    const data = await chrome.storage.session.get(LAST_KNOWN_STATE_SESSION_KEY);
+    const stored = data[LAST_KNOWN_STATE_SESSION_KEY] as Record<string, string> | undefined;
+    if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+      for (const [key, value] of Object.entries(stored)) {
+        if (typeof value === 'string') {
+          lastKnownState.set(key, value);
+        }
+      }
+    }
+  } catch {
+    // Session storage may not be available — keep current cache
+  }
+};
 
 /** Extract the aggregate TabState from a serialized cache entry. */
 const getAggregateState = (serialized: string): TabState => {
@@ -270,6 +327,7 @@ const notifyAffectedPlugins = async (affectedPlugins: PluginMeta[]): Promise<voi
         // Update the cache before sending so rapid sequential events see the
         // latest state and don't produce duplicate notifications.
         lastKnownState.set(plugin.name, serialized);
+        scheduleLastKnownStatePersist();
 
         sendTabStateNotification(plugin.name, newState);
       }),
@@ -422,6 +480,7 @@ export {
   computePluginTabState,
   getAggregateState,
   getLastKnownStates,
+  loadLastKnownStateFromSession,
   sendTabSyncAll,
   startReadinessPoll,
   stopReadinessPoll,

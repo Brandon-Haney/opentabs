@@ -55,10 +55,22 @@ vi.mock('./tab-matching.js', () => ({
 
 const mockExecuteScript = vi.fn<(injection: unknown) => Promise<Array<{ result?: unknown }>>>();
 const mockTabsGet = vi.fn<(tabId: number) => Promise<chrome.tabs.Tab>>();
+const mockStorageSessionSet = vi.fn<(items: Record<string, unknown>) => Promise<void>>().mockResolvedValue(undefined);
+const mockStorageSessionGet = vi
+  .fn<(keys: string | string[]) => Promise<Record<string, unknown>>>()
+  .mockResolvedValue({});
+const mockStorageSessionRemove = vi.fn<(keys: string | string[]) => Promise<void>>().mockResolvedValue(undefined);
 
 (globalThis as Record<string, unknown>).chrome = {
   scripting: { executeScript: mockExecuteScript },
   tabs: { get: mockTabsGet },
+  storage: {
+    session: {
+      set: mockStorageSessionSet,
+      get: mockStorageSessionGet,
+      remove: mockStorageSessionRemove,
+    },
+  },
 };
 
 // Import after mocking
@@ -69,6 +81,7 @@ const {
   updateLastKnownState,
   getLastKnownStates,
   getAggregateState,
+  loadLastKnownStateFromSession,
   checkTabRemoved,
   checkTabChanged,
   sendTabSyncAll,
@@ -725,5 +738,172 @@ describe('readiness polling', () => {
     mockGetAllPluginMeta.mockResolvedValue({ slack: plugin });
     await vi.advanceTimersByTimeAsync(50);
     expect(mockGetAllPluginMeta).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Session storage persistence — debounced writes
+// ---------------------------------------------------------------------------
+
+describe('session storage persistence', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    clearTabStateCache();
+    mockStorageSessionSet.mockClear();
+    mockStorageSessionRemove.mockClear();
+    mockStorageSessionGet.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test('updateLastKnownState does not write to session storage immediately', async () => {
+    await updateLastKnownState('my-plugin', makeStateInfo('ready'));
+    expect(mockStorageSessionSet).not.toHaveBeenCalled();
+  });
+
+  test('updateLastKnownState writes to session storage after 500ms debounce', async () => {
+    await updateLastKnownState('my-plugin', makeStateInfo('ready'));
+    vi.advanceTimersByTime(500);
+
+    expect(mockStorageSessionSet).toHaveBeenCalledTimes(1);
+    const written = mockStorageSessionSet.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(written).toHaveProperty('lastKnownState');
+    const stored = written.lastKnownState as Record<string, string>;
+    expect(stored['my-plugin']).toBeDefined();
+    const parsed = JSON.parse(stored['my-plugin'] ?? '') as { state: string };
+    expect(parsed.state).toBe('ready');
+  });
+
+  test('rapid updates are coalesced into a single session storage write', async () => {
+    await updateLastKnownState('my-plugin', makeStateInfo('ready'));
+    vi.advanceTimersByTime(200);
+    await updateLastKnownState('my-plugin', makeStateInfo('unavailable'));
+    vi.advanceTimersByTime(200);
+    await updateLastKnownState('my-plugin', makeStateInfo('closed'));
+    vi.advanceTimersByTime(500);
+
+    expect(mockStorageSessionSet).toHaveBeenCalledTimes(1);
+    const written = mockStorageSessionSet.mock.calls[0]?.[0] as Record<string, unknown>;
+    const stored = written.lastKnownState as Record<string, string>;
+    const parsed = JSON.parse(stored['my-plugin'] ?? '') as { state: string };
+    expect(parsed.state).toBe('closed');
+  });
+
+  test('clearTabStateCache cancels pending debounce and removes from session', async () => {
+    await updateLastKnownState('my-plugin', makeStateInfo('ready'));
+    clearTabStateCache();
+
+    vi.advanceTimersByTime(500);
+    expect(mockStorageSessionSet).not.toHaveBeenCalled();
+
+    expect(mockStorageSessionRemove).toHaveBeenCalledWith('lastKnownState');
+  });
+
+  test('clearPluginTabState schedules a persist after removal', async () => {
+    await updateLastKnownState('alpha', makeStateInfo('ready'));
+    await updateLastKnownState('beta', makeStateInfo('unavailable'));
+    vi.advanceTimersByTime(500);
+    mockStorageSessionSet.mockClear();
+
+    clearPluginTabState('alpha');
+    vi.advanceTimersByTime(500);
+
+    expect(mockStorageSessionSet).toHaveBeenCalledTimes(1);
+    const written = mockStorageSessionSet.mock.calls[0]?.[0] as Record<string, unknown>;
+    const stored = written.lastKnownState as Record<string, string>;
+    expect(stored).not.toHaveProperty('alpha');
+    expect(stored).toHaveProperty('beta');
+  });
+
+  test('clearPluginTabState does not persist if plugin was not in cache', () => {
+    clearPluginTabState('nonexistent');
+    vi.advanceTimersByTime(500);
+    expect(mockStorageSessionSet).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Session storage load
+// ---------------------------------------------------------------------------
+
+describe('loadLastKnownStateFromSession', () => {
+  beforeEach(() => {
+    clearTabStateCache();
+    mockStorageSessionGet.mockClear();
+    mockStorageSessionSet.mockClear();
+    mockStorageSessionRemove.mockClear();
+  });
+
+  test('populates in-memory Map from session storage', async () => {
+    const serializedReady = JSON.stringify({
+      state: 'ready',
+      tabs: [{ tabId: 1, url: 'https://example.com', title: 'Ex', ready: true }],
+    });
+    const serializedClosed = JSON.stringify({ state: 'closed', tabs: [] });
+    mockStorageSessionGet.mockResolvedValue({
+      lastKnownState: {
+        alpha: serializedReady,
+        beta: serializedClosed,
+      },
+    });
+
+    await loadLastKnownStateFromSession();
+
+    expect(getLastKnownStates().size).toBe(2);
+    expect(getAggregateState(getLastKnownStates().get('alpha') ?? '')).toBe('ready');
+    expect(getAggregateState(getLastKnownStates().get('beta') ?? '')).toBe('closed');
+  });
+
+  test('handles empty session storage gracefully', async () => {
+    mockStorageSessionGet.mockResolvedValue({});
+
+    await loadLastKnownStateFromSession();
+
+    expect(getLastKnownStates().size).toBe(0);
+  });
+
+  test('handles session storage read failure gracefully', async () => {
+    mockStorageSessionGet.mockRejectedValue(new Error('storage unavailable'));
+
+    await loadLastKnownStateFromSession();
+
+    expect(getLastKnownStates().size).toBe(0);
+  });
+
+  test('ignores non-string values in stored data', async () => {
+    mockStorageSessionGet.mockResolvedValue({
+      lastKnownState: {
+        valid: JSON.stringify({ state: 'ready', tabs: [] }),
+        invalid: 42,
+        alsoInvalid: null,
+      },
+    });
+
+    await loadLastKnownStateFromSession();
+
+    expect(getLastKnownStates().size).toBe(1);
+    expect(getLastKnownStates().has('valid')).toBe(true);
+  });
+
+  test('ignores non-object stored data', async () => {
+    mockStorageSessionGet.mockResolvedValue({
+      lastKnownState: 'not-an-object',
+    });
+
+    await loadLastKnownStateFromSession();
+
+    expect(getLastKnownStates().size).toBe(0);
+  });
+
+  test('ignores array stored data', async () => {
+    mockStorageSessionGet.mockResolvedValue({
+      lastKnownState: ['not', 'an', 'object'],
+    });
+
+    await loadLastKnownStateFromSession();
+
+    expect(getLastKnownStates().size).toBe(0);
   });
 });

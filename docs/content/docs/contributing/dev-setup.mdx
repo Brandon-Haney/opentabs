@@ -31,11 +31,12 @@ npm run build
 This runs the full build pipeline:
 
 1. `tsc --build` — compiles all platform packages via project references (incremental; use `npm run build:force` to add `--force` for a clean rebuild)
-2. Extension bundle — bundles the background script and offscreen document
-3. Side panel — builds the React side panel with Tailwind CSS
-4. Icon generation — creates extension icons from the SVG source
-5. Extension install — copies the built extension to `~/.opentabs/extension/`
-6. `npm rebuild` — rebuilds `@opentabs-dev/cli` and `@opentabs-dev/plugin-tools` to link their bin scripts after TypeScript compilation
+2. Browser tools catalog — generates the static browser tool catalog used by the side panel
+3. Extension bundle — bundles the background script and offscreen document
+4. Side panel — builds the React side panel with Tailwind CSS
+5. Icon generation — creates extension icons from the SVG source
+6. Extension install — copies the built extension to `~/.opentabs/extension/`
+7. `npm rebuild` — rebuilds `@opentabs-dev/cli` and `@opentabs-dev/plugin-tools` to link their bin scripts after TypeScript compilation
 
 ## Load the Chrome Extension
 

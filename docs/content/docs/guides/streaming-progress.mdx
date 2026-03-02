@@ -1,7 +1,7 @@
 ---
 title: Streaming & Progress
 description: Report incremental progress during long-running tool operations so AI agents see live updates and your tool never times out.
-lastUpdated: 2026-02-28
+lastUpdated: 2026-03-01
 ---
 
 Long-running tools — bulk exports, multi-page scrapes, slow API calls — risk timing out before they finish. Progress reporting solves this: your tool tells the platform "I'm still working" at each step, the dispatch timeout resets, and the AI agent sees live progress updates.
@@ -121,7 +121,7 @@ interface ProgressOptions {
 When your tool calls `context.reportProgress()`, the notification travels through the platform:
 
 1. **Tool handler** calls `reportProgress()` in the page context
-2. **Adapter IIFE** fires a `CustomEvent` on `window` (MAIN world → ISOLATED world)
+2. **Adapter IIFE** fires a `CustomEvent` on `document` (MAIN world → ISOLATED world)
 3. **Content script relay** forwards via `chrome.runtime.sendMessage`
 4. **Extension background** sends a `tool.progress` JSON-RPC notification over WebSocket
 5. **MCP server** resets the dispatch timeout and emits `notifications/progress` to the MCP client

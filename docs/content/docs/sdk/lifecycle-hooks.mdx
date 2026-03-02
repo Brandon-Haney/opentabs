@@ -285,7 +285,7 @@ class AnalyticsPlugin extends OpenTabsPlugin {
   override onActivate() {
     log.info('Analytics adapter activated');
     this.currentPage = window.location.pathname;
-    (window as Record<string, unknown>).__analyticsAdapter = { version: this.version };
+    (window as Record<string, unknown>).__analyticsAdapter = { name: this.name };
   }
 
   override onDeactivate() {

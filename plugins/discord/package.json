@@ -1,0 +1,57 @@
+{
+  "name": "@opentabs-dev/opentabs-plugin-discord",
+  "description": "OpenTabs plugin for Discord",
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "version": "0.0.52",
+  "type": "module",
+  "main": "dist/adapter.iife.js",
+  "keywords": [
+    "opentabs-plugin"
+  ],
+  "opentabs": {
+    "displayName": "Discord",
+    "description": "OpenTabs plugin for Discord",
+    "urlPatterns": [
+      "*://discord.com/*"
+    ]
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && opentabs-plugin build",
+    "dev": "tsc --watch --preserveWatchOutput & opentabs-plugin build --watch",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "check": "npm run build && npm run type-check && npm run lint && npm run format:check"
+  },
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  },
+  "dependencies": {
+    "@opentabs-dev/plugin-sdk": "^0.0.52"
+  },
+  "devDependencies": {
+    "@opentabs-dev/plugin-tools": "^0.0.52",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "jiti": "^2.6.1",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.0",
+    "zod": "^4.3.6"
+  }
+}

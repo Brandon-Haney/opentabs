@@ -26,5 +26,8 @@ const Gallery: Story = {
   },
 };
 
+const Active: Story = { args: { icon: 'send', active: true } };
+const ActiveDisabled: Story = { args: { icon: 'send', enabled: false, active: true } };
+
 export default meta;
-export { Default, WithIcon, Mail, Search, Gallery };
+export { Default, WithIcon, Mail, Search, Gallery, Active, ActiveDisabled };

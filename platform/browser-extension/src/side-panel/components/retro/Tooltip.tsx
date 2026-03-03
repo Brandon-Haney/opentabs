@@ -29,6 +29,7 @@ const TooltipTrigger = TooltipPrimitive.Trigger;
 const TooltipContent = ({
   className,
   sideOffset = 4,
+  collisionPadding = 8,
   variant,
   ref,
   ...props
@@ -37,7 +38,9 @@ const TooltipContent = ({
     <TooltipPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}
+      collisionPadding={collisionPadding}
       className={cn(
+        'max-w-[var(--radix-tooltip-content-available-width)]',
         tooltipContentVariants({
           variant,
           className,

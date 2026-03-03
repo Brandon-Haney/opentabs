@@ -22,7 +22,7 @@ const ToolRow = ({
 }) => (
   <div
     className={cn(
-      'flex items-center gap-2 border-border border-b px-3 py-2 transition-colors last:border-b-0',
+      'flex items-center gap-2 border-border border-b px-3 py-1.5 transition-colors last:border-b-0 even:bg-muted/10',
       enabled ? 'hover:bg-primary/10' : 'hover:bg-muted/50',
     )}>
     <ToolIcon icon={icon} enabled={enabled} active={active} />
@@ -30,6 +30,7 @@ const ToolRow = ({
       <Tooltip.Trigger asChild>
         <div className="min-w-0 flex-1">
           <div className="truncate text-foreground text-sm">{displayName}</div>
+          <div className="truncate text-muted-foreground text-xs">{description}</div>
         </div>
       </Tooltip.Trigger>
       <Tooltip.Content>{description}</Tooltip.Content>

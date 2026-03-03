@@ -7,8 +7,9 @@
  * the actual update. Warns if a server is running.
  */
 
+import { getPidFilePath, parsePidFile } from '../config.js';
 import { resolvePort } from '../parse-port.js';
-import { DEFAULT_HOST, toErrorMessage } from '@opentabs-dev/shared';
+import { DEFAULT_HOST, DEFAULT_PORT, platformExec, toErrorMessage } from '@opentabs-dev/shared';
 import pc from 'picocolors';
 import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
@@ -31,7 +32,9 @@ const getInstalledVersion = async (): Promise<string> => {
 
 /** Query the latest published version via `npm view`. */
 const getLatestVersion = (): string => {
-  const result = spawnSync('npm', ['view', CLI_PACKAGE_NAME, 'version'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const result = spawnSync(platformExec('npm'), ['view', CLI_PACKAGE_NAME, 'version'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
   const exitCode = result.status ?? 1;
   if (exitCode !== 0) {
     const stderr = result.stderr.toString().trim();
@@ -40,22 +43,125 @@ const getLatestVersion = (): string => {
   return result.stdout.toString().trim();
 };
 
-/** Check if the MCP server is running on the given port. */
-const isServerRunning = async (port: number): Promise<boolean> => {
+interface ServerStatus {
+  running: boolean;
+  version?: string;
+  mode?: string;
+  serverType?: 'background' | 'dev' | 'foreground';
+}
+
+/** Returns true if a process with the given PID is alive. */
+const isProcessAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Detect whether a background server (via PID file) is currently running. */
+const isBackgroundServerRunning = async (): Promise<boolean> => {
+  const pidPath = getPidFilePath();
+  let content: string;
+  try {
+    content = await readFile(pidPath, 'utf-8');
+  } catch {
+    return false;
+  }
+  const pidData = parsePidFile(content);
+  return pidData !== null && isProcessAlive(pidData.pid);
+};
+
+/** Wait for a process to exit, polling every 200ms up to `timeoutMs`. */
+const waitForExit = (pid: number, timeoutMs: number): Promise<boolean> =>
+  new Promise(resolve => {
+    const start = Date.now();
+    const check = () => {
+      if (!isProcessAlive(pid)) {
+        resolve(true);
+        return;
+      }
+      if (Date.now() - start >= timeoutMs) {
+        resolve(false);
+        return;
+      }
+      setTimeout(check, 200);
+    };
+    check();
+  });
+
+/** Stop the background server via SIGTERM and restart it with `opentabs start --background`. */
+const restartBackgroundServer = async (port: number): Promise<void> => {
+  const pidPath = getPidFilePath();
+  let content: string;
+  try {
+    content = await readFile(pidPath, 'utf-8');
+  } catch {
+    console.log(pc.dim('  Run: opentabs start --background'));
+    return;
+  }
+  const pidData = parsePidFile(content);
+  if (pidData === null || !isProcessAlive(pidData.pid)) {
+    console.log(pc.dim('  Run: opentabs start --background'));
+    return;
+  }
+
+  const { pid } = pidData;
+  const restartPort = pidData.port ?? port;
+
+  process.kill(pid, 'SIGTERM');
+  const exited = await waitForExit(pid, 5_000);
+  if (!exited) {
+    console.log(pc.yellow('Warning: Old server did not stop in time. Restart manually:'));
+    console.log(pc.dim('  opentabs start --background'));
+    return;
+  }
+
+  const startArgs = ['start', '--background'];
+  if (restartPort !== DEFAULT_PORT) {
+    startArgs.push('--port', String(restartPort));
+  }
+
+  const cliEntry = process.argv[1];
+  if (!cliEntry) {
+    console.log(pc.yellow('Warning: Cannot determine CLI path. Run manually:'));
+    console.log(pc.dim('  opentabs start --background'));
+    return;
+  }
+
+  const result = spawnSync(platformExec('node'), [cliEntry, ...startArgs], {
+    stdio: 'inherit',
+  });
+
+  if ((result.status ?? 1) !== 0) {
+    console.log(pc.yellow('Warning: Failed to restart server. Run manually:'));
+    console.log(pc.dim('  opentabs start --background'));
+  }
+};
+
+/** Check if the MCP server is running on the given port and return its status info. */
+const getServerStatus = async (port: number): Promise<ServerStatus> => {
   try {
     const res = await fetch(`http://${DEFAULT_HOST}:${port}/health`, {
       signal: AbortSignal.timeout(2_000),
     });
-    return res.ok;
+    if (!res.ok) return { running: false };
+    const version = res.headers.get('x-opentabs-version') ?? undefined;
+    const body = (await res.json()) as Record<string, unknown>;
+    const mode = typeof body['mode'] === 'string' ? body['mode'] : undefined;
+    const isBackground = await isBackgroundServerRunning();
+    const serverType = isBackground ? 'background' : mode === 'dev' ? 'dev' : 'foreground';
+    return { running: true, version, mode, serverType };
   } catch {
-    return false;
+    return { running: false };
   }
 };
 
 /** Run `npm install -g` to update the CLI package. */
 const performUpdate = (version: string): boolean => {
   const target = `${CLI_PACKAGE_NAME}@${version}`;
-  const result = spawnSync('npm', ['install', '-g', target], { stdio: 'inherit' });
+  const result = spawnSync(platformExec('npm'), ['install', '-g', target], { stdio: 'inherit' });
   return (result.status ?? 1) === 0;
 };
 
@@ -95,10 +201,16 @@ const handleUpdate = async (options: UpdateOptions): Promise<void> => {
   console.log('');
 
   // 2. Check if server is running and warn
-  const serverRunning = await isServerRunning(port);
-  if (serverRunning) {
-    console.log(pc.yellow(`Warning: MCP server is running on port ${port}.`));
-    console.log(pc.yellow('The server will need to be restarted after the update.'));
+  const serverStatus = await getServerStatus(port);
+  if (serverStatus.running) {
+    const versionLabel = serverStatus.version ? ` (v${serverStatus.version})` : '';
+    const typeLabel = serverStatus.serverType ? ` [${serverStatus.serverType}]` : '';
+    console.log(pc.yellow(`Warning: MCP server${versionLabel}${typeLabel} is running on port ${port}.`));
+    const restartNote =
+      serverStatus.serverType === 'background'
+        ? 'The server will be automatically restarted after the update.'
+        : 'The server will need to be restarted after the update.';
+    console.log(pc.yellow(restartNote));
     console.log('');
   }
 
@@ -117,11 +229,20 @@ const handleUpdate = async (options: UpdateOptions): Promise<void> => {
   console.log('');
   console.log(pc.green(`Updated to v${latest}.`));
 
-  if (serverRunning) {
+  if (serverStatus.running) {
     console.log('');
-    console.log('Restart the MCP server to use the new version:');
-    console.log(pc.dim('  1. Stop the current server (Ctrl+C or kill the process)'));
-    console.log(pc.dim('  2. Run: opentabs start'));
+    switch (serverStatus.serverType) {
+      case 'background':
+        await restartBackgroundServer(port);
+        break;
+      case 'dev':
+        console.log(pc.dim('Restart your dev server:'));
+        console.log(pc.dim('  npm run dev'));
+        break;
+      default:
+        console.log(pc.dim('Stop the server (Ctrl+C) and run:'));
+        console.log(pc.dim('  opentabs start'));
+    }
   }
 };
 

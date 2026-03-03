@@ -89,7 +89,7 @@ interface NpmSearchPackage {
  * Delegates auth to npm itself (reads ~/.npmrc), supporting private packages.
  */
 const packageExistsOnNpmAsync = async (pkg: string): Promise<boolean> => {
-  const result = await spawnProcessAsync('npm', ['view', pkg, 'version']);
+  const result = await spawnProcessAsync(platformExec('npm'), ['view', pkg, 'version']);
   return result.exitCode === 0 && result.stdout.trim().length > 0;
 };
 
@@ -117,7 +117,7 @@ const resolvePackageName = async (name: string): Promise<string | null> => {
  */
 const warnIfNotPlugin = async (pkg: string): Promise<void> => {
   try {
-    const rootResult = await spawnProcessAsync('npm', ['root', '-g']);
+    const rootResult = await spawnProcessAsync(platformExec('npm'), ['root', '-g']);
     const globalRoot = rootResult.stdout.trim();
 
     const pkgJsonPath = join(globalRoot, pkg, 'package.json');
@@ -279,7 +279,15 @@ const parseMaintainer = (entry: unknown): string | undefined => {
  */
 const fetchPackageInfo = (pkg: string): NpmSearchPackage | null => {
   try {
-    const result = spawnProcessSync('npm', ['view', pkg, 'name', 'description', 'version', 'maintainers', '--json']);
+    const result = spawnProcessSync(platformExec('npm'), [
+      'view',
+      pkg,
+      'name',
+      'description',
+      'version',
+      'maintainers',
+      '--json',
+    ]);
     if (result.exitCode !== 0) return null;
 
     const data = JSON.parse(result.stdout.trim()) as Record<string, unknown>;
@@ -345,7 +353,7 @@ interface NpmSearchJsonEntry {
  */
 const npmSearchPlugins = (query?: string): NpmSearchPackage[] => {
   const searchTerm = query ? `keywords:opentabs-plugin ${query}` : 'keywords:opentabs-plugin';
-  const result = spawnProcessSync('npm', ['search', searchTerm, '--json']);
+  const result = spawnProcessSync(platformExec('npm'), ['search', searchTerm, '--json']);
   if (result.exitCode !== 0) return [];
 
   try {

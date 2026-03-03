@@ -28,7 +28,7 @@ OpenTabs is a Chrome extension + MCP server with a plugin-based architecture. Pl
 
 - **Zero-configuration access** — uses your existing browser sessions. No API keys, no OAuth, no service accounts.
 - **Plugin ecosystem** — anyone can create and publish plugins as npm packages. Install globally and they're auto-discovered.
-- **39 built-in browser tools** — tab management, screenshots, DOM interaction, network capture, cookies, and more — available for every tab, no plugin required.
+- **40 built-in browser tools** — tab management, screenshots, DOM interaction, network capture, cookies, and more — available for every tab, no plugin required.
 - **Works with any MCP client** — Claude Code, Cursor, and any client that supports Streamable HTTP transport.
 - **Hot reload for developers** — the MCP server detects plugin changes automatically. Zero-restart development workflow.
 
@@ -81,7 +81,7 @@ opentabs status
 opentabs doctor
 ```
 
-You're ready. Your AI agent can now use all registered plugin tools and the 39 built-in browser tools.
+You're ready. Your AI agent can now use all registered plugin tools and the 40 built-in browser tools.
 
 ## Building a Plugin
 

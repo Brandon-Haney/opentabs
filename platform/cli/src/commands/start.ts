@@ -11,7 +11,7 @@
  */
 
 import { installExtension } from './setup.js';
-import { ensureAuthSecret, getConfigDir, getLogFilePath, getPidFilePath, readAuthSecret } from '../config.js';
+import { ensureAuthSecret, getConfigDir, getLogFilePath, getPidFilePath } from '../config.js';
 import { parsePort, resolvePort } from '../parse-port.js';
 import { DEFAULT_PORT, isWindows, platformExec, toErrorMessage } from '@opentabs-dev/shared';
 import pc from 'picocolors';
@@ -278,11 +278,7 @@ const handleStart = async (options: StartOptions): Promise<void> => {
   const port = resolvePort(options);
 
   if (options.showConfig) {
-    const secret = await readAuthSecret();
-    if (secret === null) {
-      console.error(pc.red('Error: No auth secret found. Run `opentabs start` to initialize.'));
-      process.exit(1);
-    }
+    const secret = await ensureAuthSecret();
     console.log(pc.dim('  MCP client config (add to your client):'));
     console.log('');
     printMcpClientConfigs(`http://127.0.0.1:${port}/mcp`, secret, false, false);

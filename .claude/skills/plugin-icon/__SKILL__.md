@@ -183,14 +183,4 @@ If validation fails, the build reports specific errors (e.g., "SVG viewBox must 
 
 2. Open the Chrome extension side panel and verify the icon renders correctly for the plugin (both active/ready state and inactive/unavailable state).
 
----
 
-## Reference: Existing Plugin Icons
-
-| Plugin | Has Icon | Source | Notes |
-|---|---|---|---|
-| `plugins/slack/icon.svg` | Yes | Official brand assets | Multi-color (4 brand colors), auto-generated inactive |
-| `plugins/discord/icon.svg` | Yes | Official brand assets | Single-color (#5865F2), uses clip-path + transform |
-| `plugins/github/icon.svg` | Yes | Official brand assets | Single-color (black), viewBox offset for square centering |
-| `plugins/notion/icon.svg` | Yes | Simple Icons fallback | Single-color (black), already square viewBox |
-| `plugins/e2e-test/icon.svg` | Yes | Custom | Test icon with colored shapes |

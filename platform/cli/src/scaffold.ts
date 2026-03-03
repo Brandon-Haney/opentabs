@@ -104,10 +104,10 @@ const generatePackageJson = async (args: ScaffoldArgs, urlPattern: string): Prom
       build: 'tsc && opentabs-plugin build',
       dev: 'tsc --watch --preserveWatchOutput & opentabs-plugin build --watch',
       'type-check': 'tsc --noEmit',
-      lint: 'eslint src/',
-      'lint:fix': 'eslint src/ --fix',
-      'format:check': 'prettier --check "src/**/*.ts"',
-      format: 'prettier --write "src/**/*.ts"',
+      lint: 'biome lint src/',
+      'lint:fix': 'biome lint --fix src/',
+      'format:check': 'biome format src/',
+      format: 'biome format --write src/',
       check: 'npm run build && npm run type-check && npm run lint && npm run format:check',
     },
     peerDependencies: {
@@ -117,14 +117,9 @@ const generatePackageJson = async (args: ScaffoldArgs, urlPattern: string): Prom
       '@opentabs-dev/plugin-sdk': openTabsVersion,
     },
     devDependencies: {
+      '@biomejs/biome': '2.4.5',
       '@opentabs-dev/plugin-tools': openTabsVersion,
-      eslint: '^9.39.2',
-      'eslint-config-prettier': '^10.1.8',
-      'eslint-plugin-prettier': '^5.5.5',
-      jiti: '^2.4.2',
-      prettier: '^3.8.1',
       typescript: '^5.9.3',
-      'typescript-eslint': '^8.55.0',
       zod: '^4.0.0',
     },
   };
@@ -158,44 +153,55 @@ const TSCONFIG_CONTENT = `${JSON.stringify(
   2,
 )}\n`;
 
-const ESLINT_CONFIG_CONTENT = `import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
-import tseslint from 'typescript-eslint';
-
-export default tseslint.config(
-  { ignores: ['dist/**', 'node_modules/**'] },
-  ...tseslint.configs.strict,
-  eslintPluginPrettierRecommended,
+const BIOME_CONFIG_CONTENT = `${JSON.stringify(
   {
-    files: ['src/**/*.ts'],
-    languageOptions: {
-      parserOptions: {
-        projectService: true,
-        tsconfigRootDir: import.meta.dirname,
+    $schema: 'https://biomejs.dev/schemas/2.4.5/schema.json',
+    files: {
+      includes: ['**', '!**/dist', '!**/*.tsbuildinfo'],
+    },
+    formatter: {
+      indentStyle: 'space',
+      indentWidth: 2,
+      lineWidth: 120,
+    },
+    javascript: {
+      formatter: {
+        trailingCommas: 'all',
+        semicolons: 'always',
+        quoteStyle: 'single',
+        arrowParentheses: 'asNeeded',
+        bracketSameLine: true,
       },
     },
-    rules: {
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
-        },
-      ],
+    json: {
+      formatter: {
+        trailingCommas: 'none',
+      },
     },
-  },
-);
-`;
-
-const PRETTIERRC_CONTENT = `${JSON.stringify(
-  {
-    trailingComma: 'all',
-    semi: true,
-    singleQuote: true,
-    arrowParens: 'avoid',
-    printWidth: 120,
-    bracketSameLine: true,
-    htmlWhitespaceSensitivity: 'strict',
+    linter: {
+      rules: {
+        recommended: true,
+        style: {
+          useConst: 'error',
+          useImportType: 'error',
+          useExportType: 'error',
+        },
+        correctness: {
+          noUnusedVariables: 'error',
+          noUnusedImports: 'error',
+          noUnusedFunctionParameters: 'error',
+        },
+      },
+    },
+    assist: {
+      actions: {
+        source: {
+          organizeImports: {
+            level: 'on',
+          },
+        },
+      },
+    },
   },
   null,
   2,
@@ -285,7 +291,7 @@ npm install
 npm run build       # tsc && opentabs-plugin build
 npm run dev         # watch mode (tsc --watch + opentabs-plugin build --watch)
 npm run type-check  # tsc --noEmit
-npm run lint        # eslint
+npm run lint        # biome
 \`\`\`
 
 ## Adding Tools
@@ -539,11 +545,8 @@ const scaffoldPlugin = async (args: ScaffoldArgs): Promise<string> => {
     await writeFile(join(projectDir, 'tsconfig.json'), TSCONFIG_CONTENT, 'utf-8');
     console.log(`  ${pc.dim('Created:')} ${pc.bold('tsconfig.json')}`);
 
-    await writeFile(join(projectDir, 'eslint.config.ts'), ESLINT_CONFIG_CONTENT, 'utf-8');
-    console.log(`  ${pc.dim('Created:')} ${pc.bold('eslint.config.ts')}`);
-
-    await writeFile(join(projectDir, '.prettierrc'), PRETTIERRC_CONTENT, 'utf-8');
-    console.log(`  ${pc.dim('Created:')} ${pc.bold('.prettierrc')}`);
+    await writeFile(join(projectDir, 'biome.json'), BIOME_CONFIG_CONTENT, 'utf-8');
+    console.log(`  ${pc.dim('Created:')} ${pc.bold('biome.json')}`);
 
     await writeFile(join(projectDir, '.gitignore'), GITIGNORE_CONTENT, 'utf-8');
     console.log(`  ${pc.dim('Created:')} ${pc.bold('.gitignore')}`);

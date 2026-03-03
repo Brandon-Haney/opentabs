@@ -56,8 +56,7 @@ describe('create-opentabs-plugin CLI', () => {
       const projectDir = join(tmpDir, 'test-plugin');
       expect(existsSync(join(projectDir, 'package.json'))).toBe(true);
       expect(existsSync(join(projectDir, 'tsconfig.json'))).toBe(true);
-      expect(existsSync(join(projectDir, 'eslint.config.ts'))).toBe(true);
-      expect(existsSync(join(projectDir, '.prettierrc'))).toBe(true);
+      expect(existsSync(join(projectDir, 'biome.json'))).toBe(true);
       expect(existsSync(join(projectDir, '.gitignore'))).toBe(true);
       expect(existsSync(join(projectDir, 'src', 'index.ts'))).toBe(true);
       expect(existsSync(join(projectDir, 'src', 'tools', 'example.ts'))).toBe(true);
@@ -285,7 +284,7 @@ describe('create-opentabs-plugin CLI', () => {
       }
       expect(lint.status ?? 1).toBe(0);
 
-      // npm run format:check — scaffolded code must match prettier config out of the box
+      // npm run format:check — scaffolded code must match biome format config out of the box
       const formatCheck = spawnSync('npm', ['run', 'format:check'], { cwd: projectDir, env: buildEnv });
       if ((formatCheck.status ?? 1) !== 0) {
         console.error('format:check stdout:', formatCheck.stdout.toString());

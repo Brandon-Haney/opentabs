@@ -74,9 +74,8 @@ describe('scaffoldPlugin', () => {
     expect(existsSync(join(projectDir, 'src', 'index.ts'))).toBe(true);
     expect(existsSync(join(projectDir, 'src', 'tools', 'example.ts'))).toBe(true);
     expect(existsSync(join(projectDir, 'tsconfig.json'))).toBe(true);
-    expect(existsSync(join(projectDir, '.prettierrc'))).toBe(true);
+    expect(existsSync(join(projectDir, 'biome.json'))).toBe(true);
     expect(existsSync(join(projectDir, '.gitignore'))).toBe(true);
-    expect(existsSync(join(projectDir, 'eslint.config.ts'))).toBe(true);
   });
 
   test("domain 'slack.com' produces URL pattern '*://slack.com/*'", async () => {
@@ -117,13 +116,14 @@ describe('scaffoldPlugin', () => {
     expect(caught?.message).toContain('already exists');
   });
 
-  test('scaffolded eslint.config.ts includes argsIgnorePattern for underscore-prefixed params', async () => {
+  test('scaffolded biome.json includes linter rules and formatter settings', async () => {
     await scaffoldPlugin({ name: 'test-plugin', domain: 'example.com' });
 
-    const eslintConfig = await readFile(join(tmpDir, 'test-plugin', 'eslint.config.ts'), 'utf-8');
-    expect(eslintConfig).toContain("argsIgnorePattern: '^_'");
-    expect(eslintConfig).toContain("varsIgnorePattern: '^_'");
-    expect(eslintConfig).toContain("caughtErrorsIgnorePattern: '^_'");
+    const biomeConfig = await readFile(join(tmpDir, 'test-plugin', 'biome.json'), 'utf-8');
+    const config = JSON.parse(biomeConfig);
+    expect(config.$schema).toContain('biomejs.dev');
+    expect(config.javascript.formatter.quoteStyle).toBe('single');
+    expect(config.linter.rules.correctness.noUnusedVariables).toBe('error');
   });
 
   test('cleans up partial directory if a file write fails, allowing retry', async () => {

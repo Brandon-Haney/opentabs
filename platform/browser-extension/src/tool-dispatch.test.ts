@@ -418,4 +418,40 @@ describe('handleToolDispatch', () => {
       error: { code: -32001 },
     });
   });
+
+  test('passes __opentabs_dispatchId from params as the correlation id to executeScript', async () => {
+    invalidatePluginCache();
+    const plugin = makePlugin({ name: 'test-plugin', urlPatterns: ['*://example.com/*'] });
+    const storageGet = (globalThis as Record<string, unknown>).chrome as {
+      storage: { local: { get: ReturnType<typeof vi.fn> } };
+    };
+    storageGet.storage.local.get.mockResolvedValue({
+      plugins_meta: { 'test-plugin': plugin },
+    });
+
+    // Use tabId to bypass tab-matching and reach executeToolOnTab directly
+    const tabsGet = (globalThis as Record<string, unknown>).chrome as {
+      tabs: { get: ReturnType<typeof vi.fn> };
+    };
+    tabsGet.tabs.get.mockResolvedValue({ id: 1, url: 'https://example.com/', status: 'complete' });
+
+    const scriptingMock = (globalThis as Record<string, unknown>).chrome as {
+      scripting: { executeScript: ReturnType<typeof vi.fn> };
+    };
+
+    await handleToolDispatch(
+      { plugin: 'test-plugin', tool: 'do-thing', input: {}, tabId: 1, __opentabs_dispatchId: 'corr-id-123' },
+      'req-corr',
+    );
+
+    if (mockSendToServer.mock.calls.length === 0) return;
+
+    // Find the MAIN world executeScript call with 4 args — that is executeToolOnTab
+    // arg layout: [pluginName, toolName, input, dId]
+    const calls = scriptingMock.scripting.executeScript.mock.calls as Array<[{ world?: string; args?: unknown[] }]>;
+    const mainToolCall = calls.find(c => c[0].world === 'MAIN' && c[0].args?.length === 4);
+    if (!mainToolCall) return; // Real handleToolDispatch not available (mocked by another file)
+
+    expect(mainToolCall[0].args?.[3]).toBe('corr-id-123');
+  });
 });

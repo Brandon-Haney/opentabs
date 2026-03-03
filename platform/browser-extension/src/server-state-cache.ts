@@ -30,6 +30,109 @@ const EMPTY_CACHE: ServerStateCache = {
 
 let cache: ServerStateCache = { ...EMPTY_CACHE };
 
+// ---------------------------------------------------------------------------
+// Pending optimistic updates — protect in-flight toggle states from being
+// overwritten by incoming plugins.changed notifications. Outer map key is
+// plugin name, inner map key is tool name, value is the optimistic enabled
+// state. Browser tools use a flat map keyed by tool name.
+// ---------------------------------------------------------------------------
+
+const pendingPluginToolUpdates = new Map<string, Map<string, boolean>>();
+const pendingBrowserToolUpdates = new Map<string, boolean>();
+
+/** Re-apply pending optimistic updates on top of the current cache. */
+const reapplyPendingOptimisticUpdates = (): void => {
+  if (pendingPluginToolUpdates.size > 0) {
+    cache = {
+      ...cache,
+      plugins: cache.plugins.map(plugin => {
+        const toolOverrides = pendingPluginToolUpdates.get(plugin.name);
+        if (!toolOverrides) return plugin;
+        return {
+          ...plugin,
+          tools: plugin.tools.map(tool => {
+            const override = toolOverrides.get(tool.name);
+            return override !== undefined ? { ...tool, enabled: override } : tool;
+          }),
+        };
+      }),
+    };
+  }
+  if (pendingBrowserToolUpdates.size > 0) {
+    cache = {
+      ...cache,
+      browserTools: cache.browserTools.map(bt => {
+        const override = pendingBrowserToolUpdates.get(bt.name);
+        return override !== undefined ? { ...bt, enabled: override } : bt;
+      }),
+    };
+  }
+};
+
+/** Register a pending optimistic update for a single plugin tool. */
+const addPendingPluginToolUpdate = (plugin: string, tool: string, enabled: boolean): void => {
+  let toolMap = pendingPluginToolUpdates.get(plugin);
+  if (!toolMap) {
+    toolMap = new Map();
+    pendingPluginToolUpdates.set(plugin, toolMap);
+  }
+  toolMap.set(tool, enabled);
+};
+
+/** Clear the pending optimistic update for a single plugin tool. */
+const removePendingPluginToolUpdate = (plugin: string, tool: string): void => {
+  const toolMap = pendingPluginToolUpdates.get(plugin);
+  if (!toolMap) return;
+  toolMap.delete(tool);
+  if (toolMap.size === 0) pendingPluginToolUpdates.delete(plugin);
+};
+
+/** Register pending optimistic updates for all tools of a plugin. */
+const addPendingPluginAllToolsUpdate = (plugin: string, toolNames: string[], enabled: boolean): void => {
+  let toolMap = pendingPluginToolUpdates.get(plugin);
+  if (!toolMap) {
+    toolMap = new Map();
+    pendingPluginToolUpdates.set(plugin, toolMap);
+  }
+  for (const name of toolNames) {
+    toolMap.set(name, enabled);
+  }
+};
+
+/** Clear pending optimistic updates for all tools of a plugin. */
+const removePendingPluginAllToolsUpdate = (plugin: string, toolNames: string[]): void => {
+  const toolMap = pendingPluginToolUpdates.get(plugin);
+  if (!toolMap) return;
+  for (const name of toolNames) {
+    toolMap.delete(name);
+  }
+  if (toolMap.size === 0) pendingPluginToolUpdates.delete(plugin);
+};
+
+/** Register a pending optimistic update for a single browser tool. */
+const addPendingBrowserToolUpdate = (tool: string, enabled: boolean): void => {
+  pendingBrowserToolUpdates.set(tool, enabled);
+};
+
+/** Clear the pending optimistic update for a single browser tool. */
+const removePendingBrowserToolUpdate = (tool: string): void => {
+  pendingBrowserToolUpdates.delete(tool);
+};
+
+/** Register pending optimistic updates for all browser tools. */
+const addPendingAllBrowserToolsUpdate = (toolNames: string[], enabled: boolean): void => {
+  for (const name of toolNames) {
+    pendingBrowserToolUpdates.set(name, enabled);
+  }
+};
+
+/** Clear pending optimistic updates for all browser tools. */
+const removePendingAllBrowserToolsUpdate = (toolNames: string[]): void => {
+  for (const name of toolNames) {
+    pendingBrowserToolUpdates.delete(name);
+  }
+};
+
 /**
  * Tracks whether sync.full has populated the caches at least once in the
  * current WebSocket session. Distinguishes "service worker woke from
@@ -69,6 +172,7 @@ const getServerStateCache = (): ServerStateCache => structuredClone(cache);
  */
 const updateServerStateCache = (partial: Partial<ServerStateCache>): void => {
   cache = { ...cache, ...partial };
+  reapplyPendingOptimisticUpdates();
   schedulePersist();
 };
 
@@ -94,6 +198,8 @@ const flushServerStateCacheToSession = (): void => {
 const clearServerStateCache = (): void => {
   cache = { ...EMPTY_CACHE };
   cachesInitialized = false;
+  pendingPluginToolUpdates.clear();
+  pendingBrowserToolUpdates.clear();
   if (persistTimer !== undefined) {
     clearTimeout(persistTimer);
     persistTimer = undefined;
@@ -137,11 +243,19 @@ const setCachesInitialized = (value: boolean): void => {
 };
 
 export {
+  addPendingAllBrowserToolsUpdate,
+  addPendingBrowserToolUpdate,
+  addPendingPluginAllToolsUpdate,
+  addPendingPluginToolUpdate,
   clearServerStateCache,
   flushServerStateCacheToSession,
   getCachesInitialized,
   getServerStateCache,
   loadServerStateCacheFromSession,
+  removePendingAllBrowserToolsUpdate,
+  removePendingBrowserToolUpdate,
+  removePendingPluginAllToolsUpdate,
+  removePendingPluginToolUpdate,
   setCachesInitialized,
   updateServerStateCache,
 };

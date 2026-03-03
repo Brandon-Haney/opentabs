@@ -977,6 +977,34 @@ describe('dispatchToExtension', () => {
     return promise;
   });
 
+  test('injects __opentabs_dispatchId (not dispatchId) into sent params', () => {
+    const state = createState();
+    const ws = createMockWs();
+    state.extensionWs = ws;
+
+    const promise = dispatchToExtension(state, 'tool.dispatch', { plugin: 'slack', tool: 'echo' }, 'slack/echo');
+
+    const rawMsg = ws.sent[0];
+    expect(rawMsg).toBeDefined();
+    const sent = JSON.parse(rawMsg as string) as {
+      id: string;
+      params: { __opentabs_dispatchId?: string; dispatchId?: unknown };
+    };
+
+    // Platform-namespaced field must be present and equal to the message id
+    expect(typeof sent.params.__opentabs_dispatchId).toBe('string');
+    expect(sent.params.__opentabs_dispatchId).toBe(sent.id);
+
+    // Legacy field must NOT be injected by the platform
+    expect(sent.params.dispatchId).toBeUndefined();
+
+    // Settle the dispatch to prevent timeout leak
+    const pending = state.pendingDispatches.get(sent.id);
+    pending?.resolve('done');
+    if (pending) clearTimeout(pending.timerId);
+    return promise;
+  });
+
   test('dispatch can be settled by handleExtensionMessage response', async () => {
     const state = createState();
     const ws = createMockWs();
@@ -2151,11 +2179,11 @@ describe('handleToolProgress — timeout reset', () => {
       },
     );
 
-    // Extract the dispatchId from the sent message
+    // Extract the __opentabs_dispatchId from the sent message
     const rawMsg = ws.sent[0];
     expect(rawMsg).toBeDefined();
-    const sentMsg = JSON.parse(rawMsg as string) as { id: string; params: { dispatchId: string } };
-    const dispatchId = sentMsg.params.dispatchId;
+    const sentMsg = JSON.parse(rawMsg as string) as { id: string; params: { __opentabs_dispatchId: string } };
+    const dispatchId = sentMsg.params.__opentabs_dispatchId;
 
     // Advance 20s (before 30s timeout) and send a progress notification
     vi.advanceTimersByTime(20_000);
@@ -2209,8 +2237,8 @@ describe('handleToolProgress — timeout reset', () => {
 
     const rawMsg = ws.sent[0];
     expect(rawMsg).toBeDefined();
-    const sentMsg = JSON.parse(rawMsg as string) as { params: { dispatchId: string } };
-    const dispatchId = sentMsg.params.dispatchId;
+    const sentMsg = JSON.parse(rawMsg as string) as { params: { __opentabs_dispatchId: string } };
+    const dispatchId = sentMsg.params.__opentabs_dispatchId;
 
     const pending = state.pendingDispatches.get(dispatchId);
     expect(pending).toBeDefined();
@@ -2249,8 +2277,8 @@ describe('handleToolProgress — timeout reset', () => {
 
     const rawMsg = ws.sent[0];
     expect(rawMsg).toBeDefined();
-    const sentMsg = JSON.parse(rawMsg as string) as { params: { dispatchId: string } };
-    const dispatchId = sentMsg.params.dispatchId;
+    const sentMsg = JSON.parse(rawMsg as string) as { params: { __opentabs_dispatchId: string } };
+    const dispatchId = sentMsg.params.__opentabs_dispatchId;
 
     // Send progress every 20s to keep resetting the timeout.
     // MAX_DISPATCH_TIMEOUT_MS is 300_000 (5 minutes).
@@ -2295,8 +2323,8 @@ describe('handleToolProgress — timeout reset', () => {
 
     const rawMsg = ws.sent[0];
     expect(rawMsg).toBeDefined();
-    const sentMsg = JSON.parse(rawMsg as string) as { params: { dispatchId: string } };
-    const dispatchId = sentMsg.params.dispatchId;
+    const sentMsg = JSON.parse(rawMsg as string) as { params: { __opentabs_dispatchId: string } };
+    const dispatchId = sentMsg.params.__opentabs_dispatchId;
 
     // Manually set startTs to simulate a dispatch that has been running for MAX_DISPATCH_TIMEOUT_MS
     const pending = state.pendingDispatches.get(dispatchId);

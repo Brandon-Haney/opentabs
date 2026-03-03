@@ -22,8 +22,16 @@ const mockStorageSessionRemove = vi.fn<(keys: string | string[]) => Promise<void
 
 // Import after mocking
 const {
+  addPendingAllBrowserToolsUpdate,
+  addPendingBrowserToolUpdate,
+  addPendingPluginAllToolsUpdate,
+  addPendingPluginToolUpdate,
   getCachesInitialized,
   getServerStateCache,
+  removePendingAllBrowserToolsUpdate,
+  removePendingBrowserToolUpdate,
+  removePendingPluginAllToolsUpdate,
+  removePendingPluginToolUpdate,
   setCachesInitialized,
   updateServerStateCache,
   clearServerStateCache,
@@ -360,5 +368,335 @@ describe('cachesInitialized flag', () => {
     await loadServerStateCacheFromSession();
 
     expect(getCachesInitialized()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pending optimistic updates — plugin tools
+// ---------------------------------------------------------------------------
+
+describe('pending optimistic plugin tool updates', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    clearServerStateCache();
+    mockStorageSessionSet.mockClear();
+    mockStorageSessionRemove.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test('pending update survives a concurrent updateServerStateCache that overwrites the tool', () => {
+    // Initial state: tool "send" is enabled
+    updateServerStateCache({
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [],
+          tools: [{ name: 'send', displayName: 'Send', description: 'desc', icon: 'wrench', enabled: true }],
+        },
+      ],
+    });
+
+    // User toggles "send" to disabled → register pending optimistic update
+    addPendingPluginToolUpdate('slack', 'send', false);
+    updateServerStateCache({
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [],
+          tools: [{ name: 'send', displayName: 'Send', description: 'desc', icon: 'wrench', enabled: false }],
+        },
+      ],
+    });
+
+    // Server sends plugins.changed with "send" still enabled (hasn't processed toggle yet)
+    updateServerStateCache({
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [],
+          tools: [{ name: 'send', displayName: 'Send', description: 'desc', icon: 'wrench', enabled: true }],
+        },
+      ],
+    });
+
+    // The pending optimistic update should have re-applied: send is still disabled
+    const cache = getServerStateCache();
+    expect(cache.plugins[0]?.tools[0]?.enabled).toBe(false);
+  });
+
+  test('after removing pending update, subsequent updateServerStateCache applies server value', () => {
+    updateServerStateCache({
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [],
+          tools: [{ name: 'send', displayName: 'Send', description: 'desc', icon: 'wrench', enabled: true }],
+        },
+      ],
+    });
+
+    addPendingPluginToolUpdate('slack', 'send', false);
+
+    // Server responds successfully → clear pending update
+    removePendingPluginToolUpdate('slack', 'send');
+
+    // Next plugins.changed from server sets enabled=true
+    updateServerStateCache({
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [],
+          tools: [{ name: 'send', displayName: 'Send', description: 'desc', icon: 'wrench', enabled: true }],
+        },
+      ],
+    });
+
+    // No pending update → server value (true) is used
+    const cache = getServerStateCache();
+    expect(cache.plugins[0]?.tools[0]?.enabled).toBe(true);
+  });
+
+  test('addPendingPluginAllToolsUpdate protects all tools from concurrent update', () => {
+    updateServerStateCache({
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [],
+          tools: [
+            { name: 'send', displayName: 'Send', description: 'desc', icon: 'wrench', enabled: true },
+            { name: 'read', displayName: 'Read', description: 'desc', icon: 'wrench', enabled: true },
+          ],
+        },
+      ],
+    });
+
+    addPendingPluginAllToolsUpdate('slack', ['send', 'read'], false);
+
+    // Server sends plugins.changed with both tools still enabled
+    updateServerStateCache({
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [],
+          tools: [
+            { name: 'send', displayName: 'Send', description: 'desc', icon: 'wrench', enabled: true },
+            { name: 'read', displayName: 'Read', description: 'desc', icon: 'wrench', enabled: true },
+          ],
+        },
+      ],
+    });
+
+    const cache = getServerStateCache();
+    expect(cache.plugins[0]?.tools[0]?.enabled).toBe(false);
+    expect(cache.plugins[0]?.tools[1]?.enabled).toBe(false);
+  });
+
+  test('removePendingPluginAllToolsUpdate clears all tool overrides', () => {
+    addPendingPluginAllToolsUpdate('slack', ['send', 'read'], false);
+    removePendingPluginAllToolsUpdate('slack', ['send', 'read']);
+
+    updateServerStateCache({
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [],
+          tools: [
+            { name: 'send', displayName: 'Send', description: 'desc', icon: 'wrench', enabled: true },
+            { name: 'read', displayName: 'Read', description: 'desc', icon: 'wrench', enabled: true },
+          ],
+        },
+      ],
+    });
+
+    const cache = getServerStateCache();
+    expect(cache.plugins[0]?.tools[0]?.enabled).toBe(true);
+    expect(cache.plugins[0]?.tools[1]?.enabled).toBe(true);
+  });
+
+  test('clearServerStateCache clears pending plugin tool updates', () => {
+    updateServerStateCache({
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [],
+          tools: [{ name: 'send', displayName: 'Send', description: 'desc', icon: 'wrench', enabled: true }],
+        },
+      ],
+    });
+
+    addPendingPluginToolUpdate('slack', 'send', false);
+    clearServerStateCache();
+
+    // Re-populate after clear — the pending update should not re-apply
+    updateServerStateCache({
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [],
+          tools: [{ name: 'send', displayName: 'Send', description: 'desc', icon: 'wrench', enabled: true }],
+        },
+      ],
+    });
+
+    expect(getServerStateCache().plugins[0]?.tools[0]?.enabled).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pending optimistic updates — browser tools
+// ---------------------------------------------------------------------------
+
+describe('pending optimistic browser tool updates', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    clearServerStateCache();
+    mockStorageSessionSet.mockClear();
+    mockStorageSessionRemove.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test('pending browser tool update survives a concurrent updateServerStateCache', () => {
+    updateServerStateCache({
+      browserTools: [
+        { name: 'screenshot', description: 'Take a screenshot', enabled: true },
+        { name: 'console', description: 'Get console logs', enabled: true },
+      ],
+    });
+
+    // User toggles screenshot disabled
+    addPendingBrowserToolUpdate('screenshot', false);
+    updateServerStateCache({
+      browserTools: [
+        { name: 'screenshot', description: 'Take a screenshot', enabled: false },
+        { name: 'console', description: 'Get console logs', enabled: true },
+      ],
+    });
+
+    // Server sends plugins.changed with screenshot still enabled
+    updateServerStateCache({
+      browserTools: [
+        { name: 'screenshot', description: 'Take a screenshot', enabled: true },
+        { name: 'console', description: 'Get console logs', enabled: true },
+      ],
+    });
+
+    const cache = getServerStateCache();
+    expect(cache.browserTools.find(bt => bt.name === 'screenshot')?.enabled).toBe(false);
+    expect(cache.browserTools.find(bt => bt.name === 'console')?.enabled).toBe(true);
+  });
+
+  test('after removing pending browser tool update, server value applies', () => {
+    addPendingBrowserToolUpdate('screenshot', false);
+    removePendingBrowserToolUpdate('screenshot');
+
+    updateServerStateCache({
+      browserTools: [{ name: 'screenshot', description: 'Take a screenshot', enabled: true }],
+    });
+
+    expect(getServerStateCache().browserTools[0]?.enabled).toBe(true);
+  });
+
+  test('addPendingAllBrowserToolsUpdate protects all browser tools', () => {
+    updateServerStateCache({
+      browserTools: [
+        { name: 'screenshot', description: 'Take a screenshot', enabled: true },
+        { name: 'console', description: 'Get console logs', enabled: true },
+      ],
+    });
+
+    addPendingAllBrowserToolsUpdate(['screenshot', 'console'], false);
+
+    // Server sends update with all enabled
+    updateServerStateCache({
+      browserTools: [
+        { name: 'screenshot', description: 'Take a screenshot', enabled: true },
+        { name: 'console', description: 'Get console logs', enabled: true },
+      ],
+    });
+
+    const cache = getServerStateCache();
+    expect(cache.browserTools.every(bt => !bt.enabled)).toBe(true);
+  });
+
+  test('removePendingAllBrowserToolsUpdate clears all browser tool overrides', () => {
+    addPendingAllBrowserToolsUpdate(['screenshot', 'console'], false);
+    removePendingAllBrowserToolsUpdate(['screenshot', 'console']);
+
+    updateServerStateCache({
+      browserTools: [
+        { name: 'screenshot', description: 'Take a screenshot', enabled: true },
+        { name: 'console', description: 'Get console logs', enabled: true },
+      ],
+    });
+
+    const cache = getServerStateCache();
+    expect(cache.browserTools.every(bt => bt.enabled)).toBe(true);
+  });
+
+  test('clearServerStateCache clears pending browser tool updates', () => {
+    addPendingBrowserToolUpdate('screenshot', false);
+    clearServerStateCache();
+
+    updateServerStateCache({
+      browserTools: [{ name: 'screenshot', description: 'Take a screenshot', enabled: true }],
+    });
+
+    expect(getServerStateCache().browserTools[0]?.enabled).toBe(true);
   });
 });

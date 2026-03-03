@@ -60,6 +60,7 @@ const {
   mockSendTabSyncAll,
   mockStartReadinessPoll,
   mockGetLastKnownStates,
+  mockLoadLastKnownStateFromSession,
 } = vi.hoisted(() => {
   const asyncNoop = () => Promise.resolve();
   const syncNoop = (() => {}) as (params: Record<string, unknown>, id: string | number) => void;
@@ -182,6 +183,7 @@ const {
     mockSendTabSyncAll: vi.fn(() => Promise.resolve()),
     mockStartReadinessPoll: vi.fn(),
     mockGetLastKnownStates: vi.fn(() => new Map<string, string>()),
+    mockLoadLastKnownStateFromSession: vi.fn(() => Promise.resolve()),
   };
 });
 
@@ -237,6 +239,7 @@ vi.mock('./tab-state.js', () => ({
   flushLastKnownStateToSession: vi.fn(),
   updateLastKnownState: vi.fn(() => Promise.resolve()),
   getLastKnownStates: mockGetLastKnownStates,
+  loadLastKnownStateFromSession: mockLoadLastKnownStateFromSession,
   getAggregateState: vi.fn(() => 'closed'),
   checkTabRemoved: vi.fn(() => Promise.resolve()),
   checkTabChanged: vi.fn(() => Promise.resolve()),
@@ -537,7 +540,8 @@ describe('validatePluginPayload', () => {
       expect(result.tools).toHaveLength(1);
     });
 
-    test('filters out tools missing enabled flag', () => {
+    test('defaults enabled=true for tools missing the enabled field and logs a warning', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       const result = expectValid({
         ...validPayload(),
         tools: [
@@ -545,10 +549,14 @@ describe('validatePluginPayload', () => {
           { name: 'valid', displayName: 'Valid', description: 'Has enabled', icon: 'wrench', enabled: false },
         ],
       });
-      expect(result.tools).toHaveLength(1);
-      const enabledTool = result.tools[0];
-      expect(enabledTool).toBeDefined();
-      expect((enabledTool as NonNullable<typeof enabledTool>).name).toBe('valid');
+      expect(result.tools).toHaveLength(2);
+      const noEnabledTool = result.tools[0];
+      expect(noEnabledTool).toBeDefined();
+      expect((noEnabledTool as NonNullable<typeof noEnabledTool>).name).toBe('no-enabled');
+      expect((noEnabledTool as NonNullable<typeof noEnabledTool>).enabled).toBe(true);
+      expect(warnSpy).toHaveBeenCalledOnce();
+      expect(warnSpy.mock.calls[0]?.[0]).toContain('no-enabled');
+      warnSpy.mockRestore();
     });
 
     test('filters out non-object tool entries', () => {
@@ -697,6 +705,9 @@ const resetRoutingMocks = (): void => {
     browserTools: [],
     serverVersion: undefined,
   });
+  mockGetLastKnownStates.mockReset();
+  mockGetLastKnownStates.mockReturnValue(new Map());
+  mockLoadLastKnownStateFromSession.mockReset();
 };
 
 describe('handleServerMessage', () => {
@@ -734,6 +745,7 @@ describe('handleServerMessage', () => {
     mockHandleExtensionForceReconnect.mockResolvedValue(undefined);
     mockHandleResourceRead.mockResolvedValue(undefined);
     mockHandlePromptGet.mockResolvedValue(undefined);
+    mockLoadLastKnownStateFromSession.mockResolvedValue(undefined);
   });
 
   describe('sync.full routing', () => {
@@ -1495,16 +1507,48 @@ describe('handleServerMessage', () => {
       });
     });
 
-    test('extension.getTabState handles empty states map', () => {
+    test('extension.getTabState handles empty states map', async () => {
       mockGetLastKnownStates.mockReturnValueOnce(new Map());
 
       handleServerMessage({ method: 'extension.getTabState', id: 55 });
+
+      // Flush microtask queue — empty map triggers await loadLastKnownStateFromSession()
+      await Promise.resolve();
+      await Promise.resolve();
 
       expect(mockSendToServer).toHaveBeenCalledTimes(1);
       expect(mockSendToServer).toHaveBeenCalledWith({
         jsonrpc: '2.0',
         result: { tabStates: {} },
         id: 55,
+      });
+    });
+
+    test('extension.getTabState loads from session storage when in-memory map is empty on service worker wake', async () => {
+      const sessionStates = new Map<string, string>([
+        ['slack', JSON.stringify({ state: 'ready', tabs: [{ tabId: 1, url: 'https://slack.com' }] })],
+      ]);
+      // First call returns empty map (in-memory not yet restored after wake)
+      mockGetLastKnownStates.mockReturnValueOnce(new Map());
+      // After loadLastKnownStateFromSession resolves, second call returns populated map
+      mockGetLastKnownStates.mockReturnValueOnce(sessionStates);
+
+      handleServerMessage({ method: 'extension.getTabState', id: 56 });
+
+      // Flush microtask queue to allow await loadLastKnownStateFromSession() to complete
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(mockLoadLastKnownStateFromSession).toHaveBeenCalledTimes(1);
+      expect(mockSendToServer).toHaveBeenCalledTimes(1);
+      expect(mockSendToServer).toHaveBeenCalledWith({
+        jsonrpc: '2.0',
+        result: {
+          tabStates: {
+            slack: { state: 'ready', tabs: [{ tabId: 1, url: 'https://slack.com' }] },
+          },
+        },
+        id: 56,
       });
     });
   });

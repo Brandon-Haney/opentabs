@@ -56,6 +56,7 @@ import {
   computePluginTabState,
   flushLastKnownStateToSession,
   getLastKnownStates,
+  loadLastKnownStateFromSession,
   sendTabSyncAll,
   startReadinessPoll,
   updateLastKnownState,
@@ -188,18 +189,22 @@ const validatePluginPayload = (raw: unknown): ValidatedPluginPayload | null => {
             typeof t === 'object' &&
             t !== null &&
             typeof (t as Record<string, unknown>).name === 'string' &&
-            typeof (t as Record<string, unknown>).description === 'string' &&
-            typeof (t as Record<string, unknown>).enabled === 'boolean',
+            typeof (t as Record<string, unknown>).description === 'string',
         )
-        .map(
-          (t): WireToolDef => ({
+        .map((t): WireToolDef => {
+          if (typeof t.enabled !== 'boolean') {
+            console.warn(
+              `[opentabs] Tool "${t.name as string}" in plugin "${obj.name as string}" is missing the "enabled" field — defaulting to enabled=true. This is a server-side bug.`,
+            );
+          }
+          return {
             name: t.name as string,
             displayName: typeof t.displayName === 'string' ? t.displayName : (t.name as string),
             description: t.description as string,
             icon: typeof t.icon === 'string' ? t.icon : 'wrench',
-            enabled: t.enabled as boolean,
-          }),
-        )
+            enabled: typeof t.enabled === 'boolean' ? t.enabled : true,
+          };
+        })
     : [];
 
   return {
@@ -509,9 +514,14 @@ const handlePluginUninstall = async (params: Record<string, unknown>, id: string
 /**
  * Handle extension.getTabState: return the last-known tab state for all plugins.
  * The MCP server sends this request to get live tab state for the /health endpoint.
+ * On service worker wake, the in-memory map is empty; load from session storage first.
  */
-const handleExtensionGetTabState = (_params: Record<string, unknown>, id: string | number): void => {
-  const states = getLastKnownStates();
+const handleExtensionGetTabState = async (_params: Record<string, unknown>, id: string | number): Promise<void> => {
+  let states = getLastKnownStates();
+  if (states.size === 0) {
+    await loadLastKnownStateFromSession();
+    states = getLastKnownStates();
+  }
   const tabStates: Record<string, { state: string; tabs: unknown[] }> = {};
   for (const [pluginName, serialized] of states) {
     try {
@@ -575,7 +585,7 @@ const methodHandlers = new Map<string, MessageHandler>([
     'extension.forceReconnect',
     wrapAsync('extension.forceReconnect', (_params, id) => handleExtensionForceReconnect(id)),
   ],
-  ['extension.getTabState', wrapSync('extension.getTabState', handleExtensionGetTabState)],
+  ['extension.getTabState', wrapAsync('extension.getTabState', handleExtensionGetTabState)],
 ]);
 
 /** Handle a JSON-RPC message received from the MCP server */

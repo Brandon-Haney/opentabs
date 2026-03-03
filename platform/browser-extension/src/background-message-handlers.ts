@@ -9,10 +9,18 @@ import { forwardToSidePanel, sendToServer } from './messaging.js';
 import { getAllPluginMeta } from './plugin-storage.js';
 import { rejectAllPendingServerRequests, sendServerRequest } from './server-request.js';
 import {
+  addPendingAllBrowserToolsUpdate,
+  addPendingBrowserToolUpdate,
+  addPendingPluginAllToolsUpdate,
+  addPendingPluginToolUpdate,
   clearServerStateCache,
   getCachesInitialized,
   getServerStateCache,
   loadServerStateCacheFromSession,
+  removePendingAllBrowserToolsUpdate,
+  removePendingBrowserToolUpdate,
+  removePendingPluginAllToolsUpdate,
+  removePendingPluginToolUpdate,
   updateServerStateCache,
 } from './server-state-cache.js';
 import {
@@ -38,9 +46,16 @@ let wsConnected = false;
 /** Tracks the reason for the last WebSocket disconnection */
 let lastDisconnectReason: DisconnectReason | undefined;
 
-/** Restore wsConnected from chrome.storage.session on service worker wake */
+/** Promise tracking the in-flight or completed wsConnected restore from session storage */
+let wsConnectedRestorePromise: Promise<void> | undefined;
+
+/**
+ * Restore wsConnected from chrome.storage.session on service worker wake.
+ * Idempotent: only reads from storage once per service worker lifecycle.
+ */
 const restoreWsConnectedState = (): void => {
-  chrome.storage.session
+  if (wsConnectedRestorePromise !== undefined) return;
+  wsConnectedRestorePromise = chrome.storage.session
     .get(WS_CONNECTED_KEY)
     .then(data => {
       if (typeof data[WS_CONNECTED_KEY] === 'boolean') {
@@ -51,6 +66,12 @@ const restoreWsConnectedState = (): void => {
       // storage.session may not be available in all contexts
     });
 };
+
+/**
+ * Await the wsConnected restore from session storage.
+ * Returns immediately if restoreWsConnectedState has not been called yet.
+ */
+const waitForWsConnectedRestore = (): Promise<void> => wsConnectedRestorePromise ?? Promise.resolve();
 
 /** Persist wsConnected to chrome.storage.session */
 const persistWsConnected = (connected: boolean): void => {
@@ -122,6 +143,12 @@ const handleWsMessage: MessageHandler = (message, sendResponse) => {
  */
 const handleBgGetFullState: MessageHandler = (_message, sendResponse) => {
   (async () => {
+    // Await wsConnected restoration before reading it. On service worker wake,
+    // restoreWsConnectedState() may still be pending when the first bg:getFullState
+    // arrives. Without this await, wsConnected would be false even though session
+    // storage has true, causing the side panel to show a false disconnected state.
+    await waitForWsConnectedRestore();
+
     // Read caches once for the wake detection check
     let tabStates = getLastKnownStates();
     let serverCache = getServerStateCache();
@@ -306,13 +333,16 @@ const handleBgSetToolEnabled: MessageHandler = (message, sendResponse) => {
       tools: p.tools.map(t => (t.name === tool ? { ...t, enabled } : t)),
     };
   });
+  addPendingPluginToolUpdate(plugin, tool, enabled);
   updateServerStateCache({ plugins: updatedPlugins });
 
   sendServerRequest('config.setToolEnabled', { plugin, tool, enabled })
     .then((result: unknown) => {
+      removePendingPluginToolUpdate(plugin, tool);
       sendResponse(result);
     })
     .catch((err: unknown) => {
+      removePendingPluginToolUpdate(plugin, tool);
       // Revert to the original plugins on failure
       updateServerStateCache({ plugins: originalPlugins });
       sendResponse({ error: err instanceof Error ? err.message : String(err) });
@@ -327,6 +357,8 @@ const handleBgSetAllToolsEnabled: MessageHandler = (message, sendResponse) => {
   // Optimistically update the local server state cache
   const cache = getServerStateCache();
   const originalPlugins = cache.plugins;
+  const pluginEntry = cache.plugins.find(p => p.name === plugin);
+  const toolNames = pluginEntry ? pluginEntry.tools.map(t => t.name) : [];
   const updatedPlugins = cache.plugins.map(p => {
     if (p.name !== plugin) return p;
     return {
@@ -334,13 +366,16 @@ const handleBgSetAllToolsEnabled: MessageHandler = (message, sendResponse) => {
       tools: p.tools.map(t => ({ ...t, enabled })),
     };
   });
+  addPendingPluginAllToolsUpdate(plugin, toolNames, enabled);
   updateServerStateCache({ plugins: updatedPlugins });
 
   sendServerRequest('config.setAllToolsEnabled', { plugin, enabled })
     .then((result: unknown) => {
+      removePendingPluginAllToolsUpdate(plugin, toolNames);
       sendResponse(result);
     })
     .catch((err: unknown) => {
+      removePendingPluginAllToolsUpdate(plugin, toolNames);
       // Revert to the original plugins on failure
       updateServerStateCache({ plugins: originalPlugins });
       sendResponse({ error: err instanceof Error ? err.message : String(err) });
@@ -356,13 +391,16 @@ const handleBgSetBrowserToolEnabled: MessageHandler = (message, sendResponse) =>
   const cache = getServerStateCache();
   const originalBrowserTools = cache.browserTools;
   const updatedBrowserTools = cache.browserTools.map(bt => (bt.name === tool ? { ...bt, enabled } : bt));
+  addPendingBrowserToolUpdate(tool, enabled);
   updateServerStateCache({ browserTools: updatedBrowserTools });
 
   sendServerRequest('config.setBrowserToolEnabled', { tool, enabled })
     .then((result: unknown) => {
+      removePendingBrowserToolUpdate(tool);
       sendResponse(result);
     })
     .catch((err: unknown) => {
+      removePendingBrowserToolUpdate(tool);
       // Revert to the original browser tools on failure
       updateServerStateCache({ browserTools: originalBrowserTools });
       sendResponse({ error: err instanceof Error ? err.message : String(err) });
@@ -376,14 +414,18 @@ const handleBgSetAllBrowserToolsEnabled: MessageHandler = (message, sendResponse
   // Optimistically update the local server state cache
   const cache = getServerStateCache();
   const originalBrowserTools = cache.browserTools;
+  const toolNames = cache.browserTools.map(bt => bt.name);
   const updatedBrowserTools = cache.browserTools.map(bt => ({ ...bt, enabled }));
+  addPendingAllBrowserToolsUpdate(toolNames, enabled);
   updateServerStateCache({ browserTools: updatedBrowserTools });
 
   sendServerRequest('config.setAllBrowserToolsEnabled', { enabled })
     .then((result: unknown) => {
+      removePendingAllBrowserToolsUpdate(toolNames);
       sendResponse(result);
     })
     .catch((err: unknown) => {
+      removePendingAllBrowserToolsUpdate(toolNames);
       // Revert to the original browser tools on failure
       updateServerStateCache({ browserTools: originalBrowserTools });
       sendResponse({ error: err instanceof Error ? err.message : String(err) });
@@ -541,4 +583,5 @@ export {
   handleWsState,
   initBackgroundMessageHandlers,
   restoreWsConnectedState,
+  waitForWsConnectedRestore,
 };

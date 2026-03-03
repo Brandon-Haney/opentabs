@@ -37,6 +37,14 @@ const {
   mockUpdateServerStateCache,
   mockSendServerRequest,
   mockRejectAllPendingServerRequests,
+  mockAddPendingPluginToolUpdate,
+  mockRemovePendingPluginToolUpdate,
+  mockAddPendingPluginAllToolsUpdate,
+  mockRemovePendingPluginAllToolsUpdate,
+  mockAddPendingBrowserToolUpdate,
+  mockRemovePendingBrowserToolUpdate,
+  mockAddPendingAllBrowserToolsUpdate,
+  mockRemovePendingAllBrowserToolsUpdate,
 } = vi.hoisted(() => ({
   mockSendToServer: vi.fn<(data: unknown) => void>(),
   mockForwardToSidePanel: vi.fn(),
@@ -71,6 +79,14 @@ const {
     Promise.resolve({}),
   ),
   mockRejectAllPendingServerRequests: vi.fn(),
+  mockAddPendingPluginToolUpdate: vi.fn(),
+  mockRemovePendingPluginToolUpdate: vi.fn(),
+  mockAddPendingPluginAllToolsUpdate: vi.fn(),
+  mockRemovePendingPluginAllToolsUpdate: vi.fn(),
+  mockAddPendingBrowserToolUpdate: vi.fn(),
+  mockRemovePendingBrowserToolUpdate: vi.fn(),
+  mockAddPendingAllBrowserToolsUpdate: vi.fn(),
+  mockRemovePendingAllBrowserToolsUpdate: vi.fn(),
 }));
 
 vi.mock('./messaging.js', () => ({
@@ -104,10 +120,18 @@ vi.mock('./plugin-storage.js', () => ({
 }));
 
 vi.mock('./server-state-cache.js', () => ({
+  addPendingAllBrowserToolsUpdate: mockAddPendingAllBrowserToolsUpdate,
+  addPendingBrowserToolUpdate: mockAddPendingBrowserToolUpdate,
+  addPendingPluginAllToolsUpdate: mockAddPendingPluginAllToolsUpdate,
+  addPendingPluginToolUpdate: mockAddPendingPluginToolUpdate,
   getCachesInitialized: mockGetCachesInitialized,
   getServerStateCache: mockGetServerStateCache,
   clearServerStateCache: mockClearServerStateCache,
   loadServerStateCacheFromSession: mockLoadServerStateCacheFromSession,
+  removePendingAllBrowserToolsUpdate: mockRemovePendingAllBrowserToolsUpdate,
+  removePendingBrowserToolUpdate: mockRemovePendingBrowserToolUpdate,
+  removePendingPluginAllToolsUpdate: mockRemovePendingPluginAllToolsUpdate,
+  removePendingPluginToolUpdate: mockRemovePendingPluginToolUpdate,
   updateServerStateCache: mockUpdateServerStateCache,
 }));
 
@@ -158,6 +182,7 @@ const {
   handleBgRemovePlugin,
   handleBgUpdatePlugin,
   initBackgroundMessageHandlers,
+  restoreWsConnectedState,
 } = await import('./background-message-handlers.js');
 
 // ---------------------------------------------------------------------------
@@ -893,6 +918,28 @@ describe('handleBgGetFullState', () => {
     expect(result.plugins).toHaveLength(1);
     expect(result.plugins[0]).toMatchObject({ name: 'wake-plugin', tabState: 'ready' });
   });
+
+  test('returns connected=true when session storage has wsConnected=true but in-memory flag not yet restored', async () => {
+    // Simulate the wake race: service worker woke up, restoreWsConnectedState() was
+    // called but the async session read hasn't resolved yet when bg:getFullState arrives.
+    // handleBgGetFullState must await waitForWsConnectedRestore() so the in-memory
+    // wsConnected is updated before it is read.
+    //
+    // Set up session storage to return wsConnected=true, then call
+    // restoreWsConnectedState() to start the async restore. At this point,
+    // wsConnected (in-memory) is still false. handleBgGetFullState must see true.
+    mockStorageSessionGet.mockResolvedValueOnce({ wsConnected: true });
+    restoreWsConnectedState();
+
+    mockGetAllPluginMeta.mockResolvedValueOnce({});
+
+    const sendResponse = vi.fn();
+    handleBgGetFullState({}, sendResponse);
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+
+    const result = sendResponse.mock.calls.at(0)?.at(0) as FullStateResponse;
+    expect(result.connected).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1033,6 +1080,69 @@ describe('handleBgSetToolEnabled', () => {
     // Must restore original enabled: false, not flip to true
     expect(revertCall.plugins[0]?.tools[0]?.enabled).toBe(false);
   });
+
+  test('registers pending optimistic update before cache update and clears on success', async () => {
+    mockGetServerStateCache.mockReturnValue({
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community',
+          source: 'npm',
+          tabState: 'closed',
+          urlPatterns: [],
+          tools: [{ name: 'send', displayName: 'Send', description: 'desc', enabled: true }],
+        },
+      ],
+      failedPlugins: [],
+      browserTools: [],
+      serverVersion: '1.0.0',
+    });
+
+    mockSendServerRequest.mockResolvedValueOnce({ ok: true });
+
+    const sendResponse = vi.fn();
+    handleBgSetToolEnabled({ plugin: 'slack', tool: 'send', enabled: false }, sendResponse);
+
+    // Pending update registered before the cache update
+    expect(mockAddPendingPluginToolUpdate).toHaveBeenCalledWith('slack', 'send', false);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+
+    // Pending update cleared on success
+    expect(mockRemovePendingPluginToolUpdate).toHaveBeenCalledWith('slack', 'send');
+  });
+
+  test('clears pending optimistic update on server error before reverting', async () => {
+    mockGetServerStateCache.mockReturnValue({
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community',
+          source: 'npm',
+          tabState: 'closed',
+          urlPatterns: [],
+          tools: [{ name: 'send', displayName: 'Send', description: 'desc', enabled: true }],
+        },
+      ],
+      failedPlugins: [],
+      browserTools: [],
+      serverVersion: '1.0.0',
+    });
+
+    mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
+
+    const sendResponse = vi.fn();
+    handleBgSetToolEnabled({ plugin: 'slack', tool: 'send', enabled: false }, sendResponse);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+
+    // Pending update cleared before revert
+    expect(mockRemovePendingPluginToolUpdate).toHaveBeenCalledWith('slack', 'send');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1075,6 +1185,39 @@ describe('handleBgSetAllToolsEnabled', () => {
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+  });
+
+  test('registers pending optimistic updates for all tools and clears on success', async () => {
+    mockGetServerStateCache.mockReturnValue({
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community',
+          source: 'npm',
+          tabState: 'closed',
+          urlPatterns: [],
+          tools: [
+            { name: 'send', displayName: 'Send', description: 'desc', enabled: true },
+            { name: 'read', displayName: 'Read', description: 'desc', enabled: true },
+          ],
+        },
+      ],
+      failedPlugins: [],
+      browserTools: [],
+      serverVersion: '1.0.0',
+    });
+
+    mockSendServerRequest.mockResolvedValueOnce({ ok: true });
+
+    const sendResponse = vi.fn();
+    handleBgSetAllToolsEnabled({ plugin: 'slack', enabled: false }, sendResponse);
+
+    expect(mockAddPendingPluginAllToolsUpdate).toHaveBeenCalledWith('slack', ['send', 'read'], false);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+    expect(mockRemovePendingPluginAllToolsUpdate).toHaveBeenCalledWith('slack', ['send', 'read']);
   });
 });
 
@@ -1142,6 +1285,42 @@ describe('handleBgSetBrowserToolEnabled', () => {
 
     expect(sendResponse).toHaveBeenCalledWith({ error: 'Server error' });
   });
+
+  test('registers pending browser tool update and clears on success', async () => {
+    mockGetServerStateCache.mockReturnValue({
+      plugins: [],
+      failedPlugins: [],
+      browserTools: [{ name: 'screenshot', description: 'Take a screenshot', enabled: true }],
+      serverVersion: '1.0.0',
+    });
+
+    mockSendServerRequest.mockResolvedValueOnce({ ok: true });
+
+    const sendResponse = vi.fn();
+    handleBgSetBrowserToolEnabled({ tool: 'screenshot', enabled: false }, sendResponse);
+
+    expect(mockAddPendingBrowserToolUpdate).toHaveBeenCalledWith('screenshot', false);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+    expect(mockRemovePendingBrowserToolUpdate).toHaveBeenCalledWith('screenshot');
+  });
+
+  test('clears pending browser tool update on server error before reverting', async () => {
+    mockGetServerStateCache.mockReturnValue({
+      plugins: [],
+      failedPlugins: [],
+      browserTools: [{ name: 'screenshot', description: 'Take a screenshot', enabled: true }],
+      serverVersion: '1.0.0',
+    });
+
+    mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
+
+    const sendResponse = vi.fn();
+    handleBgSetBrowserToolEnabled({ tool: 'screenshot', enabled: false }, sendResponse);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+    expect(mockRemovePendingBrowserToolUpdate).toHaveBeenCalledWith('screenshot');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1171,6 +1350,28 @@ describe('handleBgSetAllBrowserToolsEnabled', () => {
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+  });
+
+  test('registers pending updates for all browser tools and clears on success', async () => {
+    mockGetServerStateCache.mockReturnValue({
+      plugins: [],
+      failedPlugins: [],
+      browserTools: [
+        { name: 'screenshot', description: 'Take a screenshot', enabled: true },
+        { name: 'console', description: 'Get console logs', enabled: true },
+      ],
+      serverVersion: '1.0.0',
+    });
+
+    mockSendServerRequest.mockResolvedValueOnce({ ok: true });
+
+    const sendResponse = vi.fn();
+    handleBgSetAllBrowserToolsEnabled({ enabled: false }, sendResponse);
+
+    expect(mockAddPendingAllBrowserToolsUpdate).toHaveBeenCalledWith(['screenshot', 'console'], false);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+    expect(mockRemovePendingAllBrowserToolsUpdate).toHaveBeenCalledWith(['screenshot', 'console']);
   });
 });
 

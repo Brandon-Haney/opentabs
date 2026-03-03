@@ -157,7 +157,7 @@ const dispatchToExtension = (
   const msg: JsonRpcRequest = {
     jsonrpc: '2.0',
     method,
-    params: { ...params, dispatchId: id },
+    params: { ...params, __opentabs_dispatchId: id },
     id,
   };
 

@@ -389,7 +389,15 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, sender, sendResp
   switch (message.type) {
     case 'ws:send': {
       if (ws?.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(message.data));
+        try {
+          ws.send(JSON.stringify(message.data));
+        } catch (err) {
+          const method =
+            typeof message.data === 'object' && message.data !== null
+              ? (message.data as Record<string, unknown>).method
+              : undefined;
+          console.error('[opentabs:offscreen] Failed to serialize message for WebSocket:', method, err);
+        }
         sendResponse({ sent: true });
       } else {
         sendResponse({ sent: false, reason: 'not connected' });

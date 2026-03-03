@@ -326,8 +326,9 @@ const executeToolOnTab = async (
  * and returns the result.
  */
 const handleToolDispatch = async (params: Record<string, unknown>, id: string | number): Promise<void> => {
-  // dispatchId is the correlation key for progress reporting, injected by the MCP server
-  const dispatchId = typeof params.dispatchId === 'string' ? params.dispatchId : String(id);
+  // __opentabs_dispatchId is the platform-namespaced correlation key for progress reporting,
+  // injected by the MCP server. The double-underscore prefix avoids collision with plugin tool inputs.
+  const dispatchId = typeof params.__opentabs_dispatchId === 'string' ? params.__opentabs_dispatchId : String(id);
 
   const pluginName = requireStringParam(params, 'plugin', id);
   if (!pluginName) return;

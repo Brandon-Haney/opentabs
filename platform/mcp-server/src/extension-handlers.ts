@@ -358,6 +358,8 @@ const handleConfigSetToolEnabled = (
   callbacks.onToolConfigChanged();
   callbacks.onToolConfigPersist();
 
+  sendToExtension(state, { jsonrpc: '2.0', method: 'plugins.changed', params: { ...buildConfigStatePayload(state) } });
+
   sendToExtension(state, {
     jsonrpc: '2.0',
     result: { ok: true },
@@ -397,6 +399,8 @@ const handleConfigSetAllToolsEnabled = (
   }
   callbacks.onToolConfigChanged();
   callbacks.onToolConfigPersist();
+
+  sendToExtension(state, { jsonrpc: '2.0', method: 'plugins.changed', params: { ...buildConfigStatePayload(state) } });
 
   sendToExtension(state, {
     jsonrpc: '2.0',

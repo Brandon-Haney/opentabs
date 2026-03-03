@@ -1456,8 +1456,9 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
     expect(configChangedCalled).toBe(true);
     expect(configPersistCalled).toBe(true);
 
-    expect(ws.sent).toHaveLength(1);
-    const rawOk = ws.sent[0];
+    // First message is plugins.changed notification, second is the result
+    expect(ws.sent).toHaveLength(2);
+    const rawOk = ws.sent[1];
     expect(rawOk).toBeDefined();
     const response = JSON.parse(rawOk as string) as { jsonrpc: string; id: number; result: { ok: boolean } };
     expect(response.jsonrpc).toBe('2.0');
@@ -1503,7 +1504,8 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
 
     expect(state.toolConfig['my-plugin_send']).toBe(true);
 
-    const rawEnable = ws.sent[0];
+    // First message is plugins.changed notification, second is the result
+    const rawEnable = ws.sent[1];
     expect(rawEnable).toBeDefined();
     const response = JSON.parse(rawEnable as string) as { result: { ok: boolean } };
     expect(response.result).toEqual({ ok: true });
@@ -1840,7 +1842,8 @@ describe('handleExtensionMessage — config.setAllToolsEnabled', () => {
     expect(state.toolConfig['my-plugin_beta']).toBe(true);
     expect(state.toolConfig['my-plugin_gamma']).toBe(true);
 
-    const rawAllEnabled = ws.sent[0];
+    // First message is plugins.changed notification, second is the result
+    const rawAllEnabled = ws.sent[1];
     expect(rawAllEnabled).toBeDefined();
     const response = JSON.parse(rawAllEnabled as string) as { jsonrpc: string; id: number; result: { ok: boolean } };
     expect(response.jsonrpc).toBe('2.0');

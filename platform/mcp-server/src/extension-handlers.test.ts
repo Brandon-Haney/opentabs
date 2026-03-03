@@ -1,6 +1,8 @@
 import {
   handleConfigGetState,
   handleConfigSetBrowserToolEnabled,
+  handleConfigSetToolEnabled,
+  handleConfigSetAllToolsEnabled,
   handleConfirmationResponse,
   handlePluginLog,
   handleTabStateChanged,
@@ -853,6 +855,328 @@ describe('handleConfigSetBrowserToolEnabled', () => {
     handleConfigSetBrowserToolEnabled(state, { tool: 'browser_list_tabs', enabled: true }, 'req-6', noopCallbacks);
 
     expect(state.browserToolPolicy.browser_list_tabs).toBe(true);
+  });
+});
+
+describe('handleConfigSetToolEnabled', () => {
+  const createMockWs = (): { ws: { send: (msg: string) => void; close: () => void }; messages: string[] } => {
+    const messages: string[] = [];
+    return { ws: { send: msg => messages.push(msg), close: () => {} }, messages };
+  };
+
+  const makePlugin = (name: string, toolNames: string[] = ['do_thing']): RegisteredPlugin => ({
+    name,
+    version: '1.0.0',
+    displayName: name,
+    urlPatterns: ['https://example.com/*'],
+    trustTier: 'local',
+    iife: '',
+    tools: toolNames.map(toolName => ({
+      name: toolName,
+      displayName: toolName,
+      description: `Tool ${toolName}`,
+      icon: 'activity',
+      input_schema: {},
+      output_schema: {},
+    })),
+    resources: [],
+    prompts: [],
+    source: 'local',
+  });
+
+  test('valid toggle sends plugins.changed before result', () => {
+    const state = createState();
+    const { ws, messages } = createMockWs();
+    state.extensionWs = ws;
+    const plugin = makePlugin('test-plugin', ['do_thing']);
+    state.registry = {
+      ...state.registry,
+      plugins: new Map([['test-plugin', plugin]]) as ReadonlyMap<string, RegisteredPlugin>,
+    };
+
+    handleConfigSetToolEnabled(
+      state,
+      { plugin: 'test-plugin', tool: 'do_thing', enabled: false },
+      'req-1',
+      noopCallbacks,
+    );
+
+    // Two messages: plugins.changed notification, then result
+    expect(messages).toHaveLength(2);
+    const notification = JSON.parse(messages[0] as string) as {
+      method: string;
+      params: { plugins: unknown[]; failedPlugins: unknown[]; browserTools: unknown[]; serverVersion: string };
+    };
+    expect(notification.method).toBe('plugins.changed');
+    expect(Array.isArray(notification.params.plugins)).toBe(true);
+    expect(Array.isArray(notification.params.failedPlugins)).toBe(true);
+    expect(Array.isArray(notification.params.browserTools)).toBe(true);
+    expect(typeof notification.params.serverVersion).toBe('string');
+    // The updated toolConfig should be reflected in the plugins.changed payload
+    const pluginEntry = notification.params.plugins.find(
+      (p: unknown) => (p as { name: string }).name === 'test-plugin',
+    ) as { tools: { name: string; enabled: boolean }[] } | undefined;
+    const tool = pluginEntry?.tools.find(t => t.name === 'do_thing');
+    expect(tool?.enabled).toBe(false);
+    const response = JSON.parse(messages[1] as string) as { result: { ok: boolean }; id: string };
+    expect(response.result).toEqual({ ok: true });
+    expect(response.id).toBe('req-1');
+  });
+
+  test('sets toolConfig correctly', () => {
+    const state = createState();
+    const { ws } = createMockWs();
+    state.extensionWs = ws;
+    const plugin = makePlugin('test-plugin', ['do_thing']);
+    state.registry = {
+      ...state.registry,
+      plugins: new Map([['test-plugin', plugin]]) as ReadonlyMap<string, RegisteredPlugin>,
+    };
+
+    handleConfigSetToolEnabled(
+      state,
+      { plugin: 'test-plugin', tool: 'do_thing', enabled: false },
+      'req-2',
+      noopCallbacks,
+    );
+
+    expect(state.toolConfig['test-plugin_do_thing']).toBe(false);
+  });
+
+  test('calls onToolConfigChanged and onToolConfigPersist', () => {
+    const state = createState();
+    const { ws } = createMockWs();
+    state.extensionWs = ws;
+    const plugin = makePlugin('test-plugin', ['do_thing']);
+    state.registry = {
+      ...state.registry,
+      plugins: new Map([['test-plugin', plugin]]) as ReadonlyMap<string, RegisteredPlugin>,
+    };
+    let configChanged = false;
+    let configPersisted = false;
+    const callbacks: McpCallbacks = {
+      ...noopCallbacks,
+      onToolConfigChanged: () => {
+        configChanged = true;
+      },
+      onToolConfigPersist: () => {
+        configPersisted = true;
+      },
+    };
+
+    handleConfigSetToolEnabled(state, { plugin: 'test-plugin', tool: 'do_thing', enabled: false }, 'req-3', callbacks);
+
+    expect(configChanged).toBe(true);
+    expect(configPersisted).toBe(true);
+  });
+
+  test('unknown plugin returns error without plugins.changed', () => {
+    const state = createState();
+    const { ws, messages } = createMockWs();
+    state.extensionWs = ws;
+
+    handleConfigSetToolEnabled(
+      state,
+      { plugin: 'nonexistent', tool: 'do_thing', enabled: false },
+      'req-4',
+      noopCallbacks,
+    );
+
+    expect(messages).toHaveLength(1);
+    const response = JSON.parse(messages[0] as string) as { error: { code: number; message: string } };
+    expect(response.error.code).toBe(-32602);
+    expect(response.error.message).toContain('Plugin not found');
+  });
+
+  test('unknown tool returns error without plugins.changed', () => {
+    const state = createState();
+    const { ws, messages } = createMockWs();
+    state.extensionWs = ws;
+    const plugin = makePlugin('test-plugin', ['do_thing']);
+    state.registry = {
+      ...state.registry,
+      plugins: new Map([['test-plugin', plugin]]) as ReadonlyMap<string, RegisteredPlugin>,
+    };
+
+    handleConfigSetToolEnabled(
+      state,
+      { plugin: 'test-plugin', tool: 'nonexistent', enabled: false },
+      'req-5',
+      noopCallbacks,
+    );
+
+    expect(messages).toHaveLength(1);
+    const response = JSON.parse(messages[0] as string) as { error: { code: number; message: string } };
+    expect(response.error.code).toBe(-32602);
+    expect(response.error.message).toContain('Tool not found');
+  });
+
+  test('missing params returns error', () => {
+    const state = createState();
+    const { ws, messages } = createMockWs();
+    state.extensionWs = ws;
+
+    handleConfigSetToolEnabled(state, undefined, 'req-6', noopCallbacks);
+
+    expect(messages).toHaveLength(1);
+    const response = JSON.parse(messages[0] as string) as { error: { code: number; message: string } };
+    expect(response.error.code).toBe(-32602);
+    expect(response.error.message).toBe('Missing params');
+  });
+
+  test('invalid param types return error', () => {
+    const state = createState();
+    const { ws, messages } = createMockWs();
+    state.extensionWs = ws;
+
+    handleConfigSetToolEnabled(state, { plugin: 123, tool: 'do_thing', enabled: 'yes' }, 'req-7', noopCallbacks);
+
+    expect(messages).toHaveLength(1);
+    const response = JSON.parse(messages[0] as string) as { error: { code: number; message: string } };
+    expect(response.error.code).toBe(-32602);
+    expect(response.error.message).toContain('expected plugin (string)');
+  });
+});
+
+describe('handleConfigSetAllToolsEnabled', () => {
+  const createMockWs = (): { ws: { send: (msg: string) => void; close: () => void }; messages: string[] } => {
+    const messages: string[] = [];
+    return { ws: { send: msg => messages.push(msg), close: () => {} }, messages };
+  };
+
+  const makePlugin = (name: string, toolNames: string[] = ['tool_a', 'tool_b']): RegisteredPlugin => ({
+    name,
+    version: '1.0.0',
+    displayName: name,
+    urlPatterns: ['https://example.com/*'],
+    trustTier: 'local',
+    iife: '',
+    tools: toolNames.map(toolName => ({
+      name: toolName,
+      displayName: toolName,
+      description: `Tool ${toolName}`,
+      icon: 'activity',
+      input_schema: {},
+      output_schema: {},
+    })),
+    resources: [],
+    prompts: [],
+    source: 'local',
+  });
+
+  test('valid toggle sends plugins.changed before result', () => {
+    const state = createState();
+    const { ws, messages } = createMockWs();
+    state.extensionWs = ws;
+    const plugin = makePlugin('test-plugin', ['tool_a', 'tool_b']);
+    state.registry = {
+      ...state.registry,
+      plugins: new Map([['test-plugin', plugin]]) as ReadonlyMap<string, RegisteredPlugin>,
+    };
+
+    handleConfigSetAllToolsEnabled(state, { plugin: 'test-plugin', enabled: false }, 'req-1', noopCallbacks);
+
+    // Two messages: plugins.changed notification, then result
+    expect(messages).toHaveLength(2);
+    const notification = JSON.parse(messages[0] as string) as {
+      method: string;
+      params: { plugins: unknown[]; failedPlugins: unknown[]; browserTools: unknown[]; serverVersion: string };
+    };
+    expect(notification.method).toBe('plugins.changed');
+    expect(Array.isArray(notification.params.plugins)).toBe(true);
+    expect(Array.isArray(notification.params.failedPlugins)).toBe(true);
+    expect(Array.isArray(notification.params.browserTools)).toBe(true);
+    expect(typeof notification.params.serverVersion).toBe('string');
+    // Both tools should be disabled in the payload
+    const pluginEntry = notification.params.plugins.find(
+      (p: unknown) => (p as { name: string }).name === 'test-plugin',
+    ) as { tools: { name: string; enabled: boolean }[] } | undefined;
+    expect(pluginEntry?.tools.every(t => !t.enabled)).toBe(true);
+    const response = JSON.parse(messages[1] as string) as { result: { ok: boolean }; id: string };
+    expect(response.result).toEqual({ ok: true });
+    expect(response.id).toBe('req-1');
+  });
+
+  test('disables all tools in toolConfig', () => {
+    const state = createState();
+    const { ws } = createMockWs();
+    state.extensionWs = ws;
+    const plugin = makePlugin('test-plugin', ['tool_a', 'tool_b']);
+    state.registry = {
+      ...state.registry,
+      plugins: new Map([['test-plugin', plugin]]) as ReadonlyMap<string, RegisteredPlugin>,
+    };
+
+    handleConfigSetAllToolsEnabled(state, { plugin: 'test-plugin', enabled: false }, 'req-2', noopCallbacks);
+
+    expect(state.toolConfig['test-plugin_tool_a']).toBe(false);
+    expect(state.toolConfig['test-plugin_tool_b']).toBe(false);
+  });
+
+  test('calls onToolConfigChanged and onToolConfigPersist', () => {
+    const state = createState();
+    const { ws } = createMockWs();
+    state.extensionWs = ws;
+    const plugin = makePlugin('test-plugin', ['tool_a']);
+    state.registry = {
+      ...state.registry,
+      plugins: new Map([['test-plugin', plugin]]) as ReadonlyMap<string, RegisteredPlugin>,
+    };
+    let configChanged = false;
+    let configPersisted = false;
+    const callbacks: McpCallbacks = {
+      ...noopCallbacks,
+      onToolConfigChanged: () => {
+        configChanged = true;
+      },
+      onToolConfigPersist: () => {
+        configPersisted = true;
+      },
+    };
+
+    handleConfigSetAllToolsEnabled(state, { plugin: 'test-plugin', enabled: true }, 'req-3', callbacks);
+
+    expect(configChanged).toBe(true);
+    expect(configPersisted).toBe(true);
+  });
+
+  test('unknown plugin returns error without plugins.changed', () => {
+    const state = createState();
+    const { ws, messages } = createMockWs();
+    state.extensionWs = ws;
+
+    handleConfigSetAllToolsEnabled(state, { plugin: 'nonexistent', enabled: false }, 'req-4', noopCallbacks);
+
+    expect(messages).toHaveLength(1);
+    const response = JSON.parse(messages[0] as string) as { error: { code: number; message: string } };
+    expect(response.error.code).toBe(-32602);
+    expect(response.error.message).toContain('Plugin not found');
+  });
+
+  test('missing params returns error', () => {
+    const state = createState();
+    const { ws, messages } = createMockWs();
+    state.extensionWs = ws;
+
+    handleConfigSetAllToolsEnabled(state, undefined, 'req-5', noopCallbacks);
+
+    expect(messages).toHaveLength(1);
+    const response = JSON.parse(messages[0] as string) as { error: { code: number; message: string } };
+    expect(response.error.code).toBe(-32602);
+    expect(response.error.message).toBe('Missing params');
+  });
+
+  test('invalid param types return error', () => {
+    const state = createState();
+    const { ws, messages } = createMockWs();
+    state.extensionWs = ws;
+
+    handleConfigSetAllToolsEnabled(state, { plugin: 123, enabled: 'yes' }, 'req-6', noopCallbacks);
+
+    expect(messages).toHaveLength(1);
+    const response = JSON.parse(messages[0] as string) as { error: { code: number; message: string } };
+    expect(response.error.code).toBe(-32602);
+    expect(response.error.message).toContain('expected plugin (string)');
   });
 });
 

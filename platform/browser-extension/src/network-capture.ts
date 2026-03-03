@@ -305,9 +305,17 @@ chrome.debugger.onEvent.addListener((source: chrome.debugger.Debuggee, method: s
       // For text content, store directly; for base64-encoded text, decode from
       // base64 to UTF-8 via Uint8Array + TextDecoder (bare atob returns Latin1,
       // which corrupts non-ASCII characters like Chinese text or emoji).
-      const body = responseData.base64Encoded
-        ? new TextDecoder().decode(Uint8Array.from(atob(responseData.body), c => c.charCodeAt(0)))
-        : responseData.body;
+      let body: string;
+      if (responseData.base64Encoded) {
+        try {
+          body = new TextDecoder().decode(Uint8Array.from(atob(responseData.body), c => c.charCodeAt(0)));
+        } catch {
+          console.warn(`[network-capture] base64 decode failed for requestId ${requestId}`);
+          body = '[base64 decode failed]';
+        }
+      } else {
+        body = responseData.body;
+      }
       request.responseBody = truncateBody(body);
     });
   } else if (method === 'Network.webSocketCreated') {

@@ -469,6 +469,25 @@ describe('generateToolsManifest — displayName and icon defaults', () => {
     expect(manifest[0]?.displayName).toBe('Get User Profile');
     expect(manifest[0]?.icon).toBe('wrench');
   });
+
+  test('includes group field when tool has a group', () => {
+    const plugin = makePlugin({
+      tools: [
+        {
+          ...makeRealTool({ name: 'send_message' }),
+          group: 'Messages',
+        } as unknown as ToolDefinition,
+      ],
+    });
+    const manifest = generateToolsManifest(plugin);
+    expect(manifest[0]?.group).toBe('Messages');
+  });
+
+  test('omits group field when tool has no group', () => {
+    const plugin = makePlugin({ tools: [makeRealTool({ name: 'send_message' })] });
+    const manifest = generateToolsManifest(plugin);
+    expect(manifest[0]).not.toHaveProperty('group');
+  });
 });
 
 // ---------------------------------------------------------------------------

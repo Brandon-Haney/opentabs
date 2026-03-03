@@ -2,6 +2,15 @@
  * `opentabs doctor` command — diagnoses the entire OpenTabs setup.
  */
 
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { access, readFile, unlink } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { ADAPTER_FILENAME, DEFAULT_HOST, TOOLS_FILENAME } from '@opentabs-dev/shared';
+import type { Command } from 'commander';
+import pc from 'picocolors';
 import {
   getConfigPath,
   getExtensionDir,
@@ -13,15 +22,6 @@ import {
   resolvePluginPath,
 } from '../config.js';
 import { parsePort, resolvePort } from '../parse-port.js';
-import { ADAPTER_FILENAME, DEFAULT_HOST, TOOLS_FILENAME } from '@opentabs-dev/shared';
-import pc from 'picocolors';
-import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { access, readFile, unlink } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import type { Command } from 'commander';
 
 interface DoctorOptions {
   port?: number;
@@ -82,7 +82,7 @@ const checkServerHealth = async (
   const url = `http://${DEFAULT_HOST}:${port}/health`;
   try {
     const headers: Record<string, string> = {};
-    if (secret) headers['Authorization'] = `Bearer ${secret}`;
+    if (secret) headers.Authorization = `Bearer ${secret}`;
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(3_000) });
     if (!res.ok) {
       return {

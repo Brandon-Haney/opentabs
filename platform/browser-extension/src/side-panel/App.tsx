@@ -1,12 +1,25 @@
+import { BROWSER_TOOLS_CATALOG } from '@opentabs-dev/shared/browser-tools-catalog';
+import { Search, X } from 'lucide-react';
+import { OverlayScrollbarsComponent } from 'overlayscrollbars-react';
+import { useEffect, useRef, useState } from 'react';
+import type { DisconnectReason, InternalMessage } from '../extension-messages.js';
+import type {
+  BrowserToolState,
+  FailedPluginState,
+  FullStateResult,
+  PluginSearchResult,
+  PluginState,
+} from './bridge.js';
 import {
   getFullState,
-  sendConfirmationResponse,
-  searchPlugins,
   installPlugin,
   removePlugin,
+  searchPlugins,
+  sendConfirmationResponse,
   updatePlugin,
 } from './bridge.js';
 import { BrowserToolsCard } from './components/BrowserToolsCard.js';
+import type { ConfirmationData } from './components/ConfirmationDialog.js';
 import { ConfirmationDialog } from './components/ConfirmationDialog.js';
 import { DisconnectedState, LoadingState } from './components/EmptyStates.js';
 import { Footer } from './components/Footer.js';
@@ -17,19 +30,6 @@ import { Tooltip } from './components/retro/Tooltip.js';
 import { SearchResults } from './components/SearchResults.js';
 import { ERROR_DISPLAY_DURATION_MS } from './constants.js';
 import { useServerNotifications } from './hooks/useServerNotifications.js';
-import { BROWSER_TOOLS_CATALOG } from '@opentabs-dev/shared/browser-tools-catalog';
-import { Search, X } from 'lucide-react';
-import { OverlayScrollbarsComponent } from 'overlayscrollbars-react';
-import { useState, useEffect, useRef } from 'react';
-import type {
-  BrowserToolState,
-  FailedPluginState,
-  FullStateResult,
-  PluginSearchResult,
-  PluginState,
-} from './bridge.js';
-import type { DisconnectReason, InternalMessage } from '../extension-messages.js';
-import type { ConfirmationData } from './components/ConfirmationDialog.js';
 
 const App = () => {
   const [connected, setConnected] = useState(false);
@@ -214,7 +214,7 @@ const App = () => {
       setActiveTools(prev => {
         const next = new Set<string>();
         for (const key of prev) {
-          if (key.startsWith('browser:') || result.plugins.some(p => key.startsWith(p.name + ':'))) {
+          if (key.startsWith('browser:') || result.plugins.some(p => key.startsWith(`${p.name}:`))) {
             next.add(key);
           }
         }
@@ -351,7 +351,7 @@ const App = () => {
 
   return (
     <Tooltip.Provider>
-      <div className="text-foreground flex h-screen flex-col overflow-hidden">
+      <div className="flex h-screen flex-col overflow-hidden text-foreground">
         {connected && pendingConfirmations.length > 0 && (
           <ConfirmationDialog
             confirmations={pendingConfirmations}
@@ -362,7 +362,7 @@ const App = () => {
         {showSearchBar && (
           <div className="shrink-0 px-4 pt-4 pb-2">
             <div className="relative">
-              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2 h-4 w-4 -translate-y-1/2" />
+              <Search className="pointer-events-none absolute top-1/2 left-2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={searchQuery}
                 onChange={e => handleSearchChange(e.target.value)}
@@ -373,7 +373,7 @@ const App = () => {
                 <button
                   type="button"
                   onClick={() => handleSearchChange('')}
-                  className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer">
+                  className="absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer text-muted-foreground hover:text-foreground">
                   <X className="h-4 w-4" />
                 </button>
               )}

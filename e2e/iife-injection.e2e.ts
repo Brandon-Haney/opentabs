@@ -15,27 +15,27 @@
  * directories. Safe for parallel execution.
  */
 
-import { expect, test as fixtureTest, createMinimalPlugin, writeTestConfig, readTestConfig } from './fixtures.js';
-import {
-  waitForLog,
-  waitForExtensionConnected,
-  openTestAppTab,
-  parseToolResult,
-  waitForToolResult,
-  callToolExpectSuccess,
-  waitFor,
-  waitForToolList,
-  setupToolTest,
-  setupIsolatedIifeTest,
-  getExtensionId,
-  replaceIifeClosing,
-  writeAndWaitForWatcher,
-} from './helpers.js';
-import { test } from '@playwright/test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { BrowserContext, Page } from '@playwright/test';
+import { test } from '@playwright/test';
+import { createMinimalPlugin, expect, test as fixtureTest, readTestConfig, writeTestConfig } from './fixtures.js';
+import {
+  callToolExpectSuccess,
+  getExtensionId,
+  openTestAppTab,
+  parseToolResult,
+  replaceIifeClosing,
+  setupIsolatedIifeTest,
+  setupToolTest,
+  waitFor,
+  waitForExtensionConnected,
+  waitForLog,
+  waitForToolList,
+  waitForToolResult,
+  writeAndWaitForWatcher,
+} from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // plugin.update re-injection into live tabs
@@ -963,7 +963,7 @@ test.describe('IIFE injection — concurrent file watcher change during hot relo
       // Modify the IIFE on disk — this triggers the file watcher debounce timer
       const iifePath = path.join(ctx.pluginDir, 'dist', 'adapter.iife.js');
       const originalIife = fs.readFileSync(iifePath, 'utf-8');
-      const modifiedIife = originalIife + '\n// E2E test: concurrent change trigger\n';
+      const modifiedIife = `${originalIife}\n// E2E test: concurrent change trigger\n`;
 
       // Clear logs to detect fresh events
       ctx.server.logs.length = 0;

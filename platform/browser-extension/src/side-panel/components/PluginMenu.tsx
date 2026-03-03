@@ -1,10 +1,10 @@
+import { ArrowUpCircle, MoreHorizontal, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import type { PluginState } from '../bridge';
 import { Button } from './retro/Button';
 import { Dialog } from './retro/Dialog';
 import { Loader } from './retro/Loader';
 import { Menu } from './retro/Menu';
-import { ArrowUpCircle, MoreHorizontal, Trash2 } from 'lucide-react';
-import { useState } from 'react';
-import type { PluginState } from '../bridge';
 
 interface PluginMenuProps {
   plugin: PluginState;
@@ -37,7 +37,8 @@ const PluginMenu = ({ plugin, onUpdate, onRemove, updating, removing, className 
       <Menu>
         <Menu.Trigger asChild>
           <button
-            className="hover:bg-muted/50 flex h-6 w-6 items-center justify-center rounded"
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted/50"
             aria-label="Plugin options">
             <MoreHorizontal className="h-4 w-4" />
           </button>
@@ -61,7 +62,7 @@ const PluginMenu = ({ plugin, onUpdate, onRemove, updating, removing, className 
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <Dialog.Content>
-          <Dialog.Header className="bg-destructive text-destructive-foreground border-destructive">
+          <Dialog.Header className="border-destructive bg-destructive text-destructive-foreground">
             {removeLabel} Plugin
           </Dialog.Header>
           <Dialog.Body>
@@ -70,9 +71,9 @@ const PluginMenu = ({ plugin, onUpdate, onRemove, updating, removing, className 
               <strong className="font-head">{plugin.displayName}</strong>?
             </p>
             {isLocal ? (
-              <p className="text-muted-foreground mt-1 text-xs">This will remove the plugin path from your config.</p>
+              <p className="mt-1 text-muted-foreground text-xs">This will remove the plugin path from your config.</p>
             ) : (
-              <p className="text-muted-foreground mt-1 text-xs">
+              <p className="mt-1 text-muted-foreground text-xs">
                 This will run npm uninstall and remove the plugin globally.
               </p>
             )}
@@ -86,7 +87,7 @@ const PluginMenu = ({ plugin, onUpdate, onRemove, updating, removing, className 
             <Button
               size="sm"
               variant="outline"
-              className="text-destructive border-destructive"
+              className="border-destructive text-destructive"
               onClick={handleConfirmRemove}>
               {removeLabel}
             </Button>

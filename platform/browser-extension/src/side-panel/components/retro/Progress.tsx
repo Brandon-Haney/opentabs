@@ -1,5 +1,5 @@
-import { cn } from '../../lib/cn';
 import * as ProgressPrimitives from '@radix-ui/react-progress';
+import { cn } from '../../lib/cn';
 
 interface IProgressProps extends ProgressPrimitives.ProgressProps {
   /** Classes applied to the indicator (the filled bar) */
@@ -8,11 +8,11 @@ interface IProgressProps extends ProgressPrimitives.ProgressProps {
 
 const Progress = ({ className, indicatorClassName, value, ...props }: IProgressProps) => (
   <ProgressPrimitives.Root
-    className={cn('bg-muted border-border relative h-1.5 overflow-hidden rounded border', className)}
+    className={cn('relative h-1.5 overflow-hidden rounded border border-border bg-muted', className)}
     value={value}
     {...props}>
     <ProgressPrimitives.Indicator
-      className={cn('bg-accent-foreground h-full transition-all duration-200', indicatorClassName)}
+      className={cn('h-full bg-accent-foreground transition-all duration-200', indicatorClassName)}
       style={{ width: `${value ?? 0}%` }}
     />
   </ProgressPrimitives.Root>

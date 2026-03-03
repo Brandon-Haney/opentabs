@@ -16,20 +16,20 @@
  * worker and resumes forwarding events to the client.
  */
 
-import { DEFAULT_HOST, DEFAULT_PORT } from '@opentabs-dev/shared';
-import { WebSocket, WebSocketServer } from 'ws';
+import type { ChildProcess } from 'node:child_process';
 import { fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { watch } from 'node:fs';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createServer, request as httpRequest } from 'node:http';
 import { resolve } from 'node:path';
-import type { ChildProcess } from 'node:child_process';
-import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
+import { DEFAULT_HOST, DEFAULT_PORT } from '@opentabs-dev/shared';
+import { WebSocket, WebSocketServer } from 'ws';
 
 const WORKER_JS = resolve(import.meta.dirname, 'index.js');
 const DIST_DIR = resolve(import.meta.dirname);
-const PROXY_PORT = Number(process.env['PORT'] ?? DEFAULT_PORT);
+const PROXY_PORT = Number(process.env.PORT ?? DEFAULT_PORT);
 const DEBOUNCE_MS = 300;
 const READY_TIMEOUT_MS = 5000;
 
@@ -89,7 +89,7 @@ const reinitializeSessions = async (port: number): Promise<void> => {
         Accept: 'application/json, text/event-stream',
       };
       if (session.authHeader) {
-        headers['Authorization'] = session.authHeader;
+        headers.Authorization = session.authHeader;
       }
 
       const initRes = await fetch(`http://127.0.0.1:${port}/mcp`, {
@@ -127,7 +127,7 @@ const reinitializeSessions = async (port: number): Promise<void> => {
         'mcp-session-id': newWorkerSessionId,
       };
       if (session.authHeader) {
-        notifHeaders['Authorization'] = session.authHeader;
+        notifHeaders.Authorization = session.authHeader;
       }
 
       await fetch(`http://127.0.0.1:${port}/mcp`, {
@@ -298,7 +298,7 @@ const connectUpstreamSse = (session: ProxySession, clientRes: ServerResponse, po
     'mcp-session-id': session.workerSessionId,
   };
   if (session.authHeader) {
-    headers['Authorization'] = session.authHeader;
+    headers.Authorization = session.authHeader;
   }
 
   const upstreamReq = httpRequest(
@@ -375,11 +375,11 @@ const handleMcpPost = async (req: IncomingMessage, res: ServerResponse, port: nu
     };
     const authHeader = req.headers.authorization;
     if (authHeader) {
-      headers['Authorization'] = authHeader;
+      headers.Authorization = authHeader;
     }
     // Forward Host header for DNS rebinding protection
     if (req.headers.host) {
-      headers['Host'] = req.headers.host;
+      headers.Host = req.headers.host;
     }
 
     const workerRes = await fetch(`http://127.0.0.1:${port}/mcp`, {

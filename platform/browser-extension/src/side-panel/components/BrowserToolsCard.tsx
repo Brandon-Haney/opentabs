@@ -1,3 +1,9 @@
+import * as AccordionPrimitive from '@radix-ui/react-accordion';
+import { ChevronDown } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import type { BrowserToolState } from '../bridge.js';
+import { setAllBrowserToolsEnabled, setBrowserToolEnabled } from '../bridge.js';
+import { ERROR_DISPLAY_DURATION_MS } from '../constants.js';
 import { BrowserToolsMenu } from './BrowserToolsMenu.js';
 import { PluginIcon } from './PluginIcon.js';
 import { Accordion } from './retro/Accordion.js';
@@ -5,12 +11,6 @@ import { Alert } from './retro/Alert.js';
 import { Badge } from './retro/Badge.js';
 import { Switch } from './retro/Switch.js';
 import { ToolRow } from './ToolRow.js';
-import { setBrowserToolEnabled, setAllBrowserToolsEnabled } from '../bridge.js';
-import { ERROR_DISPLAY_DURATION_MS } from '../constants.js';
-import * as AccordionPrimitive from '@radix-ui/react-accordion';
-import { ChevronDown } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
-import type { BrowserToolState } from '../bridge.js';
 
 /** Raw SVG string for the Chrome logo, rendered via PluginIcon's sanitized SVG path. */
 const CHROME_ICON_SVG = [
@@ -125,7 +125,7 @@ const BrowserToolsCard = ({
             iconInactiveSvg={CHROME_ICON_SVG}
             active={hasActiveTool}
           />
-          <div className="font-head text-foreground flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 truncate font-head text-foreground text-sm">
             Browser
             <Badge variant="default" size="sm" className="align-middle">
               CORE
@@ -153,7 +153,7 @@ const BrowserToolsCard = ({
 
       <Accordion.Content className="border-border border-t">
         {toolFilter && (
-          <div className="text-muted-foreground mb-1 px-3 pt-2 text-xs">
+          <div className="mb-1 px-3 pt-2 text-muted-foreground text-xs">
             {visibleTools.length} of {tools.length} tools
           </div>
         )}

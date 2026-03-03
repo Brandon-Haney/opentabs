@@ -17,12 +17,12 @@
  * 7. Cleans up on SIGINT/SIGTERM.
  */
 
+import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
-import type { ChildProcess } from 'node:child_process';
 
 const ROOT = resolve(import.meta.dirname, '..');
 
@@ -216,14 +216,14 @@ const buildExtension = async (): Promise<boolean> => {
  */
 const reloadExtension = async (): Promise<void> => {
   const coloredPrefix = `${YELLOW}${BOLD}[ext]${RESET}`;
-  const port = process.env['PORT'] ?? '9515';
+  const port = process.env.PORT ?? '9515';
   const url = `http://localhost:${port}/extension/reload`;
 
   try {
     const secret = await readWsSecret();
     const headers: Record<string, string> = {};
     if (secret) {
-      headers['Authorization'] = `Bearer ${secret}`;
+      headers.Authorization = `Bearer ${secret}`;
     }
 
     const response = await fetch(url, { method: 'POST', headers });
@@ -314,8 +314,8 @@ void pipeWithPrefix(mcpSpawn.stdout, '[mcp]', GREEN, process.stdout);
 void pipeWithPrefix(mcpSpawn.stderr, '[mcp]', GREEN, process.stderr);
 
 // Print startup banner
-const port = process.env['PORT'] ?? '9515';
-const extensionPath = join(homedir(), '.opentabs', 'extension') + '/';
+const port = process.env.PORT ?? '9515';
+const extensionPath = `${join(homedir(), '.opentabs', 'extension')}/`;
 const contentLines = [
   { text: 'OpenTabs Dev Server', separatorAfter: true },
   { text: `MCP Server:  http://localhost:${port}/mcp` },

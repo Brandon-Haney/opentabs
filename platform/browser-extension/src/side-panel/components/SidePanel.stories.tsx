@@ -1,3 +1,7 @@
+import type { Meta, StoryObj } from '@storybook/react';
+import { Search, X } from 'lucide-react';
+import { useState } from 'react';
+import type { BrowserToolState, FailedPluginState, PluginSearchResult, PluginState } from '../bridge';
 import { BrowserToolsCard } from './BrowserToolsCard';
 import { DisconnectedState, LoadingState } from './EmptyStates';
 import { Footer } from './Footer';
@@ -6,10 +10,6 @@ import { PluginList } from './PluginList';
 import { Accordion } from './retro/Accordion';
 import { Input } from './retro/Input';
 import { SearchResults } from './SearchResults';
-import { Search, X } from 'lucide-react';
-import { useState } from 'react';
-import type { BrowserToolState, FailedPluginState, PluginSearchResult, PluginState } from '../bridge';
-import type { Meta, StoryObj } from '@storybook/react';
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -201,7 +201,7 @@ const SidePanelShell = ({
   searchBar?: React.ReactNode;
   centered?: boolean;
 }) => (
-  <div className="text-foreground flex min-h-screen flex-col">
+  <div className="flex min-h-screen flex-col text-foreground">
     {searchBar}
     <main className={`flex-1 px-3 py-2 ${centered ? 'flex items-center justify-center' : ''}`}>{children}</main>
     <Footer />
@@ -223,7 +223,7 @@ const SearchBar = ({
 }) => (
   <div className="px-3 py-2">
     <div className="relative">
-      <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2 h-4 w-4 -translate-y-1/2" />
+      <Search className="pointer-events-none absolute top-1/2 left-2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         value={value}
         onChange={e => onChange(e.target.value)}
@@ -234,7 +234,7 @@ const SearchBar = ({
         <button
           type="button"
           onClick={onClear}
-          className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer">
+          className="absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />
         </button>
       )}

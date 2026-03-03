@@ -21,31 +21,31 @@
  * All tests use dynamic ports and isolated config directories.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+import type { BrowserContext } from '@playwright/test';
+import type { McpServer } from './fixtures.js';
 import {
-  test,
-  expect,
-  startMcpServer,
-  fetchWsInfo,
-  launchExtensionContext,
-  createTestConfigDir,
   cleanupTestConfigDir,
   createMcpClient,
+  createTestConfigDir,
+  expect,
+  fetchWsInfo,
+  launchExtensionContext,
+  startMcpServer,
   symlinkCrossPlatform,
+  test,
 } from './fixtures.js';
 import {
+  callToolExpectSuccess,
+  getExtensionId,
+  setupToolTest,
+  waitFor,
   waitForExtensionConnected,
   waitForExtensionDisconnected,
   waitForLog,
-  waitFor,
   waitForToolResult,
-  callToolExpectSuccess,
-  setupToolTest,
-  getExtensionId,
 } from './helpers.js';
-import fs from 'node:fs';
-import path from 'node:path';
-import type { McpServer } from './fixtures.js';
-import type { BrowserContext } from '@playwright/test';
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -93,100 +93,101 @@ test.describe('MCP server lifecycle', () => {
   });
 });
 
-test.describe.serial('Hot reload', () => {
-  test('single hot reload: server preserved, extension stays connected, tab.syncAll resent', async ({
-    mcpServer,
-    extensionContext: _extensionContext,
-  }) => {
-    // 1. Wait for initial connection + full handshake
-    await waitForExtensionConnected(mcpServer);
-    await waitForLog(mcpServer, 'tab.syncAll received');
+test.describe
+  .serial('Hot reload', () => {
+    test('single hot reload: server preserved, extension stays connected, tab.syncAll resent', async ({
+      mcpServer,
+      extensionContext: _extensionContext,
+    }) => {
+      // 1. Wait for initial connection + full handshake
+      await waitForExtensionConnected(mcpServer);
+      await waitForLog(mcpServer, 'tab.syncAll received');
 
-    // 2. Clear logs to isolate hot-reload output
-    mcpServer.logs.length = 0;
-
-    // 3. Trigger hot reload
-    mcpServer.triggerHotReload();
-
-    // 4. Wait for the hot-reload cycle to complete.
-    //    The server and WebSocket connection are preserved across reloads.
-    //    The server sends sync.full to the extension via the existing connection,
-    //    and the extension responds with tab.syncAll.
-    await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
-
-    // 5. Verify logs show the reload → resync sequence
-    const logsJoined = mcpServer.logs.join('\n');
-    expect(logsJoined).toContain('Hot reload complete');
-    expect(logsJoined).toContain('tab.syncAll received');
-
-    // 6. Extension should still be connected after reload
-    const h = await mcpServer.health();
-    expect(h).not.toBeNull();
-    if (!h) throw new Error('health returned null');
-    expect(h.extensionConnected).toBe(true);
-  });
-
-  test('three rapid hot reloads: extension stays connected after each one', async ({
-    mcpServer,
-    extensionContext: _extensionContext,
-  }) => {
-    test.slow(); // 3 sequential hot reloads — needs extra time under parallel load
-
-    // Wait for initial full handshake
-    await waitForExtensionConnected(mcpServer);
-    await waitForLog(mcpServer, 'tab.syncAll received');
-
-    for (let i = 1; i <= 3; i++) {
+      // 2. Clear logs to isolate hot-reload output
       mcpServer.logs.length = 0;
+
+      // 3. Trigger hot reload
       mcpServer.triggerHotReload();
 
-      // Wait for the reload cycle: sync.full → tab.syncAll.
-      // Use 30s timeout per reload — under parallel load, reconnect backoff
-      // can take longer than the default 15s.
-      await waitForLog(mcpServer, 'tab.syncAll received', 30_000);
+      // 4. Wait for the hot-reload cycle to complete.
+      //    The server and WebSocket connection are preserved across reloads.
+      //    The server sends sync.full to the extension via the existing connection,
+      //    and the extension responds with tab.syncAll.
+      await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
 
+      // 5. Verify logs show the reload → resync sequence
       const logsJoined = mcpServer.logs.join('\n');
       expect(logsJoined).toContain('Hot reload complete');
+      expect(logsJoined).toContain('tab.syncAll received');
 
-      // Extension should still be connected
+      // 6. Extension should still be connected after reload
       const h = await mcpServer.health();
       expect(h).not.toBeNull();
       if (!h) throw new Error('health returned null');
       expect(h.extensionConnected).toBe(true);
-    }
+    });
+
+    test('three rapid hot reloads: extension stays connected after each one', async ({
+      mcpServer,
+      extensionContext: _extensionContext,
+    }) => {
+      test.slow(); // 3 sequential hot reloads — needs extra time under parallel load
+
+      // Wait for initial full handshake
+      await waitForExtensionConnected(mcpServer);
+      await waitForLog(mcpServer, 'tab.syncAll received');
+
+      for (let i = 1; i <= 3; i++) {
+        mcpServer.logs.length = 0;
+        mcpServer.triggerHotReload();
+
+        // Wait for the reload cycle: sync.full → tab.syncAll.
+        // Use 30s timeout per reload — under parallel load, reconnect backoff
+        // can take longer than the default 15s.
+        await waitForLog(mcpServer, 'tab.syncAll received', 30_000);
+
+        const logsJoined = mcpServer.logs.join('\n');
+        expect(logsJoined).toContain('Hot reload complete');
+
+        // Extension should still be connected
+        const h = await mcpServer.health();
+        expect(h).not.toBeNull();
+        if (!h) throw new Error('health returned null');
+        expect(h.extensionConnected).toBe(true);
+      }
+    });
+
+    test('hot reload preserves plugin discovery (slack plugin still found)', async ({
+      mcpServer,
+      extensionContext: _extensionContext,
+    }) => {
+      await waitForExtensionConnected(mcpServer);
+      await waitForLog(mcpServer, 'tab.syncAll received');
+
+      // Note the plugin count before reload
+      const before = await mcpServer.health();
+      expect(before).not.toBeNull();
+      if (!before) throw new Error('health returned null');
+      const pluginsBefore = before.plugins;
+
+      // Trigger hot reload
+      mcpServer.logs.length = 0;
+      mcpServer.triggerHotReload();
+
+      // Wait for full cycle
+      await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
+
+      // Plugin count should be the same after reload
+      const after = await mcpServer.health();
+      expect(after).not.toBeNull();
+      if (!after) throw new Error('health returned null');
+      expect(after.plugins).toBe(pluginsBefore);
+
+      // Logs should show plugin re-discovery
+      const logsJoined = mcpServer.logs.join('\n');
+      expect(logsJoined).toContain('Plugin discovery complete');
+    });
   });
-
-  test('hot reload preserves plugin discovery (slack plugin still found)', async ({
-    mcpServer,
-    extensionContext: _extensionContext,
-  }) => {
-    await waitForExtensionConnected(mcpServer);
-    await waitForLog(mcpServer, 'tab.syncAll received');
-
-    // Note the plugin count before reload
-    const before = await mcpServer.health();
-    expect(before).not.toBeNull();
-    if (!before) throw new Error('health returned null');
-    const pluginsBefore = before.plugins;
-
-    // Trigger hot reload
-    mcpServer.logs.length = 0;
-    mcpServer.triggerHotReload();
-
-    // Wait for full cycle
-    await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
-
-    // Plugin count should be the same after reload
-    const after = await mcpServer.health();
-    expect(after).not.toBeNull();
-    if (!after) throw new Error('health returned null');
-    expect(after.plugins).toBe(pluginsBefore);
-
-    // Logs should show plugin re-discovery
-    const logsJoined = mcpServer.logs.join('\n');
-    expect(logsJoined).toContain('Plugin discovery complete');
-  });
-});
 
 test.describe('Kill and restart', () => {
   test('extension reconnects after server is killed and restarted', async ({
@@ -408,7 +409,7 @@ test.describe('WebSocket authentication', () => {
 
   test('/ws-info returns URL without leaking the secret in the URL', async ({ mcpServer }) => {
     const headers: Record<string, string> = {};
-    if (mcpServer.secret) headers['Authorization'] = `Bearer ${mcpServer.secret}`;
+    if (mcpServer.secret) headers.Authorization = `Bearer ${mcpServer.secret}`;
     const res = await fetch(`http://localhost:${mcpServer.port}/ws-info`, {
       headers,
       signal: AbortSignal.timeout(3_000),
@@ -500,7 +501,7 @@ test.describe('Secret rotation during hot reload', () => {
     const oldSecret = authData.secret;
     const newSecret = `rotated-${crypto.randomUUID()}`;
     expect(newSecret).not.toBe(oldSecret);
-    fs.writeFileSync(authPath, JSON.stringify({ secret: newSecret }) + '\n', 'utf-8');
+    fs.writeFileSync(authPath, `${JSON.stringify({ secret: newSecret })}\n`, 'utf-8');
 
     // Trigger hot reload — server picks up the new secret from auth.json
     mcpServer.logs.length = 0;
@@ -794,7 +795,7 @@ test.describe('URL change reconnection', () => {
       const realExtensionAdaptersDir = fs.readlinkSync(extensionAdaptersSymlink);
       const extensionRootDir = path.dirname(realExtensionAdaptersDir);
       const extensionAuthPath = path.join(extensionRootDir, 'auth.json');
-      fs.writeFileSync(extensionAuthPath, JSON.stringify({ secret: serverB.secret }) + '\n', 'utf-8');
+      fs.writeFileSync(extensionAuthPath, `${JSON.stringify({ secret: serverB.secret })}\n`, 'utf-8');
 
       // Wait briefly for the file write to be visible to the extension's
       // fetch of chrome.runtime.getURL('auth.json').

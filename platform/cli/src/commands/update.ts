@@ -7,15 +7,15 @@
  * the actual update. Warns if a server is running.
  */
 
-import { getPidFilePath, parsePidFile } from '../config.js';
-import { resolvePort } from '../parse-port.js';
-import { DEFAULT_HOST, DEFAULT_PORT, platformExec, toErrorMessage } from '@opentabs-dev/shared';
-import pc from 'picocolors';
 import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_HOST, DEFAULT_PORT, platformExec, toErrorMessage } from '@opentabs-dev/shared';
 import type { Command } from 'commander';
+import pc from 'picocolors';
+import { getPidFilePath, parsePidFile } from '../config.js';
+import { resolvePort } from '../parse-port.js';
 
 const CLI_PACKAGE_NAME = '@opentabs-dev/cli';
 
@@ -149,7 +149,7 @@ const getServerStatus = async (port: number): Promise<ServerStatus> => {
     if (!res.ok) return { running: false };
     const version = res.headers.get('x-opentabs-version') ?? undefined;
     const body = (await res.json()) as Record<string, unknown>;
-    const mode = typeof body['mode'] === 'string' ? body['mode'] : undefined;
+    const mode = typeof body.mode === 'string' ? body.mode : undefined;
     const isBackground = await isBackgroundServerRunning();
     const serverType = isBackground ? 'background' : mode === 'dev' ? 'dev' : 'foreground';
     return { running: true, version, mode, serverType };

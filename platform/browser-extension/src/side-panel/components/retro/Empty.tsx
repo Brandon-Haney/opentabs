@@ -1,7 +1,7 @@
-import { Text } from './Text';
-import { cn } from '../../lib/cn';
 import { Ghost } from 'lucide-react';
 import type { HTMLAttributes } from 'react';
+import { cn } from '../../lib/cn';
+import { Text } from './Text';
 
 interface IEmptyProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
@@ -10,7 +10,7 @@ interface IEmptyProps extends HTMLAttributes<HTMLDivElement> {
 const Empty = ({ className, ...props }: IEmptyProps) => (
   <div
     className={cn(
-      'bg-card flex flex-col items-center justify-center rounded border-2 p-4 text-center shadow-md transition-all hover:shadow-none md:p-8',
+      'flex flex-col items-center justify-center rounded border-2 bg-card p-4 text-center shadow-md transition-all hover:shadow-none md:p-8',
       className,
     )}
     {...props}
@@ -31,17 +31,17 @@ const EmptyIcon = ({ children, className, ...props }: IEmptyProps) => (
 EmptyIcon.displayName = 'Empty.Icon';
 
 const EmptyTitle = ({ className, ...props }: IEmptyProps) => (
-  <Text as="h3" className={cn('text-lg font-bold md:text-2xl', className)} {...props} />
+  <Text as="h3" className={cn('font-bold text-lg md:text-2xl', className)} {...props} />
 );
 EmptyTitle.displayName = 'Empty.Title';
 
 const EmptySeparator = ({ className, ...props }: IEmptyProps) => (
-  <div role="separator" className={cn('bg-primary h-1 w-16', className)} {...props} />
+  <div role="separator" className={cn('h-1 w-16 bg-primary', className)} {...props} />
 );
 EmptySeparator.displayName = 'Empty.Separator';
 
 const EmptyDescription = ({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) => (
-  <p className={cn('text-muted-foreground max-w-[320px]', className)} {...props} />
+  <p className={cn('max-w-[320px] text-muted-foreground', className)} {...props} />
 );
 EmptyDescription.displayName = 'Empty.Description';
 

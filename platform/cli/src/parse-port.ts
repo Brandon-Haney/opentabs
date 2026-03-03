@@ -2,10 +2,10 @@
  * Shared port parser and resolver for Commander options.
  */
 
+import { readFileSync } from 'node:fs';
 import { DEFAULT_PORT, getConfigPath } from '@opentabs-dev/shared';
 import { InvalidArgumentError } from 'commander';
 import pc from 'picocolors';
-import { readFileSync } from 'node:fs';
 
 const parsePort = (value: string): number => {
   const port = Number(value);
@@ -52,7 +52,7 @@ const readConfigPort = (): number | null => {
 const resolvePort = (options: { port?: number }): number => {
   if (options.port !== undefined) return options.port;
 
-  const envPort = process.env['OPENTABS_PORT'];
+  const envPort = process.env.OPENTABS_PORT;
   if (envPort !== undefined) {
     const parsed = Number(envPort);
     if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535) {

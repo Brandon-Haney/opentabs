@@ -1,3 +1,5 @@
+import { beforeEach, describe, expect, test } from 'vitest';
+import type { PluginState, WireToolDef } from './bridge.js';
 import {
   extractShortName,
   getFullState,
@@ -13,17 +15,15 @@ import {
   setToolEnabled,
   updatePlugin,
 } from './bridge.js';
-import { beforeEach, describe, expect, test } from 'vitest';
-import type { PluginState, WireToolDef } from './bridge.js';
 
 /** Captured sendMessage calls. Each entry has the message object passed to sendMessage. */
 let sendMessageCalls: Array<{ message: unknown }> = [];
 
 /** Response to return from the next chrome.runtime.sendMessage callback */
-let mockResponse: unknown = undefined;
+let mockResponse: unknown;
 
 /** When set, chrome.runtime.lastError will return this error */
-let mockLastError: { message: string } | undefined = undefined;
+let mockLastError: { message: string } | undefined;
 
 beforeEach(() => {
   sendMessageCalls = [];
@@ -458,7 +458,7 @@ describe('sendConfirmationResponse', () => {
 
     const message = sendMessageCalls[0]?.message as Record<string, unknown>;
     const data = message.data as Record<string, unknown>;
-    expect(Object.prototype.hasOwnProperty.call(data, 'scope')).toBe(false);
+    expect(Object.hasOwn(data, 'scope')).toBe(false);
   });
 
   test('handles chrome.runtime.sendMessage rejection gracefully', () => {

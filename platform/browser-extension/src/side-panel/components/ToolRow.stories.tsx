@@ -1,11 +1,11 @@
-import { ToolRow } from './ToolRow';
-import { useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
+import { useState } from 'react';
+import { ToolRow } from './ToolRow';
 
 const meta: Meta<typeof ToolRow> = {
   title: 'Components/ToolRow',
   component: ToolRow,
-  decorators: [Story => <div className="border-border w-80 rounded border-2">{Story()}</div>],
+  decorators: [Story => <div className="w-80 rounded border-2 border-border">{Story()}</div>],
 };
 
 type Story = StoryObj<typeof ToolRow>;

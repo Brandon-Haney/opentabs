@@ -1,10 +1,4 @@
-import {
-  requireStringParam,
-  requireTabId,
-  sendErrorResult,
-  sendSuccessResult,
-  sendValidationError,
-} from './helpers.js';
+import type { PluginTabInfo, TabState } from '@opentabs-dev/shared';
 import { bgLogCollector } from '../background-log-state.js';
 import {
   buildWsUrl,
@@ -20,13 +14,19 @@ import {
   WS_CONNECTED_KEY,
   WS_FLUSH_DELAY_MS,
 } from '../constants.js';
+import type { BgForceReconnectMessage, OffscreenGetLogsMessage, SpGetStateMessage } from '../extension-messages.js';
+import type { LogEntry, LogFilterOptions, LogStats } from '../log-collector.js';
 import { getActiveCapturesSummary } from '../network-capture.js';
 import { getAllPluginMeta, getPluginMeta } from '../plugin-storage.js';
 import { findAllMatchingTabs } from '../tab-matching.js';
 import { getAggregateState, getLastKnownStates } from '../tab-state.js';
-import type { BgForceReconnectMessage, OffscreenGetLogsMessage, SpGetStateMessage } from '../extension-messages.js';
-import type { LogEntry, LogFilterOptions, LogStats } from '../log-collector.js';
-import type { PluginTabInfo, TabState } from '@opentabs-dev/shared';
+import {
+  requireStringParam,
+  requireTabId,
+  sendErrorResult,
+  sendSuccessResult,
+  sendValidationError,
+} from './helpers.js';
 
 export const handleExtensionGetState = async (id: string | number): Promise<void> => {
   try {
@@ -432,7 +432,7 @@ export const handleBrowserExecuteScript = async (
                   try {
                     const json = JSON.stringify(captured.value);
                     captured.value =
-                      json.length > truncLimit ? json.slice(0, truncLimit) + '... (truncated)' : JSON.parse(json);
+                      json.length > truncLimit ? `${json.slice(0, truncLimit)}... (truncated)` : JSON.parse(json);
                   } catch {
                     captured.value = String(captured.value);
                   }

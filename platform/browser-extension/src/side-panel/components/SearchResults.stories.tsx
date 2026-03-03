@@ -1,7 +1,7 @@
-import { SearchResults } from './SearchResults';
+import type { Meta, StoryObj } from '@storybook/react';
 import { useState } from 'react';
 import type { BrowserToolState, PluginSearchResult, PluginState } from '../bridge';
-import type { Meta, StoryObj } from '@storybook/react';
+import { SearchResults } from './SearchResults';
 
 // ---------------------------------------------------------------------------
 // Mock helpers
@@ -253,7 +253,7 @@ const AllStatesDemo = () => {
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-muted-foreground mb-2 font-mono text-xs">Installed only</p>
+        <p className="mb-2 font-mono text-muted-foreground text-xs">Installed only</p>
         <SearchResults
           plugins={plugins1}
           failedPlugins={[]}
@@ -270,7 +270,7 @@ const AllStatesDemo = () => {
         />
       </div>
       <div>
-        <p className="text-muted-foreground mb-2 font-mono text-xs">NPM loading</p>
+        <p className="mb-2 font-mono text-muted-foreground text-xs">NPM loading</p>
         <SearchResults
           plugins={plugins2}
           failedPlugins={[]}
@@ -287,7 +287,7 @@ const AllStatesDemo = () => {
         />
       </div>
       <div>
-        <p className="text-muted-foreground mb-2 font-mono text-xs">No results</p>
+        <p className="mb-2 font-mono text-muted-foreground text-xs">No results</p>
         <SearchResults
           plugins={plugins3}
           failedPlugins={[]}
@@ -304,7 +304,7 @@ const AllStatesDemo = () => {
         />
       </div>
       <div>
-        <p className="text-muted-foreground mb-2 font-mono text-xs">Both installed + available</p>
+        <p className="mb-2 font-mono text-muted-foreground text-xs">Both installed + available</p>
         <SearchResults
           plugins={plugins4}
           failedPlugins={[]}

@@ -1,6 +1,6 @@
-import { _setLogTransport, log } from './log.js';
-import { afterEach, describe, expect, vi, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { LogEntry } from './log.js';
+import { _setLogTransport, log } from './log.js';
 
 describe('sdk.log', () => {
   // Restore the default transport after each test
@@ -125,12 +125,12 @@ describe('sdk.log', () => {
 describe('global registration', () => {
   test('globalThis.__openTabs._setLogTransport is a function', () => {
     const ot = (globalThis as Record<string, unknown>).__openTabs as Record<string, unknown>;
-    expect(typeof ot['_setLogTransport']).toBe('function');
+    expect(typeof ot._setLogTransport).toBe('function');
   });
 
   test('globalThis.__openTabs.log is the exported log object', () => {
     const ot = (globalThis as Record<string, unknown>).__openTabs as Record<string, unknown>;
-    expect(ot['log']).toBe(log);
+    expect(ot.log).toBe(log);
   });
 });
 
@@ -187,12 +187,12 @@ describe('safe serialization', () => {
   test('handles circular references', () => {
     const entries = collect();
     const obj: Record<string, unknown> = { a: 1 };
-    obj['self'] = obj;
+    obj.self = obj;
     log.info('test', obj);
 
     const data = entries[0]?.data[0] as Record<string, unknown> | undefined;
-    expect(data?.['a']).toBe(1);
-    expect(data?.['self']).toBe('[Circular]');
+    expect(data?.a).toBe(1);
+    expect(data?.self).toBe('[Circular]');
   });
 
   test('truncates long strings', () => {
@@ -267,8 +267,8 @@ describe('safe serialization', () => {
     log.info('test', pojo);
 
     const data = entries[0]?.data[0] as Record<string, unknown> | undefined;
-    expect(data?.['nodeType']).toBe(1);
-    expect(data?.['className']).toBe(42);
+    expect(data?.nodeType).toBe(1);
+    expect(data?.className).toBe(42);
   });
 
   test('safeSerializeArg never throws for any input', () => {
@@ -315,7 +315,7 @@ describe('safe serialization', () => {
     log.info('test', { callback: myCallback });
 
     const data = entries[0]?.data[0] as Record<string, unknown>;
-    expect(data['callback']).toBe('[Function: myCallback]');
+    expect(data.callback).toBe('[Function: myCallback]');
   });
 
   test('serializes bigints nested inside objects via JSON replacer', () => {
@@ -323,7 +323,7 @@ describe('safe serialization', () => {
     log.info('test', { count: BigInt(42) });
 
     const data = entries[0]?.data[0] as Record<string, unknown>;
-    expect(data['count']).toBe('[BigInt: 42]');
+    expect(data.count).toBe('[BigInt: 42]');
   });
 
   test('serializes symbols nested inside objects via JSON replacer', () => {
@@ -331,7 +331,7 @@ describe('safe serialization', () => {
     log.info('test', { key: Symbol('mySymbol') });
 
     const data = entries[0]?.data[0] as Record<string, unknown>;
-    expect(data['key']).toBe('[Symbol: mySymbol]');
+    expect(data.key).toBe('[Symbol: mySymbol]');
   });
 
   test('serializes WeakRef as [WeakRef]', () => {
@@ -380,10 +380,10 @@ describe('safe serialization', () => {
     });
 
     const data = entries[0]?.data[0] as Record<string, unknown>;
-    expect(data['wr']).toBe('[WeakRef]');
-    expect(data['wm']).toBe('[WeakMap]');
-    expect(data['ws']).toBe('[WeakSet]');
-    expect(data['ab']).toBe('[ArrayBuffer]');
+    expect(data.wr).toBe('[WeakRef]');
+    expect(data.wm).toBe('[WeakMap]');
+    expect(data.ws).toBe('[WeakSet]');
+    expect(data.ab).toBe('[ArrayBuffer]');
   });
 
   test('serializes SharedArrayBuffer nested inside object via JSON replacer', () => {
@@ -392,6 +392,6 @@ describe('safe serialization', () => {
     log.info('test', { sab: new SharedArrayBuffer(4) });
 
     const data = entries[0]?.data[0] as Record<string, unknown>;
-    expect(data['sab']).toBe('[SharedArrayBuffer]');
+    expect(data.sab).toBe('[SharedArrayBuffer]');
   });
 });

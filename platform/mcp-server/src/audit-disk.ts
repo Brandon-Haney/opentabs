@@ -8,11 +8,11 @@
  * Disk writes are fire-and-forget: errors are logged but never block tool dispatch.
  */
 
-import { getConfigDir } from './config.js';
-import { log } from './logger.js';
-import { safeChmod, toErrorMessage } from '@opentabs-dev/shared';
 import { appendFile, rename, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { safeChmod, toErrorMessage } from '@opentabs-dev/shared';
+import { getConfigDir } from './config.js';
+import { log } from './logger.js';
 import type { AuditEntry } from './state.js';
 
 /** Maximum audit.log size before rotation (10 MB) */
@@ -36,7 +36,7 @@ const rotateIfNeeded = async (auditPath: string): Promise<void> => {
     const stats = await stat(auditPath);
     if (stats.size < MAX_AUDIT_FILE_SIZE) return;
 
-    const rotatedPath = auditPath + '.1';
+    const rotatedPath = `${auditPath}.1`;
 
     // Delete any existing rotated file
     await unlink(rotatedPath).catch(() => {});
@@ -64,7 +64,7 @@ const getAuditLogPath = (): string => join(getConfigDir(), 'audit.log');
 const appendAuditEntryToDisk = async (entry: AuditEntry): Promise<void> => {
   try {
     const auditPath = getAuditLogPath();
-    const line = JSON.stringify(entry) + '\n';
+    const line = `${JSON.stringify(entry)}\n`;
 
     const g = globalThis as Record<string, unknown>;
     const count = (g[WRITE_COUNT_KEY] as number | undefined) ?? 0;

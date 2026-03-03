@@ -1,6 +1,6 @@
-import { appendLog, clearAllLogs, getBufferedPlugins, getLogCount, getLogs, pruneStaleBuffers } from './log-buffer.js';
 import { afterEach, describe, expect, test } from 'vitest';
 import type { PluginLogEntry } from './log-buffer.js';
+import { appendLog, clearAllLogs, getBufferedPlugins, getLogCount, getLogs, pruneStaleBuffers } from './log-buffer.js';
 
 const makeEntry = (plugin: string, message: string, overrides?: Partial<PluginLogEntry>): PluginLogEntry => ({
   level: 'info',
@@ -138,8 +138,8 @@ describe('circular buffer behavior', () => {
       const prev = msgs[i - 1];
       const curr = msgs[i];
       if (!prev || !curr) throw new Error('Unexpected missing entry');
-      const prevNum = parseInt(prev.split('-')[1] ?? '');
-      const currNum = parseInt(curr.split('-')[1] ?? '');
+      const prevNum = parseInt(prev.split('-')[1] ?? '', 10);
+      const currNum = parseInt(curr.split('-')[1] ?? '', 10);
       expect(currNum).toBe(prevNum + 1);
     }
   });

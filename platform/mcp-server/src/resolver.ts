@@ -9,14 +9,14 @@
  * directories for packages matching the opentabs-plugin-* naming convention.
  */
 
-import { log } from './logger.js';
-import { ok, err, PLUGIN_PREFIX, platformExec, toErrorMessage } from '@opentabs-dev/shared';
 import { execFile } from 'node:child_process';
-import { readFile, readdir, realpath, stat } from 'node:fs/promises';
+import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import type { Result } from '@opentabs-dev/shared';
+import { err, ok, PLUGIN_PREFIX, platformExec, toErrorMessage } from '@opentabs-dev/shared';
+import { log } from './logger.js';
 
 /**
  * Allowed root directories for local plugin paths.
@@ -262,7 +262,7 @@ const scanGlobalDir = async (globalDir: string): Promise<string[]> => {
  * plus any non-fatal errors encountered during scanning.
  */
 const discoverGlobalNpmPlugins = async (): Promise<{ dirs: string[]; errors: string[] }> => {
-  if (process.env['OPENTABS_SKIP_NPM_DISCOVERY'] === '1') {
+  if (process.env.OPENTABS_SKIP_NPM_DISCOVERY === '1') {
     log.info('Skipping npm auto-discovery (OPENTABS_SKIP_NPM_DISCOVERY=1)');
     return { dirs: [], errors: [] };
   }

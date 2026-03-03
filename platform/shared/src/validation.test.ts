@@ -1,5 +1,5 @@
-import { EXTENSION_COPY_EXCLUDE_PATTERN, isBlockedUrlScheme, validatePluginName, validateUrlPattern } from './index.js';
 import { describe, expect, test } from 'vitest';
+import { EXTENSION_COPY_EXCLUDE_PATTERN, isBlockedUrlScheme, validatePluginName, validateUrlPattern } from './index.js';
 
 describe('validateUrlPattern', () => {
   describe('valid patterns', () => {
@@ -264,7 +264,7 @@ describe('validateUrlPattern', () => {
   describe('ReDoS protection', () => {
     test('completes in bounded time for pathological input (ReDoS protection)', () => {
       const start = Date.now();
-      const result = validateUrlPattern('*://' + 'a'.repeat(50) + '!/path');
+      const result = validateUrlPattern(`*://${'a'.repeat(50)}!/path`);
       const elapsed = Date.now() - start;
       expect(result).not.toBeNull(); // invalid host — returns error string
       expect(elapsed).toBeLessThan(100); // must complete in under 100ms

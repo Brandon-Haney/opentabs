@@ -1,6 +1,6 @@
-import { cn } from '../../lib/cn';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import type { ComponentProps } from 'react';
+import { cn } from '../../lib/cn';
 
 const Accordion = AccordionPrimitive.Root;
 
@@ -8,7 +8,7 @@ const AccordionItem = ({ className, ref, ...props }: ComponentProps<typeof Accor
   <AccordionPrimitive.Item
     ref={ref}
     className={cn(
-      'bg-background text-foreground overflow-hidden rounded border-2 shadow-md transition-all hover:shadow-sm data-[state=open]:shadow-sm',
+      'overflow-hidden rounded border-2 bg-background text-foreground shadow-md transition-all hover:shadow-sm data-[state=open]:shadow-sm',
       className,
     )}
     {...props}
@@ -21,7 +21,7 @@ const AccordionContent = ({
   ref,
   ...props
 }: ComponentProps<typeof AccordionPrimitive.Content>) => (
-  <AccordionPrimitive.Content ref={ref} className="bg-card text-card-foreground overflow-hidden font-sans" {...props}>
+  <AccordionPrimitive.Content ref={ref} className="overflow-hidden bg-card font-sans text-card-foreground" {...props}>
     <div className={cn(className)}>{children}</div>
   </AccordionPrimitive.Content>
 );

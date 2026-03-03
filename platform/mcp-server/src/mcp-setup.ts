@@ -21,15 +21,15 @@
  *   (dispatchToExtension, sendInvocationStart, etc.).
  */
 
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { z } from 'zod';
 import { log } from './logger.js';
+import type { RequestHandlerExtra } from './mcp-tool-dispatch.js';
 import { handleBrowserToolCall, handlePluginToolCall } from './mcp-tool-dispatch.js';
 import { trustTierPrefix } from './registry.js';
-import { prefixedToolName, isToolEnabled, isBrowserToolEnabled } from './state.js';
+import type { CachedBrowserTool, ServerState, ToolLookupEntry } from './state.js';
+import { isBrowserToolEnabled, isToolEnabled, prefixedToolName } from './state.js';
 import { version } from './version.js';
-import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { z } from 'zod';
-import type { RequestHandlerExtra } from './mcp-tool-dispatch.js';
-import type { ServerState, CachedBrowserTool, ToolLookupEntry } from './state.js';
 
 /**
  * The Server constructor type, extracted without directly referencing the
@@ -87,7 +87,7 @@ const getServerCtor = async (): Promise<ServerModuleShape['Server']> => {
 const rebuildCachedBrowserTools = (state: ServerState): void => {
   state.cachedBrowserTools = state.browserTools.map((bt): CachedBrowserTool => {
     const schema = z.toJSONSchema(bt.input) as Record<string, unknown>;
-    delete schema['$schema'];
+    delete schema.$schema;
     return {
       name: bt.name,
       description: bt.description,
@@ -139,7 +139,7 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
     }
 
     const { pluginName: foundPlugin, toolName: foundTool } = callableCheck;
-    log.debug('tool.call:', toolName, '→', foundPlugin + '/' + foundTool);
+    log.debug('tool.call:', toolName, '→', `${foundPlugin}/${foundTool}`);
     // Safe to assert: checkToolCallable verified the tool exists in registry.toolLookup
     const lookup = state.registry.toolLookup.get(toolName) as ToolLookupEntry;
 

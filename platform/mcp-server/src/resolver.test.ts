@@ -1,11 +1,11 @@
-import { discoverGlobalNpmPlugins, isAllowedPluginPath, resetGlobalPathsCache, resolvePluginPath } from './resolver.js';
-import { isErr, isOk } from '@opentabs-dev/shared';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import type * as ChildProcess from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type * as ChildProcess from 'node:child_process';
+import { isErr, isOk } from '@opentabs-dev/shared';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { discoverGlobalNpmPlugins, isAllowedPluginPath, resetGlobalPathsCache, resolvePluginPath } from './resolver.js';
 
 vi.mock('node:child_process', async importOriginal => {
   const actual = await importOriginal<typeof ChildProcess>();
@@ -526,7 +526,7 @@ describe('discoverGlobalNpmPlugins', () => {
     writePluginPkgJson(join(globalDir, 'opentabs-plugin-slack'), 'opentabs-plugin-slack');
 
     // Inject the same global path twice to exercise the deduplication logic
-    (globalThis as Record<string, unknown>)['__opentabs_global_paths__'] = [globalDir, globalDir];
+    (globalThis as Record<string, unknown>).__opentabs_global_paths__ = [globalDir, globalDir];
 
     const { dirs } = await discoverGlobalNpmPlugins();
 

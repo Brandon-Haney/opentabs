@@ -21,10 +21,10 @@
     "generate:browser-tools-catalog": "tsx scripts/generate-browser-tools-catalog.ts",
     "type-check": "tsc --build",
     "type-check:e2e": "tsc --noEmit -p e2e/tsconfig.json",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "format": "prettier --write --cache --cache-location node_modules/.cache/.prettiercache \"**/*.{ts,tsx,json,md}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --fix .",
+    "format": "biome format --write .",
+    "format:check": "biome check --formatter-enabled=true --linter-enabled=false .",
     "knip": "knip",
     "check": "npm run build && npm run build:plugins && npm run lint && npm run format:check && npm run knip && npm run test",
     "check:everything": "npm run check && npm run test:e2e && npm run check:docs && npm run check:plugins",
@@ -87,14 +87,13 @@
   },
   "lint-staged": {
     "*.{ts,tsx}": [
-      "prettier --write",
-      "eslint --fix"
+      "biome check --write --no-errors-on-unmatched"
     ],
     "*.json": [
-      "prettier --write"
+      "biome format --write --no-errors-on-unmatched"
     ],
     "*.md": [
-      "prettier --write"
+      "biome format --write --no-errors-on-unmatched"
     ]
   }
 }

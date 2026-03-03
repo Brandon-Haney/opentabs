@@ -17,8 +17,8 @@
 const cliSkipPermissions =
   process.argv.includes('--dangerously-skip-permissions') ||
   process.argv.includes('--dangerously-skip-confirmation') ||
-  process.env['OPENTABS_SKIP_PERMISSIONS'] === '1' ||
-  process.env['OPENTABS_SKIP_CONFIRMATION'] === '1';
+  process.env.OPENTABS_SKIP_PERMISSIONS === '1' ||
+  process.env.OPENTABS_SKIP_CONFIRMATION === '1';
 
 /** Whether the CLI flag or env var requests permission bypass */
 export const isCliSkipPermissions = (): boolean => cliSkipPermissions;

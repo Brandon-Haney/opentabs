@@ -6,23 +6,23 @@
  * from the side panel (relayed through the Chrome extension).
  */
 
-import { pluginNameFromPackage } from './loader.js';
-import { log } from './logger.js';
-import {
-  atomicWrite,
-  getConfigDir,
-  getConfigPath,
-  OFFICIAL_SCOPE,
-  normalizePluginName,
-  isValidPluginPackageName,
-  resolvePluginPackageCandidates,
-  platformExec,
-} from '@opentabs-dev/shared';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
-import type { ServerState, RegisteredPlugin } from './state.js';
+import {
+  atomicWrite,
+  getConfigDir,
+  getConfigPath,
+  isValidPluginPackageName,
+  normalizePluginName,
+  OFFICIAL_SCOPE,
+  platformExec,
+  resolvePluginPackageCandidates,
+} from '@opentabs-dev/shared';
+import { pluginNameFromPackage } from './loader.js';
+import { log } from './logger.js';
+import type { RegisteredPlugin, ServerState } from './state.js';
 
 // ---------------------------------------------------------------------------
 // Search result type returned to callers
@@ -449,7 +449,7 @@ const removeLocalPlugin = async (state: { configWriteMutex: Promise<void> }, plu
 
     if (found) {
       record.localPlugins = updatedPlugins;
-      await atomicWrite(configPath, JSON.stringify(record, null, 2) + '\n', 0o600);
+      await atomicWrite(configPath, `${JSON.stringify(record, null, 2)}\n`, 0o600);
       removed = true;
     }
   })();

@@ -2,7 +2,13 @@
  * `opentabs config` command — view and manage configuration.
  */
 
-import { getMcpClientConfigs, printMcpClientConfigs } from './start.js';
+import { existsSync } from 'node:fs';
+import { access, mkdir, unlink } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { atomicWrite, DEFAULT_HOST, DEFAULT_PORT, generateSecret, toErrorMessage } from '@opentabs-dev/shared';
+import type { Command } from 'commander';
+import pc from 'picocolors';
 import {
   atomicWriteConfig,
   getConfigPath,
@@ -13,13 +19,7 @@ import {
 } from '../config.js';
 import { notifyServer } from '../notify-server.js';
 import { resolvePort } from '../parse-port.js';
-import { atomicWrite, DEFAULT_HOST, DEFAULT_PORT, generateSecret, toErrorMessage } from '@opentabs-dev/shared';
-import pc from 'picocolors';
-import { existsSync } from 'node:fs';
-import { access, mkdir, unlink } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
-import type { Command } from 'commander';
+import { getMcpClientConfigs, printMcpClientConfigs } from './start.js';
 
 const handleConfigPath = (): void => {
   console.log(getConfigPath());
@@ -31,7 +31,7 @@ interface ConfigShowOptions {
 }
 
 const maskSecret = (secret: string): string => {
-  if (secret.length > 8) return secret.slice(0, 4) + '...' + secret.slice(-4);
+  if (secret.length > 8) return `${secret.slice(0, 4)}...${secret.slice(-4)}`;
   return '****';
 };
 
@@ -51,10 +51,10 @@ const normalizeConfigForDisplay = (config: Record<string, unknown>): Record<stri
     }
   }
   // Canonical sections always appear in defined order with defaults for absent keys
-  normalized['localPlugins'] = config['localPlugins'] ?? [];
-  normalized['tools'] = config['tools'] ?? {};
-  normalized['browserToolPolicy'] = config['browserToolPolicy'] ?? {};
-  normalized['permissions'] = config['permissions'] ?? {};
+  normalized.localPlugins = config.localPlugins ?? [];
+  normalized.tools = config.tools ?? {};
+  normalized.browserToolPolicy = config.browserToolPolicy ?? {};
+  normalized.permissions = config.permissions ?? {};
   return normalized;
 };
 
@@ -254,7 +254,7 @@ const fetchToolNames = async (port: number): Promise<string[] | null> => {
   try {
     const secret = await readAuthSecret();
     const headers: Record<string, string> = {};
-    if (secret) headers['Authorization'] = `Bearer ${secret}`;
+    if (secret) headers.Authorization = `Bearer ${secret}`;
     const res = await fetch(`http://${DEFAULT_HOST}:${port}/health`, {
       headers,
       signal: AbortSignal.timeout(3_000),
@@ -272,7 +272,7 @@ const fetchBrowserToolNames = async (port: number): Promise<string[] | null> => 
   try {
     const secret = await readAuthSecret();
     const headers: Record<string, string> = {};
-    if (secret) headers['Authorization'] = `Bearer ${secret}`;
+    if (secret) headers.Authorization = `Bearer ${secret}`;
     const res = await fetch(`http://${DEFAULT_HOST}:${port}/health`, {
       headers,
       signal: AbortSignal.timeout(3_000),
@@ -377,7 +377,7 @@ const handleSetTool = async (key: string, value: string, options: { port?: numbe
     delete config.tools;
   }
 
-  await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
+  await atomicWriteConfig(configPath, `${JSON.stringify(config, null, 2)}\n`);
 
   const indicator = enabled ? pc.green('enabled') : pc.red('disabled');
   console.log(`${toolName}: ${indicator}`);
@@ -441,7 +441,7 @@ const handleSetBrowserTool = async (key: string, value: string, options: { port?
     delete config.browserToolPolicy;
   }
 
-  await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
+  await atomicWriteConfig(configPath, `${JSON.stringify(config, null, 2)}\n`);
 
   const indicator = enabled ? pc.green('enabled') : pc.red('disabled');
   console.log(`${toolName}: ${indicator}`);
@@ -472,7 +472,7 @@ const handleSetPort = async (value: string, options: { port?: number }): Promise
     config.port = newPort;
   }
 
-  await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
+  await atomicWriteConfig(configPath, `${JSON.stringify(config, null, 2)}\n`);
   console.log(`port: ${pc.cyan(String(newPort))}`);
 
   if (newPort !== oldPort) {
@@ -520,12 +520,12 @@ const handleSetLocalPluginsAdd = async (value: string, options: { port?: number;
       process.exit(1);
     }
     plugins.push(pluginPath);
-    await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
+    await atomicWriteConfig(configPath, `${JSON.stringify(config, null, 2)}\n`);
     console.log(`${pc.green('Added:')} ${pluginPath}`);
     console.log(pc.yellow(`Warning: Path does not exist: ${pluginPath}`));
   } else {
     plugins.push(pluginPath);
-    await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
+    await atomicWriteConfig(configPath, `${JSON.stringify(config, null, 2)}\n`);
     console.log(`${pc.green('Added:')} ${pluginPath}`);
     if (!existsSync(join(pluginPath, 'package.json'))) {
       console.log(pc.yellow(`Warning: No package.json found at ${pluginPath}. Plugin may not load.`));
@@ -556,7 +556,7 @@ const handleSetLocalPluginsRemove = async (value: string, options: { port?: numb
   }
 
   plugins.splice(index, 1);
-  await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
+  await atomicWriteConfig(configPath, `${JSON.stringify(config, null, 2)}\n`);
   console.log(`${pc.green('Removed:')} ${pluginPath}`);
   await notifyServer({ port: options.port, warnIfNotRunning: true });
 };
@@ -686,7 +686,7 @@ const writeAuthFile = async (secret: string): Promise<void> => {
   const extensionDir = getExtensionDir();
   await mkdir(extensionDir, { recursive: true, mode: 0o700 });
   const authPath = join(extensionDir, 'auth.json');
-  await atomicWrite(authPath, JSON.stringify({ secret }) + '\n', 0o600);
+  await atomicWrite(authPath, `${JSON.stringify({ secret })}\n`, 0o600);
 };
 
 interface RotateSecretOptions {

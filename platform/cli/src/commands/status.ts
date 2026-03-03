@@ -2,12 +2,12 @@
  * `opentabs status` command — shows server status and connected plugins.
  */
 
+import { readFile, unlink } from 'node:fs/promises';
+import { DEFAULT_HOST, toErrorMessage } from '@opentabs-dev/shared';
+import type { Command } from 'commander';
+import pc from 'picocolors';
 import { getPidFilePath, isConnectionRefused, parsePidFile, readAuthSecret } from '../config.js';
 import { parsePort, resolvePort } from '../parse-port.js';
-import { DEFAULT_HOST, toErrorMessage } from '@opentabs-dev/shared';
-import pc from 'picocolors';
-import { readFile, unlink } from 'node:fs/promises';
-import type { Command } from 'commander';
 
 interface StatusOptions {
   port?: number;
@@ -76,7 +76,7 @@ const handleStatus = async (options: StatusOptions): Promise<void> => {
 
   try {
     const headers: Record<string, string> = {};
-    if (secret) headers['Authorization'] = `Bearer ${secret}`;
+    if (secret) headers.Authorization = `Bearer ${secret}`;
 
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(3_000) });
     if (res.status === 401) {

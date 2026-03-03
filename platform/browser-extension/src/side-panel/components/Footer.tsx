@@ -1,10 +1,10 @@
+import { Moon, Sun } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { DEFAULT_SERVER_PORT, SERVER_PORT_KEY } from '../../constants.js';
+import type { PortChangedMessage } from '../../extension-messages.js';
+import { useTheme } from '../hooks/useTheme.js';
 import { Button } from './retro/Button.js';
 import { NumberStepper } from './retro/NumberStepper.js';
-import { DEFAULT_SERVER_PORT, SERVER_PORT_KEY } from '../../constants.js';
-import { useTheme } from '../hooks/useTheme.js';
-import { Moon, Sun } from 'lucide-react';
-import { useState, useEffect } from 'react';
-import type { PortChangedMessage } from '../../extension-messages.js';
 
 const PortEditor = () => {
   const [initialPort, setInitialPort] = useState<number | null>(null);
@@ -31,7 +31,7 @@ const PortEditor = () => {
 
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-muted-foreground font-mono text-xs">Port:</span>
+      <span className="font-mono text-muted-foreground text-xs">Port:</span>
       <NumberStepper
         defaultValue={initialPort}
         onChange={handleChange}
@@ -48,7 +48,7 @@ const Footer = () => {
   const { theme, toggleTheme } = useTheme();
 
   return (
-    <footer className="border-border bg-card flex shrink-0 items-center justify-between border-t-2 px-4 py-3 text-sm">
+    <footer className="flex shrink-0 items-center justify-between border-border border-t-2 bg-card px-4 py-3 text-sm">
       <div className="flex items-center gap-2">
         <Button variant="outline" size="icon" className="h-9 w-9" asChild>
           <a

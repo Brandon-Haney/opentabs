@@ -11,7 +11,7 @@
  */
 
 const devMode =
-  process.argv.includes('--dev') || process.env['OPENTABS_DEV'] === '1' || process.env['OPENTABS_DEV'] === 'true';
+  process.argv.includes('--dev') || process.env.OPENTABS_DEV === '1' || process.env.OPENTABS_DEV === 'true';
 
 /** Whether the server is running in dev mode (file watchers, hot reload, config watching) */
 export const isDev = (): boolean => devMode;

@@ -1,4 +1,4 @@
-import { vi, describe, expect, test, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Module mocks — set up before importing iife-injection.ts so that the
@@ -182,10 +182,10 @@ describe('injectLogRelay nonce management', () => {
     let isolatedCallCount = 0;
     mockExecuteScript.mockImplementation((raw: unknown) => {
       const injection = raw as Record<string, unknown>;
-      if (injection['world'] === 'ISOLATED') {
+      if (injection.world === 'ISOLATED') {
         isolatedCallCount++;
-        const func = injection['func'] as (...args: unknown[]) => void;
-        const args = (injection['args'] as unknown[] | undefined) ?? [];
+        const func = injection.func as (...args: unknown[]) => void;
+        const args = (injection.args as unknown[] | undefined) ?? [];
         func(...args);
       }
       return Promise.resolve([{ result: undefined }]);
@@ -193,7 +193,7 @@ describe('injectLogRelay nonce management', () => {
 
     // First injection: creates the guard + nonces Set with nonce1
     await injectPluginIntoMatchingTabs('slack', ['*://slack.com/*'], true);
-    const nonces = fakeWindow['__opentabs_log_nonces'] as Set<string>;
+    const nonces = fakeWindow.__opentabs_log_nonces as Set<string>;
     expect(nonces).toBeDefined();
     expect(nonces.size).toBe(1);
     const nonce1 = [...nonces][0];
@@ -212,9 +212,9 @@ describe('injectLogRelay nonce management', () => {
 
     mockExecuteScript.mockImplementation((raw: unknown) => {
       const injection = raw as Record<string, unknown>;
-      if (injection['world'] === 'ISOLATED') {
-        const func = injection['func'] as (...args: unknown[]) => void;
-        const args = (injection['args'] as unknown[] | undefined) ?? [];
+      if (injection.world === 'ISOLATED') {
+        const func = injection.func as (...args: unknown[]) => void;
+        const args = (injection.args as unknown[] | undefined) ?? [];
         func(...args);
       }
       return Promise.resolve([{ result: undefined }]);
@@ -224,7 +224,7 @@ describe('injectLogRelay nonce management', () => {
       await injectPluginIntoMatchingTabs('slack', ['*://slack.com/*'], true);
     }
 
-    const nonces = fakeWindow['__opentabs_log_nonces'] as Set<string>;
+    const nonces = fakeWindow.__opentabs_log_nonces as Set<string>;
     expect(nonces.size).toBe(1);
   });
 });
@@ -253,20 +253,20 @@ describe('skipIfHashMatches', () => {
 
     mockExecuteScript.mockImplementation((raw: unknown) => {
       const injection = raw as Record<string, unknown>;
-      const target = injection['target'] as { tabId: number } | undefined;
+      const target = injection.target as { tabId: number } | undefined;
       const tabId = target?.tabId ?? -1;
 
       // File-based injection (injectAdapterFile)
-      if (injection['files']) {
-        fileInjections.push({ tabId, files: injection['files'] as string[] });
+      if (injection.files) {
+        fileInjections.push({ tabId, files: injection.files as string[] });
         injectedTabs.add(tabId);
         return Promise.resolve([{ result: undefined }]);
       }
 
       // readAdapterHash / isAdapterPresent: MAIN world func with a single pluginName arg
-      const world = injection['world'] as string | undefined;
-      const args = injection['args'] as unknown[] | undefined;
-      if (world === 'MAIN' && injection['func'] && args?.length === 1 && typeof args[0] === 'string') {
+      const world = injection.world as string | undefined;
+      const args = injection.args as unknown[] | undefined;
+      if (world === 'MAIN' && injection.func && args?.length === 1 && typeof args[0] === 'string') {
         // After file injection, return the post-injection hash for verifyAdapterHash
         if (injectedTabs.has(tabId) && postInjectionHash !== undefined) {
           return Promise.resolve([{ result: postInjectionHash }]);
@@ -363,18 +363,18 @@ describe('skipIfHashMatches', () => {
 
     mockExecuteScript.mockImplementation((raw: unknown) => {
       const injection = raw as Record<string, unknown>;
-      const target = injection['target'] as { tabId: number } | undefined;
+      const target = injection.target as { tabId: number } | undefined;
       const tabId = target?.tabId ?? -1;
 
-      if (injection['files']) {
+      if (injection.files) {
         fileInjections.push(tabId);
         injectedTabs.add(tabId);
         return Promise.resolve([{ result: undefined }]);
       }
 
-      const world = injection['world'] as string | undefined;
-      const args = injection['args'] as unknown[] | undefined;
-      if (world === 'MAIN' && injection['func'] && args?.length === 1 && typeof args[0] === 'string') {
+      const world = injection.world as string | undefined;
+      const args = injection.args as unknown[] | undefined;
+      if (world === 'MAIN' && injection.func && args?.length === 1 && typeof args[0] === 'string') {
         // After file injection, verifyAdapterHash should see the new hash
         if (injectedTabs.has(tabId)) return Promise.resolve([{ result: 'abc123' }]);
         // Tab 10 has the matching hash (will be skipped); tab 20 has a stale hash

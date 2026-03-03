@@ -1,5 +1,5 @@
-import { generateInactiveIcon, MAX_ICON_SIZE, validateIconSvg, validateInactiveIconColors } from './validate-icon.js';
 import { describe, expect, test } from 'vitest';
+import { generateInactiveIcon, MAX_ICON_SIZE, validateIconSvg, validateInactiveIconColors } from './validate-icon.js';
 
 /** Wrap SVG content in a valid SVG tag with a square viewBox */
 const svgWrap = (inner: string, viewBox = '0 0 32 32'): string =>
@@ -44,7 +44,7 @@ describe('validateIconSvg', () => {
   });
 
   test('file exceeding 8KB fails with "size" in error', () => {
-    const largeContent = '<rect/>' + 'x'.repeat(MAX_ICON_SIZE);
+    const largeContent = `<rect/>${'x'.repeat(MAX_ICON_SIZE)}`;
     const svg = svgWrap(largeContent);
     const result = validateIconSvg(svg, 'icon.svg');
     expect(result.valid).toBe(false);

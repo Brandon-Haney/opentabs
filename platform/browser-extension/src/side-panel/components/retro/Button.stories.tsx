@@ -1,5 +1,5 @@
-import { Button } from './Button';
 import type { Meta, StoryObj } from '@storybook/react';
+import { Button } from './Button';
 
 const meta: Meta<typeof Button> = {
   title: 'Retro/Button',
@@ -27,7 +27,7 @@ const AllVariants: Story = {
     <div className="flex flex-col gap-4">
       {(['default', 'secondary', 'outline', 'link', 'ghost'] as const).map(variant => (
         <div key={variant} className="flex items-center gap-3">
-          <span className="text-muted-foreground w-20 font-mono text-xs">{variant}</span>
+          <span className="w-20 font-mono text-muted-foreground text-xs">{variant}</span>
           {(['sm', 'md', 'lg'] as const).map(size => (
             <Button key={size} variant={variant} size={size}>
               {size}

@@ -6,20 +6,20 @@
  * mcp-setup.ts delegates to these functions after resolving the tool name.
  */
 
+import { toErrorMessage } from '@opentabs-dev/shared';
+import type { ZodError } from 'zod';
 import {
   dispatchToExtension,
   isDispatchError,
-  sendInvocationStart,
-  sendInvocationEnd,
   sendConfirmationRequest,
+  sendInvocationEnd,
+  sendInvocationStart,
 } from './extension-protocol.js';
 import { log } from './logger.js';
 import { evaluatePermission } from './permissions.js';
 import { sanitizeErrorMessage } from './sanitize-error.js';
-import { isBrowserToolEnabled, appendAuditEntry, isSessionAllowed } from './state.js';
-import { toErrorMessage } from '@opentabs-dev/shared';
-import type { ServerState, CachedBrowserTool, ToolLookupEntry, AuditEntry, ConfirmationDecision } from './state.js';
-import type { ZodError } from 'zod';
+import type { AuditEntry, CachedBrowserTool, ConfirmationDecision, ServerState, ToolLookupEntry } from './state.js';
+import { appendAuditEntry, isBrowserToolEnabled, isSessionAllowed } from './state.js';
 
 /** Maximum concurrent tool dispatches per plugin to prevent tab performance degradation */
 const MAX_CONCURRENT_DISPATCHES_PER_PLUGIN = 5;
@@ -55,7 +55,7 @@ const sanitizeOutput = (obj: unknown, depth = 0): unknown => {
  * - Tools with neither: return null (observe-tier tools, extension diagnostics)
  */
 const resolveToolDomain = async (
-  toolName: string,
+  _toolName: string,
   args: Record<string, unknown>,
   state: ServerState,
 ): Promise<string | null> => {
@@ -100,7 +100,7 @@ const resolveToolDomain = async (
 const truncateParamsPreview = (args: Record<string, unknown>): string => {
   const json = JSON.stringify(args, null, 2);
   if (json.length <= 200) return json;
-  return json.slice(0, 200) + '…';
+  return `${json.slice(0, 200)}…`;
 };
 
 /**
@@ -414,7 +414,7 @@ const handlePluginToolCall = async (
       };
     }
 
-    log.debug('tool.call: dispatching', pluginName + '/' + toolBaseName);
+    log.debug('tool.call: dispatching', `${pluginName}/${toolBaseName}`);
 
     // Extract progressToken from MCP request _meta and build onProgress callback
     const progressToken = extra._meta?.progressToken;
@@ -482,7 +482,7 @@ const handlePluginToolCall = async (
       state.activeDispatches.set(pluginName, prev - 1);
     }
     const durationMs = Date.now() - startTs;
-    log.debug('tool.call:', pluginName + '/' + toolBaseName, 'completed in', `${durationMs}ms`);
+    log.debug('tool.call:', `${pluginName}/${toolBaseName}`, 'completed in', `${durationMs}ms`);
     sendInvocationEnd(state, pluginName, toolBaseName, durationMs, success);
     appendAuditEntry(state, {
       timestamp: new Date(startTs).toISOString(),

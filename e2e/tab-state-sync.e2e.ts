@@ -8,29 +8,29 @@
  * - Server restart reconnect → tab state re-synced via tab.syncAll
  */
 
-import {
-  test,
-  expect,
-  startMcpServer,
-  startTestServer,
-  createMcpClient,
-  cleanupTestConfigDir,
-  writeTestConfig,
-  readPluginToolNames,
-  launchExtensionContext,
-  E2E_TEST_PLUGIN_DIR,
-} from './fixtures.js';
-import {
-  openTestAppTab,
-  setupToolTest,
-  waitForToolResult,
-  waitForExtensionConnected,
-  waitForLog,
-  setupAdapterSymlink,
-} from './helpers.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  cleanupTestConfigDir,
+  createMcpClient,
+  E2E_TEST_PLUGIN_DIR,
+  expect,
+  launchExtensionContext,
+  readPluginToolNames,
+  startMcpServer,
+  startTestServer,
+  test,
+  writeTestConfig,
+} from './fixtures.js';
+import {
+  openTestAppTab,
+  setupAdapterSymlink,
+  setupToolTest,
+  waitForExtensionConnected,
+  waitForLog,
+  waitForToolResult,
+} from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // US-003: Navigate away → closed transition
@@ -52,7 +52,7 @@ test.describe('Tab state sync — navigate away', () => {
         async () => {
           try {
             const pollHeaders: Record<string, string> = {};
-            if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+            if (mcpServer.secret) pollHeaders.Authorization = `Bearer ${mcpServer.secret}`;
             const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
               headers: pollHeaders,
               signal: AbortSignal.timeout(3_000),
@@ -74,7 +74,7 @@ test.describe('Tab state sync — navigate away', () => {
     // different origin causes the extension to detect no matching tabs.
     // Use the test server via 127.0.0.1 instead of localhost so the plugin's
     // URL match pattern does not match.
-    await page.goto(testServer.url.replace('localhost', '127.0.0.1') + '/non-matching', {
+    await page.goto(`${testServer.url.replace('localhost', '127.0.0.1')}/non-matching`, {
       waitUntil: 'load',
     });
 
@@ -84,7 +84,7 @@ test.describe('Tab state sync — navigate away', () => {
         async () => {
           try {
             const pollHeaders: Record<string, string> = {};
-            if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+            if (mcpServer.secret) pollHeaders.Authorization = `Bearer ${mcpServer.secret}`;
             const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
               headers: pollHeaders,
               signal: AbortSignal.timeout(3_000),
@@ -138,7 +138,7 @@ test.describe('Tab state sync — multi-tab resilience', () => {
         async () => {
           try {
             const pollHeaders: Record<string, string> = {};
-            if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+            if (mcpServer.secret) pollHeaders.Authorization = `Bearer ${mcpServer.secret}`;
             const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
               headers: pollHeaders,
               signal: AbortSignal.timeout(3_000),
@@ -165,7 +165,7 @@ test.describe('Tab state sync — multi-tab resilience', () => {
         async () => {
           try {
             const pollHeaders: Record<string, string> = {};
-            if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+            if (mcpServer.secret) pollHeaders.Authorization = `Bearer ${mcpServer.secret}`;
             const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
               headers: pollHeaders,
               signal: AbortSignal.timeout(3_000),
@@ -195,7 +195,7 @@ test.describe('Tab state sync — multi-tab resilience', () => {
         async () => {
           try {
             const pollHeaders: Record<string, string> = {};
-            if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+            if (mcpServer.secret) pollHeaders.Authorization = `Bearer ${mcpServer.secret}`;
             const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
               headers: pollHeaders,
               signal: AbortSignal.timeout(3_000),
@@ -237,7 +237,7 @@ test.describe('Tab state sync — rapid close and reopen', () => {
         async () => {
           try {
             const pollHeaders: Record<string, string> = {};
-            if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+            if (mcpServer.secret) pollHeaders.Authorization = `Bearer ${mcpServer.secret}`;
             const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
               headers: pollHeaders,
               signal: AbortSignal.timeout(3_000),
@@ -268,7 +268,7 @@ test.describe('Tab state sync — rapid close and reopen', () => {
         async () => {
           try {
             const pollHeaders: Record<string, string> = {};
-            if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+            if (mcpServer.secret) pollHeaders.Authorization = `Bearer ${mcpServer.secret}`;
             const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
               headers: pollHeaders,
               signal: AbortSignal.timeout(3_000),

@@ -37,21 +37,21 @@
  * └──────────────────────────────────────────────────────────────────────┘
  */
 
+import type { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
+import { DEFAULT_HOST, DEFAULT_PORT } from '@opentabs-dev/shared';
 import { isDev } from './dev-mode.js';
+import type { HotHandlers } from './http-routes.js';
 import { createHandlers } from './http-routes.js';
 import { log } from './logger.js';
-import { performReload } from './reload.js';
-import { createNodeServer } from './server-node.js';
-import { installShutdownHandlers } from './shutdown.js';
-import { createState } from './state.js';
-import { version } from './version.js';
-import { DEFAULT_HOST, DEFAULT_PORT } from '@opentabs-dev/shared';
-import type { HotHandlers } from './http-routes.js';
 import type { McpServerInstance } from './mcp-setup.js';
 import type { ReloadResult } from './reload.js';
+import { performReload } from './reload.js';
 import type { NodeServer } from './server-node.js';
+import { createNodeServer } from './server-node.js';
+import { installShutdownHandlers } from './shutdown.js';
 import type { ServerState } from './state.js';
-import type { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
+import { createState } from './state.js';
+import { version } from './version.js';
 
 // =========================================================================
 // FROZEN CORE — Server delegate shell and globalThis state management
@@ -168,7 +168,7 @@ const handlers: HotHandlers = createHandlers({
 
 /** Parse and validate the PORT from environment or default. Port 0 is valid (OS assigns ephemeral port). */
 const resolvePort = (): number => {
-  const raw = process.env['PORT'];
+  const raw = process.env.PORT;
   if (raw === undefined) return DEFAULT_PORT;
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0 || parsed > 65535 || parsed !== Math.floor(parsed)) {
@@ -229,7 +229,7 @@ if (!isHotReload) {
 
 // When running under the dev proxy (forked with OPENTABS_PROXY=1), report
 // the actual listening port so the proxy knows where to forward requests.
-if (process.env['OPENTABS_PROXY'] === '1' && process.send) {
+if (process.env.OPENTABS_PROXY === '1' && process.send) {
   process.send({ type: 'ready', port: actualPort });
 }
 

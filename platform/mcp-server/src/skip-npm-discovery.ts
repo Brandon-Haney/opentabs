@@ -9,6 +9,6 @@
  * on the developer's machine from polluting test isolation.
  */
 
-const skipNpmDiscovery = process.env['OPENTABS_SKIP_NPM_DISCOVERY'] === '1';
+const skipNpmDiscovery = process.env.OPENTABS_SKIP_NPM_DISCOVERY === '1';
 
 export const isSkipNpmDiscovery = (): boolean => skipNpmDiscovery;

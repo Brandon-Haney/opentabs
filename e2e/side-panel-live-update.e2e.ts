@@ -18,20 +18,20 @@
  * ensuring reliable updates regardless of how the side panel is opened.
  */
 
-import {
-  test,
-  expect,
-  startMcpServer,
-  cleanupTestConfigDir,
-  writeTestConfig,
-  readPluginToolNames,
-  launchExtensionContext,
-  E2E_TEST_PLUGIN_DIR,
-} from './fixtures.js';
-import { waitForExtensionConnected, waitForLog, openSidePanel, setupAdapterSymlink } from './helpers.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  cleanupTestConfigDir,
+  E2E_TEST_PLUGIN_DIR,
+  expect,
+  launchExtensionContext,
+  readPluginToolNames,
+  startMcpServer,
+  test,
+  writeTestConfig,
+} from './fixtures.js';
+import { openSidePanel, setupAdapterSymlink, waitForExtensionConnected, waitForLog } from './helpers.js';
 
 /**
  * POST /reload to the MCP server. Triggers a full config rediscovery and
@@ -41,7 +41,7 @@ const postReload = async (port: number, configDir: string): Promise<Response> =>
   const authPath = path.join(configDir, 'extension', 'auth.json');
   const authData = JSON.parse(fs.readFileSync(authPath, 'utf-8')) as { secret?: string };
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (authData.secret) headers['Authorization'] = `Bearer ${authData.secret}`;
+  if (authData.secret) headers.Authorization = `Bearer ${authData.secret}`;
   return fetch(`http://localhost:${port}/reload`, { method: 'POST', headers });
 };
 

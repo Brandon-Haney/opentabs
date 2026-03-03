@@ -1,6 +1,6 @@
-import { PluginIcon } from './PluginIcon';
-import { useEffect, useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
+import { useEffect, useState } from 'react';
+import { PluginIcon } from './PluginIcon';
 
 const meta: Meta<typeof PluginIcon> = {
   title: 'Components/PluginIcon',
@@ -52,7 +52,7 @@ const Palette: Story = {
             <PluginIcon pluginName={p.name} displayName={p.displayName} tabState="ready" hasUpdate size={32} />
             <PluginIcon pluginName={p.name} displayName={p.displayName} tabState="unavailable" size={32} />
             <PluginIcon pluginName={p.name} displayName={p.displayName} tabState="closed" size={32} />
-            <span className="text-foreground font-sans text-sm">{p.displayName}</span>
+            <span className="font-sans text-foreground text-sm">{p.displayName}</span>
           </div>
         ))}
       </div>
@@ -66,7 +66,7 @@ const Sizes: Story = {
       {[16, 24, 32, 40, 48, 64].map(size => (
         <div key={size} className="flex flex-col items-center gap-1">
           <PluginIcon pluginName="slack" displayName="Slack" tabState="ready" size={size} />
-          <span className="text-muted-foreground font-mono text-xs">{size}px</span>
+          <span className="font-mono text-muted-foreground text-xs">{size}px</span>
         </div>
       ))}
     </div>
@@ -110,7 +110,7 @@ const ActiveFadeOutDemo = () => {
   return (
     <div className="flex items-center gap-3">
       <PluginIcon pluginName="slack" displayName="Slack" tabState="ready" size={32} active={active} />
-      <span className="text-muted-foreground font-sans text-sm">{active ? 'Flashing…' : 'Fading out'}</span>
+      <span className="font-sans text-muted-foreground text-sm">{active ? 'Flashing…' : 'Fading out'}</span>
     </div>
   );
 };

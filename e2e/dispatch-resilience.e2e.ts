@@ -13,17 +13,17 @@
  * All tests use dynamic ports and are safe for parallel execution.
  */
 
-import { test, expect, fetchWsInfo, createMcpClient } from './fixtures.js';
+import { createMcpClient, expect, fetchWsInfo, test } from './fixtures.js';
 import {
-  waitForLog,
-  waitForExtensionConnected,
-  waitForExtensionDisconnected,
+  callToolExpectSuccess,
   openTestAppTab,
   parseToolResult,
-  waitForToolResult,
   setupToolTest,
-  callToolExpectSuccess,
   waitFor,
+  waitForExtensionConnected,
+  waitForExtensionDisconnected,
+  waitForLog,
+  waitForToolResult,
 } from './helpers.js';
 
 // ---------------------------------------------------------------------------
@@ -235,7 +235,7 @@ test.describe('Tab navigates away', () => {
     expect(okOutput.message).toBe('before-nav');
 
     // Navigate the tab to a non-matching URL (127.0.0.1 does not match the plugin's http://localhost/* pattern)
-    await page.goto(testServer.url.replace('localhost', '127.0.0.1') + '/non-matching', {
+    await page.goto(`${testServer.url.replace('localhost', '127.0.0.1')}/non-matching`, {
       waitUntil: 'load',
       timeout: 15_000,
     });

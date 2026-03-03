@@ -10,16 +10,16 @@
  * not numbers. The mock WS checks `parsed['id'] !== undefined` to detect requests.
  */
 
-import { handleExtensionMessage } from './extension-protocol.js';
-import { registerMcpHandlers, rebuildCachedBrowserTools } from './mcp-setup.js';
-import { buildRegistry } from './registry.js';
-import { createState } from './state.js';
 import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { describe, expect, test, beforeEach } from 'vitest';
-import { z } from 'zod';
-import type { McpServerInstance, RequestHandlerExtra } from './mcp-setup.js';
-import type { RegisteredPlugin } from './state.js';
 import type { WsHandle } from '@opentabs-dev/shared';
+import { beforeEach, describe, expect, test } from 'vitest';
+import { z } from 'zod';
+import { handleExtensionMessage } from './extension-protocol.js';
+import type { McpServerInstance, RequestHandlerExtra } from './mcp-setup.js';
+import { rebuildCachedBrowserTools, registerMcpHandlers } from './mcp-setup.js';
+import { buildRegistry } from './registry.js';
+import type { RegisteredPlugin } from './state.js';
+import { createState } from './state.js';
 
 /** No-op callbacks for handleExtensionMessage */
 const noopCallbacks = {
@@ -46,8 +46,8 @@ const createAutoResolveWs = (
     this.sent.push(msg);
     const parsed = JSON.parse(msg) as Record<string, unknown>;
     // Requests have an `id` field; notifications do not
-    if (parsed['id'] !== undefined) {
-      const id = parsed['id'];
+    if (parsed.id !== undefined) {
+      const id = parsed.id;
       setTimeout(() => {
         handleExtensionMessage(state, JSON.stringify({ jsonrpc: '2.0', id, result }), noopCallbacks);
       }, 0);
@@ -68,8 +68,8 @@ const createAutoRejectWs = (
   send(msg: string) {
     this.sent.push(msg);
     const parsed = JSON.parse(msg) as Record<string, unknown>;
-    if (parsed['id'] !== undefined) {
-      const id = parsed['id'];
+    if (parsed.id !== undefined) {
+      const id = parsed.id;
       setTimeout(() => {
         handleExtensionMessage(state, JSON.stringify({ jsonrpc: '2.0', id, error }), noopCallbacks);
       }, 0);

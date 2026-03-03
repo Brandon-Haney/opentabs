@@ -1,5 +1,5 @@
-import { NumberStepper } from './NumberStepper';
 import type { Meta, StoryObj } from '@storybook/react';
+import { NumberStepper } from './NumberStepper';
 
 const meta: Meta<typeof NumberStepper> = {
   title: 'Retro/NumberStepper',
@@ -32,30 +32,30 @@ const AllStates: Story = {
   render: () => (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
-        <span className="text-muted-foreground w-24 font-mono text-xs">4-digit</span>
+        <span className="w-24 font-mono text-muted-foreground text-xs">4-digit</span>
         <NumberStepper defaultValue={9515} aria-label="Port" className="h-7" />
       </div>
       <div className="flex items-center gap-3">
-        <span className="text-muted-foreground w-24 font-mono text-xs">5-digit</span>
+        <span className="w-24 font-mono text-muted-foreground text-xs">5-digit</span>
         <NumberStepper defaultValue={65535} aria-label="Port" className="h-7" />
       </div>
       <div className="flex items-center gap-3">
-        <span className="text-muted-foreground w-24 font-mono text-xs">2-digit</span>
+        <span className="w-24 font-mono text-muted-foreground text-xs">2-digit</span>
         <NumberStepper defaultValue={80} aria-label="Port" className="h-7" />
       </div>
       <div className="flex items-center gap-3">
-        <span className="text-muted-foreground w-24 font-mono text-xs">with label</span>
+        <span className="w-24 font-mono text-muted-foreground text-xs">with label</span>
         <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground font-mono text-xs">Port:</span>
+          <span className="font-mono text-muted-foreground text-xs">Port:</span>
           <NumberStepper defaultValue={3000} aria-label="Port" className="h-7" />
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <span className="text-muted-foreground w-24 font-mono text-xs">disabled</span>
+        <span className="w-24 font-mono text-muted-foreground text-xs">disabled</span>
         <NumberStepper defaultValue={9515} disabled aria-label="Port" className="h-7" />
       </div>
       <div className="flex items-center gap-3">
-        <span className="text-muted-foreground w-24 font-mono text-xs">step=10</span>
+        <span className="w-24 font-mono text-muted-foreground text-xs">step=10</span>
         <NumberStepper defaultValue={100} min={0} max={1000} step={10} aria-label="Value" className="h-7" />
       </div>
     </div>

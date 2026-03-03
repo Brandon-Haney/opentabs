@@ -1,6 +1,6 @@
+import type { Meta, StoryObj } from '@storybook/react';
 import { Button } from './Button';
 import { Dialog } from './Dialog';
-import type { Meta, StoryObj } from '@storybook/react';
 
 const meta: Meta = {
   title: 'Retro/Dialog',
@@ -42,7 +42,7 @@ const Destructive: Story = {
         </Button>
       </Dialog.Trigger>
       <Dialog.Content>
-        <Dialog.Header className="bg-destructive text-destructive-foreground border-destructive">
+        <Dialog.Header className="border-destructive bg-destructive text-destructive-foreground">
           Remove Plugin
         </Dialog.Header>
         <Dialog.Body>
@@ -56,7 +56,7 @@ const Destructive: Story = {
               Cancel
             </Button>
           </Dialog.Close>
-          <Button size="sm" variant="outline" className="text-destructive border-destructive">
+          <Button size="sm" variant="outline" className="border-destructive text-destructive">
             Remove
           </Button>
         </Dialog.Footer>

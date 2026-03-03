@@ -1,6 +1,6 @@
-import { cn } from '../../lib/cn';
-import { useRef } from 'react';
 import type { InputHTMLAttributes } from 'react';
+import { useRef } from 'react';
+import { cn } from '../../lib/cn';
 
 interface NumberStepperProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'onChange'> {
   defaultValue?: number;
@@ -50,7 +50,7 @@ const NumberStepper = ({
   return (
     <div
       className={cn(
-        'border-border inline-flex items-stretch rounded border-2 shadow-sm transition focus-within:shadow-xs',
+        'inline-flex items-stretch rounded border-2 border-border shadow-sm transition focus-within:shadow-xs',
         className,
       )}>
       <input
@@ -67,13 +67,13 @@ const NumberStepper = ({
         className="hide-number-spinner w-[6ch] min-w-0 bg-transparent px-1 font-mono text-xs outline-hidden"
         {...props}
       />
-      <div className="border-border flex flex-col border-l">
+      <div className="flex flex-col border-border border-l">
         <button
           type="button"
           tabIndex={-1}
           onClick={stepUp}
           aria-label="Increment"
-          className="text-muted-foreground hover:bg-muted hover:text-foreground flex flex-1 cursor-pointer items-center justify-center px-1 transition">
+          className="flex flex-1 cursor-pointer items-center justify-center px-1 text-muted-foreground transition hover:bg-muted hover:text-foreground">
           <svg width="8" height="5" viewBox="0 0 8 5" fill="none" aria-hidden="true">
             <path
               d="M1 4L4 1L7 4"
@@ -90,7 +90,7 @@ const NumberStepper = ({
           tabIndex={-1}
           onClick={stepDown}
           aria-label="Decrement"
-          className="text-muted-foreground hover:bg-muted hover:text-foreground flex flex-1 cursor-pointer items-center justify-center px-1 transition">
+          className="flex flex-1 cursor-pointer items-center justify-center px-1 text-muted-foreground transition hover:bg-muted hover:text-foreground">
           <svg width="8" height="5" viewBox="0 0 8 5" fill="none" aria-hidden="true">
             <path
               d="M1 1L4 4L7 1"

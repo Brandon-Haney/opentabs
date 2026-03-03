@@ -2,9 +2,9 @@
 // Fetch utilities for plugin authors
 // ---------------------------------------------------------------------------
 
-import { ToolError } from './errors.js';
 import { toErrorMessage } from '@opentabs-dev/shared';
 import type { z } from 'zod';
+import { ToolError } from './errors.js';
 
 const MAX_ERROR_BODY_LENGTH = 512;
 
@@ -91,7 +91,7 @@ export const fetchFromPage = async (url: string, init?: FetchFromPageOptions): P
 
   if (!response.ok) {
     const rawText = await response.text().catch(() => response.statusText);
-    const errorText = rawText.length > MAX_ERROR_BODY_LENGTH ? rawText.slice(0, MAX_ERROR_BODY_LENGTH) + '…' : rawText;
+    const errorText = rawText.length > MAX_ERROR_BODY_LENGTH ? `${rawText.slice(0, MAX_ERROR_BODY_LENGTH)}…` : rawText;
     const msg = `fetchFromPage: HTTP ${response.status} for ${url}: ${errorText}`;
     throw httpStatusToToolError(response, msg);
   }

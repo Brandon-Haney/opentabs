@@ -5,34 +5,34 @@
  * With `--watch`, rebuilds automatically when tsc output in `dist/` changes.
  */
 
-import { generateInactiveIcon, validateIconSvg, validateInactiveIconColors } from '../validate-icon.js';
-import { validatePluginName, validateUrlPattern, LUCIDE_ICON_NAMES } from '@opentabs-dev/plugin-sdk';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import type { FSWatcher } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, statSync, watch, writeFileSync } from 'node:fs';
+import { access, readFile, stat, unlink, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import type { ManifestTool, OpenTabsPlugin, ToolDefinition } from '@opentabs-dev/plugin-sdk';
+import { LUCIDE_ICON_NAMES, validatePluginName, validateUrlPattern } from '@opentabs-dev/plugin-sdk';
+import type { PluginPackageJson } from '@opentabs-dev/shared';
 import {
   ADAPTER_FILENAME,
   ADAPTER_SOURCE_MAP_FILENAME,
-  TOOLS_FILENAME,
   atomicWrite,
   DEFAULT_HOST,
   DEFAULT_PORT,
   getConfigDir,
   getConfigPath,
   parsePluginPackageJson,
+  TOOLS_FILENAME,
   toErrorMessage,
 } from '@opentabs-dev/shared';
+import type { Command } from 'commander';
+import type { Plugin as EsbuildPlugin } from 'esbuild';
 import { build as esbuild } from 'esbuild';
 import pc from 'picocolors';
 import { z } from 'zod';
-import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, statSync, watch, writeFileSync } from 'node:fs';
-import { access, readFile, stat, unlink, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { resolve, join, relative, dirname, isAbsolute } from 'node:path';
-import type { ManifestTool, OpenTabsPlugin, ToolDefinition } from '@opentabs-dev/plugin-sdk';
-import type { PluginPackageJson } from '@opentabs-dev/shared';
-import type { Command } from 'commander';
-import type { Plugin as EsbuildPlugin } from 'esbuild';
-import type { FSWatcher } from 'node:fs';
+import { generateInactiveIcon, validateIconSvg, validateInactiveIconColors } from '../validate-icon.js';
 
 const DEBOUNCE_MS = 100;
 
@@ -61,7 +61,7 @@ const STALE_LOCK_THRESHOLD_MS = 5 * 60 * 1_000;
  * the lock directory.
  */
 const acquireConfigLock = async (configPath: string): Promise<() => void> => {
-  const lockDir = configPath + '.lock';
+  const lockDir = `${configPath}.lock`;
   const pidFile = join(lockDir, 'pid.txt');
 
   // Atomically create the lock directory and write our PID. Returns a release
@@ -99,7 +99,7 @@ const acquireConfigLock = async (configPath: string): Promise<() => void> => {
         let holderAlive = false;
         try {
           const pid = parseInt(readFileSync(pidFile, 'utf8'), 10);
-          if (!isNaN(pid)) {
+          if (!Number.isNaN(pid)) {
             try {
               process.kill(pid, 0);
               holderAlive = true;
@@ -215,7 +215,7 @@ const registerInConfig = async (projectDir: string): Promise<boolean> => {
     if (alreadyRegistered) return false;
 
     plugins.push(absolutePath);
-    await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
+    await atomicWriteConfig(configPath, `${JSON.stringify(config, null, 2)}\n`);
     return true;
   } finally {
     if (releaseLock) releaseLock();
@@ -249,7 +249,7 @@ const notifyServer = async (): Promise<void> => {
 
   if (!secret) return;
 
-  const portEnv = process.env['OPENTABS_PORT'];
+  const portEnv = process.env.OPENTABS_PORT;
   let port: number;
   if (portEnv !== undefined) {
     port = Number(portEnv);
@@ -384,8 +384,8 @@ const convertToolSchemas = (tool: ToolDefinition) => {
     );
   }
 
-  delete inputSchema['$schema'];
-  delete outputSchema['$schema'];
+  delete inputSchema.$schema;
+  delete outputSchema.$schema;
 
   return { inputSchema, outputSchema };
 };
@@ -569,7 +569,7 @@ const bundleIIFE = async (sourceEntry: string, outDir: string, pluginName: strin
   // on window.__openTabs.adapters. This is bundled as an IIFE so the adapter
   // is available when executed in MAIN world.
   const wrapperPath = join(outDir, `_adapter_entry_${crypto.randomUUID()}.ts`);
-  const relativeImport = './' + relative(outDir, sourceEntry).replace(/\.ts$/, '.js');
+  const relativeImport = `./${relative(outDir, sourceEntry).replace(/\.ts$/, '.js')}`;
 
   const name = JSON.stringify(pluginName);
   const wrapperCode = `import plugin from ${JSON.stringify(relativeImport)};
@@ -1001,7 +1001,7 @@ const runBuild = async (projectDir: string): Promise<void> => {
   console.log(pc.dim(`Generating ${TOOLS_FILENAME}...`));
   const manifest = generateManifest(plugin, sdkVersion, icons);
   const toolsJsonPath = join(distDir, TOOLS_FILENAME);
-  await writeFile(toolsJsonPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
+  await writeFile(toolsJsonPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf-8');
   const toolCount = manifest.tools.length;
   const parts = [`${toolCount} tool${toolCount === 1 ? '' : 's'}`];
   console.log(`  Written: ${pc.bold(`dist/${TOOLS_FILENAME}`)} (${parts.join(', ')})`);

@@ -69,7 +69,7 @@ const readPackageJson = async (pkgDir: string): Promise<PackageJson> => {
 /** Write a package.json file with standard formatting (2-space indent, trailing newline). */
 const writePackageJson = async (pkgDir: string, data: PackageJson): Promise<void> => {
   const filePath = resolve(ROOT, pkgDir, 'package.json');
-  await writeFile(filePath, JSON.stringify(data, null, 2) + '\n');
+  await writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`);
 };
 
 // ---------------------------------------------------------------------------
@@ -348,7 +348,7 @@ const main = async (): Promise<void> => {
     const changelogPath = resolve(ROOT, 'CHANGELOG.md');
     if (existsSync(changelogPath)) {
       const existing = await readFile(changelogPath, 'utf-8');
-      await writeFile(changelogPath, entry + existing + '\n');
+      await writeFile(changelogPath, `${entry + existing}\n`);
     } else {
       await writeFile(changelogPath, `# Changelog\n\n${entry}`);
     }

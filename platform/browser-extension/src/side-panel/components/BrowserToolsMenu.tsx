@@ -1,5 +1,5 @@
-import { Menu } from './retro/Menu';
 import { MoreHorizontal, Server } from 'lucide-react';
+import { Menu } from './retro/Menu';
 
 interface BrowserToolsMenuProps {
   serverVersion?: string;
@@ -17,7 +17,8 @@ const BrowserToolsMenu = ({ serverVersion, className }: BrowserToolsMenuProps) =
     <Menu>
       <Menu.Trigger asChild>
         <button
-          className="hover:bg-muted/50 flex h-6 w-6 items-center justify-center rounded"
+          type="button"
+          className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted/50"
           aria-label="Browser tools options">
           <MoreHorizontal className="h-4 w-4" />
         </button>

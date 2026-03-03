@@ -340,7 +340,7 @@ const groupKey = (req: NetworkRequest): string => {
 const truncateBody = (body: string | undefined, maxLen: number): string | undefined => {
   if (!body) return undefined;
   if (body.length <= maxLen) return body;
-  return body.slice(0, maxLen) + '...';
+  return `${body.slice(0, maxLen)}...`;
 };
 
 // ---------------------------------------------------------------------------
@@ -470,7 +470,7 @@ const detectApis = (requests: NetworkRequest[], wsFrames?: WsFrame[]): ApiAnalys
         if (normalizeWsUrl(frame.url) !== normalizeWsUrl(ep.url)) continue;
         const payload =
           frame.data.length > MAX_WS_FRAME_SAMPLE_LENGTH
-            ? frame.data.slice(0, MAX_WS_FRAME_SAMPLE_LENGTH) + '...'
+            ? `${frame.data.slice(0, MAX_WS_FRAME_SAMPLE_LENGTH)}...`
             : frame.data;
         if (seen.has(payload)) continue;
         seen.add(payload);

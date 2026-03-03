@@ -1,3 +1,8 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { afterAll, afterEach, describe, expect, test } from 'vitest';
 import {
   ensureAuthSecret,
   getLocalPluginsFromConfig,
@@ -6,11 +11,6 @@ import {
   readConfig,
   resolvePluginPath,
 } from './config.js';
-import { afterAll, afterEach, describe, expect, test } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
 
 // ---------------------------------------------------------------------------
 // Test isolation: override config dir so tests don't touch real config
@@ -267,7 +267,7 @@ describe('ensureAuthSecret', () => {
   test('returns existing secret without overwriting it', async () => {
     const existingSecret = 'a'.repeat(64);
     await mkdir(extensionDir, { recursive: true });
-    await writeFile(authPath, JSON.stringify({ secret: existingSecret }) + '\n', 'utf-8');
+    await writeFile(authPath, `${JSON.stringify({ secret: existingSecret })}\n`, 'utf-8');
 
     const result = await ensureAuthSecret();
     expect(result).toBe(existingSecret);
@@ -287,7 +287,7 @@ describe('ensureAuthSecret', () => {
 
   test('regenerates secret when auth.json has no secret field', async () => {
     await mkdir(extensionDir, { recursive: true });
-    await writeFile(authPath, JSON.stringify({ other: 'value' }) + '\n', 'utf-8');
+    await writeFile(authPath, `${JSON.stringify({ other: 'value' })}\n`, 'utf-8');
 
     const secret = await ensureAuthSecret();
     expect(typeof secret).toBe('string');

@@ -10,19 +10,19 @@
  * This is a server-only test — no browser/extension required.
  */
 
-import {
-  test,
-  expect,
-  startMcpServer,
-  createTestConfigDir,
-  cleanupTestConfigDir,
-  createMcpClient,
-  fetchHealth,
-} from './fixtures.js';
-import { waitForLog } from './helpers.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  cleanupTestConfigDir,
+  createMcpClient,
+  createTestConfigDir,
+  expect,
+  fetchHealth,
+  startMcpServer,
+  test,
+} from './fixtures.js';
+import { waitForLog } from './helpers.js';
 
 test.describe('POST /reload authentication enforcement', () => {
   let configDir = '';
@@ -105,7 +105,7 @@ test.describe('Secret rotation via POST /reload', () => {
       const newSecret = `rotated-${crypto.randomUUID()}`;
       expect(newSecret).not.toBe(oldSecret);
       const authPath = path.join(configDir, 'extension', 'auth.json');
-      fs.writeFileSync(authPath, JSON.stringify({ secret: newSecret }) + '\n', 'utf-8');
+      fs.writeFileSync(authPath, `${JSON.stringify({ secret: newSecret })}\n`, 'utf-8');
 
       // Step 2: POST /reload using the OLD secret (server still has old in memory)
       server.logs.length = 0;

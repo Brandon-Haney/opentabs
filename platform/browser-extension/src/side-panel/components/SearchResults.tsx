@@ -1,11 +1,11 @@
+import type { Dispatch, ReactNode, SetStateAction } from 'react';
+import type { BrowserToolState, FailedPluginState, PluginSearchResult, PluginState } from '../bridge';
+import { extractShortName, matchesPlugin } from '../bridge';
 import { BrowserToolsCard, toDisplayName } from './BrowserToolsCard';
 import { NpmPluginCard } from './NpmPluginCard';
 import { PluginList } from './PluginList';
 import { Accordion } from './retro/Accordion';
 import { Loader } from './retro/Loader';
-import { extractShortName, matchesPlugin } from '../bridge';
-import type { BrowserToolState, FailedPluginState, PluginSearchResult, PluginState } from '../bridge';
-import type { Dispatch, ReactNode, SetStateAction } from 'react';
 
 interface SearchResultsProps {
   plugins: PluginState[];
@@ -28,7 +28,7 @@ interface SearchResultsProps {
 }
 
 const SectionHeader = ({ children }: { children: ReactNode }) => (
-  <div className="font-head text-muted-foreground mb-1.5 text-[10px] tracking-widest uppercase">{children}</div>
+  <div className="mb-1.5 font-head text-[10px] text-muted-foreground uppercase tracking-widest">{children}</div>
 );
 
 /** Returns true if a browser tool matches the search filter */
@@ -137,7 +137,7 @@ const SearchResults = ({
         ))}
 
       {/* No results message */}
-      {showNoResults && <div className="text-muted-foreground py-8 text-center text-sm">No results</div>}
+      {showNoResults && <div className="py-8 text-center text-muted-foreground text-sm">No results</div>}
     </div>
   );
 };

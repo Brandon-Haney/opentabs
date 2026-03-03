@@ -3,19 +3,19 @@
  * and tab state transitions as consumed by the `opentabs doctor` command.
  */
 
-import {
-  test,
-  expect,
-  startMcpServer,
-  cleanupTestConfigDir,
-  writeTestConfig,
-  readPluginToolNames,
-  E2E_TEST_PLUGIN_DIR,
-} from './fixtures.js';
-import { setupToolTest } from './helpers.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  cleanupTestConfigDir,
+  E2E_TEST_PLUGIN_DIR,
+  expect,
+  readPluginToolNames,
+  startMcpServer,
+  test,
+  writeTestConfig,
+} from './fixtures.js';
+import { setupToolTest } from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // US-009: Health endpoint plugin details
@@ -63,7 +63,7 @@ test.describe('Health endpoint — plugin details', () => {
     const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
 
     const headers: Record<string, string> = {};
-    if (mcpServer.secret) headers['Authorization'] = `Bearer ${mcpServer.secret}`;
+    if (mcpServer.secret) headers.Authorization = `Bearer ${mcpServer.secret}`;
 
     const res = await fetch(`http://localhost:${String(mcpServer.port)}/health`, {
       headers,
@@ -150,7 +150,7 @@ test.describe('Health endpoint — failed plugins', () => {
     try {
       const health = await server.waitForHealth(h => h.status === 'ok');
       const authHeaders: Record<string, string> = {};
-      if (server.secret) authHeaders['Authorization'] = `Bearer ${server.secret}`;
+      if (server.secret) authHeaders.Authorization = `Bearer ${server.secret}`;
 
       const raw = await fetch(`http://localhost:${String(server.port)}/health`, {
         headers: authHeaders,
@@ -199,7 +199,7 @@ test.describe('Health endpoint — tab state transitions', () => {
       .poll(
         async () => {
           const pollHeaders: Record<string, string> = {};
-          if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+          if (mcpServer.secret) pollHeaders.Authorization = `Bearer ${mcpServer.secret}`;
           const res = await fetch(`http://localhost:${String(mcpServer.port)}/health`, {
             headers: pollHeaders,
           });
@@ -232,7 +232,7 @@ test.describe('Health endpoint — tab state transitions', () => {
       .poll(
         async () => {
           const pollHeaders: Record<string, string> = {};
-          if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+          if (mcpServer.secret) pollHeaders.Authorization = `Bearer ${mcpServer.secret}`;
           const res = await fetch(`http://localhost:${String(mcpServer.port)}/health`, {
             headers: pollHeaders,
           });
@@ -265,7 +265,7 @@ test.describe('Health endpoint — tab state transitions', () => {
       .poll(
         async () => {
           const pollHeaders: Record<string, string> = {};
-          if (mcpServer.secret) pollHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+          if (mcpServer.secret) pollHeaders.Authorization = `Bearer ${mcpServer.secret}`;
           const res = await fetch(`http://localhost:${String(mcpServer.port)}/health`, {
             headers: pollHeaders,
           });

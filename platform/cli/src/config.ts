@@ -2,6 +2,9 @@
  * Config file helpers shared across CLI commands.
  */
 
+import { access, mkdir, readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import {
   atomicWrite,
   generateSecret,
@@ -12,9 +15,6 @@ import {
   getPidFilePath,
   toErrorMessage,
 } from '@opentabs-dev/shared';
-import { access, mkdir, readFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
 
 export { getConfigDir, getConfigPath, getExtensionDir, getLogFilePath, getPidFilePath };
 
@@ -38,15 +38,15 @@ export const parsePidFile = (content: string): PidFileData | null => {
     const parsed: unknown = JSON.parse(trimmed);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       const obj = parsed as Record<string, unknown>;
-      const pid = typeof obj['pid'] === 'number' ? obj['pid'] : NaN;
-      const port = typeof obj['port'] === 'number' ? obj['port'] : undefined;
-      if (!isNaN(pid)) return { pid, port };
+      const pid = typeof obj.pid === 'number' ? obj.pid : NaN;
+      const port = typeof obj.port === 'number' ? obj.port : undefined;
+      if (!Number.isNaN(pid)) return { pid, port };
     }
   } catch {
     // Not JSON — try plain integer (backward compat with old format)
   }
   const pid = parseInt(trimmed, 10);
-  if (!isNaN(pid)) return { pid };
+  if (!Number.isNaN(pid)) return { pid };
   return null;
 };
 
@@ -151,7 +151,7 @@ export const ensureAuthSecret = async (): Promise<string> => {
 
   const secret = generateSecret();
   await mkdir(extensionDir, { recursive: true, mode: 0o700 });
-  await atomicWrite(authPath, JSON.stringify({ secret }) + '\n', 0o600);
+  await atomicWrite(authPath, `${JSON.stringify({ secret })}\n`, 0o600);
   return secret;
 };
 

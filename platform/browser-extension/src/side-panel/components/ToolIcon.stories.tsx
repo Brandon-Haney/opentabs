@@ -1,5 +1,5 @@
-import { ToolIcon } from './ToolIcon';
 import type { Meta, StoryObj } from '@storybook/react';
+import { ToolIcon } from './ToolIcon';
 
 const meta: Meta<typeof ToolIcon> = { title: 'Components/ToolIcon', component: ToolIcon };
 
@@ -18,7 +18,7 @@ const Gallery: Story = {
         {icons.map((icon, i) => (
           <div key={i} className="flex flex-col items-center gap-1">
             <ToolIcon icon={icon} />
-            <span className="text-muted-foreground font-mono text-[10px]">{icon ?? 'none'}</span>
+            <span className="font-mono text-[10px] text-muted-foreground">{icon ?? 'none'}</span>
           </div>
         ))}
       </div>

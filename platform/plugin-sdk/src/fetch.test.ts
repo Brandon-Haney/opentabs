@@ -1,19 +1,19 @@
-import { ToolError } from './errors.js';
-import {
-  fetchFromPage,
-  fetchJSON,
-  postJSON,
-  postForm,
-  postFormData,
-  putJSON,
-  patchJSON,
-  deleteJSON,
-  parseRetryAfterMs,
-} from './fetch.js';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createServer } from 'node:http';
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { z } from 'zod';
-import { createServer } from 'node:http';
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import { ToolError } from './errors.js';
+import {
+  deleteJSON,
+  fetchFromPage,
+  fetchJSON,
+  parseRetryAfterMs,
+  patchJSON,
+  postForm,
+  postFormData,
+  postJSON,
+  putJSON,
+} from './fetch.js';
 
 // ---------------------------------------------------------------------------
 // Test HTTP server — lightweight alternative to fetch mocking
@@ -140,7 +140,7 @@ beforeAll(
 
         if (url.pathname === '/echo-headers') {
           const contentType = req.headers['content-type'] ?? null;
-          const credentials = req.headers['cookie'] ?? null;
+          const credentials = req.headers.cookie ?? null;
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ contentType, hasCookies: credentials !== null }));
           return;
@@ -516,7 +516,7 @@ describe('fetchFromPage', () => {
       const toolError = error as ToolError;
       expect(toolError.message).toContain('HTTP 500');
       // The body is 10,000 'x' chars — should be truncated to 512 + '…'
-      expect(toolError.message).toContain('x'.repeat(512) + '…');
+      expect(toolError.message).toContain(`${'x'.repeat(512)}…`);
       expect(toolError.message).not.toContain('x'.repeat(513));
     }
   });

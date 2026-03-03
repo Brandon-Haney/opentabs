@@ -36,7 +36,7 @@ const ensureSdkVersionInManifest = (): void => {
 
   const sdkPkg = JSON.parse(readFileSync(PLUGIN_SDK_PKG_PATH, 'utf-8')) as { version: string };
   raw.sdkVersion = sdkPkg.version;
-  writeFileSync(toolsJsonPath, JSON.stringify(raw, null, 2) + '\n', 'utf-8');
+  writeFileSync(toolsJsonPath, `${JSON.stringify(raw, null, 2)}\n`, 'utf-8');
 };
 
 /**
@@ -45,7 +45,7 @@ const ensureSdkVersionInManifest = (): void => {
  * config would corrupt the user's real configuration.
  */
 const assertNotRealConfigDir = (): void => {
-  const configDir = process.env['OPENTABS_CONFIG_DIR'];
+  const configDir = process.env.OPENTABS_CONFIG_DIR;
   if (configDir && resolve(configDir) === resolve(join(homedir(), '.opentabs'))) {
     throw new Error(
       'OPENTABS_CONFIG_DIR points to the real ~/.opentabs directory. ' +

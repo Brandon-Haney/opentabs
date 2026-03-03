@@ -1,12 +1,12 @@
-import { loadConfig, saveConfig, saveToolConfig, writeAuthFile } from './config.js';
-import { isToolEnabled } from './state.js';
-import { afterAll, beforeEach, describe, expect, test } from 'vitest';
 import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { chmod, readFile, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterAll, beforeEach, describe, expect, test } from 'vitest';
 import type { OpentabsConfig } from './config.js';
+import { loadConfig, saveConfig, saveToolConfig, writeAuthFile } from './config.js';
 import type { ServerState } from './state.js';
+import { isToolEnabled } from './state.js';
 
 // Override OPENTABS_CONFIG_DIR for test isolation.
 // Config functions read this env var lazily on each call.
@@ -217,8 +217,8 @@ describe('tool config round-trip with isToolEnabled', () => {
     await saveConfigWrapped(config);
 
     const loaded = await loadConfig();
-    expect(loaded.tools['slack_send']).toBe(false);
-    expect(loaded.tools['slack_read']).toBe(true);
+    expect(loaded.tools.slack_send).toBe(false);
+    expect(loaded.tools.slack_read).toBe(true);
 
     // Verify isToolEnabled integration with loaded config
     const stateWithConfig = { toolConfig: loaded.tools } as ServerState;

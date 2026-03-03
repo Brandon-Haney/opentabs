@@ -17,7 +17,7 @@ let removedCount = 0;
 const remove = (absolutePath: string): void => {
   try {
     rmSync(absolutePath, { recursive: true, force: true });
-    const relative = absolutePath.replace(repoRoot + '/', '');
+    const relative = absolutePath.replace(`${repoRoot}/`, '');
     console.log(`  removed: ${relative}`);
     removedCount++;
   } catch {

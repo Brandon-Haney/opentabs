@@ -51,13 +51,13 @@
  *   import { test, expect } from "./fixtures.js";
  */
 
-import { test as base, chromium } from '@playwright/test';
+import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { BrowserContext, Page } from '@playwright/test';
-import type { ChildProcess } from 'node:child_process';
+import { test as base, chromium } from '@playwright/test';
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -128,7 +128,7 @@ interface HealthResponse {
 const fetchHealth = async (port: number, secret?: string): Promise<HealthResponse | null> => {
   try {
     const headers: Record<string, string> = {};
-    if (secret) headers['Authorization'] = `Bearer ${secret}`;
+    if (secret) headers.Authorization = `Bearer ${secret}`;
 
     const res = await fetch(`http://localhost:${port}/health`, {
       headers,
@@ -231,7 +231,7 @@ const createTestConfigDir = (): string => {
   };
 
   const configPath = path.join(configDir, 'config.json');
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf-8');
   if (process.platform !== 'win32') fs.chmodSync(configPath, 0o600);
 
   // Write auth.json to the extension subdirectory — the server reads the
@@ -240,7 +240,7 @@ const createTestConfigDir = (): string => {
   fs.mkdirSync(extensionDir, { recursive: true });
   const secret = crypto.randomUUID();
   const authPath = path.join(extensionDir, 'auth.json');
-  fs.writeFileSync(authPath, JSON.stringify({ secret }) + '\n', 'utf-8');
+  fs.writeFileSync(authPath, `${JSON.stringify({ secret })}\n`, 'utf-8');
   if (process.platform !== 'win32') fs.chmodSync(authPath, 0o600);
 
   return configDir;
@@ -267,7 +267,7 @@ const readTestConfig = (configDir: string): OpentabsConfig => {
  * Write a new config.json to an isolated test config directory.
  */
 const writeTestConfig = (configDir: string, config: OpentabsConfig): void => {
-  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  fs.writeFileSync(path.join(configDir, 'config.json'), `${JSON.stringify(config, null, 2)}\n`, 'utf-8');
 };
 
 /** Minimal plugin manifest tool definition */
@@ -850,7 +850,7 @@ const createExtensionCopy = (
     // placed directly in the test's extension directory. Port configuration
     // lives in chrome.storage.local, not auth.json.
     if (secret) {
-      fs.writeFileSync(path.join(extensionDir, 'auth.json'), JSON.stringify({ secret }) + '\n', 'utf-8');
+      fs.writeFileSync(path.join(extensionDir, 'auth.json'), `${JSON.stringify({ secret })}\n`, 'utf-8');
     }
 
     fs.mkdirSync(userDataDir, { recursive: true });
@@ -865,7 +865,7 @@ const createExtensionCopy = (
 // Set HEADED=1 to show browser windows for debugging. By default, Chrome
 // launches in new headless mode (`--headless=new`) which supports extensions
 // while keeping the desktop clear.
-const SHOW_BROWSER = process.env['HEADED'] === '1';
+const SHOW_BROWSER = process.env.HEADED === '1';
 
 // Detect Docker container — /.dockerenv exists in all Docker containers.
 // Used to add Chromium flags required for running in containers (no sandbox,
@@ -1055,7 +1055,7 @@ const createMcpClient = (port: number, secret?: string): McpClient => {
       Accept: 'application/json, text/event-stream',
     };
     if (secret) {
-      headers['Authorization'] = `Bearer ${secret}`;
+      headers.Authorization = `Bearer ${secret}`;
     }
     if (sessionId) {
       headers['mcp-session-id'] = sessionId;
@@ -1148,7 +1148,7 @@ const createMcpClient = (port: number, secret?: string): McpClient => {
       Accept: 'application/json, text/event-stream',
     };
     if (secret) {
-      notifHeaders['Authorization'] = `Bearer ${secret}`;
+      notifHeaders.Authorization = `Bearer ${secret}`;
     }
     if (sessionId) {
       notifHeaders['mcp-session-id'] = sessionId;
@@ -1227,7 +1227,7 @@ const createMcpClient = (port: number, secret?: string): McpClient => {
         Accept: 'application/json, text/event-stream',
       };
       if (secret) {
-        headers['Authorization'] = `Bearer ${secret}`;
+        headers.Authorization = `Bearer ${secret}`;
       }
       if (sessionId) {
         headers['mcp-session-id'] = sessionId;
@@ -1327,7 +1327,7 @@ const createMcpClient = (port: number, secret?: string): McpClient => {
       try {
         const deleteHeaders: Record<string, string> = { 'mcp-session-id': sessionId };
         if (secret) {
-          deleteHeaders['Authorization'] = `Bearer ${secret}`;
+          deleteHeaders.Authorization = `Bearer ${secret}`;
         }
         await fetch(mcpUrl, {
           method: 'DELETE',
@@ -1474,7 +1474,7 @@ const test = base.extend<TestFixtures>({
 const fetchWsUrl = async (port: number, secret?: string): Promise<string> => {
   try {
     const headers: Record<string, string> = {};
-    if (secret) headers['Authorization'] = `Bearer ${secret}`;
+    if (secret) headers.Authorization = `Bearer ${secret}`;
     const res = await fetch(`http://localhost:${port}/ws-info`, {
       headers,
       signal: AbortSignal.timeout(3_000),
@@ -1497,7 +1497,7 @@ const fetchWsUrl = async (port: number, secret?: string): Promise<string> => {
 const fetchWsInfo = async (port: number, secret?: string): Promise<{ wsUrl: string; wsSecret: string | null }> => {
   try {
     const headers: Record<string, string> = {};
-    if (secret) headers['Authorization'] = `Bearer ${secret}`;
+    if (secret) headers.Authorization = `Bearer ${secret}`;
     const res = await fetch(`http://localhost:${port}/ws-info`, {
       headers,
       signal: AbortSignal.timeout(3_000),

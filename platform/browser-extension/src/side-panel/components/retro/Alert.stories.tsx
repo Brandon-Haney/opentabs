@@ -1,11 +1,11 @@
-import { Alert } from './Alert';
 import type { Meta, StoryObj } from '@storybook/react';
+import { Alert } from './Alert';
 
 const meta: Meta<typeof Alert> = { title: 'Retro/Alert', component: Alert };
 
 type Story = StoryObj<typeof Alert>;
 
-const Error: Story = {
+const ErrorStory: Story = {
   render: () => (
     <Alert status="error">
       <Alert.Title>Error</Alert.Title>
@@ -55,4 +55,4 @@ const AllStatuses: Story = {
 };
 
 export default meta;
-export { Error, Success, Warning, Info, AllStatuses };
+export { ErrorStory, Success, Warning, Info, AllStatuses };

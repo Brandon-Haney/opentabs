@@ -1,6 +1,6 @@
-import { getCurrentUrl, getPageGlobal, getPageTitle } from './page-state.js';
 import { GlobalWindow } from 'happy-dom';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { getCurrentUrl, getPageGlobal, getPageTitle } from './page-state.js';
 
 let win: GlobalWindow;
 
@@ -108,7 +108,7 @@ describe('getPageGlobal', () => {
     const ctor = function SomeConstructor() {
       /* noop */
     } as unknown as Record<string, unknown>;
-    ctor['config'] = { token: 'abc123' };
+    ctor.config = { token: 'abc123' };
     (globalThis as Record<string, unknown>).SomeConstructor = ctor;
     expect(getPageGlobal('SomeConstructor.config.token')).toBe('abc123');
     delete (globalThis as Record<string, unknown>).SomeConstructor;
@@ -118,7 +118,7 @@ describe('getPageGlobal', () => {
     const ctor = function SomeLib() {
       /* noop */
     } as unknown as Record<string, unknown>;
-    ctor['version'] = '1.0.0';
+    ctor.version = '1.0.0';
     (globalThis as Record<string, unknown>).SomeLib = ctor;
     expect(getPageGlobal('SomeLib.version.patch')).toBeUndefined();
     delete (globalThis as Record<string, unknown>).SomeLib;

@@ -1,10 +1,10 @@
+import { ChevronDown, ShieldAlert } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { COUNTDOWN_POLL_INTERVAL_MS } from '../constants.js';
 import { Button } from './retro/Button.js';
 import { Menu } from './retro/Menu.js';
 import { Progress } from './retro/Progress.js';
 import { Text } from './retro/Text.js';
-import { COUNTDOWN_POLL_INTERVAL_MS } from '../constants.js';
-import { ShieldAlert, ChevronDown } from 'lucide-react';
-import { useState, useEffect } from 'react';
 
 type ConfirmationData = {
   id: string;
@@ -52,7 +52,7 @@ const CountdownBar = ({ timeoutMs, receivedAt }: { timeoutMs: number; receivedAt
         className="flex-1"
         indicatorClassName={fraction > 0.33 ? 'bg-accent-foreground' : 'bg-destructive'}
       />
-      <span className="text-muted-foreground font-mono text-xs tabular-nums">{seconds}s</span>
+      <span className="font-mono text-muted-foreground text-xs tabular-nums">{seconds}s</span>
     </div>
   );
 };
@@ -93,15 +93,15 @@ const ConfirmationDialog = ({ confirmations, onRespond, onDenyAll }: Confirmatio
 
   return (
     <div className="mx-4 mt-2" role="alert">
-      <div className="border-accent-foreground bg-accent/30 rounded border-2 shadow-md">
+      <div className="rounded border-2 border-accent-foreground bg-accent/30 shadow-md">
         {/* Header */}
-        <div className="border-accent-foreground flex items-center gap-2 border-b-2 px-3 py-2">
-          <ShieldAlert className="text-accent-foreground h-4 w-4 shrink-0" />
+        <div className="flex items-center gap-2 border-accent-foreground border-b-2 px-3 py-2">
+          <ShieldAlert className="h-4 w-4 shrink-0 text-accent-foreground" />
           <Text as="h6" className="flex-1 text-sm">
             Approval Required
           </Text>
           {count > 1 && (
-            <span className="text-muted-foreground font-mono text-xs">
+            <span className="font-mono text-muted-foreground text-xs">
               {safeIndex + 1} of {count}
             </span>
           )}
@@ -111,14 +111,14 @@ const ConfirmationDialog = ({ confirmations, onRespond, onDenyAll }: Confirmatio
         <div className="space-y-2 px-3 py-2">
           {/* Tool name */}
           <div>
-            <span className="text-muted-foreground font-sans text-xs">Tool</span>
+            <span className="font-sans text-muted-foreground text-xs">Tool</span>
             <div className="font-mono text-sm">{current.tool}</div>
           </div>
 
           {/* Domain */}
           {current.domain && (
             <div>
-              <span className="text-muted-foreground font-sans text-xs">Domain</span>
+              <span className="font-sans text-muted-foreground text-xs">Domain</span>
               <div className="font-sans text-sm">{current.domain}</div>
             </div>
           )}
@@ -126,8 +126,8 @@ const ConfirmationDialog = ({ confirmations, onRespond, onDenyAll }: Confirmatio
           {/* Params preview */}
           {current.paramsPreview && (
             <div>
-              <span className="text-muted-foreground font-sans text-xs">Parameters</span>
-              <pre className="border-border bg-card mt-0.5 max-h-20 overflow-auto rounded border px-2 py-1 font-mono text-xs leading-tight">
+              <span className="font-sans text-muted-foreground text-xs">Parameters</span>
+              <pre className="mt-0.5 max-h-20 overflow-auto rounded border border-border bg-card px-2 py-1 font-mono text-xs leading-tight">
                 {current.paramsPreview}
               </pre>
             </div>
@@ -138,7 +138,7 @@ const ConfirmationDialog = ({ confirmations, onRespond, onDenyAll }: Confirmatio
         </div>
 
         {/* Actions */}
-        <div className="border-accent-foreground flex flex-col gap-1.5 border-t-2 py-2 pr-4 pl-3">
+        <div className="flex flex-col gap-1.5 border-accent-foreground border-t-2 py-2 pr-4 pl-3">
           <Button size="sm" className="w-full" onClick={() => onRespond(current.id, 'allow_once')}>
             Allow Once
           </Button>
@@ -147,12 +147,12 @@ const ConfirmationDialog = ({ confirmations, onRespond, onDenyAll }: Confirmatio
             <Button
               size="sm"
               variant="outline"
-              className="text-destructive w-full text-xs"
+              className="w-full text-destructive text-xs"
               onClick={() => onRespond(current.id, 'deny')}>
               Deny
             </Button>
             {count > 1 && (
-              <Button size="sm" variant="outline" className="text-destructive w-full text-xs" onClick={onDenyAll}>
+              <Button size="sm" variant="outline" className="w-full text-destructive text-xs" onClick={onDenyAll}>
                 Deny All
               </Button>
             )}
@@ -161,17 +161,17 @@ const ConfirmationDialog = ({ confirmations, onRespond, onDenyAll }: Confirmatio
 
         {/* Navigation for multiple confirmations */}
         {count > 1 && (
-          <div className="border-border flex justify-center gap-2 border-t px-3 py-1">
+          <div className="flex justify-center gap-2 border-border border-t px-3 py-1">
             <button
               type="button"
-              className="text-muted-foreground hover:text-foreground cursor-pointer font-mono text-xs disabled:cursor-not-allowed disabled:opacity-40"
+              className="cursor-pointer font-mono text-muted-foreground text-xs hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
               disabled={safeIndex === 0}
               onClick={() => setCurrentIndex(i => i - 1)}>
               prev
             </button>
             <button
               type="button"
-              className="text-muted-foreground hover:text-foreground cursor-pointer font-mono text-xs disabled:cursor-not-allowed disabled:opacity-40"
+              className="cursor-pointer font-mono text-muted-foreground text-xs hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
               disabled={safeIndex >= count - 1}
               onClick={() => setCurrentIndex(i => i + 1)}>
               next

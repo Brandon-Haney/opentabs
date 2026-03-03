@@ -1,3 +1,4 @@
+import { SCREENSHOT_RENDER_DELAY_MS } from '../constants.js';
 import {
   extractScriptResult,
   requireTabId,
@@ -5,7 +6,6 @@ import {
   sendSuccessResult,
   sendValidationError,
 } from './helpers.js';
-import { SCREENSHOT_RENDER_DELAY_MS } from '../constants.js';
 
 /**
  * Extracts the innerText of a DOM element in a tab's page context.
@@ -67,7 +67,7 @@ export const handleBrowserGetPageHtml = async (params: Record<string, unknown>, 
         return {
           title: document.title,
           url: document.URL,
-          html: html.length > max ? html.slice(0, max) + '... (truncated)' : html,
+          html: html.length > max ? `${html.slice(0, max)}... (truncated)` : html,
         };
       },
       args: [selector, maxLength],
@@ -111,7 +111,7 @@ export const handleBrowserGetStorage = async (params: Record<string, unknown>, i
           return {
             mode: 'single' as const,
             key: k,
-            value: value !== null && value.length > maxVal ? value.slice(0, maxVal) + '... (truncated)' : value,
+            value: value !== null && value.length > maxVal ? `${value.slice(0, maxVal)}... (truncated)` : value,
           };
         }
 
@@ -121,7 +121,7 @@ export const handleBrowserGetStorage = async (params: Record<string, unknown>, i
         for (const entryKey of keys) {
           const raw = storage.getItem(entryKey);
           if (raw === null) continue;
-          const value = raw.length > maxVal ? raw.slice(0, maxVal) + '... (truncated)' : raw;
+          const value = raw.length > maxVal ? `${raw.slice(0, maxVal)}... (truncated)` : raw;
           const entryLength = entryKey.length + value.length;
           if (totalLength + entryLength > maxResp) break;
           entries.push({ key: entryKey, value });

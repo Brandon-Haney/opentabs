@@ -34,7 +34,7 @@ const sanitizeErrorMessage = (message: string): string => {
     .replace(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/g, '[IP]');
 
   if (sanitized.length > MAX_LENGTH) {
-    sanitized = sanitized.slice(0, MAX_LENGTH - 3) + '...';
+    sanitized = `${sanitized.slice(0, MAX_LENGTH - 3)}...`;
   }
 
   return sanitized;

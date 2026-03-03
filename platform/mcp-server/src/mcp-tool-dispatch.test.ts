@@ -1,24 +1,24 @@
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { z } from 'zod';
 import {
   dispatchToExtension,
   isDispatchError,
-  sendInvocationStart,
-  sendInvocationEnd,
   sendConfirmationRequest,
+  sendInvocationEnd,
+  sendInvocationStart,
 } from './extension-protocol.js';
+import type { RequestHandlerExtra } from './mcp-tool-dispatch.js';
 import {
-  sanitizeOutput,
   formatStructuredError,
   formatZodError,
-  truncateParamsPreview,
   handleBrowserToolCall,
   handlePluginToolCall,
+  sanitizeOutput,
+  truncateParamsPreview,
 } from './mcp-tool-dispatch.js';
 import { evaluatePermission } from './permissions.js';
-import { isBrowserToolEnabled, appendAuditEntry, isSessionAllowed } from './state.js';
-import { describe, expect, test, vi, beforeEach } from 'vitest';
-import { z } from 'zod';
-import type { RequestHandlerExtra } from './mcp-tool-dispatch.js';
-import type { ServerState, CachedBrowserTool, ToolLookupEntry } from './state.js';
+import type { CachedBrowserTool, ServerState, ToolLookupEntry } from './state.js';
+import { appendAuditEntry, isBrowserToolEnabled, isSessionAllowed } from './state.js';
 
 describe('sanitizeOutput', () => {
   describe('primitives passthrough', () => {
@@ -206,7 +206,7 @@ describe('truncateParamsPreview', () => {
     const args = { data: 'x'.repeat(300) };
     const result = truncateParamsPreview(args);
     const json = JSON.stringify(args, null, 2);
-    expect(result).toBe(json.slice(0, 200) + '…');
+    expect(result).toBe(`${json.slice(0, 200)}…`);
   });
 
   test('does not truncate when json is exactly 200 chars', () => {

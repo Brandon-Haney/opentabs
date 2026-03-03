@@ -1,3 +1,17 @@
+import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  normalizePluginName,
+  OFFICIAL_SCOPE,
+  PLUGIN_PREFIX,
+  resolvePluginPackageCandidates,
+} from '@opentabs-dev/shared';
+import type { MockInstance } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
   buildDirectLookupCandidates,
   KNOWN_OFFICIAL_PLUGIN_SLUGS,
@@ -8,20 +22,6 @@ import {
   scanNpmPlugins,
   warnIfNotPlugin,
 } from './plugin.js';
-import {
-  normalizePluginName,
-  resolvePluginPackageCandidates,
-  OFFICIAL_SCOPE,
-  PLUGIN_PREFIX,
-} from '@opentabs-dev/shared';
-import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { spawn } from 'node:child_process';
-import { EventEmitter } from 'node:events';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import type { MockInstance } from 'vitest';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -291,7 +291,7 @@ describe('removeFromLocalPlugins', () => {
     const pluginDir = join(testDir, 'my-plugin');
     mkdirSync(pluginDir, { recursive: true });
     await writeFile(join(pluginDir, 'package.json'), JSON.stringify({ name: 'opentabs-plugin-my' }), 'utf-8');
-    await writeFile(join(testDir, 'config.json'), JSON.stringify({ localPlugins: [pluginDir] }) + '\n', 'utf-8');
+    await writeFile(join(testDir, 'config.json'), `${JSON.stringify({ localPlugins: [pluginDir] })}\n`, 'utf-8');
 
     await removeFromLocalPlugins('opentabs-plugin-my');
 
@@ -301,7 +301,7 @@ describe('removeFromLocalPlugins', () => {
 
   test('keeps entry when package.json is unreadable (path does not exist)', async () => {
     const missingDir = join(testDir, 'nonexistent-plugin');
-    await writeFile(join(testDir, 'config.json'), JSON.stringify({ localPlugins: [missingDir] }) + '\n', 'utf-8');
+    await writeFile(join(testDir, 'config.json'), `${JSON.stringify({ localPlugins: [missingDir] })}\n`, 'utf-8');
 
     await removeFromLocalPlugins('opentabs-plugin-nonexistent');
 
@@ -310,7 +310,7 @@ describe('removeFromLocalPlugins', () => {
   });
 
   test('does nothing when localPlugins is empty', async () => {
-    await writeFile(join(testDir, 'config.json'), JSON.stringify({ localPlugins: [] }) + '\n', 'utf-8');
+    await writeFile(join(testDir, 'config.json'), `${JSON.stringify({ localPlugins: [] })}\n`, 'utf-8');
 
     await removeFromLocalPlugins('opentabs-plugin-any');
 
@@ -327,7 +327,7 @@ describe('removeFromLocalPlugins', () => {
     await writeFile(join(plugin2Dir, 'package.json'), JSON.stringify({ name: 'opentabs-plugin-two' }), 'utf-8');
     await writeFile(
       join(testDir, 'config.json'),
-      JSON.stringify({ localPlugins: [plugin1Dir, plugin2Dir] }) + '\n',
+      `${JSON.stringify({ localPlugins: [plugin1Dir, plugin2Dir] })}\n`,
       'utf-8',
     );
 
@@ -342,7 +342,7 @@ describe('removeFromLocalPlugins', () => {
     const pluginAbsDir = join(testDir, pluginRelPath);
     mkdirSync(pluginAbsDir, { recursive: true });
     await writeFile(join(pluginAbsDir, 'package.json'), JSON.stringify({ name: 'opentabs-plugin-rel' }), 'utf-8');
-    await writeFile(join(testDir, 'config.json'), JSON.stringify({ localPlugins: [pluginRelPath] }) + '\n', 'utf-8');
+    await writeFile(join(testDir, 'config.json'), `${JSON.stringify({ localPlugins: [pluginRelPath] })}\n`, 'utf-8');
 
     await removeFromLocalPlugins('opentabs-plugin-rel');
 

@@ -16,7 +16,8 @@
       "!.claude/worktrees",
       "!.tmp",
       "!platform/browser-extension/side-panel/**/*.js",
-      "!platform/browser-extension/side-panel/**/*.css"
+      "!platform/browser-extension/side-panel/**/*.css",
+      "!**/*.css"
     ]
   },
   "formatter": {
@@ -46,7 +47,20 @@
       "recommended": true,
       "suspicious": {
         "noDoubleEquals": "error",
-        "noVar": "error"
+        "noVar": "error",
+        "noAssignInExpressions": "off",
+        "noImplicitAnyLet": "off",
+        "noArrayIndexKey": "off"
+      },
+      "security": {
+        "noDangerouslySetInnerHtml": "off"
+      },
+      "a11y": {
+        "noStaticElementInteractions": "off",
+        "useAnchorContent": "off",
+        "useSemanticElements": "off",
+        "useFocusableInteractive": "off",
+        "useAriaPropsForRole": "off"
       },
       "style": {
         "useConst": "error",

@@ -1,5 +1,5 @@
-import { CDP_VERSION } from './constants.js';
 import { toErrorMessage } from '@opentabs-dev/shared';
+import { CDP_VERSION } from './constants.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -153,7 +153,7 @@ const stringProp = (obj: Record<string, unknown>, key: string, fallback: string)
 
 /** Truncate a string to MAX_BODY_LENGTH, appending a suffix if truncated. */
 const truncateBody = (body: string): string =>
-  body.length > MAX_BODY_LENGTH ? body.slice(0, MAX_BODY_LENGTH) + '... (truncated)' : body;
+  body.length > MAX_BODY_LENGTH ? `${body.slice(0, MAX_BODY_LENGTH)}... (truncated)` : body;
 
 /**
  * Remove the oldest request from the buffer when at capacity, and clean up

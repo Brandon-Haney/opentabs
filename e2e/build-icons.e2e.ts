@@ -9,12 +9,12 @@
  * files, and runs the build as a subprocess.
  */
 
-import { test, expect, E2E_TEST_PLUGIN_DIR, ROOT, symlinkCrossPlatform } from './fixtures.js';
+import type { ExecSyncOptions } from 'node:child_process';
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { ExecSyncOptions } from 'node:child_process';
+import { E2E_TEST_PLUGIN_DIR, expect, ROOT, symlinkCrossPlatform, test } from './fixtures.js';
 
 // Path to the opentabs-plugin CLI entry point
 const CLI_PATH = path.resolve(ROOT, 'platform/plugin-tools/dist/cli.js');
@@ -221,7 +221,7 @@ test.describe('plugin icon build validation', () => {
     copyPlugin(pluginDir);
 
     // Generate an SVG with a very long path to exceed 8KB
-    const longPath = 'M0,0 ' + 'L10,10 '.repeat(1500);
+    const longPath = `M0,0 ${'L10,10 '.repeat(1500)}`;
     const oversizedSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path d="${longPath}" fill="#000"/></svg>`;
     expect(new TextEncoder().encode(oversizedSvg).byteLength).toBeGreaterThan(8192);
 

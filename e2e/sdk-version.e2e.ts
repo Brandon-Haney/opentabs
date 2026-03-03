@@ -9,20 +9,20 @@
  * All tests use dynamic ports and isolated config directories.
  */
 
-import {
-  test,
-  expect,
-  copyE2eTestPlugin,
-  createMcpClient,
-  readPluginToolNames,
-  startMcpServer,
-  cleanupTestConfigDir,
-  writeTestConfig,
-} from './fixtures.js';
-import { waitForExtensionConnected, waitForLog, setupToolTest, callToolExpectSuccess } from './helpers.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  cleanupTestConfigDir,
+  copyE2eTestPlugin,
+  createMcpClient,
+  expect,
+  readPluginToolNames,
+  startMcpServer,
+  test,
+  writeTestConfig,
+} from './fixtures.js';
+import { callToolExpectSuccess, setupToolTest, waitForExtensionConnected, waitForLog } from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // Helper: create a config directory for a custom plugin
@@ -48,7 +48,7 @@ const createConfigForPlugin = (pluginDir: string): string => {
   fs.mkdirSync(extensionDir, { recursive: true });
   fs.writeFileSync(
     path.join(extensionDir, 'auth.json'),
-    JSON.stringify({ secret: crypto.randomUUID() }) + '\n',
+    `${JSON.stringify({ secret: crypto.randomUUID() })}\n`,
     'utf-8',
   );
 

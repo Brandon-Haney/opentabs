@@ -1,5 +1,5 @@
-import { installLogCollector, LogCollector } from './log-collector.js';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { installLogCollector, LogCollector } from './log-collector.js';
 
 describe('LogCollector', () => {
   describe('capture and getEntries', () => {
@@ -47,7 +47,7 @@ describe('LogCollector', () => {
     test('handles circular references gracefully', () => {
       const collector = new LogCollector('background');
       const obj: Record<string, unknown> = {};
-      obj['self'] = obj;
+      obj.self = obj;
       collector.capture('log', [obj]);
       const entries = collector.getEntries();
       // JSON.stringify fails on circular refs, falls back to String()

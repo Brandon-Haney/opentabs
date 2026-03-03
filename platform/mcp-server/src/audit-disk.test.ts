@@ -1,9 +1,9 @@
-import { appendAuditEntryToDisk, getAuditLogPath, _resetInitialized } from './audit-disk.js';
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { _resetInitialized, appendAuditEntryToDisk, getAuditLogPath } from './audit-disk.js';
 import type { AuditEntry } from './state.js';
 
 const makeEntry = (overrides: Partial<AuditEntry> = {}): AuditEntry => ({
@@ -84,7 +84,7 @@ describe('audit-disk', () => {
     await appendAuditEntryToDisk(entry);
 
     // The original file should have been rotated
-    const rotatedPath = logPath + '.1';
+    const rotatedPath = `${logPath}.1`;
     expect(existsSync(rotatedPath)).toBe(true);
     const rotatedContent = await readFile(rotatedPath, 'utf-8');
     expect(rotatedContent).toBe(largeContent);
@@ -104,7 +104,7 @@ describe('audit-disk', () => {
     await appendAuditEntryToDisk(makeEntry());
 
     // No rotation should have occurred
-    const rotatedPath = logPath + '.1';
+    const rotatedPath = `${logPath}.1`;
     expect(existsSync(rotatedPath)).toBe(false);
   });
 

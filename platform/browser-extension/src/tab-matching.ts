@@ -82,7 +82,7 @@ export const matchPattern = (url: string, pattern: string): boolean => {
 
   // Path match — convert glob to regex
   if (path !== '/*') {
-    const pathRegex = new RegExp('^' + path.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+    const pathRegex = new RegExp(`^${path.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`);
     if (!pathRegex.test(parsed.pathname)) return false;
   }
 

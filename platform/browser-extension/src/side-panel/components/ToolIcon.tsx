@@ -1,8 +1,8 @@
-import { cn } from '../lib/cn.js';
 import { Wrench } from 'lucide-react';
-import { DynamicIcon } from 'lucide-react/dynamic';
-import { Suspense, useState, useEffect, useRef } from 'react';
 import type { IconName } from 'lucide-react/dynamic';
+import { DynamicIcon } from 'lucide-react/dynamic';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { cn } from '../lib/cn.js';
 
 interface ToolIconProps {
   icon?: string;
@@ -51,7 +51,7 @@ const ToolIcon = ({ icon, className = '', enabled = true, active = false }: Tool
       {(active || fadingOut) && (
         <div
           className={cn(
-            'bg-success border-card absolute rounded-full border-2',
+            'absolute rounded-full border-2 border-card bg-success',
             active && 'animate-activity-flash',
             fadingOut && !active && 'animate-activity-fade-out',
           )}

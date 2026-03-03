@@ -38,7 +38,7 @@ export const TOOLS_FILENAME = 'tools.json';
 
 /** Returns the config directory path (~/.opentabs or OPENTABS_CONFIG_DIR override).
  *  Re-evaluated on each call so test overrides via OPENTABS_CONFIG_DIR take effect. */
-export const getConfigDir = (): string => process.env['OPENTABS_CONFIG_DIR'] || join(homedir(), '.opentabs');
+export const getConfigDir = (): string => process.env.OPENTABS_CONFIG_DIR || join(homedir(), '.opentabs');
 
 /** Returns the path to config.json inside the config directory. */
 export const getConfigPath = (): string => join(getConfigDir(), 'config.json');

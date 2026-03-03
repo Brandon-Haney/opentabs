@@ -6,15 +6,15 @@
  * for post-restart forensics.
  */
 
-import { isNonOpenTabsHttpError, isTimeout } from './status.js';
-import { getConfigDir, isConnectionRefused, readAuthSecret } from '../config.js';
-import { resolvePort } from '../parse-port.js';
-import { DEFAULT_HOST, toErrorMessage } from '@opentabs-dev/shared';
-import { InvalidArgumentError } from 'commander';
-import pc from 'picocolors';
 import { access, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { DEFAULT_HOST, toErrorMessage } from '@opentabs-dev/shared';
 import type { Command } from 'commander';
+import { InvalidArgumentError } from 'commander';
+import pc from 'picocolors';
+import { getConfigDir, isConnectionRefused, readAuthSecret } from '../config.js';
+import { resolvePort } from '../parse-port.js';
+import { isNonOpenTabsHttpError, isTimeout } from './status.js';
 
 interface AuditOptions {
   port?: number;
@@ -143,7 +143,7 @@ const handleAuditFromFile = async (options: AuditOptions): Promise<void> => {
       () => false,
     ))
   ) {
-    console.log(pc.dim('No audit log file found at ' + auditPath));
+    console.log(pc.dim(`No audit log file found at ${auditPath}`));
     return;
   }
 
@@ -240,7 +240,7 @@ const handleAudit = async (options: AuditOptions): Promise<void> => {
 
   try {
     const headers: Record<string, string> = {};
-    if (secret) headers['Authorization'] = `Bearer ${secret}`;
+    if (secret) headers.Authorization = `Bearer ${secret}`;
 
     const res = await fetch(url.toString(), {
       headers,

@@ -3,10 +3,10 @@
  * Used by both plugin commands and config set commands.
  */
 
-import { readAuthSecret } from './config.js';
-import { resolvePort } from './parse-port.js';
 import { DEFAULT_HOST } from '@opentabs-dev/shared';
 import pc from 'picocolors';
+import { readAuthSecret } from './config.js';
+import { resolvePort } from './parse-port.js';
 
 interface NotifyOptions {
   port?: number;
@@ -44,7 +44,7 @@ const notifyServer = async (options: NotifyOptions): Promise<void> => {
 
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (secret) headers['Authorization'] = `Bearer ${secret}`;
+    if (secret) headers.Authorization = `Bearer ${secret}`;
 
     const res = await fetch(`http://${DEFAULT_HOST}:${port}/reload`, {
       method: 'POST',

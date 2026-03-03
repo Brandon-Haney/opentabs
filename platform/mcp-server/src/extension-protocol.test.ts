@@ -1,3 +1,9 @@
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdir, readdir, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { WsHandle } from '@opentabs-dev/shared';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
   dispatchToExtension,
   handleExtensionMessage,
@@ -7,14 +13,8 @@ import {
   writeAdapterFile,
 } from './extension-protocol.js';
 import { buildRegistry } from './registry.js';
-import { createState, DISPATCH_TIMEOUT_MS, MAX_DISPATCH_TIMEOUT_MS } from './state.js';
-import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { mkdir, readdir, readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { PendingDispatch, RegisteredPlugin } from './state.js';
-import type { WsHandle } from '@opentabs-dev/shared';
+import { createState, DISPATCH_TIMEOUT_MS, MAX_DISPATCH_TIMEOUT_MS } from './state.js';
 
 /** Create a mock WsHandle that records sent messages */
 const createMockWs = (): WsHandle & { sent: string[] } => ({
@@ -2443,7 +2443,7 @@ describe('writeAdapterFile', () => {
   });
 
   test('writes large IIFE content correctly', async () => {
-    const largeContent = '// ' + 'x'.repeat(100_000);
+    const largeContent = `// ${'x'.repeat(100_000)}`;
     const adapterFile = await writeAdapterFile('large-plugin', largeContent);
 
     const fileName = adapterFile.replace('adapters/', '');

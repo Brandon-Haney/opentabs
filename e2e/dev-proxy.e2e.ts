@@ -9,29 +9,29 @@
  * All tests use dynamic ports and isolated config directories.
  */
 
+import { execSync } from 'node:child_process';
+import fs, { readFileSync } from 'node:fs';
 import {
-  test,
-  expect,
-  startMcpServer,
-  createTestConfigDir,
   cleanupTestConfigDir,
   createMcpClient,
   createMinimalPlugin,
+  createTestConfigDir,
+  expect,
+  fetchWsInfo,
   readPluginToolNames,
   readTestConfig,
+  startMcpServer,
+  test,
   writeTestConfig,
-  fetchWsInfo,
 } from './fixtures.js';
 import {
-  waitForLog,
-  waitForExtensionConnected,
-  waitForToolList,
-  waitForToolResult,
   parseToolResult,
   setupToolTest,
+  waitForExtensionConnected,
+  waitForLog,
+  waitForToolList,
+  waitForToolResult,
 } from './helpers.js';
-import { execSync } from 'node:child_process';
-import fs, { readFileSync } from 'node:fs';
 
 /**
  * Checks whether a process is dead (exited or zombie). On Linux, reads
@@ -79,7 +79,7 @@ test.describe('Dev proxy request buffering', () => {
       // The proxy's whenReady() buffers this request and forwards it once
       // the new worker sends the IPC 'ready' message with its port.
       const headers: Record<string, string> = {};
-      if (server.secret) headers['Authorization'] = `Bearer ${server.secret}`;
+      if (server.secret) headers.Authorization = `Bearer ${server.secret}`;
 
       const response = await fetch(`http://localhost:${server.port}/health`, {
         headers,
@@ -224,7 +224,7 @@ test.describe('Dev proxy graceful shutdown', () => {
       // Verify the port is no longer listening — the proxy's HTTP server
       // should be closed. A fetch should fail with ECONNREFUSED.
       const headers: Record<string, string> = {};
-      if (server.secret) headers['Authorization'] = `Bearer ${server.secret}`;
+      if (server.secret) headers.Authorization = `Bearer ${server.secret}`;
 
       await expect(
         fetch(`http://localhost:${port}/health`, {
@@ -283,7 +283,7 @@ test.describe('Dev proxy health during worker restart window', () => {
       expect(workerPids.length).toBeGreaterThan(0);
 
       const headers: Record<string, string> = {};
-      if (server.secret) headers['Authorization'] = `Bearer ${server.secret}`;
+      if (server.secret) headers.Authorization = `Bearer ${server.secret}`;
 
       // Kill the worker directly with SIGKILL.
       for (const pid of workerPids) {
@@ -367,7 +367,7 @@ test.describe('Dev proxy 503 timeout', () => {
       // the proxy's whenReady() buffers the request for READY_TIMEOUT_MS (5s)
       // then calls the onTimeout callback, returning 503.
       const headers: Record<string, string> = {};
-      if (server.secret) headers['Authorization'] = `Bearer ${server.secret}`;
+      if (server.secret) headers.Authorization = `Bearer ${server.secret}`;
 
       const start = Date.now();
       const response = await fetch(`http://localhost:${server.port}/health`, {
@@ -471,171 +471,172 @@ test.describe('POST /reload in non-hot (production) mode', () => {
   });
 });
 
-test.describe.serial('Dev proxy SSE mid-stream worker restart', () => {
-  test('SSE tool call gets clean error or completes when worker restarts mid-stream', async ({
-    mcpServer,
-    testServer,
-    extensionContext,
-    mcpClient,
-  }) => {
-    test.slow();
+test.describe
+  .serial('Dev proxy SSE mid-stream worker restart', () => {
+    test('SSE tool call gets clean error or completes when worker restarts mid-stream', async ({
+      mcpServer,
+      testServer,
+      extensionContext,
+      mcpClient,
+    }) => {
+      test.slow();
 
-    const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
+      const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
 
-    try {
-      // Baseline: verify the slow_with_progress tool works normally
-      const baseline = await mcpClient.callToolWithProgress(
-        'e2e-test_slow_with_progress',
-        { durationMs: 500, steps: 2 },
-        { timeout: 15_000 },
-      );
-      expect(baseline.isError).toBe(false);
-      const baselineOutput = parseToolResult(baseline.content);
-      expect(baselineOutput.completed).toBe(true);
-
-      // Start a slow tool call that produces an SSE stream with progress
-      // notifications over 5 seconds. The proxy pipes the response via
-      // proxyRes.pipe(res) — when the worker dies mid-stream, the pipe
-      // breaks and the client receives either a partial/error response
-      // or a connection reset.
-      const slowCallPromise = mcpClient.callToolWithProgress(
-        'e2e-test_slow_with_progress',
-        { durationMs: 5_000, steps: 10 },
-        { timeout: 30_000 },
-      );
-
-      // Wait for the request to reach the worker and start producing
-      // progress events, then trigger hot reload. The proxy kills the
-      // old worker with SIGTERM, severing the piped SSE connection.
-      await new Promise(r => setTimeout(r, 1_000));
-      mcpServer.logs.length = 0;
-      mcpServer.triggerHotReload();
-
-      // The SSE stream may complete successfully (if the tool finished
-      // before the worker was killed) or fail with 502/connection reset
-      // (if the pipe was severed mid-stream). Both outcomes are acceptable
-      // — the proxy should not hang indefinitely.
       try {
-        const slowResult = await slowCallPromise;
-        // If it completed, verify the content is valid
-        if (!slowResult.isError) {
-          const output = parseToolResult(slowResult.content);
-          expect(output.completed).toBe(true);
+        // Baseline: verify the slow_with_progress tool works normally
+        const baseline = await mcpClient.callToolWithProgress(
+          'e2e-test_slow_with_progress',
+          { durationMs: 500, steps: 2 },
+          { timeout: 15_000 },
+        );
+        expect(baseline.isError).toBe(false);
+        const baselineOutput = parseToolResult(baseline.content);
+        expect(baselineOutput.completed).toBe(true);
+
+        // Start a slow tool call that produces an SSE stream with progress
+        // notifications over 5 seconds. The proxy pipes the response via
+        // proxyRes.pipe(res) — when the worker dies mid-stream, the pipe
+        // breaks and the client receives either a partial/error response
+        // or a connection reset.
+        const slowCallPromise = mcpClient.callToolWithProgress(
+          'e2e-test_slow_with_progress',
+          { durationMs: 5_000, steps: 10 },
+          { timeout: 30_000 },
+        );
+
+        // Wait for the request to reach the worker and start producing
+        // progress events, then trigger hot reload. The proxy kills the
+        // old worker with SIGTERM, severing the piped SSE connection.
+        await new Promise(r => setTimeout(r, 1_000));
+        mcpServer.logs.length = 0;
+        mcpServer.triggerHotReload();
+
+        // The SSE stream may complete successfully (if the tool finished
+        // before the worker was killed) or fail with 502/connection reset
+        // (if the pipe was severed mid-stream). Both outcomes are acceptable
+        // — the proxy should not hang indefinitely.
+        try {
+          const slowResult = await slowCallPromise;
+          // If it completed, verify the content is valid
+          if (!slowResult.isError) {
+            const output = parseToolResult(slowResult.content);
+            expect(output.completed).toBe(true);
+          }
+        } catch {
+          // 502 Bad Gateway, connection reset, or partial SSE stream — expected
+          // when the worker is killed mid-stream. The proxy's proxyRes.pipe(res)
+          // connection breaks when the upstream worker dies.
         }
-      } catch {
-        // 502 Bad Gateway, connection reset, or partial SSE stream — expected
-        // when the worker is killed mid-stream. The proxy's proxyRes.pipe(res)
-        // connection breaks when the upstream worker dies.
+
+        // Wait for the hot reload to complete
+        await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+        // Wait for the extension to reconnect to the new worker. The proxy
+        // kills old WebSocket connections during restart, so the extension
+        // detects the close and reconnects.
+        await waitForExtensionConnected(mcpServer, 30_000);
+
+        // Verify subsequent tool calls work after the reload. The MCP client
+        // auto-reinitializes the session (new worker has no session memory).
+        const afterResult = await mcpClient.callTool('e2e-test_echo', { message: 'after-sse-reload' });
+        expect(afterResult.isError).toBe(false);
+        const afterOutput = parseToolResult(afterResult.content);
+        expect(afterOutput.message).toBe('after-sse-reload');
+      } finally {
+        await page.close();
       }
+    });
 
-      // Wait for the hot reload to complete
-      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+    test('rapid successive hot reloads during active SSE stream resolve without deadlock', async ({
+      mcpServer,
+      testServer,
+      extensionContext,
+      mcpClient,
+    }) => {
+      test.slow();
 
-      // Wait for the extension to reconnect to the new worker. The proxy
-      // kills old WebSocket connections during restart, so the extension
-      // detects the close and reconnects.
-      await waitForExtensionConnected(mcpServer, 30_000);
+      const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
 
-      // Verify subsequent tool calls work after the reload. The MCP client
-      // auto-reinitializes the session (new worker has no session memory).
-      const afterResult = await mcpClient.callTool('e2e-test_echo', { message: 'after-sse-reload' });
-      expect(afterResult.isError).toBe(false);
-      const afterOutput = parseToolResult(afterResult.content);
-      expect(afterOutput.message).toBe('after-sse-reload');
-    } finally {
-      await page.close();
-    }
-  });
-
-  test('rapid successive hot reloads during active SSE stream resolve without deadlock', async ({
-    mcpServer,
-    testServer,
-    extensionContext,
-    mcpClient,
-  }) => {
-    test.slow();
-
-    const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
-
-    try {
-      // Baseline: verify the slow_with_progress tool works normally
-      const baseline = await mcpClient.callToolWithProgress(
-        'e2e-test_slow_with_progress',
-        { durationMs: 500, steps: 2 },
-        { timeout: 15_000 },
-      );
-      expect(baseline.isError).toBe(false);
-      const baselineOutput = parseToolResult(baseline.content);
-      expect(baselineOutput.completed).toBe(true);
-
-      // Start a slow tool call that produces an SSE stream with progress
-      // notifications over 5 seconds. This exercises the proxy's piped SSE
-      // connection path, which breaks when the worker is killed mid-stream.
-      const slowCallPromise = mcpClient.callToolWithProgress(
-        'e2e-test_slow_with_progress',
-        { durationMs: 5_000, steps: 10 },
-        { timeout: 30_000 },
-      );
-
-      // Wait for the request to reach the worker and start producing
-      // progress events before triggering the rapid reloads.
-      await new Promise(r => setTimeout(r, 500));
-
-      // Fire 3 hot reloads in rapid succession without awaiting between them.
-      // Each reload kills the current worker and forks a new one — the last
-      // worker becomes the final worker. The proxy must not deadlock or corrupt
-      // state even when multiple restarts overlap with an active SSE stream.
-      mcpServer.logs.length = 0;
-      mcpServer.triggerHotReload();
-      mcpServer.triggerHotReload();
-      mcpServer.triggerHotReload();
-
-      // The slow SSE call may complete, error cleanly with 502/connection reset,
-      // or time out — all outcomes are acceptable. The proxy must not hang.
       try {
-        const slowResult = await slowCallPromise;
-        if (!slowResult.isError) {
-          const output = parseToolResult(slowResult.content);
-          expect(output.completed).toBe(true);
+        // Baseline: verify the slow_with_progress tool works normally
+        const baseline = await mcpClient.callToolWithProgress(
+          'e2e-test_slow_with_progress',
+          { durationMs: 500, steps: 2 },
+          { timeout: 15_000 },
+        );
+        expect(baseline.isError).toBe(false);
+        const baselineOutput = parseToolResult(baseline.content);
+        expect(baselineOutput.completed).toBe(true);
+
+        // Start a slow tool call that produces an SSE stream with progress
+        // notifications over 5 seconds. This exercises the proxy's piped SSE
+        // connection path, which breaks when the worker is killed mid-stream.
+        const slowCallPromise = mcpClient.callToolWithProgress(
+          'e2e-test_slow_with_progress',
+          { durationMs: 5_000, steps: 10 },
+          { timeout: 30_000 },
+        );
+
+        // Wait for the request to reach the worker and start producing
+        // progress events before triggering the rapid reloads.
+        await new Promise(r => setTimeout(r, 500));
+
+        // Fire 3 hot reloads in rapid succession without awaiting between them.
+        // Each reload kills the current worker and forks a new one — the last
+        // worker becomes the final worker. The proxy must not deadlock or corrupt
+        // state even when multiple restarts overlap with an active SSE stream.
+        mcpServer.logs.length = 0;
+        mcpServer.triggerHotReload();
+        mcpServer.triggerHotReload();
+        mcpServer.triggerHotReload();
+
+        // The slow SSE call may complete, error cleanly with 502/connection reset,
+        // or time out — all outcomes are acceptable. The proxy must not hang.
+        try {
+          const slowResult = await slowCallPromise;
+          if (!slowResult.isError) {
+            const output = parseToolResult(slowResult.content);
+            expect(output.completed).toBe(true);
+          }
+        } catch {
+          // 502 Bad Gateway, connection reset, or partial SSE stream — expected
+          // when the worker is killed mid-stream by rapid successive reloads.
         }
-      } catch {
-        // 502 Bad Gateway, connection reset, or partial SSE stream — expected
-        // when the worker is killed mid-stream by rapid successive reloads.
+
+        // Wait for the final hot reload to complete (the last worker reports ready)
+        await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+        // Wait for the extension to reconnect to the new worker
+        await waitForExtensionConnected(mcpServer, 30_000);
+
+        // Wait for the extension to resync plugin/tool state with the new worker
+        await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
+
+        // Poll until the tool is callable end-to-end through the extension
+        await waitForToolResult(mcpClient, 'e2e-test_echo', { message: 'poll-check' }, { isError: false }, 20_000);
+
+        // Verify end-to-end tool dispatch works after all rapid hot reloads.
+        // This confirms the proxy's full relay path is functional after multiple
+        // overlapping worker restarts during an active SSE stream.
+        const afterResult = await mcpClient.callTool('e2e-test_echo', { message: 'after-rapid-reload' });
+        expect(afterResult.isError).toBe(false);
+        expect(parseToolResult(afterResult.content).message).toBe('after-rapid-reload');
+
+        // Verify no deadlock, state corruption, or uncaught exceptions in logs.
+        // ECONNREFUSED is intentionally excluded — it may appear legitimately
+        // when the proxy tries to forward to a worker that was already killed by
+        // a subsequent rapid reload.
+        const errorPatterns = ['deadlock', 'state corruption', 'uncaughtException'];
+        const joinedLogs = mcpServer.logs.join('\n');
+        for (const pattern of errorPatterns) {
+          expect(joinedLogs).not.toContain(pattern);
+        }
+      } finally {
+        await page.close();
       }
-
-      // Wait for the final hot reload to complete (the last worker reports ready)
-      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
-
-      // Wait for the extension to reconnect to the new worker
-      await waitForExtensionConnected(mcpServer, 30_000);
-
-      // Wait for the extension to resync plugin/tool state with the new worker
-      await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
-
-      // Poll until the tool is callable end-to-end through the extension
-      await waitForToolResult(mcpClient, 'e2e-test_echo', { message: 'poll-check' }, { isError: false }, 20_000);
-
-      // Verify end-to-end tool dispatch works after all rapid hot reloads.
-      // This confirms the proxy's full relay path is functional after multiple
-      // overlapping worker restarts during an active SSE stream.
-      const afterResult = await mcpClient.callTool('e2e-test_echo', { message: 'after-rapid-reload' });
-      expect(afterResult.isError).toBe(false);
-      expect(parseToolResult(afterResult.content).message).toBe('after-rapid-reload');
-
-      // Verify no deadlock, state corruption, or uncaught exceptions in logs.
-      // ECONNREFUSED is intentionally excluded — it may appear legitimately
-      // when the proxy tries to forward to a worker that was already killed by
-      // a subsequent rapid reload.
-      const errorPatterns = ['deadlock', 'state corruption', 'uncaughtException'];
-      const joinedLogs = mcpServer.logs.join('\n');
-      for (const pattern of errorPatterns) {
-        expect(joinedLogs).not.toContain(pattern);
-      }
-    } finally {
-      await page.close();
-    }
+    });
   });
-});
 
 test.describe('Dev proxy WebSocket upgrade during worker restart', () => {
   test('WebSocket upgrade during restart is buffered or cleanly rejected, and works after reload', async () => {
@@ -774,63 +775,64 @@ test.describe('Dev proxy WebSocket upgrade during worker restart', () => {
   });
 });
 
-test.describe.serial('Dev proxy multi-client tool dispatch after hot reload', () => {
-  test('both MCP clients dispatch tools end-to-end after hot reload', async ({
-    mcpServer,
-    testServer,
-    extensionContext,
-    mcpClient,
-  }) => {
-    test.slow();
+test.describe
+  .serial('Dev proxy multi-client tool dispatch after hot reload', () => {
+    test('both MCP clients dispatch tools end-to-end after hot reload', async ({
+      mcpServer,
+      testServer,
+      extensionContext,
+      mcpClient,
+    }) => {
+      test.slow();
 
-    const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
+      const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
 
-    // Create a second MCP client to test concurrent multi-client dispatch
-    const client2 = createMcpClient(mcpServer.port, mcpServer.secret);
-    await client2.initialize();
+      // Create a second MCP client to test concurrent multi-client dispatch
+      const client2 = createMcpClient(mcpServer.port, mcpServer.secret);
+      await client2.initialize();
 
-    try {
-      // Baseline: both clients dispatch e2e-test_echo through the extension
-      const baseline1 = await mcpClient.callTool('e2e-test_echo', { message: 'client1-before' });
-      expect(baseline1.isError).toBe(false);
-      expect(parseToolResult(baseline1.content).message).toBe('client1-before');
+      try {
+        // Baseline: both clients dispatch e2e-test_echo through the extension
+        const baseline1 = await mcpClient.callTool('e2e-test_echo', { message: 'client1-before' });
+        expect(baseline1.isError).toBe(false);
+        expect(parseToolResult(baseline1.content).message).toBe('client1-before');
 
-      const baseline2 = await client2.callTool('e2e-test_echo', { message: 'client2-before' });
-      expect(baseline2.isError).toBe(false);
-      expect(parseToolResult(baseline2.content).message).toBe('client2-before');
+        const baseline2 = await client2.callTool('e2e-test_echo', { message: 'client2-before' });
+        expect(baseline2.isError).toBe(false);
+        expect(parseToolResult(baseline2.content).message).toBe('client2-before');
 
-      // Trigger hot reload — the dev proxy kills the old worker and forks a new one
-      mcpServer.logs.length = 0;
-      mcpServer.triggerHotReload();
+        // Trigger hot reload — the dev proxy kills the old worker and forks a new one
+        mcpServer.logs.length = 0;
+        mcpServer.triggerHotReload();
 
-      // Wait for the new worker to fully start
-      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+        // Wait for the new worker to fully start
+        await waitForLog(mcpServer, 'Hot reload complete', 20_000);
 
-      // Wait for the extension to reconnect to the new worker (the proxy kills
-      // old WebSocket connections during restart, so the extension detects the
-      // close and re-establishes the connection)
-      await waitForExtensionConnected(mcpServer, 30_000);
+        // Wait for the extension to reconnect to the new worker (the proxy kills
+        // old WebSocket connections during restart, so the extension detects the
+        // close and re-establishes the connection)
+        await waitForExtensionConnected(mcpServer, 30_000);
 
-      // Wait for the extension to resync its plugin/tool state with the new worker
-      await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
+        // Wait for the extension to resync its plugin/tool state with the new worker
+        await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
 
-      // Poll until the tool is callable again (tab state = ready after worker restart).
-      // Both clients auto-reinitialize their sessions against the new worker.
-      await waitForToolResult(mcpClient, 'e2e-test_echo', { message: 'poll-check' }, { isError: false }, 20_000);
+        // Poll until the tool is callable again (tab state = ready after worker restart).
+        // Both clients auto-reinitialize their sessions against the new worker.
+        await waitForToolResult(mcpClient, 'e2e-test_echo', { message: 'poll-check' }, { isError: false }, 20_000);
 
-      // Both clients must be able to dispatch e2e-test_echo end-to-end after hot reload.
-      // This exercises the full relay path: MCP client → proxy → new worker → extension
-      // WebSocket → adapter IIFE → tool handler → extension → worker → proxy → client.
-      const after1 = await mcpClient.callTool('e2e-test_echo', { message: 'client1-after' });
-      expect(after1.isError).toBe(false);
-      expect(parseToolResult(after1.content).message).toBe('client1-after');
+        // Both clients must be able to dispatch e2e-test_echo end-to-end after hot reload.
+        // This exercises the full relay path: MCP client → proxy → new worker → extension
+        // WebSocket → adapter IIFE → tool handler → extension → worker → proxy → client.
+        const after1 = await mcpClient.callTool('e2e-test_echo', { message: 'client1-after' });
+        expect(after1.isError).toBe(false);
+        expect(parseToolResult(after1.content).message).toBe('client1-after');
 
-      const after2 = await client2.callTool('e2e-test_echo', { message: 'client2-after' });
-      expect(after2.isError).toBe(false);
-      expect(parseToolResult(after2.content).message).toBe('client2-after');
-    } finally {
-      await client2.close();
-      await page.close();
-    }
+        const after2 = await client2.callTool('e2e-test_echo', { message: 'client2-after' });
+        expect(after2.isError).toBe(false);
+        expect(parseToolResult(after2.content).message).toBe('client2-after');
+      } finally {
+        await client2.close();
+        await page.close();
+      }
+    });
   });
-});

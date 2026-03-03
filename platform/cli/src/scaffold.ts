@@ -6,12 +6,12 @@
  * `@opentabs-dev/*` npm packages. There is no monorepo special-casing.
  */
 
-import { validatePluginName, validateUrlPattern } from '@opentabs-dev/plugin-sdk';
-import pc from 'picocolors';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { resolve, join, dirname } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
+import { validatePluginName, validateUrlPattern } from '@opentabs-dev/plugin-sdk';
+import pc from 'picocolors';
 
 // --- Errors ---
 
@@ -128,36 +128,35 @@ const generatePackageJson = async (args: ScaffoldArgs, urlPattern: string): Prom
       zod: '^4.0.0',
     },
   };
-  return JSON.stringify(pkg, null, 2) + '\n';
+  return `${JSON.stringify(pkg, null, 2)}\n`;
 };
 
-const TSCONFIG_CONTENT =
-  JSON.stringify(
-    {
-      compilerOptions: {
-        target: 'ES2022',
-        module: 'ES2022',
-        moduleResolution: 'bundler',
-        declaration: true,
-        declarationMap: true,
-        sourceMap: true,
-        outDir: 'dist',
-        rootDir: 'src',
-        strict: true,
-        noUncheckedIndexedAccess: true,
-        noFallthroughCasesInSwitch: true,
-        noImplicitReturns: true,
-        noImplicitOverride: true,
-        forceConsistentCasingInFileNames: true,
-        esModuleInterop: true,
-        skipLibCheck: true,
-        composite: true,
-      },
-      include: ['src'],
+const TSCONFIG_CONTENT = `${JSON.stringify(
+  {
+    compilerOptions: {
+      target: 'ES2022',
+      module: 'ES2022',
+      moduleResolution: 'bundler',
+      declaration: true,
+      declarationMap: true,
+      sourceMap: true,
+      outDir: 'dist',
+      rootDir: 'src',
+      strict: true,
+      noUncheckedIndexedAccess: true,
+      noFallthroughCasesInSwitch: true,
+      noImplicitReturns: true,
+      noImplicitOverride: true,
+      forceConsistentCasingInFileNames: true,
+      esModuleInterop: true,
+      skipLibCheck: true,
+      composite: true,
     },
-    null,
-    2,
-  ) + '\n';
+    include: ['src'],
+  },
+  null,
+  2,
+)}\n`;
 
 const ESLINT_CONFIG_CONTENT = `import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import tseslint from 'typescript-eslint';
@@ -188,20 +187,19 @@ export default tseslint.config(
 );
 `;
 
-const PRETTIERRC_CONTENT =
-  JSON.stringify(
-    {
-      trailingComma: 'all',
-      semi: true,
-      singleQuote: true,
-      arrowParens: 'avoid',
-      printWidth: 120,
-      bracketSameLine: true,
-      htmlWhitespaceSensitivity: 'strict',
-    },
-    null,
-    2,
-  ) + '\n';
+const PRETTIERRC_CONTENT = `${JSON.stringify(
+  {
+    trailingComma: 'all',
+    semi: true,
+    singleQuote: true,
+    arrowParens: 'avoid',
+    printWidth: 120,
+    bracketSameLine: true,
+    htmlWhitespaceSensitivity: 'strict',
+  },
+  null,
+  2,
+)}\n`;
 
 const GITIGNORE_CONTENT = `dist/
 node_modules/

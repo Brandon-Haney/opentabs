@@ -1,4 +1,4 @@
-import { vi, describe, expect, test, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Module mocks — set up before importing handler modules
@@ -28,8 +28,9 @@ Object.assign(globalThis, {
 });
 
 // Import after mocking
-const { handleBrowserPressKey, SHIFTED_PUNCTUATION_CODES, UNSHIFTED_PUNCTUATION_CODES } =
-  await import('./key-press-command.js');
+const { handleBrowserPressKey, SHIFTED_PUNCTUATION_CODES, UNSHIFTED_PUNCTUATION_CODES } = await import(
+  './key-press-command.js'
+);
 
 /** Extract the first argument from the first call to mockSendToServer */
 const firstSentMessage = (): Record<string, unknown> => {
@@ -108,7 +109,7 @@ describe('SHIFTED_PUNCTUATION_CODES', () => {
     expect(SHIFTED_PUNCTUATION_CODES['!']).toBe('Digit1');
     expect(SHIFTED_PUNCTUATION_CODES['@']).toBe('Digit2');
     expect(SHIFTED_PUNCTUATION_CODES['#']).toBe('Digit3');
-    expect(SHIFTED_PUNCTUATION_CODES['$']).toBe('Digit4');
+    expect(SHIFTED_PUNCTUATION_CODES.$).toBe('Digit4');
     expect(SHIFTED_PUNCTUATION_CODES['%']).toBe('Digit5');
     expect(SHIFTED_PUNCTUATION_CODES['^']).toBe('Digit6');
     expect(SHIFTED_PUNCTUATION_CODES['&']).toBe('Digit7');
@@ -118,7 +119,7 @@ describe('SHIFTED_PUNCTUATION_CODES', () => {
   });
 
   test('maps shifted symbol keys to their physical key codes', () => {
-    expect(SHIFTED_PUNCTUATION_CODES['_']).toBe('Minus');
+    expect(SHIFTED_PUNCTUATION_CODES._).toBe('Minus');
     expect(SHIFTED_PUNCTUATION_CODES['+']).toBe('Equal');
     expect(SHIFTED_PUNCTUATION_CODES['{']).toBe('BracketLeft');
     expect(SHIFTED_PUNCTUATION_CODES['}']).toBe('BracketRight');

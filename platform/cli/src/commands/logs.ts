@@ -12,13 +12,13 @@
  * onPluginLog handler.
  */
 
-import { getLogFilePath } from '../config.js';
-import { InvalidArgumentError } from 'commander';
-import pc from 'picocolors';
-import { existsSync, statSync, createReadStream, watch } from 'node:fs';
+import { createReadStream, existsSync, statSync, watch } from 'node:fs';
 import { open, stat } from 'node:fs/promises';
 import { StringDecoder } from 'node:string_decoder';
 import type { Command } from 'commander';
+import { InvalidArgumentError } from 'commander';
+import pc from 'picocolors';
+import { getLogFilePath } from '../config.js';
 
 interface LogsOptions {
   lines?: number;
@@ -128,7 +128,7 @@ const followFile = async (filePath: string, initialOffset: number, filter?: stri
       partialLine = lines.pop() ?? '';
       for (const line of lines) {
         if (line.includes(filter)) {
-          process.stdout.write(line + '\n');
+          process.stdout.write(`${line}\n`);
         }
       }
     });

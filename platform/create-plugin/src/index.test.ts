@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
 const CLI_PATH = resolve(import.meta.dirname, '..', 'dist', 'index.js');
 
@@ -237,106 +237,101 @@ describe('create-opentabs-plugin CLI', () => {
         '@opentabs-dev/plugin-tools': localPluginTools,
       };
 
-      await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf-8');
+      await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf-8');
     };
 
-    test(
-      'scaffolded plugin can be installed and built, producing valid manifest and adapter',
-      { timeout: 60_000 },
-      async () => {
-        const { exitCode: scaffoldExit } = runCli(['build-test', '--domain', 'example.com'], {
-          cwd: tmpDir,
-          configDir,
-        });
-        expect(scaffoldExit).toBe(0);
+    test('scaffolded plugin can be installed and built, producing valid manifest and adapter', {
+      timeout: 60_000,
+    }, async () => {
+      const { exitCode: scaffoldExit } = runCli(['build-test', '--domain', 'example.com'], {
+        cwd: tmpDir,
+        configDir,
+      });
+      expect(scaffoldExit).toBe(0);
 
-        const projectDir = join(tmpDir, 'build-test');
+      const projectDir = join(tmpDir, 'build-test');
 
-        // Override deps to use local platform packages (avoids npm auth requirement)
-        await overrideToLocalPackages(projectDir);
+      // Override deps to use local platform packages (avoids npm auth requirement)
+      await overrideToLocalPackages(projectDir);
 
-        // Use isolated config so the build doesn't register in the user's
-        // real ~/.opentabs/config.json or notify a running MCP server.
-        const buildEnv = { ...process.env, OPENTABS_CONFIG_DIR: configDir };
+      // Use isolated config so the build doesn't register in the user's
+      // real ~/.opentabs/config.json or notify a running MCP server.
+      const buildEnv = { ...process.env, OPENTABS_CONFIG_DIR: configDir };
 
-        // npm install
-        const install = spawnSync('npm', ['install'], {
-          cwd: projectDir,
-          env: buildEnv,
-        });
-        if ((install.status ?? 1) !== 0) {
-          console.error('install stdout:', install.stdout.toString());
-          console.error('install stderr:', install.stderr.toString());
-        }
-        expect(install.status ?? 1).toBe(0);
+      // npm install
+      const install = spawnSync('npm', ['install'], {
+        cwd: projectDir,
+        env: buildEnv,
+      });
+      if ((install.status ?? 1) !== 0) {
+        console.error('install stdout:', install.stdout.toString());
+        console.error('install stderr:', install.stderr.toString());
+      }
+      expect(install.status ?? 1).toBe(0);
 
-        // npm run build (tsc && opentabs-plugin build)
-        const build = spawnSync('npm', ['run', 'build'], { cwd: projectDir, env: buildEnv });
-        if ((build.status ?? 1) !== 0) {
-          console.error('build stdout:', build.stdout.toString());
-          console.error('build stderr:', build.stderr.toString());
-        }
-        expect(build.status ?? 1).toBe(0);
+      // npm run build (tsc && opentabs-plugin build)
+      const build = spawnSync('npm', ['run', 'build'], { cwd: projectDir, env: buildEnv });
+      if ((build.status ?? 1) !== 0) {
+        console.error('build stdout:', build.stdout.toString());
+        console.error('build stderr:', build.stderr.toString());
+      }
+      expect(build.status ?? 1).toBe(0);
 
-        // npm run lint — scaffolded code must pass lint with zero errors out of the box
-        const lint = spawnSync('npm', ['run', 'lint'], { cwd: projectDir, env: buildEnv });
-        if ((lint.status ?? 1) !== 0) {
-          console.error('lint stdout:', lint.stdout.toString());
-          console.error('lint stderr:', lint.stderr.toString());
-        }
-        expect(lint.status ?? 1).toBe(0);
+      // npm run lint — scaffolded code must pass lint with zero errors out of the box
+      const lint = spawnSync('npm', ['run', 'lint'], { cwd: projectDir, env: buildEnv });
+      if ((lint.status ?? 1) !== 0) {
+        console.error('lint stdout:', lint.stdout.toString());
+        console.error('lint stderr:', lint.stderr.toString());
+      }
+      expect(lint.status ?? 1).toBe(0);
 
-        // npm run format:check — scaffolded code must match prettier config out of the box
-        const formatCheck = spawnSync('npm', ['run', 'format:check'], { cwd: projectDir, env: buildEnv });
-        if ((formatCheck.status ?? 1) !== 0) {
-          console.error('format:check stdout:', formatCheck.stdout.toString());
-          console.error('format:check stderr:', formatCheck.stderr.toString());
-        }
-        expect(formatCheck.status ?? 1).toBe(0);
+      // npm run format:check — scaffolded code must match prettier config out of the box
+      const formatCheck = spawnSync('npm', ['run', 'format:check'], { cwd: projectDir, env: buildEnv });
+      if ((formatCheck.status ?? 1) !== 0) {
+        console.error('format:check stdout:', formatCheck.stdout.toString());
+        console.error('format:check stderr:', formatCheck.stderr.toString());
+      }
+      expect(formatCheck.status ?? 1).toBe(0);
 
-        // Verify dist/tools.json exists and is valid JSON
-        const toolsJsonPath = join(projectDir, 'dist', 'tools.json');
-        expect(existsSync(toolsJsonPath)).toBe(true);
+      // Verify dist/tools.json exists and is valid JSON
+      const toolsJsonPath = join(projectDir, 'dist', 'tools.json');
+      expect(existsSync(toolsJsonPath)).toBe(true);
 
-        const manifest = JSON.parse(await readFile(toolsJsonPath, 'utf-8')) as {
-          tools: Array<{
-            name: string;
-            description: string;
-            input_schema: Record<string, unknown>;
-            output_schema: Record<string, unknown>;
-          }>;
-        };
+      const manifest = JSON.parse(await readFile(toolsJsonPath, 'utf-8')) as {
+        tools: Array<{
+          name: string;
+          description: string;
+          input_schema: Record<string, unknown>;
+          output_schema: Record<string, unknown>;
+        }>;
+      };
 
-        // Verify manifest has top-level structure
-        expect(Array.isArray(manifest.tools)).toBe(true);
+      // Verify manifest has top-level structure
+      expect(Array.isArray(manifest.tools)).toBe(true);
 
-        // Verify tools array has at least one tool with required fields
-        expect(manifest.tools.length).toBeGreaterThan(0);
-        const tool = manifest.tools[0];
-        expect(tool).toBeDefined();
-        expect(typeof tool?.name).toBe('string');
-        expect(typeof tool?.description).toBe('string');
-        expect(tool?.input_schema).toBeDefined();
-        expect(tool?.output_schema).toBeDefined();
+      // Verify tools array has at least one tool with required fields
+      expect(manifest.tools.length).toBeGreaterThan(0);
+      const tool = manifest.tools[0];
+      expect(tool).toBeDefined();
+      expect(typeof tool?.name).toBe('string');
+      expect(typeof tool?.description).toBe('string');
+      expect(tool?.input_schema).toBeDefined();
+      expect(tool?.output_schema).toBeDefined();
 
-        // Verify package.json has opentabs field with metadata
-        const pkgJson = JSON.parse(await readFile(join(projectDir, 'package.json'), 'utf-8')) as Record<
-          string,
-          unknown
-        >;
-        expect(pkgJson.name).toBe('opentabs-plugin-build-test');
-        expect(pkgJson.version).toBe('0.0.1');
-        expect(pkgJson.main).toBe('dist/adapter.iife.js');
-        const opentabs = pkgJson.opentabs as { urlPatterns: string[] };
-        expect(Array.isArray(opentabs.urlPatterns)).toBe(true);
-        expect(opentabs.urlPatterns).toContain('*://example.com/*');
+      // Verify package.json has opentabs field with metadata
+      const pkgJson = JSON.parse(await readFile(join(projectDir, 'package.json'), 'utf-8')) as Record<string, unknown>;
+      expect(pkgJson.name).toBe('opentabs-plugin-build-test');
+      expect(pkgJson.version).toBe('0.0.1');
+      expect(pkgJson.main).toBe('dist/adapter.iife.js');
+      const opentabs = pkgJson.opentabs as { urlPatterns: string[] };
+      expect(Array.isArray(opentabs.urlPatterns)).toBe(true);
+      expect(opentabs.urlPatterns).toContain('*://example.com/*');
 
-        // Verify dist/adapter.iife.js exists and is non-empty
-        const adapterPath = join(projectDir, 'dist', 'adapter.iife.js');
-        expect(existsSync(adapterPath)).toBe(true);
-        const adapterContent = await readFile(adapterPath, 'utf-8');
-        expect(adapterContent.length).toBeGreaterThan(0);
-      },
-    );
+      // Verify dist/adapter.iife.js exists and is non-empty
+      const adapterPath = join(projectDir, 'dist', 'adapter.iife.js');
+      expect(existsSync(adapterPath)).toBe(true);
+      const adapterContent = await readFile(adapterPath, 'utf-8');
+      expect(adapterContent.length).toBeGreaterThan(0);
+    });
   });
 });

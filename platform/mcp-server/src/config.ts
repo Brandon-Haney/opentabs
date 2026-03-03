@@ -10,10 +10,10 @@
  * to avoid clobbering shared state.
  */
 
-import { log } from './logger.js';
-import { atomicWrite, generateSecret, getConfigDir, getConfigPath, getExtensionDir } from '@opentabs-dev/shared';
 import { access, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { atomicWrite, generateSecret, getConfigDir, getConfigPath, getExtensionDir } from '@opentabs-dev/shared';
+import { log } from './logger.js';
 
 /**
  * Shape of ~/.opentabs/config.json
@@ -284,7 +284,7 @@ const loadConfig = async (): Promise<OpentabsConfig> => {
       browserToolPolicy: {},
       permissions: defaultPermissions(),
     };
-    await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
+    await atomicWriteConfig(configPath, `${JSON.stringify(config, null, 2)}\n`);
     log.info(`Created default config at ${configPath}`);
     return config;
   }
@@ -313,7 +313,7 @@ const saveConfig = async (state: { configWriteMutex: Promise<void> }, config: Op
   const writePromise = (async () => {
     await prev;
     await mkdir(configDir, { recursive: true, mode: 0o700 });
-    await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
+    await atomicWriteConfig(configPath, `${JSON.stringify(config, null, 2)}\n`);
   })();
   // The mutex chain always fulfills so subsequent writes proceed even after a failure.
   state.configWriteMutex = writePromise.catch(() => {});
@@ -356,7 +356,7 @@ const saveToolConfig = async (
       permissions: current.permissions,
       skipPermissions: current.skipPermissions,
     };
-    await atomicWriteConfig(configPath, JSON.stringify(updated, null, 2) + '\n');
+    await atomicWriteConfig(configPath, `${JSON.stringify(updated, null, 2)}\n`);
   })();
   // The mutex chain always fulfills so subsequent writes proceed even after a failure.
   state.configWriteMutex = writePromise.catch(() => {});
@@ -397,7 +397,7 @@ const saveBrowserToolPolicy = async (
       permissions: current.permissions,
       skipPermissions: current.skipPermissions,
     };
-    await atomicWriteConfig(configPath, JSON.stringify(updated, null, 2) + '\n');
+    await atomicWriteConfig(configPath, `${JSON.stringify(updated, null, 2)}\n`);
   })();
   state.configWriteMutex = writePromise.catch(() => {});
   await writePromise;
@@ -412,7 +412,7 @@ const writeAuthFile = async (secret: string): Promise<void> => {
   const extensionDir = getExtensionDir();
   await mkdir(extensionDir, { recursive: true, mode: 0o700 });
   const authPath = join(extensionDir, 'auth.json');
-  await atomicWrite(authPath, JSON.stringify({ secret }) + '\n', 0o600);
+  await atomicWrite(authPath, `${JSON.stringify({ secret })}\n`, 0o600);
 };
 
 /**
@@ -446,7 +446,7 @@ const loadSecret = async (): Promise<string> => {
   // auth.json doesn't exist or has no valid secret — generate and write one
   const secret = generateSecret();
   await mkdir(extensionDir, { recursive: true, mode: 0o700 });
-  await atomicWrite(authPath, JSON.stringify({ secret }) + '\n', 0o600);
+  await atomicWrite(authPath, `${JSON.stringify({ secret })}\n`, 0o600);
   log.info(`Generated WebSocket authentication secret in ${authPath}`);
   return secret;
 };

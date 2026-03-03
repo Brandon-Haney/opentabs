@@ -1,24 +1,24 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createServer } from 'node:http';
+import { homedir, tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, afterEach, describe, expect, test, vi } from 'vitest';
+import type { CheckResult } from './doctor.js';
 import {
   checkAuthSecret,
   checkBrowser,
-  checkRuntime,
   checkConfigFile,
   checkExtensionConnected,
   checkMcpClientConfig,
   checkNpmPlugins,
   checkPlugins,
+  checkRuntime,
   checkServerHealth,
   defaultMcpClientLocations,
   isCwdProjectDirectory,
 } from './doctor.js';
-import { afterAll, afterEach, describe, expect, test, vi } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
-import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
-import type { CheckResult } from './doctor.js';
-import type { IncomingMessage, ServerResponse } from 'node:http';
 
 /** Create a test HTTP server listening on a random port. Returns { port, close }. */
 const createTestServer = (
@@ -112,7 +112,7 @@ describe('checkServerHealth', () => {
   test('sends Authorization header when secret is provided', async () => {
     let receivedAuth = '';
     const server = await createTestServer((req, res) => {
-      receivedAuth = req.headers['authorization'] ?? '';
+      receivedAuth = req.headers.authorization ?? '';
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', version: '1.0.0', toolCount: 5 }));
     });
@@ -127,9 +127,9 @@ describe('checkServerHealth', () => {
   });
 
   test('sends no Authorization header when secret is null', async () => {
-    let receivedAuth: string | undefined = undefined;
+    let receivedAuth: string | undefined;
     const server = await createTestServer((req, res) => {
-      receivedAuth = req.headers['authorization'];
+      receivedAuth = req.headers.authorization;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', version: '1.0.0', toolCount: 5 }));
     });
@@ -144,9 +144,9 @@ describe('checkServerHealth', () => {
   });
 
   test('sends no Authorization header when secret is undefined', async () => {
-    let receivedAuth: string | undefined = undefined;
+    let receivedAuth: string | undefined;
     const server = await createTestServer((req, res) => {
-      receivedAuth = req.headers['authorization'];
+      receivedAuth = req.headers.authorization;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', version: '1.0.0', toolCount: 5 }));
     });

@@ -6,12 +6,12 @@
  * to a health-check probe when no PID file exists.
  */
 
-import { isConnectionRefused, getPidFilePath, parsePidFile, readAuthSecret } from '../config.js';
-import { parsePort, resolvePort } from '../parse-port.js';
-import { DEFAULT_HOST } from '@opentabs-dev/shared';
-import pc from 'picocolors';
 import { readFile, unlink } from 'node:fs/promises';
+import { DEFAULT_HOST } from '@opentabs-dev/shared';
 import type { Command } from 'commander';
+import pc from 'picocolors';
+import { getPidFilePath, isConnectionRefused, parsePidFile, readAuthSecret } from '../config.js';
+import { parsePort, resolvePort } from '../parse-port.js';
 
 interface StopOptions {
   port?: number;
@@ -77,7 +77,7 @@ const handleStop = async (options: StopOptions): Promise<void> => {
     const healthUrl = `http://${DEFAULT_HOST}:${port}/health`;
     const secret = await readAuthSecret();
     const healthHeaders: Record<string, string> = {};
-    if (secret) healthHeaders['Authorization'] = `Bearer ${secret}`;
+    if (secret) healthHeaders.Authorization = `Bearer ${secret}`;
 
     try {
       const res = await fetch(healthUrl, { headers: healthHeaders, signal: AbortSignal.timeout(2_000) });
@@ -112,7 +112,7 @@ const handleStop = async (options: StopOptions): Promise<void> => {
 
   const secret = await readAuthSecret();
   const headers: Record<string, string> = {};
-  if (secret) headers['Authorization'] = `Bearer ${secret}`;
+  if (secret) headers.Authorization = `Bearer ${secret}`;
 
   try {
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(3_000) });

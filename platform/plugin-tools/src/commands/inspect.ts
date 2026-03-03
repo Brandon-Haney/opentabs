@@ -4,12 +4,12 @@
  * a human-readable summary of tools.
  */
 
-import { TOOLS_FILENAME, parsePluginPackageJson } from '@opentabs-dev/shared';
-import pc from 'picocolors';
 import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ManifestTool } from '@opentabs-dev/shared';
+import { parsePluginPackageJson, TOOLS_FILENAME } from '@opentabs-dev/shared';
 import type { Command } from 'commander';
+import pc from 'picocolors';
 
 /** Shape of dist/tools.json as written by `opentabs-plugin build` */
 interface ToolsJsonManifest {
@@ -39,7 +39,7 @@ const extractFields = (schema: Record<string, unknown>): Array<{ name: string; t
 };
 
 /** Truncate a string to maxLen, appending "..." if truncated */
-const truncate = (s: string, maxLen: number): string => (s.length > maxLen ? s.slice(0, maxLen - 3) + '...' : s);
+const truncate = (s: string, maxLen: number): string => (s.length > maxLen ? `${s.slice(0, maxLen - 3)}...` : s);
 
 const handleInspect = async (options: { json?: boolean }, projectDir: string = process.cwd()): Promise<void> => {
   // Read dist/tools.json

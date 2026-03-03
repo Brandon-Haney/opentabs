@@ -14,18 +14,18 @@
  * All tests use dynamic ports and are safe for parallel execution.
  */
 
-import { test, expect } from './fixtures.js';
-import {
-  waitForExtensionConnected,
-  waitForLog,
-  parseToolResult,
-  waitFor,
-  BROWSER_TOOL_NAMES,
-  openSidePanel,
-} from './helpers.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { McpClient, McpServer, TestServer } from './fixtures.js';
+import { expect, test } from './fixtures.js';
+import {
+  BROWSER_TOOL_NAMES,
+  openSidePanel,
+  parseToolResult,
+  waitFor,
+  waitForExtensionConnected,
+  waitForLog,
+} from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -84,7 +84,7 @@ const openTestServerTab = async (mcpClient: McpClient, testServer: TestServer): 
  * and return the tab ID.
  */
 const openInteractivePage = async (mcpClient: McpClient, testServer: TestServer): Promise<number> => {
-  const openResult = await mcpClient.callTool('browser_open_tab', { url: testServer.url + '/interactive' });
+  const openResult = await mcpClient.callTool('browser_open_tab', { url: `${testServer.url}/interactive` });
   expect(openResult.isError).toBe(false);
   const tabInfo = parseToolResult(openResult.content);
   const tabId = tabInfo.id as number;
@@ -364,7 +364,7 @@ test.describe('browser_navigate_tab', () => {
     // Navigate it
     const navResult = await mcpClient.callTool('browser_navigate_tab', {
       tabId,
-      url: testServer.url + '/non-matching',
+      url: `${testServer.url}/non-matching`,
     });
     expect(navResult.isError).toBe(false);
     const navData = parseToolResult(navResult.content);
@@ -979,7 +979,7 @@ test.describe('browser_focus_tab', () => {
     expect(open1.isError).toBe(false);
     const tabId1 = parseToolResult(open1.content).id as number;
 
-    const open2 = await mcpClient.callTool('browser_open_tab', { url: testServer.url + '/non-matching' });
+    const open2 = await mcpClient.callTool('browser_open_tab', { url: `${testServer.url}/non-matching` });
     expect(open2.isError).toBe(false);
     const tabId2 = parseToolResult(open2.content).id as number;
 
@@ -1133,7 +1133,7 @@ test.describe('browser_get_tab_content', () => {
 
     // Open the interactive page which has a known h1
     const openResult = await mcpClient.callTool('browser_open_tab', {
-      url: testServer.url + '/interactive',
+      url: `${testServer.url}/interactive`,
     });
     expect(openResult.isError).toBe(false);
     const tabInfo = parseToolResult(openResult.content);
@@ -1664,7 +1664,7 @@ test.describe('Browser tools — network capture lifecycle', () => {
     // 2. Navigate to trigger network requests
     const navResult = await mcpClient.callTool('browser_navigate_tab', {
       tabId,
-      url: testServer.url + '/interactive',
+      url: `${testServer.url}/interactive`,
     });
     expect(navResult.isError).toBe(false);
 
@@ -1700,7 +1700,7 @@ test.describe('Browser tools — network capture lifecycle', () => {
     await mcpClient.callTool('browser_enable_network_capture', { tabId });
     await mcpClient.callTool('browser_navigate_tab', {
       tabId,
-      url: testServer.url + '/interactive',
+      url: `${testServer.url}/interactive`,
     });
 
     // Poll until requests are captured
@@ -1748,7 +1748,7 @@ test.describe('Browser tools — network capture lifecycle', () => {
     // Navigate to /interactive — this request should be captured
     await mcpClient.callTool('browser_navigate_tab', {
       tabId,
-      url: testServer.url + '/interactive',
+      url: `${testServer.url}/interactive`,
     });
 
     // Poll until requests matching the filter are captured
@@ -1791,7 +1791,7 @@ test.describe('Browser tools — network capture lifecycle', () => {
     // Navigate to generate HTTP traffic
     await mcpClient.callTool('browser_navigate_tab', {
       tabId,
-      url: testServer.url + '/interactive',
+      url: `${testServer.url}/interactive`,
     });
 
     // Wait until requests are captured
@@ -1837,7 +1837,7 @@ test.describe('Browser tools — network capture lifecycle', () => {
     // Navigate to WebSocket test page — opens a WS connection and sends a ping
     await mcpClient.callTool('browser_navigate_tab', {
       tabId,
-      url: testServer.url + '/ws-test',
+      url: `${testServer.url}/ws-test`,
     });
 
     // Wait until WebSocket frames are captured
@@ -1888,7 +1888,7 @@ test.describe('Browser tools — network capture lifecycle', () => {
     await mcpClient.callTool('browser_enable_network_capture', { tabId });
     await mcpClient.callTool('browser_navigate_tab', {
       tabId,
-      url: testServer.url + '/interactive',
+      url: `${testServer.url}/interactive`,
     });
     await waitForNetworkRequests(mcpClient, tabId);
 
@@ -1959,7 +1959,7 @@ test.describe('Browser tools — WebSocket frame capture', () => {
     // sends a ping message, and receives a hello + echo back from the server.
     await mcpClient.callTool('browser_navigate_tab', {
       tabId,
-      url: testServer.url + '/ws-test',
+      url: `${testServer.url}/ws-test`,
     });
 
     // Poll until at least 2 WebSocket frames are captured (sent + received)
@@ -2005,7 +2005,7 @@ test.describe('Browser tools — WebSocket frame capture', () => {
     await mcpClient.callTool('browser_enable_network_capture', { tabId });
     await mcpClient.callTool('browser_navigate_tab', {
       tabId,
-      url: testServer.url + '/ws-test',
+      url: `${testServer.url}/ws-test`,
     });
 
     // Wait for frames to be captured
@@ -2241,7 +2241,7 @@ test.describe('Browser tools — resource inspection', () => {
 
     const result = await mcpClient.callTool('browser_get_resource_content', {
       tabId,
-      url: testServer.url + '/nonexistent-resource.js',
+      url: `${testServer.url}/nonexistent-resource.js`,
     });
     expect(result.isError).toBe(true);
 
@@ -2645,7 +2645,7 @@ test.describe('Browser tools — network body capture', () => {
     // CDP captures requests from inline page scripts (unlike file-injected scripts).
     await mcpClient.callTool('browser_navigate_tab', {
       tabId,
-      url: testServer.url + '/post-test',
+      url: `${testServer.url}/post-test`,
     });
 
     // Poll until the /api/echo request with requestBody appears
@@ -2695,7 +2695,7 @@ test.describe('Browser tools — network body capture', () => {
     // The responseBody is attached asynchronously after Network.loadingFinished.
     await mcpClient.callTool('browser_navigate_tab', {
       tabId,
-      url: testServer.url + '/post-test',
+      url: `${testServer.url}/post-test`,
     });
 
     // Poll until the /api/echo request with responseBody appears

@@ -13,7 +13,6 @@
  * documents do not have access to chrome.storage APIs.
  */
 
-import { isValidWsOrigin, wsToHttpBase } from './ws-utils.js';
 import {
   buildWsUrl,
   DEFAULT_SERVER_PORT,
@@ -21,9 +20,10 @@ import {
   WS_CLOSE_PONG_TIMEOUT,
   WS_INFO_TIMEOUT_MS,
 } from '../constants.js';
+import type { DisconnectReason, InternalMessage, WsDataMessage, WsStateMessage } from '../extension-messages.js';
 import { ALL_ALLOWED_METHODS } from '../known-methods.js';
 import { installLogCollector } from '../log-collector.js';
-import type { DisconnectReason, InternalMessage, WsDataMessage, WsStateMessage } from '../extension-messages.js';
+import { isValidWsOrigin, wsToHttpBase } from './ws-utils.js';
 
 /** Capture console output in a ring buffer for retrieval by debugging tools */
 const offscreenLogCollector = installLogCollector('offscreen');
@@ -58,7 +58,7 @@ const ALLOWED_METHODS = new Set<string>(ALL_ALLOWED_METHODS);
 const fetchWsInfo = async (httpBase: string): Promise<{ response: Response } | { reason: DisconnectReason }> => {
   try {
     const headers: Record<string, string> = {};
-    if (wsSecret) headers['Authorization'] = `Bearer ${wsSecret}`;
+    if (wsSecret) headers.Authorization = `Bearer ${wsSecret}`;
     let res = await fetch(`${httpBase}/ws-info`, {
       headers,
       signal: AbortSignal.timeout(WS_INFO_TIMEOUT_MS),
@@ -69,7 +69,7 @@ const fetchWsInfo = async (httpBase: string): Promise<{ response: Response } | {
     if (res.status === 401) {
       await bootstrapFromAuthFile();
       const retryHeaders: Record<string, string> = {};
-      if (wsSecret) retryHeaders['Authorization'] = `Bearer ${wsSecret}`;
+      if (wsSecret) retryHeaders.Authorization = `Bearer ${wsSecret}`;
       res = await fetch(`${httpBase}/ws-info`, {
         headers: retryHeaders,
         signal: AbortSignal.timeout(WS_INFO_TIMEOUT_MS),

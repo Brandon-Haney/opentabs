@@ -1,8 +1,8 @@
+import type { TabState } from '@opentabs-dev/shared';
+import { ArrowUp } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { sanitizeSvg } from '../../sanitize-svg.js';
 import { cn } from '../lib/cn.js';
-import { ArrowUp } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
-import type { TabState } from '@opentabs-dev/shared';
 
 const AVATAR_PALETTE_SIZE = 10;
 
@@ -74,7 +74,7 @@ const StatusIndicator = ({
   if (tabState === 'unavailable') {
     return (
       <div
-        className="bg-primary border-card absolute rounded-full border-2"
+        className="absolute rounded-full border-2 border-card bg-primary"
         style={{ width: dotSize, height: dotSize, bottom: -2, right: -2 }}
       />
     );
@@ -84,7 +84,7 @@ const StatusIndicator = ({
     const iconSize = Math.max(6, Math.round(dotSize * 0.6));
     return (
       <div
-        className="bg-accent border-card absolute flex items-center justify-center rounded-full border-2"
+        className="absolute flex items-center justify-center rounded-full border-2 border-card bg-accent"
         style={{ width: dotSize, height: dotSize, bottom: -2, right: -2 }}>
         <ArrowUp className="text-accent-foreground" style={{ width: iconSize, height: iconSize }} strokeWidth={3} />
       </div>
@@ -94,7 +94,7 @@ const StatusIndicator = ({
   return (
     <div
       className={cn(
-        'bg-success border-card absolute rounded-full border-2',
+        'absolute rounded-full border-2 border-card bg-success',
         active && 'animate-activity-flash',
         fadingOut && !active && 'animate-activity-fade-out',
       )}
@@ -138,7 +138,7 @@ const PluginIcon = ({
     return (
       <div className={`relative shrink-0 ${className}`} style={{ width: size, height: size }}>
         <div
-          className="border-border flex h-full w-full items-center justify-center rounded border-2"
+          className="flex h-full w-full items-center justify-center rounded border-2 border-border"
           style={{ width: size, height: size }}>
           <div
             className="overflow-hidden"
@@ -157,9 +157,9 @@ const PluginIcon = ({
   return (
     <div className={`relative shrink-0 ${className}`} style={{ width: size, height: size }}>
       <div
-        className="border-border flex h-full w-full items-center justify-center rounded border-2"
+        className="flex h-full w-full items-center justify-center rounded border-2 border-border"
         style={{ width: size, height: size, backgroundColor: getAvatarVar(pluginName) }}>
-        <span className="font-head leading-none text-white select-none" style={{ fontSize, letterSpacing: '-0.02em' }}>
+        <span className="select-none font-head text-white leading-none" style={{ fontSize, letterSpacing: '-0.02em' }}>
           {letter}
         </span>
       </div>

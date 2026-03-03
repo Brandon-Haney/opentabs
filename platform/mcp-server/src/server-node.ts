@@ -8,16 +8,16 @@
  * Node.js 20+ has global Request / Response via undici, so no polyfills needed.
  */
 
-import { log } from './logger.js';
-import { WebSocketServer } from 'ws';
-import { createServer } from 'node:http';
-import { Readable } from 'node:stream';
-import type { ServerAdapter } from './http-routes.js';
-import type { WsHandle } from '@opentabs-dev/shared';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createServer } from 'node:http';
 import type { Duplex } from 'node:stream';
+import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
+import type { WsHandle } from '@opentabs-dev/shared';
 import type { RawData } from 'ws';
+import { WebSocketServer } from 'ws';
+import type { ServerAdapter } from './http-routes.js';
+import { log } from './logger.js';
 
 /** Maximum HTTP request body size (10 MB, matching the WebSocket maxPayload) */
 const MAX_BODY_SIZE = 10 * 1024 * 1024;
@@ -110,7 +110,7 @@ const toWebRequest = (req: IncomingMessage, body: Buffer | null): Request => {
 
   // Node.js 20+ requires duplex: 'half' for requests with a body.
   if (hasBody) {
-    (init as Record<string, unknown>)['duplex'] = 'half';
+    (init as Record<string, unknown>).duplex = 'half';
   }
 
   return new Request(url, init);

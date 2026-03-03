@@ -28,9 +28,9 @@
  */
 
 import './orphan-guard.js';
-import { WebSocketServer } from 'ws';
-import http from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import http from 'node:http';
+import { WebSocketServer } from 'ws';
 
 // ---------------------------------------------------------------------------
 // State
@@ -1121,7 +1121,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
 
   // REST API — GET /jwt-localstorage/api/me (requires Bearer token)
   if (path === '/jwt-localstorage/api/me' && req.method === 'GET') {
-    const authHeader = req.headers['authorization'];
+    const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));
@@ -1143,7 +1143,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
 
   // REST API — GET /jwt-localstorage/api/tasks
   if (path === '/jwt-localstorage/api/tasks' && req.method === 'GET') {
-    const authHeader = req.headers['authorization'];
+    const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));
@@ -1165,7 +1165,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
 
   // REST API — POST /jwt-localstorage/api/tasks
   if (path === '/jwt-localstorage/api/tasks' && req.method === 'POST') {
-    const authHeader = req.headers['authorization'];
+    const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));
@@ -1525,7 +1525,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
 
   // API — GET /mixed-auth/api/dashboard (requires Bearer token)
   if (path === '/mixed-auth/api/dashboard' && req.method === 'GET') {
-    const authHeader = req.headers['authorization'];
+    const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));
@@ -1543,7 +1543,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
 
   // API — GET /mixed-auth/api/notifications (requires Bearer token)
   if (path === '/mixed-auth/api/notifications' && req.method === 'GET') {
-    const authHeader = req.headers['authorization'];
+    const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));
@@ -1565,7 +1565,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
 
   // API — POST /mixed-auth/api/actions (requires Bearer token + CSRF header)
   if (path === '/mixed-auth/api/actions' && req.method === 'POST') {
-    const authHeader = req.headers['authorization'];
+    const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));
@@ -1723,7 +1723,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
 
   // REST API — GET /jwt-sessionstorage/api/notes (requires Bearer token)
   if (path === '/jwt-sessionstorage/api/notes' && req.method === 'GET') {
-    const authHeader = req.headers['authorization'];
+    const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));
@@ -1745,7 +1745,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
 
   // REST API — POST /jwt-sessionstorage/api/notes
   if (path === '/jwt-sessionstorage/api/notes' && req.method === 'POST') {
-    const authHeader = req.headers['authorization'];
+    const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));
@@ -1784,7 +1784,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
 
   // REST API — GET /basicauth-app/api/files (requires Basic Auth)
   if (path === '/basicauth-app/api/files' && req.method === 'GET') {
-    const authHeader = req.headers['authorization'];
+    const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Basic ')) {
       res.writeHead(401, { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Basic realm="files"' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));
@@ -1806,7 +1806,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
 
   // REST API — POST /basicauth-app/api/files (requires Basic Auth)
   if (path === '/basicauth-app/api/files' && req.method === 'POST') {
-    const authHeader = req.headers['authorization'];
+    const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Basic ')) {
       res.writeHead(401, { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Basic realm="files"' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));

@@ -1,6 +1,6 @@
-import { detectApis } from './detect-apis.js';
 import { describe, expect, test } from 'vitest';
 import type { ApiEndpoint, ApiProtocol, WsFrame } from './detect-apis.js';
+import { detectApis } from './detect-apis.js';
 import type { NetworkRequest } from './detect-auth.js';
 
 /** Build a minimal network request with defaults. */
@@ -519,7 +519,7 @@ describe('detectApis', () => {
     });
 
     test('truncates long request body to 500 chars', () => {
-      const longBody = '{"data":"' + 'x'.repeat(600) + '"}';
+      const longBody = `{"data":"${'x'.repeat(600)}"}`;
       const result = detectApis([
         req({
           url: 'https://api.example.com/v1/items',

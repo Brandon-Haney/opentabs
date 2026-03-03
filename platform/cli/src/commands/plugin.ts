@@ -2,7 +2,21 @@
  * `opentabs plugin` command — plugin management (create, search, install, remove, list).
  */
 
-import { colorTabState } from './status.js';
+import { spawn, spawnSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import {
+  DEFAULT_HOST,
+  normalizePluginName,
+  OFFICIAL_SCOPE,
+  PLUGIN_PREFIX,
+  platformExec,
+  resolvePluginPackageCandidates,
+  TOOLS_FILENAME,
+  toErrorMessage,
+} from '@opentabs-dev/shared';
+import type { Command } from 'commander';
+import pc from 'picocolors';
 import {
   atomicWriteConfig,
   getConfigPath,
@@ -14,22 +28,8 @@ import {
 } from '../config.js';
 import { notifyServer } from '../notify-server.js';
 import { parsePort, resolvePort } from '../parse-port.js';
-import { scaffoldPlugin, promptForMissingArgs, ScaffoldError } from '../scaffold.js';
-import {
-  DEFAULT_HOST,
-  TOOLS_FILENAME,
-  OFFICIAL_SCOPE,
-  PLUGIN_PREFIX,
-  normalizePluginName,
-  resolvePluginPackageCandidates,
-  platformExec,
-  toErrorMessage,
-} from '@opentabs-dev/shared';
-import pc from 'picocolors';
-import { spawn, spawnSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import type { Command } from 'commander';
+import { promptForMissingArgs, ScaffoldError, scaffoldPlugin } from '../scaffold.js';
+import { colorTabState } from './status.js';
 
 interface SpawnResult {
   exitCode: number;
@@ -203,7 +203,7 @@ const removeFromLocalPlugins = async (pkg: string): Promise<void> => {
   if (remaining.length < localPlugins.length) {
     const removed = localPlugins.length - remaining.length;
     config.localPlugins = remaining;
-    await atomicWriteConfig(configPath, JSON.stringify(config, null, 2) + '\n');
+    await atomicWriteConfig(configPath, `${JSON.stringify(config, null, 2)}\n`);
     console.log(
       pc.dim(`Removed ${removed.toString()} local plugin ${removed === 1 ? 'entry' : 'entries'} from config.`),
     );
@@ -425,7 +425,7 @@ const handlePluginSearch = (query?: string): void => {
     const label = pkg.name.startsWith(`${OFFICIAL_SCOPE}/`) ? pc.blue('[official]') : pc.dim('[community]');
     const desc = pkg.description
       ? pkg.description.length > descWidth
-        ? pkg.description.slice(0, descWidth - 3) + '...'
+        ? `${pkg.description.slice(0, descWidth - 3)}...`
         : pkg.description
       : '';
     const author = pkg.publisher?.username ?? 'unknown';
@@ -562,7 +562,7 @@ const handlePluginList = async (options: PluginListOptions): Promise<void> => {
   // Try to fetch from running server first
   try {
     const headers: Record<string, string> = {};
-    if (secret) headers['Authorization'] = `Bearer ${secret}`;
+    if (secret) headers.Authorization = `Bearer ${secret}`;
 
     const res = await fetch(`http://${DEFAULT_HOST}:${port}/health`, {
       headers,

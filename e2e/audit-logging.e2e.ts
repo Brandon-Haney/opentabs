@@ -10,8 +10,8 @@
  * All tests use dynamic ports and are safe for parallel execution.
  */
 
-import { test, expect } from './fixtures.js';
-import { setupToolTest, callToolExpectSuccess } from './helpers.js';
+import { expect, test } from './fixtures.js';
+import { callToolExpectSuccess, setupToolTest } from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,7 +50,7 @@ const fetchAudit = async (
     }
   }
   const headers: Record<string, string> = {};
-  if (secret) headers['Authorization'] = `Bearer ${secret}`;
+  if (secret) headers.Authorization = `Bearer ${secret}`;
 
   const res = await fetch(url.toString(), {
     headers,
@@ -199,7 +199,7 @@ test.describe('Audit logging', () => {
 
     // Fetch health (authenticated to get full response)
     const healthHeaders: Record<string, string> = {};
-    if (mcpServer.secret) healthHeaders['Authorization'] = `Bearer ${mcpServer.secret}`;
+    if (mcpServer.secret) healthHeaders.Authorization = `Bearer ${mcpServer.secret}`;
 
     const res = await fetch(`http://localhost:${mcpServer.port}/health`, {
       headers: healthHeaders,

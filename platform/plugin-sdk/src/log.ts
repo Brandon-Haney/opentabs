@@ -37,7 +37,7 @@ const safeSerializeArg = (value: unknown): unknown => {
     if (type === 'boolean' || type === 'number') return value;
 
     if (type === 'string') {
-      return (value as string).length > MAX_STRING_LENGTH ? (value as string).slice(0, MAX_STRING_LENGTH) + '…' : value;
+      return (value as string).length > MAX_STRING_LENGTH ? `${(value as string).slice(0, MAX_STRING_LENGTH)}…` : value;
     }
 
     if (type === 'function') return `[Function: ${(value as { name?: string }).name || 'anonymous'}]`;

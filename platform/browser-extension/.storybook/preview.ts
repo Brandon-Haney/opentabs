@@ -1,8 +1,8 @@
 import './chrome-mock.mjs';
 import './preview.css';
-import { Tooltip } from '../src/side-panel/components/retro/Tooltip';
-import { createElement } from 'react';
 import type { Preview } from '@storybook/react';
+import { createElement } from 'react';
+import { Tooltip } from '../src/side-panel/components/retro/Tooltip';
 
 const preview: Preview = {
   parameters: {
@@ -27,7 +27,7 @@ const preview: Preview = {
   },
   decorators: [
     (Story, context) => {
-      const theme = context.globals['theme'] as string;
+      const theme = context.globals.theme as string;
       document.documentElement.classList.toggle('dark', theme === 'dark');
       return createElement(Tooltip.Provider, null, Story());
     },

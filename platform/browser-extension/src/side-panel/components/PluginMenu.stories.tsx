@@ -1,6 +1,6 @@
-import { PluginMenu } from './PluginMenu';
-import type { PluginState } from '../bridge';
 import type { Meta, StoryObj } from '@storybook/react';
+import type { PluginState } from '../bridge';
+import { PluginMenu } from './PluginMenu';
 
 const mockNpmPlugin = (overrides?: Partial<PluginState>): PluginState => ({
   name: 'slack',
@@ -52,7 +52,7 @@ const WithUpdate: Story = {
 const LocalPlugin: Story = {
   render: () => (
     <div>
-      <p className="text-muted-foreground mb-2 text-xs">
+      <p className="mb-2 text-muted-foreground text-xs">
         Local plugin — menu shows &ldquo;Remove&rdquo; instead of &ldquo;Uninstall&rdquo;:
       </p>
       <PluginMenu
@@ -69,7 +69,7 @@ const LocalPlugin: Story = {
 const WithConfirmDialog: Story = {
   render: () => (
     <div>
-      <p className="text-muted-foreground mb-2 text-xs">
+      <p className="mb-2 text-muted-foreground text-xs">
         Open the menu and click Uninstall to see the confirmation dialog:
       </p>
       <PluginMenu
@@ -87,7 +87,7 @@ const AllStates: Story = {
   render: () => (
     <div className="space-y-4">
       <div>
-        <p className="text-muted-foreground mb-1 text-xs">Default (no update)</p>
+        <p className="mb-1 text-muted-foreground text-xs">Default (no update)</p>
         <PluginMenu
           plugin={mockNpmPlugin()}
           onUpdate={() => undefined}
@@ -97,7 +97,7 @@ const AllStates: Story = {
         />
       </div>
       <div>
-        <p className="text-muted-foreground mb-1 text-xs">With update available</p>
+        <p className="mb-1 text-muted-foreground text-xs">With update available</p>
         <PluginMenu
           plugin={mockNpmPlugin({ update: { latestVersion: '0.2.0', updateCommand: 'npm update slack' } })}
           onUpdate={() => undefined}
@@ -107,7 +107,7 @@ const AllStates: Story = {
         />
       </div>
       <div>
-        <p className="text-muted-foreground mb-1 text-xs">Updating (spinner on Update item)</p>
+        <p className="mb-1 text-muted-foreground text-xs">Updating (spinner on Update item)</p>
         <PluginMenu
           plugin={mockNpmPlugin({ update: { latestVersion: '0.2.0', updateCommand: 'npm update slack' } })}
           onUpdate={() => undefined}
@@ -117,7 +117,7 @@ const AllStates: Story = {
         />
       </div>
       <div>
-        <p className="text-muted-foreground mb-1 text-xs">Removing (spinner on Uninstall item)</p>
+        <p className="mb-1 text-muted-foreground text-xs">Removing (spinner on Uninstall item)</p>
         <PluginMenu
           plugin={mockNpmPlugin()}
           onUpdate={() => undefined}
@@ -127,7 +127,7 @@ const AllStates: Story = {
         />
       </div>
       <div>
-        <p className="text-muted-foreground mb-1 text-xs">Local plugin (shows &ldquo;Remove&rdquo;)</p>
+        <p className="mb-1 text-muted-foreground text-xs">Local plugin (shows &ldquo;Remove&rdquo;)</p>
         <PluginMenu
           plugin={mockNpmPlugin({ source: 'local' })}
           onUpdate={() => undefined}

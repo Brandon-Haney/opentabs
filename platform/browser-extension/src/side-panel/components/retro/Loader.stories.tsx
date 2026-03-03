@@ -1,5 +1,5 @@
-import { Loader } from './Loader';
 import type { Meta, StoryObj } from '@storybook/react';
+import { Loader } from './Loader';
 
 const meta: Meta<typeof Loader> = {
   title: 'Retro/Loader',
@@ -23,7 +23,7 @@ const AllVariants: Story = {
     <div className="flex flex-col gap-4">
       {(['default', 'secondary', 'outline'] as const).map(variant => (
         <div key={variant} className="flex items-center gap-4">
-          <span className="text-muted-foreground w-20 font-mono text-xs">{variant}</span>
+          <span className="w-20 font-mono text-muted-foreground text-xs">{variant}</span>
           {(['sm', 'md', 'lg'] as const).map(size => (
             <Loader key={size} variant={variant} size={size} />
           ))}

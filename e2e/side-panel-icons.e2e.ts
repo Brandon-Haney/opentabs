@@ -7,22 +7,22 @@
  * with proper active/inactive treatment and letter-avatar fallback.
  */
 
-import {
-  test,
-  expect,
-  startMcpServer,
-  startTestServer,
-  cleanupTestConfigDir,
-  writeTestConfig,
-  readPluginToolNames,
-  launchExtensionContext,
-  createMinimalPlugin,
-  E2E_TEST_PLUGIN_DIR,
-} from './fixtures.js';
-import { waitForExtensionConnected, waitForLog, openSidePanel, setupAdapterSymlink } from './helpers.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  cleanupTestConfigDir,
+  createMinimalPlugin,
+  E2E_TEST_PLUGIN_DIR,
+  expect,
+  launchExtensionContext,
+  readPluginToolNames,
+  startMcpServer,
+  startTestServer,
+  test,
+  writeTestConfig,
+} from './fixtures.js';
+import { openSidePanel, setupAdapterSymlink, waitForExtensionConnected, waitForLog } from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // Health endpoint — iconSvg field
@@ -137,7 +137,7 @@ test.describe('Icon pipeline — side panel rendering', () => {
 
       // Poll /health with auth headers to get pluginDetails
       const authHeaders: Record<string, string> = {};
-      if (server.secret) authHeaders['Authorization'] = `Bearer ${server.secret}`;
+      if (server.secret) authHeaders.Authorization = `Bearer ${server.secret}`;
 
       await expect
         .poll(

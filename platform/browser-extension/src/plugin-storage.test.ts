@@ -1,14 +1,14 @@
+import { beforeEach, describe, expect, test } from 'vitest';
 import { PLUGINS_META_KEY } from './constants.js';
+import type { PluginMeta } from './extension-messages.js';
 import {
-  storePluginsBatch,
-  removePlugin,
-  removePluginsBatch,
   getAllPluginMeta,
   getPluginMeta,
   invalidatePluginCache,
+  removePlugin,
+  removePluginsBatch,
+  storePluginsBatch,
 } from './plugin-storage.js';
-import { beforeEach, describe, expect, test } from 'vitest';
-import type { PluginMeta } from './extension-messages.js';
 
 // ---------------------------------------------------------------------------
 // In-memory mock of chrome.storage.local
@@ -92,15 +92,15 @@ describe('getAllPluginMeta', () => {
     };
     const result = await getAllPluginMeta();
     expect(Object.keys(result)).toEqual(['valid']);
-    expect(result['valid']?.name).toBe('valid');
+    expect(result.valid?.name).toBe('valid');
   });
 
   test('returns a copy (mutations do not affect cache)', async () => {
     await storePluginsBatch([makeMeta('alpha')]);
     const first = await getAllPluginMeta();
-    first['injected'] = makeMeta('injected');
+    first.injected = makeMeta('injected');
     const second = await getAllPluginMeta();
-    expect(second['injected']).toBeUndefined();
+    expect(second.injected).toBeUndefined();
   });
 });
 
@@ -156,7 +156,7 @@ describe('storePluginsBatch', () => {
   test('persists to chrome.storage.local', async () => {
     await storePluginsBatch([makeMeta('persisted')]);
     const rawData = store[PLUGINS_META_KEY] as Record<string, PluginMeta>;
-    expect(rawData['persisted']?.name).toBe('persisted');
+    expect(rawData.persisted?.name).toBe('persisted');
   });
 });
 
@@ -249,10 +249,10 @@ describe('write serialization', () => {
     await Promise.all([p1, p2]);
 
     const result = await getAllPluginMeta();
-    expect(result['a']).toBeUndefined();
-    expect(result['b']).toBeUndefined();
-    expect(result['c']).toBeDefined();
-    expect(result['d']).toBeDefined();
+    expect(result.a).toBeUndefined();
+    expect(result.b).toBeUndefined();
+    expect(result.c).toBeDefined();
+    expect(result.d).toBeDefined();
   });
 
   test('failing write does not break the mutex chain', async () => {
@@ -303,11 +303,11 @@ describe('invalidatePluginCache', () => {
 
     // Without invalidation, the cache still returns the old state
     const beforeInvalidate = await getAllPluginMeta();
-    expect(beforeInvalidate['external']).toBeUndefined();
+    expect(beforeInvalidate.external).toBeUndefined();
 
     // After invalidation, the fresh read from storage includes the external entry
     invalidatePluginCache();
     const afterInvalidate = await getAllPluginMeta();
-    expect(afterInvalidate['external']).toBeDefined();
+    expect(afterInvalidate.external).toBeDefined();
   });
 });

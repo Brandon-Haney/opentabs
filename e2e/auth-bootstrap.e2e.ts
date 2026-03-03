@@ -10,21 +10,21 @@
  * directory.
  */
 
-import {
-  test,
-  expect,
-  startMcpServer,
-  createTestConfigDir,
-  cleanupTestConfigDir,
-  launchExtensionContext,
-  createMcpClient,
-  symlinkCrossPlatform,
-} from './fixtures.js';
-import { waitForExtensionConnected, waitForLog, setupAdapterSymlink } from './helpers.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { McpServer } from './fixtures.js';
+import {
+  cleanupTestConfigDir,
+  createMcpClient,
+  createTestConfigDir,
+  expect,
+  launchExtensionContext,
+  startMcpServer,
+  symlinkCrossPlatform,
+  test,
+} from './fixtures.js';
+import { setupAdapterSymlink, waitForExtensionConnected, waitForLog } from './helpers.js';
 
 test.describe('Auth bootstrap', () => {
   test('extension connects after auth.json is written post-load', async () => {
@@ -64,7 +64,7 @@ test.describe('Auth bootstrap', () => {
         // 5. Write auth.json to the extension directory with the server's secret.
         //    The extension's next connect() call will run bootstrapFromAuthFile(),
         //    pick up the secret, and authenticate successfully.
-        const authJson = JSON.stringify({ secret: server.secret }) + '\n';
+        const authJson = `${JSON.stringify({ secret: server.secret })}\n`;
         fs.writeFileSync(path.join(extensionDir, 'auth.json'), authJson, 'utf-8');
 
         // 6. Wait for the extension to reconnect. The backoff timer will fire
@@ -159,7 +159,7 @@ test.describe('Auth bootstrap', () => {
         //    also updates the extension's copy.
         const newSecret = `rotated-${crypto.randomUUID()}`;
         const authPath = path.join(configDir, 'extension', 'auth.json');
-        fs.writeFileSync(authPath, JSON.stringify({ secret: newSecret }) + '\n', 'utf-8');
+        fs.writeFileSync(authPath, `${JSON.stringify({ secret: newSecret })}\n`, 'utf-8');
 
         // 5. Trigger hot reload so the server picks up the new secret
         server.logs.length = 0;

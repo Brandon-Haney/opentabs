@@ -17,11 +17,11 @@
  * `tsc --build` for this project before bundling.
  */
 
-import { build } from 'esbuild';
 import { execSync } from 'node:child_process';
 import { unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Plugin } from 'esbuild';
+import { build } from 'esbuild';
 
 const base = import.meta.dirname;
 
@@ -99,5 +99,3 @@ for (const { entrypoint, outfile, label } of entries) {
 if (failed) {
   process.exit(1);
 }
-
-export {};

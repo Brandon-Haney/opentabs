@@ -1,3 +1,8 @@
+import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { describe, expect, test } from 'vitest';
+import { z } from 'zod';
+import type { BrowserToolDefinition } from './browser-tools/definition.js';
+import type { McpServerInstance, RequestHandlerExtra } from './mcp-setup.js';
 import {
   checkToolCallable,
   getEnabledToolsList,
@@ -6,13 +11,8 @@ import {
   sanitizeOutput,
 } from './mcp-setup.js';
 import { buildRegistry, trustTierPrefix } from './registry.js';
-import { createState } from './state.js';
-import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { describe, expect, test } from 'vitest';
-import { z } from 'zod';
-import type { BrowserToolDefinition } from './browser-tools/definition.js';
-import type { McpServerInstance, RequestHandlerExtra } from './mcp-setup.js';
 import type { RegisteredPlugin } from './state.js';
+import { createState } from './state.js';
 
 /** Create a minimal RegisteredPlugin for testing */
 const createPlugin = (name: string, toolNames: string[]): RegisteredPlugin => ({
@@ -704,8 +704,8 @@ describe('sanitizeOutput', () => {
       '{"a":1,"__proto__":{"evil":true},"constructor":"bad","prototype":"also bad","b":2}',
     ) as Record<string, unknown>;
     const result = sanitizeOutput(input) as Record<string, unknown>;
-    expect(result['a']).toBe(1);
-    expect(result['b']).toBe(2);
+    expect(result.a).toBe(1);
+    expect(result.b).toBe(2);
     expect(Object.hasOwn(result, '__proto__')).toBe(false);
     expect(Object.hasOwn(result, 'constructor')).toBe(false);
     expect(Object.hasOwn(result, 'prototype')).toBe(false);
@@ -716,11 +716,11 @@ describe('sanitizeOutput', () => {
       '{"safe":{"__proto__":{"evil":true},"nested":{"constructor":"bad","value":42}}}',
     ) as Record<string, unknown>;
     const result = sanitizeOutput(input) as Record<string, unknown>;
-    const safe = result['safe'] as Record<string, unknown>;
+    const safe = result.safe as Record<string, unknown>;
     expect(Object.hasOwn(safe, '__proto__')).toBe(false);
-    const nested = safe['nested'] as Record<string, unknown>;
+    const nested = safe.nested as Record<string, unknown>;
     expect(Object.hasOwn(nested, 'constructor')).toBe(false);
-    expect(nested['value']).toBe(42);
+    expect(nested.value).toBe(42);
   });
 
   test('strips dangerous keys from objects inside arrays', () => {
@@ -728,9 +728,9 @@ describe('sanitizeOutput', () => {
       '[{"name":"alice","__proto__":{"evil":true}},{"name":"bob","constructor":"bad"}]',
     ) as Array<Record<string, unknown>>;
     const result = sanitizeOutput(input) as Array<Record<string, unknown>>;
-    expect(result[0]?.['name']).toBe('alice');
+    expect(result[0]?.name).toBe('alice');
     expect(Object.hasOwn(result[0] ?? {}, '__proto__')).toBe(false);
-    expect(result[1]?.['name']).toBe('bob');
+    expect(result[1]?.name).toBe('bob');
     expect(Object.hasOwn(result[1] ?? {}, 'constructor')).toBe(false);
   });
 
@@ -741,7 +741,7 @@ describe('sanitizeOutput', () => {
     expect(result[1]).toBe('hello');
     expect(result[2]).toBe(null);
     const obj = result[3] as Record<string, unknown>;
-    expect(obj['x']).toBe(10);
+    expect(obj.x).toBe(10);
     expect(Object.hasOwn(obj, '__proto__')).toBe(false);
     expect(result[4]).toBe(true);
   });
@@ -758,13 +758,13 @@ describe('sanitizeOutput', () => {
     // Navigate 50 levels of "child" to reach the innermost object
     let result = sanitizeOutput(deep) as Record<string, unknown>;
     for (let i = 0; i < 50; i++) {
-      result = result['child'] as Record<string, unknown>;
+      result = result.child as Record<string, unknown>;
     }
     // At depth 50 we have an object; sanitizeOutput processes it (depth=50 is not > 50)
     // but the inner __proto__ key should be stripped since we're at depth=50 recursing to depth=51
     // At depth=51, depth > 50 triggers — but the key-stripping happens at depth=50 in the loop,
     // so the value is still sanitized. The raw return only affects the VALUE at depth > 50.
-    expect(result['value']).toBe('leaf');
+    expect(result.value).toBe('leaf');
   });
 
   test('depth limit — returns safe placeholder at depth 51', () => {
@@ -777,7 +777,7 @@ describe('sanitizeOutput', () => {
     }
     let result: unknown = sanitizeOutput(deep);
     for (let i = 0; i < 51; i++) {
-      result = (result as Record<string, unknown>)['child'];
+      result = (result as Record<string, unknown>).child;
     }
     // At depth 51, depth > 50 returns a safe placeholder instead of the unsanitized object
     expect(result).toBe('[Object too deep]');
@@ -812,10 +812,10 @@ describe('sanitizeOutput', () => {
   test('partial-match keys are NOT stripped (__proto__x, constructorHelper)', () => {
     const input = JSON.parse('{"__proto__x":1,"myConstructor":2,"prototypeX":3,"safe":4}') as Record<string, unknown>;
     const result = sanitizeOutput(input) as Record<string, unknown>;
-    expect(result['__proto__x']).toBe(1);
-    expect(result['myConstructor']).toBe(2);
-    expect(result['prototypeX']).toBe(3);
-    expect(result['safe']).toBe(4);
+    expect(result.__proto__x).toBe(1);
+    expect(result.myConstructor).toBe(2);
+    expect(result.prototypeX).toBe(3);
+    expect(result.safe).toBe(4);
   });
 });
 

@@ -1,3 +1,11 @@
+// PluginCard needs a custom header layout (icon + name + switch outside the trigger) that the retro Accordion wrapper does not support.
+import * as AccordionPrimitive from '@radix-ui/react-accordion';
+import { ChevronDown } from 'lucide-react';
+import type { Dispatch, SetStateAction } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { PluginState, WireToolDef } from '../bridge.js';
+import { matchesTool, setAllToolsEnabled, setToolEnabled } from '../bridge.js';
+import { ERROR_DISPLAY_DURATION_MS } from '../constants.js';
 import { PluginIcon } from './PluginIcon.js';
 import { PluginMenu } from './PluginMenu.js';
 import { Accordion } from './retro/Accordion.js';
@@ -6,14 +14,6 @@ import { Badge } from './retro/Badge.js';
 import { Switch } from './retro/Switch.js';
 import { Tooltip } from './retro/Tooltip.js';
 import { ToolRow } from './ToolRow.js';
-import { matchesTool, setToolEnabled, setAllToolsEnabled } from '../bridge.js';
-import { ERROR_DISPLAY_DURATION_MS } from '../constants.js';
-// PluginCard needs a custom header layout (icon + name + switch outside the trigger) that the retro Accordion wrapper does not support.
-import * as AccordionPrimitive from '@radix-ui/react-accordion';
-import { ChevronDown } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
-import type { PluginState, WireToolDef } from '../bridge.js';
-import type { Dispatch, SetStateAction } from 'react';
 
 const PluginCard = ({
   plugin,
@@ -115,7 +115,7 @@ const PluginCard = ({
               {plugin.update && <> &middot; Update: {plugin.update.latestVersion}</>}
             </Tooltip.Content>
           </Tooltip>
-          <div className="font-head text-foreground flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 truncate font-head text-foreground text-sm">
             {plugin.displayName}
             {plugin.source === 'local' && (
               <Badge variant="default" size="sm" className="align-middle">
@@ -128,7 +128,7 @@ const PluginCard = ({
                   <Badge
                     variant="outline"
                     size="sm"
-                    className="border-accent bg-accent/10 text-accent-foreground align-middle">
+                    className="border-accent bg-accent/10 align-middle text-accent-foreground">
                     SDK
                   </Badge>
                 </Tooltip.Trigger>
@@ -174,7 +174,7 @@ const PluginCard = ({
 
       <Accordion.Content className="border-border border-t">
         {toolFilter && (
-          <div className="text-muted-foreground mb-1 px-3 pt-2 text-xs">
+          <div className="mb-1 px-3 pt-2 text-muted-foreground text-xs">
             {visibleTools.length} of {pluginTools.length} tools
           </div>
         )}

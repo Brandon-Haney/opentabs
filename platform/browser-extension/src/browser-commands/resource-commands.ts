@@ -1,3 +1,7 @@
+import { toErrorMessage } from '@opentabs-dev/shared';
+import { CDP_VERSION } from '../constants.js';
+import { isCapturing } from '../network-capture.js';
+import { sanitizeErrorMessage } from '../sanitize-error.js';
 import {
   requireStringParam,
   requireTabId,
@@ -5,10 +9,6 @@ import {
   sendSuccessResult,
   sendValidationError,
 } from './helpers.js';
-import { CDP_VERSION } from '../constants.js';
-import { isCapturing } from '../network-capture.js';
-import { sanitizeErrorMessage } from '../sanitize-error.js';
-import { toErrorMessage } from '@opentabs-dev/shared';
 
 export interface CdpFrame {
   id: string;
@@ -197,7 +197,7 @@ export const handleBrowserGetResourceContent = async (
         // Truncate text content that exceeds maxLength
         let truncated = false;
         if (!base64Encoded && content.length > maxLength) {
-          content = content.slice(0, maxLength) + '... (truncated)';
+          content = `${content.slice(0, maxLength)}... (truncated)`;
           truncated = true;
         }
 

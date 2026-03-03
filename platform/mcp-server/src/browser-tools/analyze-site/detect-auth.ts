@@ -185,14 +185,14 @@ const detectBearerHeaders = (requests: NetworkRequest[], hasJwtInStorage: boolea
   const hasBearerPrefix = requestsWithAuth.some(r => {
     if (!r.requestHeaders) return false;
     const val = getHeaderValue(r.requestHeaders, 'authorization');
-    return val !== undefined && val.startsWith('Bearer ');
+    return val?.startsWith('Bearer ');
   });
 
   // Check if any Authorization header starts with "Basic"
   const hasBasicPrefix = requestsWithAuth.some(r => {
     if (!r.requestHeaders) return false;
     const val = getHeaderValue(r.requestHeaders, 'authorization');
-    return val !== undefined && val.startsWith('Basic ');
+    return val?.startsWith('Basic ');
   });
 
   // If all auth headers are Basic (no Bearer), skip bearer detection
@@ -293,7 +293,7 @@ const detectBasicAuth = (requests: NetworkRequest[]): AuthMethod[] => {
   const hasBasicPrefix = requestsWithAuth.some(r => {
     if (!r.requestHeaders) return false;
     const val = getHeaderValue(r.requestHeaders, 'authorization');
-    return val !== undefined && val.startsWith('Basic ');
+    return val?.startsWith('Basic ');
   });
 
   if (!hasBasicPrefix) return [];
@@ -301,7 +301,7 @@ const detectBasicAuth = (requests: NetworkRequest[]): AuthMethod[] => {
   const basicReq = requestsWithAuth.find(r => {
     if (!r.requestHeaders) return false;
     const val = getHeaderValue(r.requestHeaders, 'authorization');
-    return val !== undefined && val.startsWith('Basic ');
+    return val?.startsWith('Basic ');
   });
   if (!basicReq) return [];
   const sampleUrl = basicReq.url;
@@ -432,10 +432,10 @@ const getHeaderValue = (headers: Record<string, string>, name: string): string |
 const truncateUrl = (url: string): string => {
   try {
     const parsed = new URL(url);
-    const path = parsed.pathname.length > 40 ? parsed.pathname.slice(0, 40) + '...' : parsed.pathname;
+    const path = parsed.pathname.length > 40 ? `${parsed.pathname.slice(0, 40)}...` : parsed.pathname;
     return `${parsed.origin}${path}`;
   } catch {
-    return url.length > 80 ? url.slice(0, 80) + '...' : url;
+    return url.length > 80 ? `${url.slice(0, 80)}...` : url;
   }
 };
 

@@ -1,9 +1,9 @@
+import type { Dispatch, SetStateAction } from 'react';
+import type { FailedPluginState, PluginState } from '../bridge.js';
+import { matchesTool } from '../bridge.js';
 import { FailedPluginCard } from './FailedPluginCard.js';
 import { PluginCard } from './PluginCard.js';
 import { Accordion } from './retro/Accordion.js';
-import { matchesTool } from '../bridge.js';
-import type { FailedPluginState, PluginState } from '../bridge.js';
-import type { Dispatch, SetStateAction } from 'react';
 
 const PluginList = ({
   plugins,
@@ -37,7 +37,7 @@ const PluginList = ({
 
   if (filterLower && visiblePlugins.length === 0) {
     return (
-      <div className="text-muted-foreground py-8 text-center text-sm">No tools matching &ldquo;{toolFilter}&rdquo;</div>
+      <div className="py-8 text-center text-muted-foreground text-sm">No tools matching &ldquo;{toolFilter}&rdquo;</div>
     );
   }
 

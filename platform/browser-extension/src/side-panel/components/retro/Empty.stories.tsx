@@ -1,5 +1,5 @@
-import { Empty } from './Empty';
 import type { Meta, StoryObj } from '@storybook/react';
+import { Empty } from './Empty';
 
 const meta: Meta = {
   title: 'Retro/Empty',
@@ -12,7 +12,7 @@ const Default: Story = {
   render: () => (
     <Empty>
       <Empty.Content>
-        <Empty.Icon className="text-muted-foreground h-12 w-12" />
+        <Empty.Icon className="h-12 w-12 text-muted-foreground" />
         <Empty.Title>Nothing Here</Empty.Title>
         <Empty.Separator />
         <Empty.Description>No items to display.</Empty.Description>

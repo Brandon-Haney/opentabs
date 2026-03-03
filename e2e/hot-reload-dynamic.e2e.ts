@@ -19,33 +19,33 @@
  * modify plugin files use per-test copies to avoid affecting parallel tests.
  */
 
-import {
-  test,
-  expect,
-  startMcpServer,
-  createMcpClient,
-  cleanupTestConfigDir,
-  readTestConfig,
-  writeTestConfig,
-  createMinimalPlugin,
-  copyE2eTestPlugin,
-  readPluginToolNames,
-  E2E_TEST_PLUGIN_DIR,
-} from './fixtures.js';
-import {
-  waitFor,
-  waitForLog,
-  waitForExtensionConnected,
-  parseToolResult,
-  BROWSER_TOOL_NAMES,
-  waitForToolResult,
-  waitForToolList,
-  writeAndWaitForWatcher,
-  setupToolTest,
-} from './helpers.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  cleanupTestConfigDir,
+  copyE2eTestPlugin,
+  createMcpClient,
+  createMinimalPlugin,
+  E2E_TEST_PLUGIN_DIR,
+  expect,
+  readPluginToolNames,
+  readTestConfig,
+  startMcpServer,
+  test,
+  writeTestConfig,
+} from './fixtures.js';
+import {
+  BROWSER_TOOL_NAMES,
+  parseToolResult,
+  setupToolTest,
+  waitFor,
+  waitForExtensionConnected,
+  waitForLog,
+  waitForToolList,
+  waitForToolResult,
+  writeAndWaitForWatcher,
+} from './helpers.js';
 
 /** Tool entry shape in dist/tools.json */
 interface ManifestToolEntry {
@@ -83,25 +83,94 @@ const writeToolsToManifest = (toolsJsonPath: string, tools: ManifestToolEntry[])
 // Plugin installation via config change + hot reload
 // ---------------------------------------------------------------------------
 
-test.describe.serial('Hot reload — plugin installation', () => {
-  test('new plugin tools appear in tools/list after config change + hot reload', async ({ mcpServer, mcpClient }) => {
-    const toolsBefore = await mcpClient.listTools();
-    const pluginToolsBefore = toolsBefore.filter(t => t.name.startsWith('e2e-test_'));
-    expect(pluginToolsBefore.length).toBeGreaterThan(0);
+test.describe
+  .serial('Hot reload — plugin installation', () => {
+    test('new plugin tools appear in tools/list after config change + hot reload', async ({ mcpServer, mcpClient }) => {
+      const toolsBefore = await mcpClient.listTools();
+      const pluginToolsBefore = toolsBefore.filter(t => t.name.startsWith('e2e-test_'));
+      expect(pluginToolsBefore.length).toBeGreaterThan(0);
 
-    // Create a minimal second plugin in a temp directory
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-install-'));
-    const newPluginDir = createMinimalPlugin(tmpDir, 'extra-test', [
-      { name: 'do_stuff', description: 'Do stuff' },
-      { name: 'check_health', description: 'Check health' },
-    ]);
+      // Create a minimal second plugin in a temp directory
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-install-'));
+      const newPluginDir = createMinimalPlugin(tmpDir, 'extra-test', [
+        { name: 'do_stuff', description: 'Do stuff' },
+        { name: 'check_health', description: 'Check health' },
+      ]);
 
-    try {
-      // Update config to add the new plugin and enable its tools
+      try {
+        // Update config to add the new plugin and enable its tools
+        const config = readTestConfig(mcpServer.configDir);
+        config.localPlugins.push(newPluginDir);
+        config.tools['extra-test_do_stuff'] = true;
+        config.tools['extra-test_check_health'] = true;
+        writeTestConfig(mcpServer.configDir, config);
+
+        // Trigger hot reload
+        mcpServer.logs.length = 0;
+        mcpServer.triggerHotReload();
+        await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+        // Verify new plugin's tools appear
+        const toolsAfter = await mcpClient.listTools();
+        const extraTools = toolsAfter.filter(t => t.name.startsWith('extra-test_'));
+        expect(extraTools.map(t => t.name).sort()).toEqual(['extra-test_check_health', 'extra-test_do_stuff']);
+
+        // Original e2e-test tools should still be there
+        const e2eToolsAfter = toolsAfter.filter(t => t.name.startsWith('e2e-test_'));
+        expect(e2eToolsAfter.length).toBe(pluginToolsBefore.length);
+
+        // Browser tools should still be there
+        for (const bt of BROWSER_TOOL_NAMES) {
+          expect(toolsAfter.map(t => t.name)).toContain(bt);
+        }
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    test('multiple new plugins installed in one hot reload', async ({ mcpServer, mcpClient }) => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-multi-install-'));
+      const plugin1Dir = createMinimalPlugin(tmpDir, 'alpha', [{ name: 'ping', description: 'Ping' }]);
+      const plugin2Dir = createMinimalPlugin(tmpDir, 'beta', [{ name: 'pong', description: 'Pong' }]);
+
+      try {
+        const config = readTestConfig(mcpServer.configDir);
+        config.localPlugins.push(plugin1Dir, plugin2Dir);
+        config.tools.alpha_ping = true;
+        config.tools.beta_pong = true;
+        writeTestConfig(mcpServer.configDir, config);
+
+        mcpServer.logs.length = 0;
+        mcpServer.triggerHotReload();
+        await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+        const tools = await mcpClient.listTools();
+        const names = tools.map(t => t.name);
+        expect(names).toContain('alpha_ping');
+        expect(names).toContain('beta_pong');
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+// ---------------------------------------------------------------------------
+// Plugin removal via config change + hot reload
+// ---------------------------------------------------------------------------
+
+test.describe
+  .serial('Hot reload — plugin removal', () => {
+    test('removed plugin tools disappear from tools/list after config change + hot reload', async ({
+      mcpServer,
+      mcpClient,
+    }) => {
+      const toolsBefore = await mcpClient.listTools();
+      const pluginToolsBefore = toolsBefore.filter(t => t.name.startsWith('e2e-test_'));
+      expect(pluginToolsBefore.length).toBeGreaterThan(0);
+
+      // Remove all local plugins from config
       const config = readTestConfig(mcpServer.configDir);
-      config.localPlugins.push(newPluginDir);
-      config.tools['extra-test_do_stuff'] = true;
-      config.tools['extra-test_check_health'] = true;
+      config.localPlugins = [];
       writeTestConfig(mcpServer.configDir, config);
 
       // Trigger hot reload
@@ -109,284 +178,226 @@ test.describe.serial('Hot reload — plugin installation', () => {
       mcpServer.triggerHotReload();
       await waitForLog(mcpServer, 'Hot reload complete', 20_000);
 
-      // Verify new plugin's tools appear
+      // Plugin tools should be gone
       const toolsAfter = await mcpClient.listTools();
-      const extraTools = toolsAfter.filter(t => t.name.startsWith('extra-test_'));
-      expect(extraTools.map(t => t.name).sort()).toEqual(['extra-test_check_health', 'extra-test_do_stuff']);
-
-      // Original e2e-test tools should still be there
       const e2eToolsAfter = toolsAfter.filter(t => t.name.startsWith('e2e-test_'));
-      expect(e2eToolsAfter.length).toBe(pluginToolsBefore.length);
+      expect(e2eToolsAfter.length).toBe(0);
 
       // Browser tools should still be there
       for (const bt of BROWSER_TOOL_NAMES) {
         expect(toolsAfter.map(t => t.name)).toContain(bt);
       }
-    } finally {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
-  });
+    });
 
-  test('multiple new plugins installed in one hot reload', async ({ mcpServer, mcpClient }) => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-multi-install-'));
-    const plugin1Dir = createMinimalPlugin(tmpDir, 'alpha', [{ name: 'ping', description: 'Ping' }]);
-    const plugin2Dir = createMinimalPlugin(tmpDir, 'beta', [{ name: 'pong', description: 'Pong' }]);
+    test('plugin re-added after removal reappears in tools/list', async ({ mcpServer, mcpClient }) => {
+      const toolsBefore = await mcpClient.listTools();
+      const pluginToolsBefore = toolsBefore.filter(t => t.name.startsWith('e2e-test_'));
+      expect(pluginToolsBefore.length).toBeGreaterThan(0);
 
-    try {
+      // Remove plugin
       const config = readTestConfig(mcpServer.configDir);
-      config.localPlugins.push(plugin1Dir, plugin2Dir);
-      config.tools['alpha_ping'] = true;
-      config.tools['beta_pong'] = true;
+      const savedPlugins = [...config.localPlugins];
+      config.localPlugins = [];
       writeTestConfig(mcpServer.configDir, config);
 
       mcpServer.logs.length = 0;
       mcpServer.triggerHotReload();
       await waitForLog(mcpServer, 'Hot reload complete', 20_000);
 
-      const tools = await mcpClient.listTools();
-      const names = tools.map(t => t.name);
-      expect(names).toContain('alpha_ping');
-      expect(names).toContain('beta_pong');
-    } finally {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
+      const toolsMid = await mcpClient.listTools();
+      expect(toolsMid.filter(t => t.name.startsWith('e2e-test_')).length).toBe(0);
+
+      // Re-add plugin
+      config.localPlugins = savedPlugins;
+      writeTestConfig(mcpServer.configDir, config);
+
+      mcpServer.logs.length = 0;
+      mcpServer.triggerHotReload();
+      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+      // Plugin tools should be back
+      const toolsAfter = await mcpClient.listTools();
+      const e2eToolsAfter = toolsAfter.filter(t => t.name.startsWith('e2e-test_'));
+      expect(e2eToolsAfter.length).toBe(pluginToolsBefore.length);
+    });
   });
-});
-
-// ---------------------------------------------------------------------------
-// Plugin removal via config change + hot reload
-// ---------------------------------------------------------------------------
-
-test.describe.serial('Hot reload — plugin removal', () => {
-  test('removed plugin tools disappear from tools/list after config change + hot reload', async ({
-    mcpServer,
-    mcpClient,
-  }) => {
-    const toolsBefore = await mcpClient.listTools();
-    const pluginToolsBefore = toolsBefore.filter(t => t.name.startsWith('e2e-test_'));
-    expect(pluginToolsBefore.length).toBeGreaterThan(0);
-
-    // Remove all local plugins from config
-    const config = readTestConfig(mcpServer.configDir);
-    config.localPlugins = [];
-    writeTestConfig(mcpServer.configDir, config);
-
-    // Trigger hot reload
-    mcpServer.logs.length = 0;
-    mcpServer.triggerHotReload();
-    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
-
-    // Plugin tools should be gone
-    const toolsAfter = await mcpClient.listTools();
-    const e2eToolsAfter = toolsAfter.filter(t => t.name.startsWith('e2e-test_'));
-    expect(e2eToolsAfter.length).toBe(0);
-
-    // Browser tools should still be there
-    for (const bt of BROWSER_TOOL_NAMES) {
-      expect(toolsAfter.map(t => t.name)).toContain(bt);
-    }
-  });
-
-  test('plugin re-added after removal reappears in tools/list', async ({ mcpServer, mcpClient }) => {
-    const toolsBefore = await mcpClient.listTools();
-    const pluginToolsBefore = toolsBefore.filter(t => t.name.startsWith('e2e-test_'));
-    expect(pluginToolsBefore.length).toBeGreaterThan(0);
-
-    // Remove plugin
-    const config = readTestConfig(mcpServer.configDir);
-    const savedPlugins = [...config.localPlugins];
-    config.localPlugins = [];
-    writeTestConfig(mcpServer.configDir, config);
-
-    mcpServer.logs.length = 0;
-    mcpServer.triggerHotReload();
-    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
-
-    const toolsMid = await mcpClient.listTools();
-    expect(toolsMid.filter(t => t.name.startsWith('e2e-test_')).length).toBe(0);
-
-    // Re-add plugin
-    config.localPlugins = savedPlugins;
-    writeTestConfig(mcpServer.configDir, config);
-
-    mcpServer.logs.length = 0;
-    mcpServer.triggerHotReload();
-    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
-
-    // Plugin tools should be back
-    const toolsAfter = await mcpClient.listTools();
-    const e2eToolsAfter = toolsAfter.filter(t => t.name.startsWith('e2e-test_'));
-    expect(e2eToolsAfter.length).toBe(pluginToolsBefore.length);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Tool config changes via hot reload
 // ---------------------------------------------------------------------------
 
-test.describe.serial('Hot reload — tool config changes', () => {
-  test('disabling a tool via config hides it from tools/list after hot reload', async ({ mcpServer, mcpClient }) => {
-    const toolsBefore = await mcpClient.listTools();
-    expect(toolsBefore.map(t => t.name)).toContain('e2e-test_echo');
+test.describe
+  .serial('Hot reload — tool config changes', () => {
+    test('disabling a tool via config hides it from tools/list after hot reload', async ({ mcpServer, mcpClient }) => {
+      const toolsBefore = await mcpClient.listTools();
+      expect(toolsBefore.map(t => t.name)).toContain('e2e-test_echo');
 
-    // Disable the echo tool
-    const config = readTestConfig(mcpServer.configDir);
-    config.tools['e2e-test_echo'] = false;
-    writeTestConfig(mcpServer.configDir, config);
+      // Disable the echo tool
+      const config = readTestConfig(mcpServer.configDir);
+      config.tools['e2e-test_echo'] = false;
+      writeTestConfig(mcpServer.configDir, config);
 
-    mcpServer.logs.length = 0;
-    mcpServer.triggerHotReload();
-    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+      mcpServer.logs.length = 0;
+      mcpServer.triggerHotReload();
+      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
 
-    const toolsAfter = await mcpClient.listTools();
-    expect(toolsAfter.map(t => t.name)).not.toContain('e2e-test_echo');
+      const toolsAfter = await mcpClient.listTools();
+      expect(toolsAfter.map(t => t.name)).not.toContain('e2e-test_echo');
 
-    // Other tools should still be there
-    expect(toolsAfter.map(t => t.name)).toContain('e2e-test_greet');
-    for (const bt of BROWSER_TOOL_NAMES) {
-      expect(toolsAfter.map(t => t.name)).toContain(bt);
-    }
+      // Other tools should still be there
+      expect(toolsAfter.map(t => t.name)).toContain('e2e-test_greet');
+      for (const bt of BROWSER_TOOL_NAMES) {
+        expect(toolsAfter.map(t => t.name)).toContain(bt);
+      }
+    });
+
+    test('re-enabling a tool via config restores it in tools/list after hot reload', async ({
+      mcpServer,
+      mcpClient,
+    }) => {
+      // Disable echo
+      const config = readTestConfig(mcpServer.configDir);
+      config.tools['e2e-test_echo'] = false;
+      writeTestConfig(mcpServer.configDir, config);
+
+      mcpServer.logs.length = 0;
+      mcpServer.triggerHotReload();
+      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+      expect((await mcpClient.listTools()).map(t => t.name)).not.toContain('e2e-test_echo');
+
+      // Re-enable echo
+      config.tools['e2e-test_echo'] = true;
+      writeTestConfig(mcpServer.configDir, config);
+
+      mcpServer.logs.length = 0;
+      mcpServer.triggerHotReload();
+      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+      expect((await mcpClient.listTools()).map(t => t.name)).toContain('e2e-test_echo');
+    });
   });
-
-  test('re-enabling a tool via config restores it in tools/list after hot reload', async ({ mcpServer, mcpClient }) => {
-    // Disable echo
-    const config = readTestConfig(mcpServer.configDir);
-    config.tools['e2e-test_echo'] = false;
-    writeTestConfig(mcpServer.configDir, config);
-
-    mcpServer.logs.length = 0;
-    mcpServer.triggerHotReload();
-    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
-
-    expect((await mcpClient.listTools()).map(t => t.name)).not.toContain('e2e-test_echo');
-
-    // Re-enable echo
-    config.tools['e2e-test_echo'] = true;
-    writeTestConfig(mcpServer.configDir, config);
-
-    mcpServer.logs.length = 0;
-    mcpServer.triggerHotReload();
-    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
-
-    expect((await mcpClient.listTools()).map(t => t.name)).toContain('e2e-test_echo');
-  });
-});
 
 // ---------------------------------------------------------------------------
 // File watcher — manifest changes (no hot reload needed)
 // ---------------------------------------------------------------------------
 
-test.describe.serial('File watcher — manifest changes', () => {
-  test('adding a tool to manifest makes it appear in tools/list', async () => {
-    // Create a per-test copy of the plugin so we can modify files safely
-    const { pluginDir, tmpDir } = copyE2eTestPlugin();
-    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-config-'));
+test.describe
+  .serial('File watcher — manifest changes', () => {
+    test('adding a tool to manifest makes it appear in tools/list', async () => {
+      // Create a per-test copy of the plugin so we can modify files safely
+      const { pluginDir, tmpDir } = copyE2eTestPlugin();
+      const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-config-'));
 
-    // Build config pointing to the copy, pre-enable the future tool
-    const prefixedToolNames = [...readPluginToolNames(), 'e2e-test_dynamic_tool'];
-    const tools: Record<string, boolean> = {};
-    for (const t of prefixedToolNames) {
-      tools[t] = true;
-    }
-    writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
+      // Build config pointing to the copy, pre-enable the future tool
+      const prefixedToolNames = [...readPluginToolNames(), 'e2e-test_dynamic_tool'];
+      const tools: Record<string, boolean> = {};
+      for (const t of prefixedToolNames) {
+        tools[t] = true;
+      }
+      writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
 
-    const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port, server.secret);
+      const server = await startMcpServer(configDir, true);
+      const client = createMcpClient(server.port, server.secret);
 
-    try {
-      await client.initialize();
-      const toolsBefore = await client.listTools();
-      const e2eToolsBefore = toolsBefore.filter(t => t.name.startsWith('e2e-test_'));
-      const countBefore = e2eToolsBefore.length;
+      try {
+        await client.initialize();
+        const toolsBefore = await client.listTools();
+        const e2eToolsBefore = toolsBefore.filter(t => t.name.startsWith('e2e-test_'));
+        const countBefore = e2eToolsBefore.length;
 
-      // The dynamic_tool should NOT be present yet (not in manifest)
-      expect(toolsBefore.map(t => t.name)).not.toContain('e2e-test_dynamic_tool');
+        // The dynamic_tool should NOT be present yet (not in manifest)
+        expect(toolsBefore.map(t => t.name)).not.toContain('e2e-test_dynamic_tool');
 
-      // Modify dist/tools.json to add a new tool, retrying if the file
-      // watcher misses the write (FSEvents registration race on macOS).
-      const toolsJsonPath = path.join(pluginDir, 'dist', 'tools.json');
-      const tools = readToolsFromManifest(toolsJsonPath);
-      tools.push({
-        name: 'dynamic_tool',
-        displayName: 'Dynamic Tool',
-        description: 'Dynamically added via file watcher',
-        icon: 'wrench',
-        input_schema: { type: 'object', properties: {}, additionalProperties: false },
-        output_schema: {
-          type: 'object',
-          properties: { ok: { type: 'boolean' } },
-          required: ['ok'],
-          additionalProperties: false,
-        },
-      });
-      await writeAndWaitForWatcher(server, () => writeToolsToManifest(toolsJsonPath, tools), 'tools.json updated for');
+        // Modify dist/tools.json to add a new tool, retrying if the file
+        // watcher misses the write (FSEvents registration race on macOS).
+        const toolsJsonPath = path.join(pluginDir, 'dist', 'tools.json');
+        const tools = readToolsFromManifest(toolsJsonPath);
+        tools.push({
+          name: 'dynamic_tool',
+          displayName: 'Dynamic Tool',
+          description: 'Dynamically added via file watcher',
+          icon: 'wrench',
+          input_schema: { type: 'object', properties: {}, additionalProperties: false },
+          output_schema: {
+            type: 'object',
+            properties: { ok: { type: 'boolean' } },
+            required: ['ok'],
+            additionalProperties: false,
+          },
+        });
+        await writeAndWaitForWatcher(
+          server,
+          () => writeToolsToManifest(toolsJsonPath, tools),
+          'tools.json updated for',
+        );
 
-      // Poll until the new tool appears in tools/list (replaces waitForLog + sleep)
-      const toolsAfter = await waitForToolList(
-        client,
-        tools => tools.some(t => t.name === 'e2e-test_dynamic_tool'),
-        15_000,
-        300,
-        'e2e-test_dynamic_tool to appear',
-      );
-      const e2eToolsAfter = toolsAfter.filter(t => t.name.startsWith('e2e-test_'));
-      expect(e2eToolsAfter.length).toBe(countBefore + 1);
-    } finally {
-      await client.close();
-      await server.kill();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      cleanupTestConfigDir(configDir);
-    }
+        // Poll until the new tool appears in tools/list (replaces waitForLog + sleep)
+        const toolsAfter = await waitForToolList(
+          client,
+          tools => tools.some(t => t.name === 'e2e-test_dynamic_tool'),
+          15_000,
+          300,
+          'e2e-test_dynamic_tool to appear',
+        );
+        const e2eToolsAfter = toolsAfter.filter(t => t.name.startsWith('e2e-test_'));
+        expect(e2eToolsAfter.length).toBe(countBefore + 1);
+      } finally {
+        await client.close();
+        await server.kill();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        cleanupTestConfigDir(configDir);
+      }
+    });
+
+    test('removing a tool from manifest removes it from tools/list', async () => {
+      const { pluginDir, tmpDir } = copyE2eTestPlugin();
+      const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-remove-'));
+
+      const prefixedToolNames = readPluginToolNames();
+      const tools: Record<string, boolean> = {};
+      for (const t of prefixedToolNames) {
+        tools[t] = true;
+      }
+      writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
+
+      const server = await startMcpServer(configDir, true);
+      const client = createMcpClient(server.port, server.secret);
+
+      try {
+        await client.initialize();
+        const toolsBefore = await client.listTools();
+        expect(toolsBefore.map(t => t.name)).toContain('e2e-test_echo');
+
+        // Remove the echo tool from dist/tools.json, retrying if the file
+        // watcher misses the write (FSEvents registration race on macOS).
+        const toolsJsonPath = path.join(pluginDir, 'dist', 'tools.json');
+        const tools = readToolsFromManifest(toolsJsonPath);
+        const filteredTools = tools.filter(t => t.name !== 'echo');
+        await writeAndWaitForWatcher(
+          server,
+          () => writeToolsToManifest(toolsJsonPath, filteredTools),
+          'tools.json updated for',
+        );
+
+        // Poll until echo tool disappears from tools/list
+        const toolsAfter = await waitForToolList(
+          client,
+          tools => !tools.some(t => t.name === 'e2e-test_echo'),
+          15_000,
+          300,
+          'e2e-test_echo to disappear',
+        );
+        // Other tools should remain
+        expect(toolsAfter.map(t => t.name)).toContain('e2e-test_greet');
+      } finally {
+        await client.close();
+        await server.kill();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        cleanupTestConfigDir(configDir);
+      }
+    });
   });
-
-  test('removing a tool from manifest removes it from tools/list', async () => {
-    const { pluginDir, tmpDir } = copyE2eTestPlugin();
-    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-remove-'));
-
-    const prefixedToolNames = readPluginToolNames();
-    const tools: Record<string, boolean> = {};
-    for (const t of prefixedToolNames) {
-      tools[t] = true;
-    }
-    writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
-
-    const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port, server.secret);
-
-    try {
-      await client.initialize();
-      const toolsBefore = await client.listTools();
-      expect(toolsBefore.map(t => t.name)).toContain('e2e-test_echo');
-
-      // Remove the echo tool from dist/tools.json, retrying if the file
-      // watcher misses the write (FSEvents registration race on macOS).
-      const toolsJsonPath = path.join(pluginDir, 'dist', 'tools.json');
-      const tools = readToolsFromManifest(toolsJsonPath);
-      const filteredTools = tools.filter(t => t.name !== 'echo');
-      await writeAndWaitForWatcher(
-        server,
-        () => writeToolsToManifest(toolsJsonPath, filteredTools),
-        'tools.json updated for',
-      );
-
-      // Poll until echo tool disappears from tools/list
-      const toolsAfter = await waitForToolList(
-        client,
-        tools => !tools.some(t => t.name === 'e2e-test_echo'),
-        15_000,
-        300,
-        'e2e-test_echo to disappear',
-      );
-      // Other tools should remain
-      expect(toolsAfter.map(t => t.name)).toContain('e2e-test_greet');
-    } finally {
-      await client.close();
-      await server.kill();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      cleanupTestConfigDir(configDir);
-    }
-  });
-});
 
 // ---------------------------------------------------------------------------
 // File watcher — IIFE changes
@@ -495,134 +506,142 @@ test.describe('Hot reload — multiple MCP sessions', () => {
 // New plugin tools callable from existing session after hot reload
 // ---------------------------------------------------------------------------
 
-test.describe.serial('Hot reload — new plugin callable from existing session', () => {
-  test('plugin added via config is callable from pre-existing MCP session after hot reload', async ({
-    mcpServer,
-    testServer,
-    extensionContext,
-    mcpClient,
-  }) => {
-    test.slow();
+test.describe
+  .serial('Hot reload — new plugin callable from existing session', () => {
+    test('plugin added via config is callable from pre-existing MCP session after hot reload', async ({
+      mcpServer,
+      testServer,
+      extensionContext,
+      mcpClient,
+    }) => {
+      test.slow();
 
-    await waitForExtensionConnected(mcpServer);
-    await waitForLog(mcpServer, 'tab.syncAll received');
-    await testServer.reset();
+      await waitForExtensionConnected(mcpServer);
+      await waitForLog(mcpServer, 'tab.syncAll received');
+      await testServer.reset();
 
-    // Verify e2e-test plugin tools are visible
-    const toolsBefore = await mcpClient.listTools();
-    expect(toolsBefore.map(t => t.name)).toContain('e2e-test_echo');
+      // Verify e2e-test plugin tools are visible
+      const toolsBefore = await mcpClient.listTools();
+      expect(toolsBefore.map(t => t.name)).toContain('e2e-test_echo');
 
-    // Open a tab to the test server so the adapter gets injected
-    const page = await extensionContext.newPage();
-    await page.goto(testServer.url, { waitUntil: 'load' });
+      // Open a tab to the test server so the adapter gets injected
+      const page = await extensionContext.newPage();
+      await page.goto(testServer.url, { waitUntil: 'load' });
 
-    // Wait for adapter injection
-    await waitFor(
-      () =>
-        page.evaluate(() => {
-          const ot = (globalThis as Record<string, unknown>).__openTabs as
-            | { adapters?: Record<string, unknown> }
-            | undefined;
-          return ot?.adapters?.['e2e-test'] !== undefined;
-        }),
-      20_000,
-      500,
-      'e2e-test adapter to be injected into tab',
-    );
+      // Wait for adapter injection
+      await waitFor(
+        () =>
+          page.evaluate(() => {
+            const ot = (globalThis as Record<string, unknown>).__openTabs as
+              | { adapters?: Record<string, unknown> }
+              | undefined;
+            return ot?.adapters?.['e2e-test'] !== undefined;
+          }),
+        20_000,
+        500,
+        'e2e-test adapter to be injected into tab',
+      );
 
-    // Poll until the tool is callable (tab state = ready) instead of fixed sleep
-    await waitForToolResult(mcpClient, 'e2e-test_get_status', {}, { isError: false }, 15_000);
+      // Poll until the tool is callable (tab state = ready) instead of fixed sleep
+      await waitForToolResult(mcpClient, 'e2e-test_get_status', {}, { isError: false }, 15_000);
 
-    // Call a tool before hot reload (baseline)
-    const beforeResult = await mcpClient.callTool('e2e-test_echo', { message: 'before-install' });
-    expect(beforeResult.isError).toBe(false);
-    const beforeOutput = JSON.parse(beforeResult.content) as Record<string, unknown>;
-    expect(beforeOutput.message).toBe('before-install');
+      // Call a tool before hot reload (baseline)
+      const beforeResult = await mcpClient.callTool('e2e-test_echo', { message: 'before-install' });
+      expect(beforeResult.isError).toBe(false);
+      const beforeOutput = JSON.parse(beforeResult.content) as Record<string, unknown>;
+      expect(beforeOutput.message).toBe('before-install');
 
-    // Now create a new minimal plugin and add it via config
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-callable-'));
-    const newPluginDir = createMinimalPlugin(tmpDir, 'callable-test', [{ name: 'hello', description: 'Say hello' }]);
+      // Now create a new minimal plugin and add it via config
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-callable-'));
+      const newPluginDir = createMinimalPlugin(tmpDir, 'callable-test', [{ name: 'hello', description: 'Say hello' }]);
 
-    try {
-      const config = readTestConfig(mcpServer.configDir);
-      config.localPlugins.push(newPluginDir);
-      config.tools['callable-test_hello'] = true;
-      writeTestConfig(mcpServer.configDir, config);
+      try {
+        const config = readTestConfig(mcpServer.configDir);
+        config.localPlugins.push(newPluginDir);
+        config.tools['callable-test_hello'] = true;
+        writeTestConfig(mcpServer.configDir, config);
 
-      mcpServer.logs.length = 0;
-      mcpServer.triggerHotReload();
-      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+        mcpServer.logs.length = 0;
+        mcpServer.triggerHotReload();
+        await waitForLog(mcpServer, 'Hot reload complete', 20_000);
 
-      // Wait for extension to re-sync after hot reload
-      await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
+        // Wait for extension to re-sync after hot reload
+        await waitForLog(mcpServer, 'tab.syncAll received', 20_000);
 
-      // Poll until the tool is callable instead of fixed sleep
-      await waitForToolResult(mcpClient, 'e2e-test_echo', { message: 'post-reload-check' }, { isError: false }, 15_000);
+        // Poll until the tool is callable instead of fixed sleep
+        await waitForToolResult(
+          mcpClient,
+          'e2e-test_echo',
+          { message: 'post-reload-check' },
+          { isError: false },
+          15_000,
+        );
 
-      // The pre-existing session should now see the new plugin's tool
-      const toolsAfter = await mcpClient.listTools();
-      expect(toolsAfter.map(t => t.name)).toContain('callable-test_hello');
+        // The pre-existing session should now see the new plugin's tool
+        const toolsAfter = await mcpClient.listTools();
+        expect(toolsAfter.map(t => t.name)).toContain('callable-test_hello');
 
-      // The original e2e-test tools should still be callable
-      const afterResult = await mcpClient.callTool('e2e-test_echo', { message: 'after-install' });
-      expect(afterResult.isError).toBe(false);
-      const afterOutput = JSON.parse(afterResult.content) as Record<string, unknown>;
-      expect(afterOutput.message).toBe('after-install');
+        // The original e2e-test tools should still be callable
+        const afterResult = await mcpClient.callTool('e2e-test_echo', { message: 'after-install' });
+        expect(afterResult.isError).toBe(false);
+        const afterOutput = JSON.parse(afterResult.content) as Record<string, unknown>;
+        expect(afterOutput.message).toBe('after-install');
 
-      await page.close();
-    } finally {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
+        await page.close();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
   });
-});
 
 // ---------------------------------------------------------------------------
 // Health endpoint consistency across dynamic changes
 // ---------------------------------------------------------------------------
 
-test.describe.serial('Hot reload — health endpoint consistency', () => {
-  test('health plugin count reflects added and removed plugins', async ({ mcpServer, mcpClient: _mcpClient }) => {
-    const healthBefore = await mcpServer.health();
-    expect(healthBefore).not.toBeNull();
-    if (!healthBefore) throw new Error('health returned null');
-    const countBefore = healthBefore.plugins;
+test.describe
+  .serial('Hot reload — health endpoint consistency', () => {
+    test('health plugin count reflects added and removed plugins', async ({ mcpServer, mcpClient: _mcpClient }) => {
+      const healthBefore = await mcpServer.health();
+      expect(healthBefore).not.toBeNull();
+      if (!healthBefore) throw new Error('health returned null');
+      const countBefore = healthBefore.plugins;
 
-    // Add a plugin
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-health-'));
-    const newPluginDir = createMinimalPlugin(tmpDir, 'health-test', [{ name: 'probe', description: 'Probe' }]);
+      // Add a plugin
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-health-'));
+      const newPluginDir = createMinimalPlugin(tmpDir, 'health-test', [{ name: 'probe', description: 'Probe' }]);
 
-    try {
-      const config = readTestConfig(mcpServer.configDir);
-      config.localPlugins.push(newPluginDir);
-      config.tools['health-test_probe'] = true;
-      writeTestConfig(mcpServer.configDir, config);
+      try {
+        const config = readTestConfig(mcpServer.configDir);
+        config.localPlugins.push(newPluginDir);
+        config.tools['health-test_probe'] = true;
+        writeTestConfig(mcpServer.configDir, config);
 
-      mcpServer.logs.length = 0;
-      mcpServer.triggerHotReload();
-      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+        mcpServer.logs.length = 0;
+        mcpServer.triggerHotReload();
+        await waitForLog(mcpServer, 'Hot reload complete', 20_000);
 
-      const healthAfterAdd = await mcpServer.health();
-      expect(healthAfterAdd).not.toBeNull();
-      if (!healthAfterAdd) throw new Error('health returned null');
-      expect(healthAfterAdd.plugins).toBe(countBefore + 1);
+        const healthAfterAdd = await mcpServer.health();
+        expect(healthAfterAdd).not.toBeNull();
+        if (!healthAfterAdd) throw new Error('health returned null');
+        expect(healthAfterAdd.plugins).toBe(countBefore + 1);
 
-      // Remove the added plugin
-      config.localPlugins = config.localPlugins.filter(p => p !== newPluginDir);
-      writeTestConfig(mcpServer.configDir, config);
+        // Remove the added plugin
+        config.localPlugins = config.localPlugins.filter(p => p !== newPluginDir);
+        writeTestConfig(mcpServer.configDir, config);
 
-      mcpServer.logs.length = 0;
-      mcpServer.triggerHotReload();
-      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+        mcpServer.logs.length = 0;
+        mcpServer.triggerHotReload();
+        await waitForLog(mcpServer, 'Hot reload complete', 20_000);
 
-      const healthAfterRemove = await mcpServer.health();
-      expect(healthAfterRemove).not.toBeNull();
-      if (!healthAfterRemove) throw new Error('health returned null');
-      expect(healthAfterRemove.plugins).toBe(countBefore);
-    } finally {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
+        const healthAfterRemove = await mcpServer.health();
+        expect(healthAfterRemove).not.toBeNull();
+        if (!healthAfterRemove) throw new Error('health returned null');
+        expect(healthAfterRemove.plugins).toBe(countBefore);
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
   });
-});
 
 // ---------------------------------------------------------------------------
 // File watcher + hot reload combined
@@ -703,201 +722,208 @@ test.describe('File watcher + hot reload combined', () => {
 // Empty plugin config → add plugin (cold start scenario)
 // ---------------------------------------------------------------------------
 
-test.describe.serial('Hot reload — empty to populated', () => {
-  test('server starts with no plugins, hot reload adds plugin', async () => {
-    // Start with an EMPTY config (no plugins, no tools)
-    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-empty-'));
-    writeTestConfig(configDir, { localPlugins: [], tools: {} });
+test.describe
+  .serial('Hot reload — empty to populated', () => {
+    test('server starts with no plugins, hot reload adds plugin', async () => {
+      // Start with an EMPTY config (no plugins, no tools)
+      const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-empty-'));
+      writeTestConfig(configDir, { localPlugins: [], tools: {} });
 
-    const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port, server.secret);
+      const server = await startMcpServer(configDir, true);
+      const client = createMcpClient(server.port, server.secret);
 
-    try {
-      await client.initialize();
+      try {
+        await client.initialize();
 
-      // Initially only browser tools should be present
-      const toolsBefore = await client.listTools();
-      const browserToolSet = new Set(BROWSER_TOOL_NAMES);
-      const pluginTools = toolsBefore.filter(t => !browserToolSet.has(t.name));
-      expect(pluginTools.length).toBe(0);
+        // Initially only browser tools should be present
+        const toolsBefore = await client.listTools();
+        const browserToolSet = new Set(BROWSER_TOOL_NAMES);
+        const pluginTools = toolsBefore.filter(t => !browserToolSet.has(t.name));
+        expect(pluginTools.length).toBe(0);
 
-      for (const bt of BROWSER_TOOL_NAMES) {
-        expect(toolsBefore.map(t => t.name)).toContain(bt);
+        for (const bt of BROWSER_TOOL_NAMES) {
+          expect(toolsBefore.map(t => t.name)).toContain(bt);
+        }
+
+        // Add e2e-test plugin via config
+        const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
+        const prefixedToolNames = readPluginToolNames();
+        const tools: Record<string, boolean> = {};
+        for (const t of prefixedToolNames) {
+          tools[t] = true;
+        }
+        writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
+
+        server.logs.length = 0;
+        server.triggerHotReload();
+        await waitForLog(server, 'Hot reload complete', 20_000);
+
+        // Now plugin tools should appear
+        const toolsAfter = await client.listTools();
+        const e2eTools = toolsAfter.filter(t => t.name.startsWith('e2e-test_'));
+        expect(e2eTools.length).toBe(prefixedToolNames.length);
+
+        // Browser tools should still be there
+        for (const bt of BROWSER_TOOL_NAMES) {
+          expect(toolsAfter.map(t => t.name)).toContain(bt);
+        }
+      } finally {
+        await client.close();
+        await server.kill();
+        cleanupTestConfigDir(configDir);
       }
-
-      // Add e2e-test plugin via config
-      const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
-      const prefixedToolNames = readPluginToolNames();
-      const tools: Record<string, boolean> = {};
-      for (const t of prefixedToolNames) {
-        tools[t] = true;
-      }
-      writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
-
-      server.logs.length = 0;
-      server.triggerHotReload();
-      await waitForLog(server, 'Hot reload complete', 20_000);
-
-      // Now plugin tools should appear
-      const toolsAfter = await client.listTools();
-      const e2eTools = toolsAfter.filter(t => t.name.startsWith('e2e-test_'));
-      expect(e2eTools.length).toBe(prefixedToolNames.length);
-
-      // Browser tools should still be there
-      for (const bt of BROWSER_TOOL_NAMES) {
-        expect(toolsAfter.map(t => t.name)).toContain(bt);
-      }
-    } finally {
-      await client.close();
-      await server.kill();
-      cleanupTestConfigDir(configDir);
-    }
+    });
   });
-});
 
 // ---------------------------------------------------------------------------
 // In-flight tool dispatch during hot reload
 // ---------------------------------------------------------------------------
 
-test.describe.serial('Hot reload — in-flight tool dispatch', () => {
-  test('pending tool call completes successfully after hot reload fires mid-flight', async ({
-    mcpServer,
-    testServer,
-    extensionContext,
-    mcpClient,
-  }) => {
-    test.slow();
+test.describe
+  .serial('Hot reload — in-flight tool dispatch', () => {
+    test('pending tool call completes successfully after hot reload fires mid-flight', async ({
+      mcpServer,
+      testServer,
+      extensionContext,
+      mcpClient,
+    }) => {
+      test.slow();
 
-    const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
+      const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
 
-    try {
-      // Baseline: tool works normally
-      const baseline = await mcpClient.callTool('e2e-test_echo', { message: 'baseline' });
-      expect(baseline.isError).toBe(false);
-
-      // Set the test server to slow mode (3 second delay)
-      await testServer.setSlow(3_000);
-
-      // Start a slow tool call — this will take ~3 seconds
-      const slowCallPromise = mcpClient.callTool('e2e-test_echo', { message: 'in-flight' });
-
-      // Wait until the request actually reaches the test server before triggering
-      // hot reload. Polling replaces a fixed 500ms sleep that was insufficient
-      // under heavy CI load.
-      await waitFor(
-        async () => {
-          const invocations = await testServer.invocations();
-          return invocations.some(
-            i => i.path === '/api/echo' && (i.body as Record<string, unknown>).message === 'in-flight',
-          );
-        },
-        10_000,
-        200,
-        'echo request with message "in-flight" to reach test server',
-      );
-      mcpServer.logs.length = 0;
-      mcpServer.triggerHotReload();
-
-      // The slow call may complete successfully or fail (the proxy kills
-      // the worker process during restart, which can sever in-flight
-      // HTTP connections). Either outcome is acceptable — the important
-      // behavior is that subsequent calls work after the reload.
       try {
-        const slowResult = await slowCallPromise;
-        // If it completed, verify the content is correct
-        if (!slowResult.isError) {
-          const output = parseToolResult(slowResult.content);
-          expect(output.message).toBe('in-flight');
+        // Baseline: tool works normally
+        const baseline = await mcpClient.callTool('e2e-test_echo', { message: 'baseline' });
+        expect(baseline.isError).toBe(false);
+
+        // Set the test server to slow mode (3 second delay)
+        await testServer.setSlow(3_000);
+
+        // Start a slow tool call — this will take ~3 seconds
+        const slowCallPromise = mcpClient.callTool('e2e-test_echo', { message: 'in-flight' });
+
+        // Wait until the request actually reaches the test server before triggering
+        // hot reload. Polling replaces a fixed 500ms sleep that was insufficient
+        // under heavy CI load.
+        await waitFor(
+          async () => {
+            const invocations = await testServer.invocations();
+            return invocations.some(
+              i => i.path === '/api/echo' && (i.body as Record<string, unknown>).message === 'in-flight',
+            );
+          },
+          10_000,
+          200,
+          'echo request with message "in-flight" to reach test server',
+        );
+        mcpServer.logs.length = 0;
+        mcpServer.triggerHotReload();
+
+        // The slow call may complete successfully or fail (the proxy kills
+        // the worker process during restart, which can sever in-flight
+        // HTTP connections). Either outcome is acceptable — the important
+        // behavior is that subsequent calls work after the reload.
+        try {
+          const slowResult = await slowCallPromise;
+          // If it completed, verify the content is correct
+          if (!slowResult.isError) {
+            const output = parseToolResult(slowResult.content);
+            expect(output.message).toBe('in-flight');
+          }
+        } catch {
+          // 502 Bad Gateway or connection reset during worker restart — expected
         }
-      } catch {
-        // 502 Bad Gateway or connection reset during worker restart — expected
+
+        // Hot reload should have completed
+        await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+        // Wait for the extension to reconnect to the new worker. The proxy
+        // kills the old worker's WebSocket connections during restart, so the
+        // extension must detect the close and reconnect. Under high parallelism
+        // (20+ Playwright workers), CPU contention can delay the reconnection
+        // beyond the default 1s backoff, causing the post-reload tool call to
+        // fail with "Extension not connected" if we don't wait.
+        await waitForExtensionConnected(mcpServer, 30_000);
+
+        // Reset slow mode and verify the session still works after reload
+        await testServer.setSlow(0);
+        const afterResult = await mcpClient.callTool('e2e-test_echo', { message: 'after-reload' });
+        expect(afterResult.isError).toBe(false);
+        const afterOutput = parseToolResult(afterResult.content);
+        expect(afterOutput.message).toBe('after-reload');
+      } finally {
+        await page.close();
       }
-
-      // Hot reload should have completed
-      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
-
-      // Wait for the extension to reconnect to the new worker. The proxy
-      // kills the old worker's WebSocket connections during restart, so the
-      // extension must detect the close and reconnect. Under high parallelism
-      // (20+ Playwright workers), CPU contention can delay the reconnection
-      // beyond the default 1s backoff, causing the post-reload tool call to
-      // fail with "Extension not connected" if we don't wait.
-      await waitForExtensionConnected(mcpServer, 30_000);
-
-      // Reset slow mode and verify the session still works after reload
-      await testServer.setSlow(0);
-      const afterResult = await mcpClient.callTool('e2e-test_echo', { message: 'after-reload' });
-      expect(afterResult.isError).toBe(false);
-      const afterOutput = parseToolResult(afterResult.content);
-      expect(afterOutput.message).toBe('after-reload');
-    } finally {
-      await page.close();
-    }
+    });
   });
-});
 
 // ---------------------------------------------------------------------------
 // Tool description/schema change verification
 // ---------------------------------------------------------------------------
 
-test.describe.serial('File watcher — tool metadata changes', () => {
-  test('tool description change in manifest is reflected in tools/list', async () => {
-    const { pluginDir, tmpDir } = copyE2eTestPlugin();
-    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-desc-'));
+test.describe
+  .serial('File watcher — tool metadata changes', () => {
+    test('tool description change in manifest is reflected in tools/list', async () => {
+      const { pluginDir, tmpDir } = copyE2eTestPlugin();
+      const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-desc-'));
 
-    const prefixedToolNames = readPluginToolNames();
-    const tools: Record<string, boolean> = {};
-    for (const t of prefixedToolNames) {
-      tools[t] = true;
-    }
-    writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
+      const prefixedToolNames = readPluginToolNames();
+      const tools: Record<string, boolean> = {};
+      for (const t of prefixedToolNames) {
+        tools[t] = true;
+      }
+      writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
 
-    const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port, server.secret);
+      const server = await startMcpServer(configDir, true);
+      const client = createMcpClient(server.port, server.secret);
 
-    try {
-      await client.initialize();
+      try {
+        await client.initialize();
 
-      // Get the original description of the echo tool
-      const toolsBefore = await client.listTools();
-      const echoBefore = toolsBefore.find(t => t.name === 'e2e-test_echo');
-      expect(echoBefore).toBeDefined();
-      if (!echoBefore) throw new Error('echo tool not found');
-      const originalDesc = echoBefore.description;
+        // Get the original description of the echo tool
+        const toolsBefore = await client.listTools();
+        const echoBefore = toolsBefore.find(t => t.name === 'e2e-test_echo');
+        expect(echoBefore).toBeDefined();
+        if (!echoBefore) throw new Error('echo tool not found');
+        const originalDesc = echoBefore.description;
 
-      // Modify the echo tool's description in dist/tools.json, retrying if
-      // the file watcher misses the write (FSEvents registration race on macOS).
-      const toolsJsonPath = path.join(pluginDir, 'dist', 'tools.json');
-      const tools = readToolsFromManifest(toolsJsonPath);
-      const echoTool = tools.find(t => t.name === 'echo');
-      expect(echoTool).toBeDefined();
-      if (!echoTool) throw new Error('echo tool not found in tools.json');
-      echoTool.description = 'UPDATED: Echo a message back with new description';
-      await writeAndWaitForWatcher(server, () => writeToolsToManifest(toolsJsonPath, tools), 'tools.json updated for');
+        // Modify the echo tool's description in dist/tools.json, retrying if
+        // the file watcher misses the write (FSEvents registration race on macOS).
+        const toolsJsonPath = path.join(pluginDir, 'dist', 'tools.json');
+        const tools = readToolsFromManifest(toolsJsonPath);
+        const echoTool = tools.find(t => t.name === 'echo');
+        expect(echoTool).toBeDefined();
+        if (!echoTool) throw new Error('echo tool not found in tools.json');
+        echoTool.description = 'UPDATED: Echo a message back with new description';
+        await writeAndWaitForWatcher(
+          server,
+          () => writeToolsToManifest(toolsJsonPath, tools),
+          'tools.json updated for',
+        );
 
-      // Poll until the description changes in tools/list
-      const toolsAfter = await waitForToolList(
-        client,
-        tools => {
-          const echo = tools.find(t => t.name === 'e2e-test_echo');
-          return echo !== undefined && echo.description.includes('UPDATED');
-        },
-        15_000,
-        300,
-        'echo description to contain UPDATED',
-      );
-      const echoAfter = toolsAfter.find(t => t.name === 'e2e-test_echo');
-      expect(echoAfter).toBeDefined();
-      if (!echoAfter) throw new Error('echo tool not found after update');
-      expect(echoAfter.description).not.toBe(originalDesc);
-    } finally {
-      await client.close();
-      await server.kill();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      cleanupTestConfigDir(configDir);
-    }
+        // Poll until the description changes in tools/list
+        const toolsAfter = await waitForToolList(
+          client,
+          tools => {
+            const echo = tools.find(t => t.name === 'e2e-test_echo');
+            return echo?.description.includes('UPDATED') ?? false;
+          },
+          15_000,
+          300,
+          'echo description to contain UPDATED',
+        );
+        const echoAfter = toolsAfter.find(t => t.name === 'e2e-test_echo');
+        expect(echoAfter).toBeDefined();
+        if (!echoAfter) throw new Error('echo tool not found after update');
+        expect(echoAfter.description).not.toBe(originalDesc);
+      } finally {
+        await client.close();
+        await server.kill();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        cleanupTestConfigDir(configDir);
+      }
+    });
   });
-});
 
 // ---------------------------------------------------------------------------
 // Corrupted manifest graceful handling
@@ -1047,244 +1073,251 @@ test.describe('Hot reload — no extension connected', () => {
 // File watcher — input_schema change propagation
 // ---------------------------------------------------------------------------
 
-test.describe.serial('File watcher — input_schema changes', () => {
-  test('tool input_schema change in manifest is reflected in tools/list', async () => {
-    const { pluginDir, tmpDir } = copyE2eTestPlugin();
-    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-schema-'));
+test.describe
+  .serial('File watcher — input_schema changes', () => {
+    test('tool input_schema change in manifest is reflected in tools/list', async () => {
+      const { pluginDir, tmpDir } = copyE2eTestPlugin();
+      const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-schema-'));
 
-    const prefixedToolNames = readPluginToolNames();
-    const tools: Record<string, boolean> = {};
-    for (const t of prefixedToolNames) {
-      tools[t] = true;
-    }
-    writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
+      const prefixedToolNames = readPluginToolNames();
+      const tools: Record<string, boolean> = {};
+      for (const t of prefixedToolNames) {
+        tools[t] = true;
+      }
+      writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
 
-    const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port, server.secret);
+      const server = await startMcpServer(configDir, true);
+      const client = createMcpClient(server.port, server.secret);
 
-    try {
-      await client.initialize();
+      try {
+        await client.initialize();
 
-      // Get the original input_schema of the echo tool
-      const toolsBefore = await client.listTools();
-      const echoBefore = toolsBefore.find(t => t.name === 'e2e-test_echo');
-      expect(echoBefore).toBeDefined();
-      if (!echoBefore) throw new Error('echo tool not found');
+        // Get the original input_schema of the echo tool
+        const toolsBefore = await client.listTools();
+        const echoBefore = toolsBefore.find(t => t.name === 'e2e-test_echo');
+        expect(echoBefore).toBeDefined();
+        if (!echoBefore) throw new Error('echo tool not found');
 
-      // Modify the echo tool's input_schema in dist/tools.json — add a new
-      // property, retrying if the watcher misses the write (FSEvents race).
-      const toolsJsonPath = path.join(pluginDir, 'dist', 'tools.json');
-      const tools = readToolsFromManifest(toolsJsonPath);
-      const echoTool = tools.find(t => t.name === 'echo');
-      expect(echoTool).toBeDefined();
-      if (!echoTool) throw new Error('echo tool not found in tools.json');
+        // Modify the echo tool's input_schema in dist/tools.json — add a new
+        // property, retrying if the watcher misses the write (FSEvents race).
+        const toolsJsonPath = path.join(pluginDir, 'dist', 'tools.json');
+        const tools = readToolsFromManifest(toolsJsonPath);
+        const echoTool = tools.find(t => t.name === 'echo');
+        expect(echoTool).toBeDefined();
+        if (!echoTool) throw new Error('echo tool not found in tools.json');
 
-      // Add a new optional "prefix" property to the schema
-      const props = ((echoTool.input_schema ?? {}).properties ?? {}) as Record<string, unknown>;
-      props['prefix'] = { type: 'string', description: 'Optional prefix for the echo' };
-      (echoTool.input_schema ??= {}).properties = props;
-      await writeAndWaitForWatcher(server, () => writeToolsToManifest(toolsJsonPath, tools), 'tools.json updated for');
+        // Add a new optional "prefix" property to the schema
+        const props = (echoTool.input_schema?.properties ?? {}) as Record<string, unknown>;
+        props.prefix = { type: 'string', description: 'Optional prefix for the echo' };
+        (echoTool.input_schema ??= {}).properties = props;
+        await writeAndWaitForWatcher(
+          server,
+          () => writeToolsToManifest(toolsJsonPath, tools),
+          'tools.json updated for',
+        );
 
-      // Poll until the input_schema changes in tools/list
-      const toolsAfter = await waitForToolList(
-        client,
-        tools => {
-          const echo = tools.find(t => t.name === 'e2e-test_echo');
-          if (!echo) return false;
-          const schema = (echo as Record<string, unknown>).inputSchema as Record<string, unknown> | undefined;
-          const propsObj = schema?.properties as Record<string, unknown> | undefined;
-          return propsObj !== undefined && 'prefix' in propsObj;
-        },
-        15_000,
-        300,
-        'echo input_schema to include prefix property',
-      );
-      const echoAfter = toolsAfter.find(t => t.name === 'e2e-test_echo');
-      expect(echoAfter).toBeDefined();
-      if (!echoAfter) throw new Error('echo tool not found after update');
+        // Poll until the input_schema changes in tools/list
+        const toolsAfter = await waitForToolList(
+          client,
+          tools => {
+            const echo = tools.find(t => t.name === 'e2e-test_echo');
+            if (!echo) return false;
+            const schema = (echo as Record<string, unknown>).inputSchema as Record<string, unknown> | undefined;
+            const propsObj = schema?.properties as Record<string, unknown> | undefined;
+            return propsObj !== undefined && 'prefix' in propsObj;
+          },
+          15_000,
+          300,
+          'echo input_schema to include prefix property',
+        );
+        const echoAfter = toolsAfter.find(t => t.name === 'e2e-test_echo');
+        expect(echoAfter).toBeDefined();
+        if (!echoAfter) throw new Error('echo tool not found after update');
 
-      // The new schema should have the "prefix" property
-      const afterProps = (echoAfter.inputSchema as Record<string, unknown>).properties as Record<string, unknown>;
-      expect(afterProps).toHaveProperty('prefix');
+        // The new schema should have the "prefix" property
+        const afterProps = (echoAfter.inputSchema as Record<string, unknown>).properties as Record<string, unknown>;
+        expect(afterProps).toHaveProperty('prefix');
 
-      // Original schema should NOT have had "prefix"
-      const beforeProps = (echoBefore.inputSchema as Record<string, unknown>).properties as Record<string, unknown>;
-      expect(beforeProps).not.toHaveProperty('prefix');
-    } finally {
-      await client.close();
-      await server.kill();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      cleanupTestConfigDir(configDir);
-    }
+        // Original schema should NOT have had "prefix"
+        const beforeProps = (echoBefore.inputSchema as Record<string, unknown>).properties as Record<string, unknown>;
+        expect(beforeProps).not.toHaveProperty('prefix');
+      } finally {
+        await client.close();
+        await server.kill();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        cleanupTestConfigDir(configDir);
+      }
+    });
   });
-});
 
 // ---------------------------------------------------------------------------
 // File watcher restart after hot reload
 // ---------------------------------------------------------------------------
 
-test.describe.serial('File watcher — restart after hot reload', () => {
-  test('file watcher still detects manifest changes after hot reload', async () => {
-    const { pluginDir, tmpDir } = copyE2eTestPlugin();
-    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-restart-'));
+test.describe
+  .serial('File watcher — restart after hot reload', () => {
+    test('file watcher still detects manifest changes after hot reload', async () => {
+      const { pluginDir, tmpDir } = copyE2eTestPlugin();
+      const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-restart-'));
 
-    // Pre-enable a future dynamic tool for the second file watcher change
-    const prefixedToolNames = [...readPluginToolNames(), 'e2e-test_post_reload_tool'];
-    const tools: Record<string, boolean> = {};
-    for (const t of prefixedToolNames) {
-      tools[t] = true;
-    }
-    writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
+      // Pre-enable a future dynamic tool for the second file watcher change
+      const prefixedToolNames = [...readPluginToolNames(), 'e2e-test_post_reload_tool'];
+      const tools: Record<string, boolean> = {};
+      for (const t of prefixedToolNames) {
+        tools[t] = true;
+      }
+      writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
 
-    const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port, server.secret);
+      const server = await startMcpServer(configDir, true);
+      const client = createMcpClient(server.port, server.secret);
 
-    try {
-      await client.initialize();
+      try {
+        await client.initialize();
 
-      // 1. Verify file watcher works BEFORE hot reload
-      await waitForLog(server, 'File watcher: Watching', 10_000);
+        // 1. Verify file watcher works BEFORE hot reload
+        await waitForLog(server, 'File watcher: Watching', 10_000);
 
-      const toolsJsonPath = path.join(pluginDir, 'dist', 'tools.json');
-      const toolsBefore2 = readToolsFromManifest(toolsJsonPath);
+        const toolsJsonPath = path.join(pluginDir, 'dist', 'tools.json');
+        const toolsBefore2 = readToolsFromManifest(toolsJsonPath);
 
-      // Modify description of echo tool — file watcher should detect it
-      const echoTool = toolsBefore2.find(t => t.name === 'echo');
-      expect(echoTool).toBeDefined();
-      if (!echoTool) throw new Error('echo tool not found in tools.json');
-      await writeAndWaitForWatcher(
-        server,
-        attempt => {
-          echoTool.description = 'BEFORE-RELOAD: modified description' + ' '.repeat(attempt);
-          writeToolsToManifest(toolsJsonPath, toolsBefore2);
-        },
-        'tools.json updated for',
-      );
+        // Modify description of echo tool — file watcher should detect it
+        const echoTool = toolsBefore2.find(t => t.name === 'echo');
+        expect(echoTool).toBeDefined();
+        if (!echoTool) throw new Error('echo tool not found in tools.json');
+        await writeAndWaitForWatcher(
+          server,
+          attempt => {
+            echoTool.description = `BEFORE-RELOAD: modified description${' '.repeat(attempt)}`;
+            writeToolsToManifest(toolsJsonPath, toolsBefore2);
+          },
+          'tools.json updated for',
+        );
 
-      // Poll until the description changes
-      const toolsMid = await waitForToolList(
-        client,
-        tools => {
-          const echo = tools.find(t => t.name === 'e2e-test_echo');
-          return echo !== undefined && echo.description.includes('BEFORE-RELOAD');
-        },
-        10_000,
-        300,
-        'echo description to contain BEFORE-RELOAD',
-      );
-      const echoMid = toolsMid.find(t => t.name === 'e2e-test_echo');
-      expect(echoMid).toBeDefined();
-      if (!echoMid) throw new Error('echo tool not found after first tools.json update');
+        // Poll until the description changes
+        const toolsMid = await waitForToolList(
+          client,
+          tools => {
+            const echo = tools.find(t => t.name === 'e2e-test_echo');
+            return echo?.description.includes('BEFORE-RELOAD') ?? false;
+          },
+          10_000,
+          300,
+          'echo description to contain BEFORE-RELOAD',
+        );
+        const echoMid = toolsMid.find(t => t.name === 'e2e-test_echo');
+        expect(echoMid).toBeDefined();
+        if (!echoMid) throw new Error('echo tool not found after first tools.json update');
 
-      // 2. Trigger hot reload — this stops old file watchers and starts new ones
-      server.logs.length = 0;
-      server.triggerHotReload();
-      await waitForLog(server, 'Hot reload complete', 20_000);
+        // 2. Trigger hot reload — this stops old file watchers and starts new ones
+        server.logs.length = 0;
+        server.triggerHotReload();
+        await waitForLog(server, 'Hot reload complete', 20_000);
 
-      // Verify file watchers were restarted
-      await waitForLog(server, 'File watcher: Watching', 10_000);
+        // Verify file watchers were restarted
+        await waitForLog(server, 'File watcher: Watching', 10_000);
 
-      // 3. Modify tools.json AGAIN after hot reload — the new file watcher
-      //    should detect this change. Add a new tool to be sure.
-      const toolsAfterReload = readToolsFromManifest(toolsJsonPath);
-      const postReloadTool = {
-        name: 'post_reload_tool',
-        displayName: 'Post Reload Tool',
-        description: 'Added after hot reload to verify file watcher restart',
-        icon: 'wrench',
-        input_schema: { type: 'object', properties: {}, additionalProperties: false },
-        output_schema: {
-          type: 'object',
-          properties: { ok: { type: 'boolean' } },
-          required: ['ok'],
-          additionalProperties: false,
-        },
-      };
-      toolsAfterReload.push(postReloadTool);
-      await writeAndWaitForWatcher(
-        server,
-        attempt => {
-          postReloadTool.description = 'Added after hot reload to verify file watcher restart' + ' '.repeat(attempt);
-          writeToolsToManifest(toolsJsonPath, toolsAfterReload);
-        },
-        'tools.json updated for',
-      );
+        // 3. Modify tools.json AGAIN after hot reload — the new file watcher
+        //    should detect this change. Add a new tool to be sure.
+        const toolsAfterReload = readToolsFromManifest(toolsJsonPath);
+        const postReloadTool = {
+          name: 'post_reload_tool',
+          displayName: 'Post Reload Tool',
+          description: 'Added after hot reload to verify file watcher restart',
+          icon: 'wrench',
+          input_schema: { type: 'object', properties: {}, additionalProperties: false },
+          output_schema: {
+            type: 'object',
+            properties: { ok: { type: 'boolean' } },
+            required: ['ok'],
+            additionalProperties: false,
+          },
+        };
+        toolsAfterReload.push(postReloadTool);
+        await writeAndWaitForWatcher(
+          server,
+          attempt => {
+            postReloadTool.description = `Added after hot reload to verify file watcher restart${' '.repeat(attempt)}`;
+            writeToolsToManifest(toolsJsonPath, toolsAfterReload);
+          },
+          'tools.json updated for',
+        );
 
-      // Poll until the new tool appears (new file watcher after hot reload should detect this)
-      await waitForToolList(
-        client,
-        tools => tools.some(t => t.name === 'e2e-test_post_reload_tool'),
-        10_000,
-        300,
-        'e2e-test_post_reload_tool to appear after reload',
-      );
-    } finally {
-      await client.close();
-      await server.kill();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      cleanupTestConfigDir(configDir);
-    }
+        // Poll until the new tool appears (new file watcher after hot reload should detect this)
+        await waitForToolList(
+          client,
+          tools => tools.some(t => t.name === 'e2e-test_post_reload_tool'),
+          10_000,
+          300,
+          'e2e-test_post_reload_tool to appear after reload',
+        );
+      } finally {
+        await client.close();
+        await server.kill();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        cleanupTestConfigDir(configDir);
+      }
+    });
   });
-});
 
 // ---------------------------------------------------------------------------
 // File watcher — version change propagation
 // ---------------------------------------------------------------------------
 
-test.describe.serial('File watcher — tools.json rewrite preserves all tools', () => {
-  test('rewriting tools.json preserves all tools', async () => {
-    const { pluginDir, tmpDir } = copyE2eTestPlugin();
-    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-rewrite-'));
+test.describe
+  .serial('File watcher — tools.json rewrite preserves all tools', () => {
+    test('rewriting tools.json preserves all tools', async () => {
+      const { pluginDir, tmpDir } = copyE2eTestPlugin();
+      const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-rewrite-'));
 
-    const prefixedToolNames = readPluginToolNames();
-    const toolConfig: Record<string, boolean> = {};
-    for (const t of prefixedToolNames) {
-      toolConfig[t] = true;
-    }
-    writeTestConfig(configDir, { localPlugins: [pluginDir], tools: toolConfig });
+      const prefixedToolNames = readPluginToolNames();
+      const toolConfig: Record<string, boolean> = {};
+      for (const t of prefixedToolNames) {
+        toolConfig[t] = true;
+      }
+      writeTestConfig(configDir, { localPlugins: [pluginDir], tools: toolConfig });
 
-    const server = await startMcpServer(configDir, true);
-    const client = createMcpClient(server.port, server.secret);
+      const server = await startMcpServer(configDir, true);
+      const client = createMcpClient(server.port, server.secret);
 
-    try {
-      await client.initialize();
+      try {
+        await client.initialize();
 
-      // Verify initial tools are present
-      const toolsBefore = await client.listTools();
-      const e2eToolsBefore = toolsBefore.filter(t => t.name.startsWith('e2e-test_'));
-      expect(e2eToolsBefore.length).toBeGreaterThan(0);
-      const countBefore = e2eToolsBefore.length;
+        // Verify initial tools are present
+        const toolsBefore = await client.listTools();
+        const e2eToolsBefore = toolsBefore.filter(t => t.name.startsWith('e2e-test_'));
+        expect(e2eToolsBefore.length).toBeGreaterThan(0);
+        const countBefore = e2eToolsBefore.length;
 
-      // Re-write tools.json to trigger the file watcher
-      const toolsJsonPath = path.join(pluginDir, 'dist', 'tools.json');
-      const toolsContent = fs.readFileSync(toolsJsonPath, 'utf-8');
-      await writeAndWaitForWatcher(
-        server,
-        attempt => fs.writeFileSync(toolsJsonPath, attempt === 0 ? toolsContent : toolsContent + '\n', 'utf-8'),
-        'tools.json updated for',
-      );
+        // Re-write tools.json to trigger the file watcher
+        const toolsJsonPath = path.join(pluginDir, 'dist', 'tools.json');
+        const toolsContent = fs.readFileSync(toolsJsonPath, 'utf-8');
+        await writeAndWaitForWatcher(
+          server,
+          attempt => fs.writeFileSync(toolsJsonPath, attempt === 0 ? toolsContent : `${toolsContent}\n`, 'utf-8'),
+          'tools.json updated for',
+        );
 
-      // All tools should still be present after the rewrite
-      const toolsAfter = await client.listTools();
-      const e2eToolsAfter = toolsAfter.filter(t => t.name.startsWith('e2e-test_'));
-      expect(e2eToolsAfter.length).toBe(countBefore);
+        // All tools should still be present after the rewrite
+        const toolsAfter = await client.listTools();
+        const e2eToolsAfter = toolsAfter.filter(t => t.name.startsWith('e2e-test_'));
+        expect(e2eToolsAfter.length).toBe(countBefore);
 
-      // Verify the same tool names are present
-      const namesBefore = e2eToolsBefore.map(t => t.name).sort();
-      const namesAfter = e2eToolsAfter.map(t => t.name).sort();
-      expect(namesAfter).toEqual(namesBefore);
+        // Verify the same tool names are present
+        const namesBefore = e2eToolsBefore.map(t => t.name).sort();
+        const namesAfter = e2eToolsAfter.map(t => t.name).sort();
+        expect(namesAfter).toEqual(namesBefore);
 
-      // Verify server health is ok
-      const health = await server.health();
-      expect(health).not.toBeNull();
-      if (!health) throw new Error('health returned null');
-      expect(health.status).toBe('ok');
-      expect(health.plugins).toBe(1);
-    } finally {
-      await client.close();
-      await server.kill();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      cleanupTestConfigDir(configDir);
-    }
+        // Verify server health is ok
+        const health = await server.health();
+        expect(health).not.toBeNull();
+        if (!health) throw new Error('health returned null');
+        expect(health.status).toBe('ok');
+        expect(health.plugins).toBe(1);
+      } finally {
+        await client.close();
+        await server.kill();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        cleanupTestConfigDir(configDir);
+      }
+    });
   });
-});

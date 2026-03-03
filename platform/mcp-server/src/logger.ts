@@ -44,7 +44,7 @@ const formatArgs = (args: unknown[], includeStack: boolean): unknown[] => {
   if (last instanceof Error) {
     const rest = args.slice(0, -1);
     if (includeStack && last.stack) {
-      return [...rest, '\n  ' + last.stack];
+      return [...rest, `\n  ${last.stack}`];
     }
     return [...rest, last.message];
   }
@@ -58,7 +58,7 @@ const parseLevel = (raw: string | undefined): LogLevel => {
   return 'info';
 };
 
-const currentLevel = LEVELS[parseLevel(process.env['OPENTABS_LOG_LEVEL'])];
+const currentLevel = LEVELS[parseLevel(process.env.OPENTABS_LOG_LEVEL)];
 
 const log = {
   /** Verbose diagnostic output — suppressed by default */

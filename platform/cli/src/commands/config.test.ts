@@ -1,3 +1,9 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import type { MockInstance } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
   applyPolicyEntry,
   handleSetLocalPluginsAdd,
@@ -7,12 +13,6 @@ import {
   resolveStoredPluginPath,
   suggestKey,
 } from './config.js';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import type { MockInstance } from 'vitest';
 
 vi.mock('../notify-server.js', () => ({
   notifyServer: vi.fn().mockResolvedValue(undefined),
@@ -181,7 +181,7 @@ describe('applyPolicyEntry', () => {
   test('setting disabled adds the key with value false', () => {
     const map: Record<string, boolean> = {};
     applyPolicyEntry(map, 'browser_execute_script', false);
-    expect(map['browser_execute_script']).toBe(false);
+    expect(map.browser_execute_script).toBe(false);
   });
 
   test('setting enabled on a key that does not exist leaves the map unchanged', () => {
@@ -193,14 +193,14 @@ describe('applyPolicyEntry', () => {
   test('setting disabled on a key already set to false keeps it false', () => {
     const map: Record<string, boolean> = { browser_execute_script: false };
     applyPolicyEntry(map, 'browser_execute_script', false);
-    expect(map['browser_execute_script']).toBe(false);
+    expect(map.browser_execute_script).toBe(false);
   });
 
   test('does not affect other keys in the map', () => {
     const map: Record<string, boolean> = { tool_a: false, tool_b: false };
     applyPolicyEntry(map, 'tool_a', true);
     expect(Object.hasOwn(map, 'tool_a')).toBe(false);
-    expect(map['tool_b']).toBe(false);
+    expect(map.tool_b).toBe(false);
   });
 });
 
@@ -211,18 +211,18 @@ describe('applyPolicyEntry', () => {
 describe('normalizeConfigForDisplay', () => {
   test('adds browserToolPolicy: {} when key is absent from config', () => {
     const result = normalizeConfigForDisplay({ permissions: {} });
-    expect(result['browserToolPolicy']).toEqual({});
+    expect(result.browserToolPolicy).toEqual({});
   });
 
   test('preserves existing browserToolPolicy entries when present', () => {
     const policy = { browser_execute_script: false };
     const result = normalizeConfigForDisplay({ browserToolPolicy: policy });
-    expect(result['browserToolPolicy']).toEqual(policy);
+    expect(result.browserToolPolicy).toEqual(policy);
   });
 
   test('preserves empty object {} browserToolPolicy as-is (not replaced)', () => {
     const result = normalizeConfigForDisplay({ browserToolPolicy: {} });
-    expect(result['browserToolPolicy']).toEqual({});
+    expect(result.browserToolPolicy).toEqual({});
   });
 
   test('preserves all other keys unchanged', () => {
@@ -232,9 +232,9 @@ describe('normalizeConfigForDisplay', () => {
       localPlugins: ['/some/plugin'],
     };
     const result = normalizeConfigForDisplay(config);
-    expect(result['port']).toBe(9000);
-    expect(result['permissions']).toEqual({ trustedDomains: ['example.com'] });
-    expect(result['localPlugins']).toEqual(['/some/plugin']);
+    expect(result.port).toBe(9000);
+    expect(result.permissions).toEqual({ trustedDomains: ['example.com'] });
+    expect(result.localPlugins).toEqual(['/some/plugin']);
   });
 
   test('does not modify the input config object', () => {
@@ -246,7 +246,7 @@ describe('normalizeConfigForDisplay', () => {
   test('browserToolPolicy appears in output even for empty config', () => {
     const result = normalizeConfigForDisplay({});
     expect(Object.hasOwn(result, 'browserToolPolicy')).toBe(true);
-    expect(result['browserToolPolicy']).toEqual({});
+    expect(result.browserToolPolicy).toEqual({});
   });
 
   test('canonical sections always appear in order: localPlugins, tools, browserToolPolicy, permissions', () => {
@@ -284,12 +284,12 @@ describe('normalizeConfigForDisplay', () => {
 describe('handleSetLocalPluginsAdd', () => {
   let testDir: string;
   let exitSpy: MockInstance;
-  const savedConfigDir = process.env['OPENTABS_CONFIG_DIR'];
+  const savedConfigDir = process.env.OPENTABS_CONFIG_DIR;
 
   beforeEach(() => {
     testDir = mkdtempSync(join(tmpdir(), 'opentabs-addplugin-test-'));
-    process.env['OPENTABS_CONFIG_DIR'] = testDir;
-    writeFileSync(join(testDir, 'config.json'), JSON.stringify({ localPlugins: [] }) + '\n', 'utf-8');
+    process.env.OPENTABS_CONFIG_DIR = testDir;
+    writeFileSync(join(testDir, 'config.json'), `${JSON.stringify({ localPlugins: [] })}\n`, 'utf-8');
     exitSpy = vi.spyOn(process, 'exit').mockImplementation((_code?: number | string | null) => {
       throw new Error(`process.exit(${_code ?? ''})`);
     });
@@ -298,9 +298,9 @@ describe('handleSetLocalPluginsAdd', () => {
   afterEach(() => {
     rmSync(testDir, { recursive: true, force: true });
     if (savedConfigDir !== undefined) {
-      process.env['OPENTABS_CONFIG_DIR'] = savedConfigDir;
+      process.env.OPENTABS_CONFIG_DIR = savedConfigDir;
     } else {
-      delete process.env['OPENTABS_CONFIG_DIR'];
+      delete process.env.OPENTABS_CONFIG_DIR;
     }
     vi.restoreAllMocks();
   });

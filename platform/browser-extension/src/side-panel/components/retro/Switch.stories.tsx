@@ -1,6 +1,6 @@
-import { Switch } from './Switch';
-import { useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
+import { useState } from 'react';
+import { Switch } from './Switch';
 
 const meta: Meta<typeof Switch> = { title: 'Retro/Switch', component: Switch };
 
@@ -15,7 +15,7 @@ const InteractiveDemo = () => {
   return (
     <div className="flex items-center gap-3">
       <Switch checked={checked} onCheckedChange={setChecked} />
-      <span className="text-foreground font-sans text-sm">{checked ? 'On' : 'Off'}</span>
+      <span className="font-sans text-foreground text-sm">{checked ? 'On' : 'Off'}</span>
     </div>
   );
 };

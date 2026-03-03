@@ -20,22 +20,22 @@
  * minimal plugin added to localPlugins.
  */
 
-import {
-  test,
-  expect,
-  fetchWsInfo,
-  createTestConfigDir,
-  cleanupTestConfigDir,
-  readTestConfig,
-  writeTestConfig,
-  createMinimalPlugin,
-  createMcpClient,
-  startMcpServer,
-} from './fixtures.js';
-import { waitForToolList } from './helpers.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  cleanupTestConfigDir,
+  createMcpClient,
+  createMinimalPlugin,
+  createTestConfigDir,
+  expect,
+  fetchWsInfo,
+  readTestConfig,
+  startMcpServer,
+  test,
+  writeTestConfig,
+} from './fixtures.js';
+import { waitForToolList } from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // WebSocket JSON-RPC helper
@@ -377,7 +377,7 @@ test.describe('plugin.remove', () => {
       const config = readTestConfig(configDir);
       config.localPlugins.push(removableDir);
       // Enable the removable plugin's tool
-      config.tools['removable_ping'] = true;
+      config.tools.removable_ping = true;
       writeTestConfig(configDir, config);
 
       // Start the server with this config

@@ -1,8 +1,8 @@
+import { useEffect, useState } from 'react';
+import { DEFAULT_SERVER_PORT, SERVER_PORT_KEY } from '../../constants.js';
+import type { DisconnectReason } from '../../extension-messages.js';
 import { Empty } from './retro/Empty.js';
 import { Loader } from './retro/Loader.js';
-import { DEFAULT_SERVER_PORT, SERVER_PORT_KEY } from '../../constants.js';
-import { useState, useEffect } from 'react';
-import type { DisconnectReason } from '../../extension-messages.js';
 
 const ConnectionRefusedState = () => {
   const [port, setPort] = useState(DEFAULT_SERVER_PORT);
@@ -39,7 +39,7 @@ const ConnectionRefusedState = () => {
         <Empty.Title>Cannot Reach MCP Server</Empty.Title>
         <Empty.Separator className="bg-destructive" />
         <Empty.Description>Start the MCP server:</Empty.Description>
-        <code className="border-destructive/40 bg-destructive/10 rounded border-2 px-3 py-2 font-mono text-sm">
+        <code className="rounded border-2 border-destructive/40 bg-destructive/10 px-3 py-2 font-mono text-sm">
           {command}
         </code>
       </Empty.Content>
@@ -55,7 +55,7 @@ const AuthFailedState = () => (
       <Empty.Description>
         The extension&rsquo;s secret does not match the server. Reload the extension to pick up the latest secret:
       </Empty.Description>
-      <code className="border-destructive/40 bg-destructive/10 rounded border-2 px-3 py-2 font-mono text-sm">
+      <code className="rounded border-2 border-destructive/40 bg-destructive/10 px-3 py-2 font-mono text-sm">
         chrome://extensions/ → reload
       </code>
     </Empty.Content>

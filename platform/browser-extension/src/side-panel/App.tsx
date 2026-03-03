@@ -199,12 +199,17 @@ const App = () => {
       setDisconnectReason(result.disconnectReason);
       setPlugins(result.plugins);
       setFailedPlugins(result.failedPlugins);
-      setBrowserTools(prev =>
-        prev.map(t => {
-          const serverTool = result.browserTools.find(s => s.name === t.name);
-          return serverTool ? { ...t, enabled: serverTool.enabled } : t;
-        }),
-      );
+      setBrowserTools(() => {
+        if (result.browserTools.length === 0) {
+          return BROWSER_TOOLS_CATALOG.map(t => ({ ...t, enabled: true }));
+        }
+        const serverNames = new Set(result.browserTools.map(t => t.name));
+        const merged = [...result.browserTools];
+        for (const local of BROWSER_TOOLS_CATALOG) {
+          if (!serverNames.has(local.name)) merged.push({ ...local, enabled: true });
+        }
+        return merged;
+      });
       setServerVersion(result.serverVersion);
       setActiveTools(prev => {
         const next = new Set<string>();

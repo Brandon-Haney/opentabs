@@ -414,6 +414,17 @@ const handleSetBrowserTool = async (key: string, value: string, options: { port?
     process.exit(1);
   }
 
+  // Validate against the server's registered tool list before writing config.
+  // If the server is reachable and the tool name is not recognized, reject without writing.
+  // If the server is not reachable, proceed with writing and warn instead.
+  const port = resolvePort(options);
+  const registeredBrowserTools = await fetchBrowserToolNames(port);
+  if (registeredBrowserTools && !registeredBrowserTools.includes(toolName)) {
+    console.error(pc.red(`Error: "${toolName}" is not a registered browser tool.`));
+    console.error(pc.dim('Run opentabs config set browser-tool. to list available browser tools.'));
+    process.exit(1);
+  }
+
   const { config, configPath } = await loadConfig();
 
   if (
@@ -435,15 +446,7 @@ const handleSetBrowserTool = async (key: string, value: string, options: { port?
   const indicator = enabled ? pc.green('enabled') : pc.red('disabled');
   console.log(`${toolName}: ${indicator}`);
 
-  const port = resolvePort(options);
-  const registeredBrowserTools = await fetchBrowserToolNames(port);
-  if (registeredBrowserTools && !registeredBrowserTools.includes(toolName)) {
-    console.log(
-      pc.yellow(
-        `Warning: "${toolName}" does not match any registered browser tool. Check the name or start the server.`,
-      ),
-    );
-  } else if (!registeredBrowserTools) {
+  if (!registeredBrowserTools) {
     console.log(
       pc.dim(`Note: Could not validate tool name (server not running). Verify with: opentabs config set browser-tool.`),
     );

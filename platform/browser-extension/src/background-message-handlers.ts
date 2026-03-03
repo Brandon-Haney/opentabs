@@ -323,9 +323,12 @@ const handleBgSetToolEnabled: MessageHandler = (message, sendResponse) => {
   const tool = message.tool as string;
   const enabled = message.enabled as boolean;
 
-  // Optimistically update the local server state cache
+  // Capture the original enabled value for surgical rollback
   const cache = getServerStateCache();
-  const originalPlugins = cache.plugins;
+  const pluginEntry = cache.plugins.find(p => p.name === plugin);
+  const originalEnabled = pluginEntry?.tools.find(t => t.name === tool)?.enabled ?? !enabled;
+
+  // Optimistically update the local server state cache
   const updatedPlugins = cache.plugins.map(p => {
     if (p.name !== plugin) return p;
     return {
@@ -343,8 +346,17 @@ const handleBgSetToolEnabled: MessageHandler = (message, sendResponse) => {
     })
     .catch((err: unknown) => {
       removePendingPluginToolUpdate(plugin, tool);
-      // Revert to the original plugins on failure
-      updateServerStateCache({ plugins: originalPlugins });
+      // Surgically revert only the target tool in the current cache, preserving
+      // any concurrent plugins.changed updates that arrived during the request.
+      const currentCache = getServerStateCache();
+      const revertedPlugins = currentCache.plugins.map(p => {
+        if (p.name !== plugin) return p;
+        return {
+          ...p,
+          tools: p.tools.map(t => (t.name === tool ? { ...t, enabled: originalEnabled } : t)),
+        };
+      });
+      updateServerStateCache({ plugins: revertedPlugins });
       sendResponse({ error: err instanceof Error ? err.message : String(err) });
     });
 };
@@ -354,11 +366,18 @@ const handleBgSetAllToolsEnabled: MessageHandler = (message, sendResponse) => {
   const plugin = message.plugin as string;
   const enabled = message.enabled as boolean;
 
-  // Optimistically update the local server state cache
+  // Capture original enabled values for surgical rollback
   const cache = getServerStateCache();
-  const originalPlugins = cache.plugins;
   const pluginEntry = cache.plugins.find(p => p.name === plugin);
   const toolNames = pluginEntry ? pluginEntry.tools.map(t => t.name) : [];
+  const originalToolStates = new Map<string, boolean>();
+  if (pluginEntry) {
+    for (const t of pluginEntry.tools) {
+      originalToolStates.set(t.name, t.enabled);
+    }
+  }
+
+  // Optimistically update the local server state cache
   const updatedPlugins = cache.plugins.map(p => {
     if (p.name !== plugin) return p;
     return {
@@ -376,8 +395,20 @@ const handleBgSetAllToolsEnabled: MessageHandler = (message, sendResponse) => {
     })
     .catch((err: unknown) => {
       removePendingPluginAllToolsUpdate(plugin, toolNames);
-      // Revert to the original plugins on failure
-      updateServerStateCache({ plugins: originalPlugins });
+      // Surgically revert only the target plugin's tools in the current cache,
+      // preserving any concurrent plugins.changed updates that arrived during the request.
+      const currentCache = getServerStateCache();
+      const revertedPlugins = currentCache.plugins.map(p => {
+        if (p.name !== plugin) return p;
+        return {
+          ...p,
+          tools: p.tools.map(t => ({
+            ...t,
+            enabled: originalToolStates.get(t.name) ?? t.enabled,
+          })),
+        };
+      });
+      updateServerStateCache({ plugins: revertedPlugins });
       sendResponse({ error: err instanceof Error ? err.message : String(err) });
     });
 };
@@ -387,9 +418,11 @@ const handleBgSetBrowserToolEnabled: MessageHandler = (message, sendResponse) =>
   const tool = message.tool as string;
   const enabled = message.enabled as boolean;
 
-  // Optimistically update the local server state cache
+  // Capture the original enabled value for surgical rollback
   const cache = getServerStateCache();
-  const originalBrowserTools = cache.browserTools;
+  const originalEnabled = cache.browserTools.find(bt => bt.name === tool)?.enabled ?? !enabled;
+
+  // Optimistically update the local server state cache
   const updatedBrowserTools = cache.browserTools.map(bt => (bt.name === tool ? { ...bt, enabled } : bt));
   addPendingBrowserToolUpdate(tool, enabled);
   updateServerStateCache({ browserTools: updatedBrowserTools });
@@ -401,8 +434,13 @@ const handleBgSetBrowserToolEnabled: MessageHandler = (message, sendResponse) =>
     })
     .catch((err: unknown) => {
       removePendingBrowserToolUpdate(tool);
-      // Revert to the original browser tools on failure
-      updateServerStateCache({ browserTools: originalBrowserTools });
+      // Surgically revert only the target browser tool in the current cache,
+      // preserving any concurrent plugins.changed updates that arrived during the request.
+      const currentCache = getServerStateCache();
+      const revertedBrowserTools = currentCache.browserTools.map(bt =>
+        bt.name === tool ? { ...bt, enabled: originalEnabled } : bt,
+      );
+      updateServerStateCache({ browserTools: revertedBrowserTools });
       sendResponse({ error: err instanceof Error ? err.message : String(err) });
     });
 };
@@ -411,10 +449,15 @@ const handleBgSetBrowserToolEnabled: MessageHandler = (message, sendResponse) =>
 const handleBgSetAllBrowserToolsEnabled: MessageHandler = (message, sendResponse) => {
   const enabled = message.enabled as boolean;
 
-  // Optimistically update the local server state cache
+  // Capture original enabled values for surgical rollback
   const cache = getServerStateCache();
-  const originalBrowserTools = cache.browserTools;
   const toolNames = cache.browserTools.map(bt => bt.name);
+  const originalToolStates = new Map<string, boolean>();
+  for (const bt of cache.browserTools) {
+    originalToolStates.set(bt.name, bt.enabled);
+  }
+
+  // Optimistically update the local server state cache
   const updatedBrowserTools = cache.browserTools.map(bt => ({ ...bt, enabled }));
   addPendingAllBrowserToolsUpdate(toolNames, enabled);
   updateServerStateCache({ browserTools: updatedBrowserTools });
@@ -426,8 +469,14 @@ const handleBgSetAllBrowserToolsEnabled: MessageHandler = (message, sendResponse
     })
     .catch((err: unknown) => {
       removePendingAllBrowserToolsUpdate(toolNames);
-      // Revert to the original browser tools on failure
-      updateServerStateCache({ browserTools: originalBrowserTools });
+      // Surgically revert only the browser tools' enabled states in the current cache,
+      // preserving any concurrent plugins.changed updates that arrived during the request.
+      const currentCache = getServerStateCache();
+      const revertedBrowserTools = currentCache.browserTools.map(bt => ({
+        ...bt,
+        enabled: originalToolStates.get(bt.name) ?? bt.enabled,
+      }));
+      updateServerStateCache({ browserTools: revertedBrowserTools });
       sendResponse({ error: err instanceof Error ? err.message : String(err) });
     });
 };

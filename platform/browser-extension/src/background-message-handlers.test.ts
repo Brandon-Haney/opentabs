@@ -1143,6 +1143,130 @@ describe('handleBgSetToolEnabled', () => {
     // Pending update cleared before revert
     expect(mockRemovePendingPluginToolUpdate).toHaveBeenCalledWith('slack', 'send');
   });
+
+  test('rollback only reverts the target tool, not other tools or plugins', async () => {
+    const initialCache = {
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [] as string[],
+          tools: [
+            { name: 'send', displayName: 'Send', description: 'desc', enabled: true },
+            { name: 'read', displayName: 'Read', description: 'desc', enabled: false },
+          ],
+        },
+        {
+          name: 'github',
+          displayName: 'GitHub',
+          version: '2.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'ready' as const,
+          urlPatterns: [] as string[],
+          tools: [{ name: 'create_issue', displayName: 'Create Issue', description: 'desc', enabled: true }],
+        },
+      ],
+      failedPlugins: [],
+      browserTools: [],
+      serverVersion: '1.0.0',
+    };
+    mockGetServerStateCache.mockReturnValue(initialCache);
+
+    mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
+
+    const sendResponse = vi.fn();
+    handleBgSetToolEnabled({ plugin: 'slack', tool: 'send', enabled: false }, sendResponse);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+
+    const revertCall = mockUpdateServerStateCache.mock.calls[1]?.[0] as {
+      plugins: Array<{ name: string; tools: Array<{ name: string; enabled: boolean }> }>;
+    };
+    // Target tool reverted to original value
+    const slackPlugin = revertCall.plugins.find(p => p.name === 'slack');
+    expect(slackPlugin?.tools.find(t => t.name === 'send')?.enabled).toBe(true);
+    // Other tool in same plugin untouched
+    expect(slackPlugin?.tools.find(t => t.name === 'read')?.enabled).toBe(false);
+    // Other plugin untouched
+    const githubPlugin = revertCall.plugins.find(p => p.name === 'github');
+    expect(githubPlugin?.tools.find(t => t.name === 'create_issue')?.enabled).toBe(true);
+  });
+
+  test('rollback preserves concurrent plugins.changed updates', async () => {
+    // Initial state: slack send is enabled
+    const initialCache = {
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [] as string[],
+          tools: [{ name: 'send', displayName: 'Send', description: 'desc', enabled: true }],
+        },
+      ],
+      failedPlugins: [],
+      browserTools: [],
+      serverVersion: '1.0.0',
+    };
+
+    // Simulate concurrent plugins.changed adding a new plugin between optimistic update
+    // and rollback. The second getServerStateCache call returns updated state.
+    const concurrentUpdatedCache = {
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [] as string[],
+          tools: [{ name: 'send', displayName: 'Send', description: 'desc', enabled: false }],
+        },
+        {
+          name: 'github',
+          displayName: 'GitHub',
+          version: '2.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'ready' as const,
+          urlPatterns: [] as string[],
+          tools: [{ name: 'create_issue', displayName: 'Create Issue', description: 'desc', enabled: true }],
+        },
+      ],
+      failedPlugins: [],
+      browserTools: [],
+      serverVersion: '1.0.0',
+    };
+
+    // First call: initial state (read at handler start)
+    // Second call: concurrent-updated state (read during rollback)
+    mockGetServerStateCache.mockReturnValueOnce(initialCache).mockReturnValueOnce(concurrentUpdatedCache);
+
+    mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
+
+    const sendResponse = vi.fn();
+    handleBgSetToolEnabled({ plugin: 'slack', tool: 'send', enabled: false }, sendResponse);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+
+    const revertCall = mockUpdateServerStateCache.mock.calls[1]?.[0] as {
+      plugins: Array<{ name: string; tools: Array<{ name: string; enabled: boolean }> }>;
+    };
+    // Target tool reverted to original (true), not the concurrent value (false)
+    expect(revertCall.plugins.find(p => p.name === 'slack')?.tools[0]?.enabled).toBe(true);
+    // Concurrent new plugin (github) preserved in the rollback
+    expect(revertCall.plugins.find(p => p.name === 'github')).toBeDefined();
+    expect(revertCall.plugins).toHaveLength(2);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1218,6 +1342,80 @@ describe('handleBgSetAllToolsEnabled', () => {
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
     expect(mockRemovePendingPluginAllToolsUpdate).toHaveBeenCalledWith('slack', ['send', 'read']);
+  });
+
+  test('rollback preserves concurrent plugins.changed and only reverts target plugin tools', async () => {
+    const initialCache = {
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [] as string[],
+          tools: [
+            { name: 'send', displayName: 'Send', description: 'desc', enabled: true },
+            { name: 'read', displayName: 'Read', description: 'desc', enabled: false },
+          ],
+        },
+      ],
+      failedPlugins: [],
+      browserTools: [],
+      serverVersion: '1.0.0',
+    };
+
+    // Concurrent update adds a new plugin
+    const concurrentCache = {
+      plugins: [
+        {
+          name: 'slack',
+          displayName: 'Slack',
+          version: '1.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'closed' as const,
+          urlPatterns: [] as string[],
+          tools: [
+            { name: 'send', displayName: 'Send', description: 'desc', enabled: false },
+            { name: 'read', displayName: 'Read', description: 'desc', enabled: false },
+          ],
+        },
+        {
+          name: 'github',
+          displayName: 'GitHub',
+          version: '2.0.0',
+          trustTier: 'community' as const,
+          source: 'npm' as const,
+          tabState: 'ready' as const,
+          urlPatterns: [] as string[],
+          tools: [{ name: 'create_issue', displayName: 'Create Issue', description: 'desc', enabled: true }],
+        },
+      ],
+      failedPlugins: [],
+      browserTools: [],
+      serverVersion: '1.0.0',
+    };
+
+    mockGetServerStateCache.mockReturnValueOnce(initialCache).mockReturnValueOnce(concurrentCache);
+    mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
+
+    const sendResponse = vi.fn();
+    handleBgSetAllToolsEnabled({ plugin: 'slack', enabled: false }, sendResponse);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+
+    const revertCall = mockUpdateServerStateCache.mock.calls[1]?.[0] as {
+      plugins: Array<{ name: string; tools: Array<{ name: string; enabled: boolean }> }>;
+    };
+    // Target plugin tools reverted to original values
+    const slackPlugin = revertCall.plugins.find(p => p.name === 'slack');
+    expect(slackPlugin?.tools.find(t => t.name === 'send')?.enabled).toBe(true);
+    expect(slackPlugin?.tools.find(t => t.name === 'read')?.enabled).toBe(false);
+    // Concurrent new plugin preserved
+    expect(revertCall.plugins.find(p => p.name === 'github')).toBeDefined();
+    expect(revertCall.plugins).toHaveLength(2);
   });
 });
 
@@ -1321,6 +1519,49 @@ describe('handleBgSetBrowserToolEnabled', () => {
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
     expect(mockRemovePendingBrowserToolUpdate).toHaveBeenCalledWith('screenshot');
   });
+
+  test('rollback preserves concurrent updates and only reverts the target browser tool', async () => {
+    const initialCache = {
+      plugins: [],
+      failedPlugins: [],
+      browserTools: [
+        { name: 'screenshot', description: 'Take a screenshot', enabled: true },
+        { name: 'console', description: 'Get console logs', enabled: true },
+      ],
+      serverVersion: '1.0.0',
+    };
+
+    // Concurrent update changes the 'console' tool's description and adds a new tool
+    const concurrentCache = {
+      plugins: [],
+      failedPlugins: [],
+      browserTools: [
+        { name: 'screenshot', description: 'Take a screenshot', enabled: false },
+        { name: 'console', description: 'Get console logs (updated)', enabled: false },
+        { name: 'network', description: 'Network monitor', enabled: true },
+      ],
+      serverVersion: '1.0.0',
+    };
+
+    mockGetServerStateCache.mockReturnValueOnce(initialCache).mockReturnValueOnce(concurrentCache);
+    mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
+
+    const sendResponse = vi.fn();
+    handleBgSetBrowserToolEnabled({ tool: 'screenshot', enabled: false }, sendResponse);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+
+    const revertCall = mockUpdateServerStateCache.mock.calls[1]?.[0] as {
+      browserTools: Array<{ name: string; description: string; enabled: boolean }>;
+    };
+    // Target browser tool reverted to original enabled value
+    expect(revertCall.browserTools.find(bt => bt.name === 'screenshot')?.enabled).toBe(true);
+    // Other browser tools untouched (from concurrent state)
+    expect(revertCall.browserTools.find(bt => bt.name === 'console')?.enabled).toBe(false);
+    // Concurrent new tool preserved
+    expect(revertCall.browserTools.find(bt => bt.name === 'network')).toBeDefined();
+    expect(revertCall.browserTools).toHaveLength(3);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1372,6 +1613,48 @@ describe('handleBgSetAllBrowserToolsEnabled', () => {
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
     expect(mockRemovePendingAllBrowserToolsUpdate).toHaveBeenCalledWith(['screenshot', 'console']);
+  });
+
+  test('rollback preserves concurrent updates and only reverts browser tool enabled states', async () => {
+    const initialCache = {
+      plugins: [],
+      failedPlugins: [],
+      browserTools: [
+        { name: 'screenshot', description: 'Take a screenshot', enabled: true },
+        { name: 'console', description: 'Get console logs', enabled: false },
+      ],
+      serverVersion: '1.0.0',
+    };
+
+    // Concurrent update adds a new browser tool
+    const concurrentCache = {
+      plugins: [],
+      failedPlugins: [],
+      browserTools: [
+        { name: 'screenshot', description: 'Take a screenshot', enabled: false },
+        { name: 'console', description: 'Get console logs', enabled: false },
+        { name: 'network', description: 'Network monitor', enabled: true },
+      ],
+      serverVersion: '1.0.0',
+    };
+
+    mockGetServerStateCache.mockReturnValueOnce(initialCache).mockReturnValueOnce(concurrentCache);
+    mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
+
+    const sendResponse = vi.fn();
+    handleBgSetAllBrowserToolsEnabled({ enabled: false }, sendResponse);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+
+    const revertCall = mockUpdateServerStateCache.mock.calls[1]?.[0] as {
+      browserTools: Array<{ name: string; enabled: boolean }>;
+    };
+    // Original tools reverted to their pre-toggle states
+    expect(revertCall.browserTools.find(bt => bt.name === 'screenshot')?.enabled).toBe(true);
+    expect(revertCall.browserTools.find(bt => bt.name === 'console')?.enabled).toBe(false);
+    // Concurrent new tool preserved (no original state, keeps current value)
+    expect(revertCall.browserTools.find(bt => bt.name === 'network')?.enabled).toBe(true);
+    expect(revertCall.browserTools).toHaveLength(3);
   });
 });
 

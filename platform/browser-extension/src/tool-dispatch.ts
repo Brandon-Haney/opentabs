@@ -130,98 +130,6 @@ const removeProgressListener = (tabId: number, dispatchId: string): void => {
 };
 
 /**
- * Inject an ISOLATED world content script that bridges fetch:proxy requests
- * between the MAIN world and the background service worker.
- *
- * Two listeners are installed:
- * 1. A CustomEvent listener for 'opentabs:fetch-proxy:request:{dispatchId}' —
- *    relays the request to the background via chrome.runtime.sendMessage.
- * 2. A chrome.runtime.onMessage listener for 'fetch:proxy:response' messages —
- *    dispatches a CustomEvent 'opentabs:fetch-proxy:response:{requestId}' back
- *    to the MAIN world so the tool handler's Promise resolves.
- *
- * CustomEvents fired in MAIN world are visible in ISOLATED world because they
- * share the same DOM.
- */
-const injectFetchProxyBridge = async (tabId: number, dispatchId: string): Promise<void> => {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'ISOLATED',
-      func: (dId: string) => {
-        const pendingRequestIds = new Set<string>();
-
-        const requestEventName = `opentabs:fetch-proxy:request:${dId}`;
-        const requestHandler = (e: Event) => {
-          const detail = (e as CustomEvent).detail as {
-            requestId: string;
-            url: string;
-            method: string;
-            headers: Record<string, string>;
-            body: string | undefined;
-            pluginName: string;
-          } | null;
-          if (!detail) return;
-          pendingRequestIds.add(detail.requestId);
-          void chrome.runtime.sendMessage({
-            type: 'fetch:proxy',
-            requestId: detail.requestId,
-            url: detail.url,
-            method: detail.method,
-            headers: detail.headers,
-            body: detail.body,
-            pluginName: detail.pluginName,
-          });
-        };
-        document.addEventListener(requestEventName, requestHandler);
-
-        const responseHandler = (msg: { type?: string; requestId?: string }) => {
-          if (msg.type !== 'fetch:proxy:response') return;
-          if (!msg.requestId || !pendingRequestIds.has(msg.requestId)) return;
-          pendingRequestIds.delete(msg.requestId);
-          document.dispatchEvent(new CustomEvent(`opentabs:fetch-proxy:response:${msg.requestId}`, { detail: msg }));
-        };
-        chrome.runtime.onMessage.addListener(responseHandler);
-
-        // Store a cleanup function so we can remove both listeners later
-        const cleanupKey = `__opentabs_fetch_proxy_cleanup_${dId}`;
-        const doc = document as unknown as Record<string, unknown>;
-        doc[cleanupKey] = () => {
-          document.removeEventListener(requestEventName, requestHandler);
-          chrome.runtime.onMessage.removeListener(responseHandler);
-          pendingRequestIds.clear();
-          doc[cleanupKey] = undefined;
-        };
-      },
-      args: [dispatchId],
-    });
-  } catch {
-    // Tab may not be injectable — fetch proxy bridge is best-effort
-  }
-};
-
-/**
- * Remove the ISOLATED world fetch proxy bridge installed by injectFetchProxyBridge.
- * Fire-and-forget — errors are silently ignored since the dispatch is already complete.
- */
-const removeFetchProxyBridge = (tabId: number, dispatchId: string): void => {
-  chrome.scripting
-    .executeScript({
-      target: { tabId },
-      world: 'ISOLATED',
-      func: (dId: string) => {
-        const cleanupKey = `__opentabs_fetch_proxy_cleanup_${dId}`;
-        const cleanup = (document as unknown as Record<string, unknown>)[cleanupKey] as (() => void) | undefined;
-        if (cleanup) cleanup();
-      },
-      args: [dispatchId],
-    })
-    .catch(() => {
-      // Best-effort cleanup
-    });
-};
-
-/**
  * Execute a tool on a specific tab. Returns the structured result from the
  * adapter script, or throws if the tab is inaccessible (e.g., closed).
  *
@@ -476,12 +384,10 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
   const executeOnTab = async (tid: number): Promise<DispatchResult> => {
     await injectToolInvocationLog(tid, pluginName, toolName, link);
     await injectProgressListener(tid, dispatchId);
-    await injectFetchProxyBridge(tid, dispatchId);
     try {
       return await executeToolOnTab(tid, pluginName, toolName, input, dispatchId);
     } finally {
       removeProgressListener(tid, dispatchId);
-      removeFetchProxyBridge(tid, dispatchId);
     }
   };
 

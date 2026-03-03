@@ -114,8 +114,12 @@ export const handleExtensionGetLogs = async (params: Record<string, unknown>, id
       filterOptions.since = params.since;
     }
 
+    // Build per-source options without the limit — each source must return all matching
+    // entries so the merged result is accurate. The limit is applied once after merging.
+    const { limit: _, ...sourceOptions } = filterOptions;
+
     // Get background logs directly from the local collector
-    const bgEntries = bgLogCollector.getEntries(filterOptions);
+    const bgEntries = bgLogCollector.getEntries(sourceOptions);
     const bgStats = bgLogCollector.getStats();
 
     // Get offscreen logs via internal message
@@ -129,7 +133,7 @@ export const handleExtensionGetLogs = async (params: Record<string, unknown>, id
     try {
       const raw: unknown = await chrome.runtime.sendMessage({
         type: 'offscreen:getLogs',
-        options: Object.keys(filterOptions).length > 0 ? filterOptions : undefined,
+        options: Object.keys(sourceOptions).length > 0 ? sourceOptions : undefined,
       } satisfies OffscreenGetLogsMessage);
       const response = raw as { entries?: LogEntry[]; stats?: LogStats } | undefined;
       if (response && Array.isArray(response.entries)) {

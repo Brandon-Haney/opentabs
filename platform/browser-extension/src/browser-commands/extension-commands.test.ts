@@ -4,8 +4,17 @@ import { vi, describe, expect, test, beforeEach, afterEach } from 'vitest';
 // Module mocks — set up before importing handler modules
 // ---------------------------------------------------------------------------
 
-const { mockSendToServer } = vi.hoisted(() => ({
+const { mockSendToServer, mockBgGetEntries, mockBgGetStats } = vi.hoisted(() => ({
   mockSendToServer: vi.fn<(data: unknown) => void>(),
+  mockBgGetEntries: vi.fn<(options?: unknown) => unknown[]>(() => []),
+  mockBgGetStats: vi.fn<
+    () => { totalCaptured: number; bufferSize: number; oldestTimestamp: number | null; newestTimestamp: number | null }
+  >(() => ({
+    totalCaptured: 0,
+    bufferSize: 0,
+    oldestTimestamp: null,
+    newestTimestamp: null,
+  })),
 }));
 
 vi.mock('../messaging.js', () => ({
@@ -35,8 +44,8 @@ vi.mock('../constants.js', () => ({
 
 vi.mock('../background-log-state.js', () => ({
   bgLogCollector: {
-    getEntries: vi.fn(() => []),
-    getStats: vi.fn(() => ({ totalCaptured: 0, bufferSize: 0, oldestTimestamp: null, newestTimestamp: null })),
+    getEntries: mockBgGetEntries,
+    getStats: mockBgGetStats,
   },
 }));
 
@@ -81,7 +90,7 @@ Object.assign(globalThis, {
 const { ADAPTER_HASH_PROP } = await import('../constants.js');
 const { getPluginMeta } = await import('../plugin-storage.js');
 const { findAllMatchingTabs } = await import('../tab-matching.js');
-const { handleExtensionCheckAdapter, handleBrowserExecuteScript, handleExtensionGetSidePanel } =
+const { handleExtensionCheckAdapter, handleBrowserExecuteScript, handleExtensionGetLogs, handleExtensionGetSidePanel } =
   await import('./extension-commands.js');
 
 /** Extract the first argument from the first call to mockSendToServer */
@@ -92,6 +101,106 @@ const firstSentMessage = (): Record<string, unknown> => {
   if (!firstCall) throw new Error('Expected at least one call');
   return firstCall[0] as Record<string, unknown>;
 };
+
+// ---------------------------------------------------------------------------
+// handleExtensionGetLogs
+// ---------------------------------------------------------------------------
+
+describe('handleExtensionGetLogs', () => {
+  beforeEach(() => {
+    mockSendToServer.mockReset();
+    mockSendMessage.mockReset();
+    mockBgGetEntries.mockReset();
+    mockBgGetStats.mockReset();
+  });
+
+  test('applies limit only after merging — not to individual sources', async () => {
+    // Background returns 2 entries; offscreen returns 2 entries.
+    // With limit: 3, the merged result should contain the 3 most recent across both sources.
+    const bgEntry1 = { timestamp: 100, level: 'info' as const, source: 'background' as const, message: 'bg-newest' };
+    const bgEntry2 = { timestamp: 50, level: 'info' as const, source: 'background' as const, message: 'bg-older' };
+    const offEntry1 = {
+      timestamp: 80,
+      level: 'info' as const,
+      source: 'offscreen' as const,
+      message: 'off-newest',
+    };
+    const offEntry2 = { timestamp: 30, level: 'info' as const, source: 'offscreen' as const, message: 'off-older' };
+
+    mockBgGetEntries.mockReturnValueOnce([bgEntry1, bgEntry2]);
+    mockBgGetStats.mockReturnValueOnce({
+      totalCaptured: 2,
+      bufferSize: 2,
+      oldestTimestamp: 50,
+      newestTimestamp: 100,
+    });
+
+    mockSendMessage.mockResolvedValueOnce({
+      entries: [offEntry1, offEntry2],
+      stats: { totalCaptured: 2, bufferSize: 2, oldestTimestamp: 30, newestTimestamp: 80 },
+    });
+
+    await handleExtensionGetLogs({ limit: 3 }, 'req-limit');
+
+    const msg = firstSentMessage();
+    const entries = (msg.result as Record<string, unknown>).entries as Array<{ timestamp: number }>;
+    expect(entries).toHaveLength(3);
+    // Newest-first: 100, 80, 50
+    expect(entries.map(e => e.timestamp)).toEqual([100, 80, 50]);
+  });
+
+  test('does not pass limit to bgLogCollector.getEntries', async () => {
+    mockBgGetEntries.mockReturnValueOnce([]);
+    mockBgGetStats.mockReturnValueOnce({
+      totalCaptured: 0,
+      bufferSize: 0,
+      oldestTimestamp: null,
+      newestTimestamp: null,
+    });
+    mockSendMessage.mockResolvedValueOnce(undefined);
+
+    await handleExtensionGetLogs({ limit: 5, level: 'error' }, 'req-no-limit-to-source');
+
+    const callArg = mockBgGetEntries.mock.calls[0]?.[0];
+    expect(callArg).not.toHaveProperty('limit');
+    // Other filter options are still passed through
+    expect(callArg).toMatchObject({ level: 'error' });
+  });
+
+  test('does not pass limit to offscreen sendMessage options', async () => {
+    mockBgGetEntries.mockReturnValueOnce([]);
+    mockBgGetStats.mockReturnValueOnce({
+      totalCaptured: 0,
+      bufferSize: 0,
+      oldestTimestamp: null,
+      newestTimestamp: null,
+    });
+    mockSendMessage.mockResolvedValueOnce(undefined);
+
+    await handleExtensionGetLogs({ limit: 10, source: 'offscreen' }, 'req-no-limit-offscreen');
+
+    const sendMsgArg = mockSendMessage.mock.calls[0]?.[0] as Record<string, unknown>;
+    const options = sendMsgArg.options as Record<string, unknown> | undefined;
+    expect(options).not.toHaveProperty('limit');
+  });
+
+  test('uses DEFAULT_LOG_LIMIT when no limit param is provided', async () => {
+    mockBgGetEntries.mockReturnValueOnce([]);
+    mockBgGetStats.mockReturnValueOnce({
+      totalCaptured: 0,
+      bufferSize: 0,
+      oldestTimestamp: null,
+      newestTimestamp: null,
+    });
+    mockSendMessage.mockResolvedValueOnce(undefined);
+
+    await handleExtensionGetLogs({}, 'req-default-limit');
+
+    const msg = firstSentMessage();
+    const entries = (msg.result as Record<string, unknown>).entries;
+    expect(Array.isArray(entries)).toBe(true);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // handleExtensionGetSidePanel

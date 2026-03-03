@@ -316,17 +316,23 @@ void pipeWithPrefix(mcpSpawn.stderr, '[mcp]', GREEN, process.stderr);
 // Print startup banner
 const port = process.env['PORT'] ?? '9515';
 const extensionPath = join(homedir(), '.opentabs', 'extension') + '/';
-const bannerLines = [
-  '┌─────────────────────────────────────────────┐',
-  '│  OpenTabs Dev Server                        │',
-  '├─────────────────────────────────────────────┤',
-  `│  MCP Server:  http://localhost:${port}/mcp`.padEnd(46) + '│',
-  `│  Extension:   ${extensionPath}`.padEnd(46) + '│',
-  '│  Mode:        dev (hot reload)              │',
-  '├─────────────────────────────────────────────┤',
-  `│  ${GREEN}${BOLD}Ready${RESET} — watching for changes...            │`,
-  '└─────────────────────────────────────────────┘',
+const contentLines = [
+  { text: 'OpenTabs Dev Server', separatorAfter: true },
+  { text: `MCP Server:  http://localhost:${port}/mcp` },
+  { text: `Extension:   ${extensionPath}` },
+  { text: 'Mode:        dev (hot reload)', separatorAfter: true },
+  { text: 'Ready — watching for changes...', display: `${GREEN}${BOLD}Ready${RESET} — watching for changes...` },
 ];
+// 2 chars padding per side: "│  content  │"
+const innerWidth = Math.max(...contentLines.map(l => l.text.length)) + 4;
+const hr = '─'.repeat(innerWidth);
+const bannerLines: string[] = [`┌${hr}┐`];
+for (const line of contentLines) {
+  const pad = ' '.repeat(innerWidth - 2 - line.text.length);
+  bannerLines.push(`│  ${line.display ?? line.text}${pad}│`);
+  if (line.separatorAfter) bannerLines.push(`├${hr}┤`);
+}
+bannerLines.push(`└${hr}┘`);
 console.log(`\n${bannerLines.join('\n')}\n`);
 
 // 5. Rebuild the extension on each tsc recompilation.

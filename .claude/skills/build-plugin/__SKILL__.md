@@ -547,9 +547,10 @@ While building and testing, keep a running mental note of anything that slowed y
 - A browser tool limitation that required a workaround
 
 **Missing SDK capabilities** — things you had to hand-roll that the SDK should provide:
-- Ask: *"If the SDK had a `helper for X`, would it have saved meaningful code?"*
-- Examples: had to write custom cookie parsing that could be `getCookie(name)`; had to write a retry loop that `sdk.retry()` would cover; had to manually resolve a workspace/space ID that a `getWorkspaceId()` helper could handle; had to build response normalization logic that a common mapper could handle
-- The bar is: **would at least 2 different plugins benefit from this?** If yes, it belongs in the SDK.
+- Ask: *"If the SDK had a helper for X, would virtually every plugin developer hit this same need?"*
+- Examples of things that clear the bar: retry logic, cookie parsing, request timeout wiring, token persistence boilerplate — these are universal to all plugins regardless of what app they target
+- Examples of things that do NOT clear the bar: resolving a Notion workspace ID, normalizing a Discord message shape, handling Slack's rate limit headers — these are app-specific, not platform-level concerns
+- **The test is universality, not frequency.** Something that every plugin needs once beats something a few plugins need repeatedly. If the need is tied to a specific app's quirks, it belongs in that plugin — not in the SDK.
 
 **Missing documentation or guidance** — things that required trial and error to discover:
 - Auth patterns not covered in the scaffold comments or skill

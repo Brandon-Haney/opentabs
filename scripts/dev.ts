@@ -19,9 +19,9 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { DEV_RELOAD_PORT } from './dev-reload-constants';
 import { type DevReloadServer, startDevReloadServer } from './dev-reload-server';
@@ -211,6 +211,107 @@ const buildExtension = async (): Promise<boolean> => {
   return true;
 };
 
+type RebuildTarget = 'side-panel' | 'extension';
+
+const EXT_DIST = join(ROOT, 'platform', 'browser-extension', 'dist');
+
+/**
+ * Scan the browser-extension dist/ directory for .js files modified after
+ * `since` and determine which build targets need rebuilding.
+ *
+ * Categorization:
+ * - Files under `dist/side-panel/` → 'side-panel'
+ * - `dist/background.js` and files under `dist/offscreen/` → 'extension'
+ * - All other .js files (shared modules like bridge.js, messaging.js) → both targets
+ *
+ * Returns a Set of targets that need rebuilding, or an empty set if
+ * no extension-related files changed.
+ */
+const determineChangedTargets = async (since: number): Promise<Set<RebuildTarget>> => {
+  const targets = new Set<RebuildTarget>();
+  await scanDir(EXT_DIST, since, targets);
+  return targets;
+};
+
+/**
+ * Recursively scan a directory for .js files newer than `since`,
+ * categorizing each into 'side-panel' or 'extension' targets.
+ */
+const scanDir = async (dir: string, since: number, targets: Set<RebuildTarget>): Promise<void> => {
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await scanDir(fullPath, since, targets);
+    } else if (entry.name.endsWith('.js') && !entry.name.endsWith('.d.ts')) {
+      const fileStat = await stat(fullPath);
+      if (fileStat.mtimeMs <= since) continue;
+      const rel = relative(EXT_DIST, fullPath);
+      if (rel.startsWith('side-panel/')) {
+        targets.add('side-panel');
+      } else if (rel === 'background.js' || rel.startsWith('offscreen/')) {
+        targets.add('extension');
+      } else {
+        // Shared code (bridge, messaging, message-router, etc.) — triggers both
+        targets.add('side-panel');
+        targets.add('extension');
+      }
+    }
+  }
+};
+
+/**
+ * Build only the side panel (React + Tailwind) and install to ~/.opentabs/extension/.
+ */
+const buildSidePanel = async (): Promise<boolean> => {
+  const extDir = join(ROOT, 'platform', 'browser-extension');
+  const prefix = '[ext]';
+  const color = YELLOW;
+  const coloredPrefix = `${color}${BOLD}${prefix}${RESET}`;
+
+  console.log(`${coloredPrefix} Rebuilding side panel...`);
+
+  const sidePanelCode = await runWithPrefix(['npm', 'run', 'build:side-panel'], extDir, prefix, color);
+  if (sidePanelCode !== 0) {
+    console.error(`${coloredPrefix} build:side-panel failed (exit ${sidePanelCode})`);
+    return false;
+  }
+
+  const installCode = await runWithPrefix(['npx', 'tsx', 'scripts/install-extension.ts'], ROOT, prefix, color);
+  if (installCode !== 0) {
+    console.error(`${coloredPrefix} install-extension failed (exit ${installCode})`);
+    return false;
+  }
+
+  return true;
+};
+
+/**
+ * Build only the background/offscreen bundles and install to ~/.opentabs/extension/.
+ */
+const buildBackground = async (): Promise<boolean> => {
+  const extDir = join(ROOT, 'platform', 'browser-extension');
+  const prefix = '[ext]';
+  const color = YELLOW;
+  const coloredPrefix = `${color}${BOLD}${prefix}${RESET}`;
+
+  console.log(`${coloredPrefix} Rebuilding background/offscreen...`);
+
+  const bundleCode = await runWithPrefix(['npm', 'run', 'build:bundle'], extDir, prefix, color);
+  if (bundleCode !== 0) {
+    console.error(`${coloredPrefix} build:bundle failed (exit ${bundleCode})`);
+    return false;
+  }
+
+  const installCode = await runWithPrefix(['npx', 'tsx', 'scripts/install-extension.ts'], ROOT, prefix, color);
+  if (installCode !== 0) {
+    console.error(`${coloredPrefix} install-extension failed (exit ${installCode})`);
+    return false;
+  }
+
+  return true;
+};
+
 /**
  * Send a reload signal to the Chrome extension via the MCP server's
  * /extension/reload endpoint. Handles cases where the server is not
@@ -358,11 +459,72 @@ console.log(`\n${bannerLines.join('\n')}\n`);
 //    Instead, we trigger rebuilds from tsc's own output: each time tsc prints
 //    "Watching for file changes", it has finished writing all dist/ files for
 //    the current compilation. This avoids the feedback loop entirely.
+//
+//    Change detection: track the timestamp of the last tsc compilation. After
+//    each recompilation, scan browser-extension/dist/ for .js files newer than
+//    the previous timestamp to determine which targets (side-panel, background)
+//    need rebuilding. Only the affected targets are rebuilt and reloaded.
 let extensionRebuildTimer: ReturnType<typeof setTimeout> | null = null;
 let extensionBuildInProgress = false;
 let rebuildRequestedDuringBuild = false;
+let lastCompilationTimestamp = Date.now();
 
 const DEBOUNCE_MS = 300;
+
+/**
+ * Run the targeted extension rebuild based on which dist/ files changed.
+ * Falls back to a full rebuild if the relay server is unavailable.
+ */
+const runTargetedRebuild = async (): Promise<void> => {
+  const coloredPrefix = `${YELLOW}${BOLD}[ext]${RESET}`;
+  const compilationStart = lastCompilationTimestamp;
+  lastCompilationTimestamp = Date.now();
+
+  const targets = await determineChangedTargets(compilationStart);
+
+  if (targets.size === 0) {
+    // No extension files changed — skip rebuild entirely
+    return;
+  }
+
+  const hasSidePanel = targets.has('side-panel');
+  const hasBackground = targets.has('extension');
+
+  if (hasSidePanel && hasBackground) {
+    // Both targets changed — full rebuild
+    const ok = await buildExtension();
+    if (ok) {
+      if (devReloadServer) {
+        devReloadServer.broadcast('extension');
+        console.log(`${coloredPrefix} Extension rebuilt (full — background + UI changed).`);
+      } else {
+        await reloadExtension();
+      }
+    }
+  } else if (hasBackground) {
+    // Background/offscreen only
+    const ok = await buildBackground();
+    if (ok) {
+      if (devReloadServer) {
+        devReloadServer.broadcast('extension');
+        console.log(`${coloredPrefix} Extension rebuilt (background/offscreen).`);
+      } else {
+        await reloadExtension();
+      }
+    }
+  } else {
+    // Side panel only
+    const ok = await buildSidePanel();
+    if (ok) {
+      if (devReloadServer) {
+        devReloadServer.broadcast('side-panel');
+        console.log(`${coloredPrefix} Side panel rebuilt (UI-only).`);
+      } else {
+        await reloadExtension();
+      }
+    }
+  }
+};
 
 const scheduleExtensionRebuild = (): void => {
   if (extensionBuildInProgress) {
@@ -378,17 +540,13 @@ const scheduleExtensionRebuild = (): void => {
     extensionRebuildTimer = null;
     extensionBuildInProgress = true;
     rebuildRequestedDuringBuild = false;
-    void buildExtension()
-      .then(async ok => {
-        if (ok) await reloadExtension();
-      })
-      .finally(() => {
-        extensionBuildInProgress = false;
-        if (rebuildRequestedDuringBuild) {
-          rebuildRequestedDuringBuild = false;
-          scheduleExtensionRebuild();
-        }
-      });
+    void runTargetedRebuild().finally(() => {
+      extensionBuildInProgress = false;
+      if (rebuildRequestedDuringBuild) {
+        rebuildRequestedDuringBuild = false;
+        scheduleExtensionRebuild();
+      }
+    });
   }, DEBOUNCE_MS);
 };
 

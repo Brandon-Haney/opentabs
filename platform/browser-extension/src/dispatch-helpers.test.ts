@@ -240,7 +240,7 @@ describe('dispatchWithTabFallback', () => {
       id: 'req-23',
       pluginName: 'test-plugin',
       plugin,
-      operationName: 'resource read',
+      operationName: 'tool dispatch',
       executeOnTab,
     });
 
@@ -268,7 +268,7 @@ describe('dispatchWithTabFallback', () => {
       id: 'req-24',
       pluginName: 'test-plugin',
       plugin,
-      operationName: 'prompt get',
+      operationName: 'tool dispatch',
       executeOnTab,
     });
 
@@ -349,7 +349,7 @@ describe('dispatchWithTabFallback', () => {
       id: 'req-27',
       pluginName: 'test-plugin',
       plugin,
-      operationName: 'resource read',
+      operationName: 'tool dispatch',
       executeOnTab,
     });
 

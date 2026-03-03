@@ -10,15 +10,7 @@
 import { appendAuditEntryToDisk } from './audit-disk.js';
 import type { BrowserToolDefinition } from './browser-tools/definition.js';
 import type { PermissionsConfig } from './config.js';
-import type {
-  TabState,
-  TrustTier,
-  ManifestTool,
-  ManifestResource,
-  ManifestPrompt,
-  PluginTabInfo,
-  WsHandle,
-} from '@opentabs-dev/shared';
+import type { TabState, TrustTier, ManifestTool, PluginTabInfo, WsHandle } from '@opentabs-dev/shared';
 import type { FSWatcher } from 'node:fs';
 
 /**
@@ -88,8 +80,6 @@ export interface RegisteredPlugin {
   trustTier: TrustTier;
   iife: string;
   tools: ManifestTool[];
-  resources: ManifestResource[];
-  prompts: ManifestPrompt[];
   /** How this plugin was discovered: 'npm' (global auto-discovery) or 'local' (config localPlugins) */
   source: PluginSource;
   /** SHA-256 hex hash of the adapter IIFE content (from manifest, set by `opentabs-plugin build`) */
@@ -168,37 +158,18 @@ export interface OutdatedPlugin {
   updateCommand: string;
 }
 
-/** Resolved resource lookup entry for O(1) dispatch in resources/read */
-export interface ResourceLookupEntry {
-  pluginName: string;
-  /** Original (unprefixed) resource URI as defined in the plugin manifest */
-  originalUri: string;
-}
-
-/** Resolved prompt lookup entry for O(1) dispatch in prompts/get */
-export interface PromptLookupEntry {
-  pluginName: string;
-  /** Original (unprefixed) prompt name as defined in the plugin manifest */
-  originalName: string;
-}
-
 /**
  * Immutable registry of discovered plugins.
  *
  * Holds all successfully loaded plugins, a pre-built O(1) tool lookup map
- * with compiled Ajv validators, O(1) resource and prompt lookup maps,
- * and a list of discovery failures. Built once per reload cycle and
- * swapped atomically on ServerState.
+ * with compiled Ajv validators, and a list of discovery failures. Built once
+ * per reload cycle and swapped atomically on ServerState.
  */
 export interface PluginRegistry {
   /** All successfully loaded plugins, keyed by internal plugin name */
   readonly plugins: ReadonlyMap<string, RegisteredPlugin>;
   /** O(1) tool lookup: prefixed tool name → plugin/tool names + validator */
   readonly toolLookup: ReadonlyMap<string, ToolLookupEntry>;
-  /** O(1) resource lookup: prefixed URI → plugin name + original URI */
-  readonly resourceLookup: ReadonlyMap<string, ResourceLookupEntry>;
-  /** O(1) prompt lookup: prefixed name → plugin name + original name */
-  readonly promptLookup: ReadonlyMap<string, PromptLookupEntry>;
   /** Plugin paths that failed discovery */
   readonly failures: readonly FailedPlugin[];
 }
@@ -358,8 +329,6 @@ export const STATE_SCHEMA_VERSION = 4;
 export const EMPTY_REGISTRY: PluginRegistry = Object.freeze({
   plugins: freezeRegistryMap(new Map<string, RegisteredPlugin>()),
   toolLookup: freezeRegistryMap(new Map<string, ToolLookupEntry>()),
-  resourceLookup: freezeRegistryMap(new Map<string, ResourceLookupEntry>()),
-  promptLookup: freezeRegistryMap(new Map<string, PromptLookupEntry>()),
   failures: Object.freeze([] as FailedPlugin[]),
 });
 
@@ -421,12 +390,6 @@ export const getNextRequestId = (): string => crypto.randomUUID();
 
 /** Get the prefixed tool name: plugin_tool */
 export const prefixedToolName = (plugin: string, tool: string): string => `${plugin}_${tool}`;
-
-/** Get the prefixed resource URI: opentabs+<plugin>://<original-uri-path> */
-export const prefixedResourceUri = (plugin: string, uri: string): string => `opentabs+${plugin}://${uri}`;
-
-/** Get the prefixed prompt name: plugin_prompt (same convention as tools) */
-export const prefixedPromptName = (plugin: string, promptName: string): string => `${plugin}_${promptName}`;
 
 /** Check if a tool is enabled in config. Tools are enabled by default — only
  *  explicitly disabled tools (set to false) are hidden from MCP clients. */

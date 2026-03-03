@@ -25,8 +25,7 @@ Each plugin follows the same pattern:
 1. **Create the plugin** (`plugins/<name>/`): Extend `OpenTabsPlugin` from `@opentabs-dev/plugin-sdk`
 2. **Configure `package.json`**: Add an `opentabs` field with `displayName`, `description`, and `urlPatterns`; set `main` to `dist/adapter.iife.js`
 3. **Define tools** (`plugins/<name>/src/tools/`): One file per tool using `defineTool()` with Zod schemas. The `handle(params, context?)` function receives an optional `ToolHandlerContext` as its second argument for reporting progress during long-running operations
-4. **Optionally define resources and prompts**: Use `defineResource()` for data the plugin can expose (read via `resources/read`) and `definePrompt()` for prompt templates (rendered via `prompts/get`). Assign them to the `resources` and `prompts` properties on the plugin class
-5. **Build**: `cd plugins/<name> && npm install && npm run build` (runs `tsc` then `opentabs-plugin build`, which produces `dist/adapter.iife.js` and `dist/tools.json`, auto-registers the plugin in `localPlugins`, and calls `POST /reload` to notify the MCP server)
+4. **Build**: `cd plugins/<name> && npm install && npm run build` (runs `tsc` then `opentabs-plugin build`, which produces `dist/adapter.iife.js` and `dist/tools.json`, auto-registers the plugin in `localPlugins`, and calls `POST /reload` to notify the MCP server)
 
 ## Building Plugins
 

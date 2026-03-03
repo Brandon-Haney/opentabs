@@ -177,12 +177,8 @@ describe('EMPTY_REGISTRY', () => {
   test('registry maps are frozen instances of Map', () => {
     expect(EMPTY_REGISTRY.plugins).toBeInstanceOf(Map);
     expect(EMPTY_REGISTRY.toolLookup).toBeInstanceOf(Map);
-    expect(EMPTY_REGISTRY.resourceLookup).toBeInstanceOf(Map);
-    expect(EMPTY_REGISTRY.promptLookup).toBeInstanceOf(Map);
     expect(Object.isFrozen(EMPTY_REGISTRY.plugins)).toBe(true);
     expect(Object.isFrozen(EMPTY_REGISTRY.toolLookup)).toBe(true);
-    expect(Object.isFrozen(EMPTY_REGISTRY.resourceLookup)).toBe(true);
-    expect(Object.isFrozen(EMPTY_REGISTRY.promptLookup)).toBe(true);
   });
 
   test('failures array is frozen', () => {

@@ -95,8 +95,6 @@ const createPlugin = (name: string, toolNames: string[]): RegisteredPlugin => ({
     input_schema: { type: 'object' as const },
     output_schema: { type: 'object' as const },
   })),
-  resources: [],
-  prompts: [],
 });
 
 /** Mock RequestHandlerExtra for testing */
@@ -122,8 +120,6 @@ const createMockServer = () => {
     },
     connect: () => Promise.resolve(),
     sendToolListChanged: () => Promise.resolve(),
-    sendResourceListChanged: () => Promise.resolve(),
-    sendPromptListChanged: () => Promise.resolve(),
     sendLoggingMessage: () => Promise.resolve(),
   };
   return {

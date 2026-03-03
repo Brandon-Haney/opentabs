@@ -52,8 +52,6 @@ const {
   mockHandleExtensionGetSidePanel,
   mockHandleExtensionCheckAdapter,
   mockHandleExtensionForceReconnect,
-  mockHandleResourceRead,
-  mockHandlePromptGet,
   mockNotifyConfirmationRequest,
   mockUpdateServerStateCache,
   mockGetServerStateCache,
@@ -162,8 +160,6 @@ const {
       asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>,
     ),
     mockHandleExtensionForceReconnect: vi.fn(asyncNoop as (id: string | number) => Promise<void>),
-    mockHandleResourceRead: vi.fn(asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>),
-    mockHandlePromptGet: vi.fn(asyncNoop as (params: Record<string, unknown>, id: string | number) => Promise<void>),
     mockNotifyConfirmationRequest: vi.fn<(params: Record<string, unknown>) => void>(),
     mockUpdateServerStateCache: vi.fn<(partial: Record<string, unknown>) => void>(),
     mockGetServerStateCache: vi.fn(
@@ -208,11 +204,6 @@ vi.mock('./tool-dispatch.js', () => ({
   getPluginLink: vi.fn(),
   handleToolDispatch: mockHandleToolDispatch,
   notifyDispatchProgress: vi.fn(),
-}));
-
-vi.mock('./resource-prompt-dispatch.js', () => ({
-  handleResourceRead: mockHandleResourceRead,
-  handlePromptGet: mockHandlePromptGet,
 }));
 
 vi.mock('./plugin-storage.js', () => ({
@@ -695,8 +686,6 @@ const resetRoutingMocks = (): void => {
   mockHandleExtensionGetSidePanel.mockReset();
   mockHandleExtensionCheckAdapter.mockReset();
   mockHandleExtensionForceReconnect.mockReset();
-  mockHandleResourceRead.mockReset();
-  mockHandlePromptGet.mockReset();
   mockUpdateServerStateCache.mockReset();
   mockGetServerStateCache.mockReset();
   mockGetServerStateCache.mockReturnValue({
@@ -743,8 +732,6 @@ describe('handleServerMessage', () => {
     mockHandleExtensionGetSidePanel.mockResolvedValue(undefined);
     mockHandleExtensionCheckAdapter.mockResolvedValue(undefined);
     mockHandleExtensionForceReconnect.mockResolvedValue(undefined);
-    mockHandleResourceRead.mockResolvedValue(undefined);
-    mockHandlePromptGet.mockResolvedValue(undefined);
     mockLoadLastKnownStateFromSession.mockResolvedValue(undefined);
   });
 
@@ -1050,53 +1037,6 @@ describe('handleServerMessage', () => {
       });
 
       expect(mockHandleToolDispatch).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('resource.read routing', () => {
-    test('delegates to handleResourceRead with params and id', () => {
-      handleServerMessage({
-        method: 'resource.read',
-        id: 60,
-        params: { plugin: 'slack', uri: 'test://items' },
-      });
-
-      expect(mockHandleResourceRead).toHaveBeenCalledTimes(1);
-      expect(mockHandleResourceRead).toHaveBeenCalledWith({ plugin: 'slack', uri: 'test://items' }, 60);
-    });
-
-    test('does not dispatch resource.read without an id', () => {
-      handleServerMessage({
-        method: 'resource.read',
-        params: { plugin: 'slack', uri: 'test://items' },
-      });
-
-      expect(mockHandleResourceRead).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('prompt.get routing', () => {
-    test('delegates to handlePromptGet with params and id', () => {
-      handleServerMessage({
-        method: 'prompt.get',
-        id: 61,
-        params: { plugin: 'slack', prompt: 'greet', arguments: { name: 'World' } },
-      });
-
-      expect(mockHandlePromptGet).toHaveBeenCalledTimes(1);
-      expect(mockHandlePromptGet).toHaveBeenCalledWith(
-        { plugin: 'slack', prompt: 'greet', arguments: { name: 'World' } },
-        61,
-      );
-    });
-
-    test('does not dispatch prompt.get without an id', () => {
-      handleServerMessage({
-        method: 'prompt.get',
-        params: { plugin: 'slack', prompt: 'greet', arguments: {} },
-      });
-
-      expect(mockHandlePromptGet).not.toHaveBeenCalled();
     });
   });
 

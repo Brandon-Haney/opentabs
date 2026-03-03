@@ -252,19 +252,6 @@ describe('handleInspect — JSON output mode', () => {
     const parsed: unknown = JSON.parse(logs.join('\n'));
     expect(parsed).toEqual(minimalManifest);
   });
-
-  test('outputs manifest with resources and prompts in JSON mode', async () => {
-    const manifest: ToolsJsonManifest = {
-      sdkVersion: '0.0.20',
-      tools: minimalManifest.tools,
-      resources: [{ uri: 'test://items', name: 'Items', description: 'All items', mimeType: 'application/json' }],
-      prompts: [{ name: 'greet', description: 'Greet someone', arguments: [{ name: 'name', required: true }] }],
-    };
-    await writeToolsJson(manifest);
-    const { logs } = await captureOutput(() => handleInspect({ json: true }, tmpDir));
-    const parsed: unknown = JSON.parse(logs.join('\n'));
-    expect(parsed).toEqual(manifest);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -308,115 +295,21 @@ describe('handleInspect — formatted output', () => {
     expect(output).toContain('(unknown)');
   });
 
-  test('displays summary counts for tools, resources, and prompts', async () => {
+  test('displays summary count for tools', async () => {
     await writeToolsJson(minimalManifest);
     const { logs } = await captureOutput(() => handleInspect({}, tmpDir));
     const output = logs.join('\n');
     expect(output).toContain('1 tool');
-    expect(output).toContain('0 resources');
-    expect(output).toContain('0 prompts');
   });
 
-  test('pluralizes correctly for multiple items', async () => {
+  test('pluralizes correctly for multiple tools', async () => {
     const manifest: ToolsJsonManifest = {
       tools: [sampleTool, sampleTool],
-      resources: [
-        { uri: 'a://1', name: 'R1' },
-        { uri: 'a://2', name: 'R2' },
-      ],
-      prompts: [{ name: 'p1' }, { name: 'p2' }, { name: 'p3' }],
     };
     await writeToolsJson(manifest);
     const { logs } = await captureOutput(() => handleInspect({}, tmpDir));
     const output = logs.join('\n');
     expect(output).toContain('2 tools');
-    expect(output).toContain('2 resources');
-    expect(output).toContain('3 prompts');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// handleInspect — resources display
-// ---------------------------------------------------------------------------
-
-describe('handleInspect — resources display', () => {
-  test('displays resource URI, name, description, and MIME type', async () => {
-    const manifest: ToolsJsonManifest = {
-      tools: minimalManifest.tools,
-      resources: [
-        {
-          uri: 'slack://channels',
-          name: 'Channels',
-          description: 'List of Slack channels',
-          mimeType: 'application/json',
-        },
-      ],
-    };
-    await writeToolsJson(manifest);
-    const { logs } = await captureOutput(() => handleInspect({}, tmpDir));
-    const output = logs.join('\n');
-    expect(output).toContain('Resources');
-    expect(output).toContain('slack://channels');
-    expect(output).toContain('Channels');
-    expect(output).toContain('List of Slack channels');
-    expect(output).toContain('MIME: application/json');
-  });
-
-  test('omits description and MIME lines when not present', async () => {
-    const manifest: ToolsJsonManifest = {
-      tools: minimalManifest.tools,
-      resources: [{ uri: 'test://data', name: 'Data' }],
-    };
-    await writeToolsJson(manifest);
-    const { logs } = await captureOutput(() => handleInspect({}, tmpDir));
-    const output = logs.join('\n');
-    expect(output).toContain('test://data');
-    expect(output).toContain('Data');
-    expect(output).not.toContain('MIME:');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// handleInspect — prompts display
-// ---------------------------------------------------------------------------
-
-describe('handleInspect — prompts display', () => {
-  test('displays prompt name, description, and argument metadata', async () => {
-    const manifest: ToolsJsonManifest = {
-      tools: minimalManifest.tools,
-      prompts: [
-        {
-          name: 'greet',
-          description: 'Greet someone',
-          arguments: [
-            { name: 'name', description: 'Who to greet', required: true },
-            { name: 'style', description: 'Greeting style', required: false },
-          ],
-        },
-      ],
-    };
-    await writeToolsJson(manifest);
-    const { logs } = await captureOutput(() => handleInspect({}, tmpDir));
-    const output = logs.join('\n');
-    expect(output).toContain('Prompts');
-    expect(output).toContain('greet');
-    expect(output).toContain('Greet someone');
-    expect(output).toContain('Args:');
-    expect(output).toContain('name');
-    expect(output).toContain('Who to greet');
-    expect(output).toContain('style?');
-  });
-
-  test('omits description and args lines when not present', async () => {
-    const manifest: ToolsJsonManifest = {
-      tools: minimalManifest.tools,
-      prompts: [{ name: 'simple' }],
-    };
-    await writeToolsJson(manifest);
-    const { logs } = await captureOutput(() => handleInspect({}, tmpDir));
-    const output = logs.join('\n');
-    expect(output).toContain('simple');
-    expect(output).not.toContain('Args:');
   });
 });
 

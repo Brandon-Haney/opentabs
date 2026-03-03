@@ -382,8 +382,6 @@ const generatePluginIndex = (args: ScaffoldArgs, urlPattern: string): string => 
   return `import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import { exampleTool } from './tools/example.js';
 import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
-// To add resources or prompts, extend the import above:
-// import type { ToolDefinition, ResourceDefinition, PromptDefinition } from '@opentabs-dev/plugin-sdk';
 
 class ${toPascalCase(args.name)}Plugin extends OpenTabsPlugin {
   readonly name = ${singleQuote(args.name)};
@@ -391,14 +389,6 @@ class ${toPascalCase(args.name)}Plugin extends OpenTabsPlugin {
   override readonly displayName = ${singleQuote(displayName)};
   readonly urlPatterns = [${singleQuote(urlPattern)}];
   readonly tools: ToolDefinition[] = [exampleTool];
-
-  // To expose read-only data as resources (the 'override' keyword is required):
-  // override readonly resources: ResourceDefinition[] = [];
-  //
-  // To add prompt templates (the 'override' keyword is required):
-  // override readonly prompts: PromptDefinition[] = [];
-  //
-  // See: https://opentabs.dev/docs/guides/resources-prompts
 
   // IMPORTANT: Implement this method to check if the user is authenticated.
   // The plugin reports 'unavailable' until this returns true.

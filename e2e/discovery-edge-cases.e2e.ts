@@ -213,10 +213,7 @@ test.describe('Discovery edge cases — broken plugins', () => {
         },
       }),
     );
-    fs.writeFileSync(
-      path.join(pluginDir, 'dist', 'tools.json'),
-      JSON.stringify({ tools: [], resources: [], prompts: [] }),
-    );
+    fs.writeFileSync(path.join(pluginDir, 'dist', 'tools.json'), JSON.stringify({ tools: [] }));
     // Intentionally NOT writing dist/adapter.iife.js
 
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-disc-noiife-cfg-'));
@@ -385,8 +382,6 @@ test.describe('Discovery edge cases — broken plugins', () => {
               },
             },
           ],
-          resources: [],
-          prompts: [],
         }),
       );
 

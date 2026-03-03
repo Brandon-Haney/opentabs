@@ -4,7 +4,7 @@ description: How the MCP server, Chrome extension, and plugins work together to 
 lastUpdated: 2026-03-01
 ---
 
-OpenTabs has three main components: the **MCP server** (discovers plugins and dispatches requests), the **Chrome extension** (injects plugin adapters into browser tabs), and **plugins** (define tools, resources, and prompts that run in the page context). All communication uses JSON-RPC 2.0.
+OpenTabs has three main components: the **MCP server** (discovers plugins and dispatches requests), the **Chrome extension** (injects plugin adapters into browser tabs), and **plugins** (define tools that run in the page context). All communication uses JSON-RPC 2.0.
 
 <ArchitectureIllustration />
 
@@ -13,7 +13,7 @@ OpenTabs has three main components: the **MCP server** (discovers plugins and di
 The MCP server runs on `localhost:9515` (configurable via the `PORT` env var). The `opentabs` CLI also accepts `OPENTABS_PORT` as a user-facing convenience — it reads the value and passes it to the server process as `PORT` when spawning. It is an HTTP + WebSocket server (`node:http` + `ws`) with two responsibilities:
 
 1. **Plugin discovery** — resolves plugins from npm and local paths, loads their metadata and adapter bundles, and builds an immutable registry
-2. **Request dispatch** — registers plugin tools, resources, and prompts as MCP capabilities, dispatches calls to the Chrome extension via WebSocket, and relays results back to MCP clients
+2. **Request dispatch** — registers plugin tools as MCP capabilities, dispatches calls to the Chrome extension via WebSocket, and relays results back to MCP clients
 
 ### HTTP Endpoints
 
@@ -80,18 +80,16 @@ Plugin discovery is a five-phase pipeline in `platform/mcp-server/src/discovery.
 2. **Resolve local plugins** — reads filesystem paths from `config.localPlugins` and resolves them to absolute directories
 3. **Load all plugins** — reads `package.json` (with `opentabs` metadata field), `dist/adapter.iife.js`, and `dist/tools.json` for each plugin in parallel; assigns a trust tier to each: Official (`@opentabs-dev/*`), Community (any other npm package), or Local (filesystem path)
 4. **Merge** — local plugins override npm plugins of the same name
-5. **Build registry** — constructs an immutable `PluginRegistry` with O(1) lookup maps for tools, resources, and prompts
+5. **Build registry** — constructs an immutable `PluginRegistry` with O(1) lookup maps for tools
 
 Errors in any phase are collected but non-fatal — other plugins still load. Failed plugins are tracked in the registry for diagnostic purposes (visible in `/health`).
 
 ### Plugin Registry
 
-The `PluginRegistry` (`platform/mcp-server/src/registry.ts`) is immutable (`Object.freeze()`). It maintains four internal `Map`s:
+The `PluginRegistry` (`platform/mcp-server/src/registry.ts`) is immutable (`Object.freeze()`). It maintains two internal `Map`s:
 
 - `plugins` — name → `RegisteredPlugin`
 - `toolLookup` — prefixed tool name → `ToolLookupEntry` (with pre-compiled Ajv validators)
-- `resourceLookup` — prefixed URI → `ResourceLookupEntry`
-- `promptLookup` — prefixed prompt name → `PromptLookupEntry`
 
 When plugins change, a new registry is built and atomically swapped on the server state. Ajv validators are compiled during registry construction, so tool dispatch has O(1) lookup with no schema compilation at call time.
 
@@ -179,8 +177,6 @@ When an AI agent calls a tool:
 4. The extension calls `adapter.handle(toolName, input)` in the MAIN world via `chrome.scripting.executeScript()`
 5. The result flows back through WebSocket to the MCP server, which returns it to the AI agent
 
-Resource reads (`resource.read`) and prompt gets (`prompt.get`) follow the same pipeline with the same two-path dispatch. They do not support progress reporting or lifecycle hooks.
-
 ### Tab State Machine
 
 Each plugin has three tab states:
@@ -245,14 +241,6 @@ All server ↔ extension communication uses JSON-RPC 2.0 over WebSocket with a 1
     <Table.Row>
       <Table.Cell className="font-medium">`tool.dispatch`</Table.Cell>
       <Table.Cell>Execute a plugin tool on a matching tab</Table.Cell>
-    </Table.Row>
-    <Table.Row>
-      <Table.Cell className="font-medium">`resource.read`</Table.Cell>
-      <Table.Cell>Read a plugin resource on a matching tab</Table.Cell>
-    </Table.Row>
-    <Table.Row>
-      <Table.Cell className="font-medium">`prompt.get`</Table.Cell>
-      <Table.Cell>Render a plugin prompt on a matching tab</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`browser.*`</Table.Cell>
@@ -502,4 +490,4 @@ For deeper understanding, start with these files:
 - `platform/mcp-server/src/permissions.ts` — browser tool security tiers and permission evaluation
 - `platform/browser-extension/src/background.ts` — extension service worker, adapter injection, message routing
 - `platform/browser-extension/src/offscreen/index.ts` — persistent WebSocket via offscreen document
-- `platform/plugin-sdk/src/index.ts` — `OpenTabsPlugin` base class, `defineTool`, `defineResource`, `definePrompt`
+- `platform/plugin-sdk/src/index.ts` — `OpenTabsPlugin` base class, `defineTool`

@@ -309,7 +309,7 @@ const createMinimalPlugin = (
 
   fs.writeFileSync(path.join(pluginDir, 'package.json'), JSON.stringify(packageJson, null, 2), 'utf-8');
 
-  // dist/tools.json — tool definitions (new manifest format with resources/prompts)
+  // dist/tools.json — tool definitions
   const toolDefs = tools.map(t => ({
     name: t.name,
     displayName: t.name
@@ -327,7 +327,7 @@ const createMinimalPlugin = (
     },
   }));
 
-  const manifest = { tools: toolDefs, resources: [], prompts: [] };
+  const manifest = { tools: toolDefs };
   fs.writeFileSync(path.join(pluginDir, 'dist', 'tools.json'), JSON.stringify(manifest, null, 2), 'utf-8');
 
   const iife = [
@@ -996,35 +996,6 @@ interface ProgressNotification {
   message?: string;
 }
 
-/** A resource entry returned by resources/list */
-interface McpResource {
-  uri: string;
-  name: string;
-  description?: string;
-  mimeType?: string;
-}
-
-/** Content returned by resources/read */
-interface McpResourceContent {
-  uri: string;
-  text?: string;
-  blob?: string;
-  mimeType?: string;
-}
-
-/** A prompt entry returned by prompts/list */
-interface McpPrompt {
-  name: string;
-  description?: string;
-  arguments?: Array<{ name: string; description?: string; required?: boolean }>;
-}
-
-/** A prompt message returned by prompts/get */
-interface McpPromptMessage {
-  role: string;
-  content: { type: string; text: string };
-}
-
 /**
  * MCP streamable HTTP client for E2E tests.
  *
@@ -1050,14 +1021,6 @@ interface McpClient {
     args?: Record<string, unknown>,
     options?: { timeout?: number },
   ) => Promise<{ content: string; isError: boolean; progressNotifications: ProgressNotification[] }>;
-  /** List all registered resources via `resources/list`. */
-  listResources: () => Promise<McpResource[]>;
-  /** Read a resource by URI via `resources/read`. */
-  readResource: (uri: string) => Promise<McpResourceContent[]>;
-  /** List all registered prompts via `prompts/list`. */
-  listPrompts: () => Promise<McpPrompt[]>;
-  /** Render a prompt by name via `prompts/get`. */
-  getPrompt: (name: string, args?: Record<string, string>) => Promise<McpPromptMessage[]>;
   /** Close the MCP session by sending a DELETE request. */
   close: () => Promise<void>;
   /** Reset the session so the next initialize() creates a fresh session. */
@@ -1353,72 +1316,6 @@ const createMcpClient = (port: number, secret?: string): McpClient => {
       return { content: text, isError: result.isError === true, progressNotifications };
     },
 
-    listResources: async () => {
-      const res = await request({
-        jsonrpc: '2.0',
-        method: 'resources/list',
-        params: {},
-        id: nextId++,
-      });
-      if (res.error) {
-        const err = res.error as { message: string };
-        throw new Error(`resources/list failed: ${err.message}`);
-      }
-      const result = res.result as { resources: McpResource[] };
-      return result.resources;
-    },
-
-    readResource: async uri => {
-      const res = await request(
-        {
-          jsonrpc: '2.0',
-          method: 'resources/read',
-          params: { uri },
-          id: nextId++,
-        },
-        60_000,
-      );
-      if (res.error) {
-        const err = res.error as { message: string };
-        throw new Error(`resources/read failed: ${err.message}`);
-      }
-      const result = res.result as { contents: McpResourceContent[] };
-      return result.contents;
-    },
-
-    listPrompts: async () => {
-      const res = await request({
-        jsonrpc: '2.0',
-        method: 'prompts/list',
-        params: {},
-        id: nextId++,
-      });
-      if (res.error) {
-        const err = res.error as { message: string };
-        throw new Error(`prompts/list failed: ${err.message}`);
-      }
-      const result = res.result as { prompts: McpPrompt[] };
-      return result.prompts;
-    },
-
-    getPrompt: async (name, args = {}) => {
-      const res = await request(
-        {
-          jsonrpc: '2.0',
-          method: 'prompts/get',
-          params: { name, arguments: args },
-          id: nextId++,
-        },
-        60_000,
-      );
-      if (res.error) {
-        const err = res.error as { message: string };
-        throw new Error(`prompts/get failed: ${err.message}`);
-      }
-      const result = res.result as { messages: McpPromptMessage[] };
-      return result.messages;
-    },
-
     close: async () => {
       if (!sessionId) return;
       try {
@@ -1654,16 +1551,4 @@ export {
   E2E_TEST_PLUGIN_DIR,
   ROOT,
 };
-export type {
-  HealthResponse,
-  PluginDetail,
-  McpServer,
-  TestServer,
-  McpClient,
-  OpentabsConfig,
-  ProgressNotification,
-  McpResource,
-  McpResourceContent,
-  McpPrompt,
-  McpPromptMessage,
-};
+export type { HealthResponse, PluginDetail, McpServer, TestServer, McpClient, OpentabsConfig, ProgressNotification };

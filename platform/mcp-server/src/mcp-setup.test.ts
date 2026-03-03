@@ -7,13 +7,7 @@ import {
 } from './mcp-setup.js';
 import { buildRegistry, trustTierPrefix } from './registry.js';
 import { createState } from './state.js';
-import {
-  CallToolRequestSchema,
-  ListResourcesRequestSchema,
-  ReadResourceRequestSchema,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, test } from 'vitest';
 import { z } from 'zod';
 import type { BrowserToolDefinition } from './browser-tools/definition.js';
@@ -37,8 +31,6 @@ const createPlugin = (name: string, toolNames: string[]): RegisteredPlugin => ({
     input_schema: { type: 'object' },
     output_schema: { type: 'object' },
   })),
-  resources: [],
-  prompts: [],
 });
 
 describe('rebuildCachedBrowserTools — cached browser tools', () => {
@@ -243,8 +235,6 @@ const createMockServer = (): {
     },
     connect: () => Promise.resolve(),
     sendToolListChanged: () => Promise.resolve(),
-    sendResourceListChanged: () => Promise.resolve(),
-    sendPromptListChanged: () => Promise.resolve(),
     sendLoggingMessage: () => Promise.resolve(),
   };
   return { server, handlers };
@@ -829,159 +819,12 @@ describe('sanitizeOutput', () => {
   });
 });
 
-/** Create a plugin with resources and prompts for testing */
-const createPluginWithResourcesPrompts = (name: string): RegisteredPlugin => ({
-  ...createPlugin(name, ['ping']),
-  resources: [{ uri: 'test://items', name: 'Items', description: 'Test items', mimeType: 'application/json' }],
-  prompts: [{ name: 'greet', description: 'Greet someone', arguments: [{ name: 'name', required: true }] }],
-});
-
 /** Get a handler from the map or throw — avoids non-null assertions */
 const getHandler = (handlers: Map<unknown, RequestHandler>, schema: unknown): RequestHandler => {
   const handler = handlers.get(schema);
   if (!handler) throw new Error(`Handler not registered for schema`);
   return handler;
 };
-
-describe('registerMcpHandlers — resources/list', () => {
-  test('returns all resources from registered plugins with prefixed URIs', () => {
-    const state = createState();
-    state.registry = buildRegistry([createPluginWithResourcesPrompts('test-plug')], []);
-
-    const { server, handlers } = createMockServer();
-    registerMcpHandlers(server, state);
-
-    const handler = getHandler(handlers, ListResourcesRequestSchema);
-    const result = handler({ params: { name: '' } }, mockExtra) as {
-      resources: Array<{ uri: string; name: string }>;
-    };
-
-    expect(result.resources).toHaveLength(1);
-    expect(result.resources[0]?.uri).toBe('opentabs+test-plug://test://items');
-    expect(result.resources[0]?.name).toBe('Items');
-  });
-
-  test('returns empty array when no plugins have resources', () => {
-    const state = createState();
-    state.registry = buildRegistry([createPlugin('slack', ['send_message'])], []);
-
-    const { server, handlers } = createMockServer();
-    registerMcpHandlers(server, state);
-
-    const handler = getHandler(handlers, ListResourcesRequestSchema);
-    const result = handler({ params: { name: '' } }, mockExtra) as {
-      resources: Array<{ uri: string }>;
-    };
-
-    expect(result.resources).toHaveLength(0);
-  });
-});
-
-describe('registerMcpHandlers — prompts/list', () => {
-  test('returns all prompts from registered plugins with prefixed names', () => {
-    const state = createState();
-    state.registry = buildRegistry([createPluginWithResourcesPrompts('test-plug')], []);
-
-    const { server, handlers } = createMockServer();
-    registerMcpHandlers(server, state);
-
-    const handler = getHandler(handlers, ListPromptsRequestSchema);
-    const result = handler({ params: { name: '' } }, mockExtra) as {
-      prompts: Array<{ name: string; description?: string }>;
-    };
-
-    expect(result.prompts).toHaveLength(1);
-    expect(result.prompts[0]?.name).toBe('test-plug_greet');
-    expect(result.prompts[0]?.description).toBe('Greet someone');
-  });
-
-  test('returns empty array when no plugins have prompts', () => {
-    const state = createState();
-    state.registry = buildRegistry([createPlugin('slack', ['send_message'])], []);
-
-    const { server, handlers } = createMockServer();
-    registerMcpHandlers(server, state);
-
-    const handler = getHandler(handlers, ListPromptsRequestSchema);
-    const result = handler({ params: { name: '' } }, mockExtra) as {
-      prompts: Array<{ name: string }>;
-    };
-
-    expect(result.prompts).toHaveLength(0);
-  });
-});
-
-describe('registerMcpHandlers — resources/read', () => {
-  test('throws MCP error for unknown resource URI', async () => {
-    const state = createState();
-    state.registry = buildRegistry([createPlugin('slack', ['send_message'])], []);
-
-    const { server, handlers } = createMockServer();
-    registerMcpHandlers(server, state);
-
-    const handler = getHandler(handlers, ReadResourceRequestSchema);
-
-    try {
-      await handler({ params: { name: '', uri: 'nonexistent://resource' } }, mockExtra);
-      throw new Error('Expected handler to throw');
-    } catch (err) {
-      expect((err as { message: string }).message).toContain('Resource not found');
-    }
-  });
-
-  test('throws MCP error when extension is not connected', async () => {
-    const state = createState();
-    state.registry = buildRegistry([createPluginWithResourcesPrompts('test-plug')], []);
-
-    const { server, handlers } = createMockServer();
-    registerMcpHandlers(server, state);
-
-    const handler = getHandler(handlers, ReadResourceRequestSchema);
-
-    try {
-      await handler({ params: { name: '', uri: 'opentabs+test-plug://test://items' } }, mockExtra);
-      throw new Error('Expected handler to throw');
-    } catch (err) {
-      expect((err as { message: string }).message).toContain('Extension not connected');
-    }
-  });
-});
-
-describe('registerMcpHandlers — prompts/get', () => {
-  test('throws MCP error for unknown prompt name', async () => {
-    const state = createState();
-    state.registry = buildRegistry([createPlugin('slack', ['send_message'])], []);
-
-    const { server, handlers } = createMockServer();
-    registerMcpHandlers(server, state);
-
-    const handler = getHandler(handlers, GetPromptRequestSchema);
-
-    try {
-      await handler({ params: { name: 'nonexistent_prompt' } }, mockExtra);
-      throw new Error('Expected handler to throw');
-    } catch (err) {
-      expect((err as { message: string }).message).toContain('Prompt not found');
-    }
-  });
-
-  test('throws MCP error when extension is not connected', async () => {
-    const state = createState();
-    state.registry = buildRegistry([createPluginWithResourcesPrompts('test-plug')], []);
-
-    const { server, handlers } = createMockServer();
-    registerMcpHandlers(server, state);
-
-    const handler = getHandler(handlers, GetPromptRequestSchema);
-
-    try {
-      await handler({ params: { name: 'test-plug_greet', arguments: { name: 'World' } } }, mockExtra);
-      throw new Error('Expected handler to throw');
-    } catch (err) {
-      expect((err as { message: string }).message).toContain('Extension not connected');
-    }
-  });
-});
 
 describe('registerMcpHandlers — generic dispatch error sanitization', () => {
   test('file paths in generic dispatch errors are sanitized to [PATH]', async () => {

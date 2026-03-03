@@ -1002,8 +1002,6 @@ describe('handleConfigSetToolEnabled', () => {
       input_schema: {},
       output_schema: {},
     })),
-    resources: [],
-    prompts: [],
     source: 'local',
   });
 
@@ -1182,8 +1180,6 @@ describe('handleConfigSetAllToolsEnabled', () => {
       input_schema: {},
       output_schema: {},
     })),
-    resources: [],
-    prompts: [],
     source: 'local',
   });
 

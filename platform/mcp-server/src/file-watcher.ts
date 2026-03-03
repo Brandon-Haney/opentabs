@@ -21,7 +21,7 @@
  */
 
 import { getConfigDir } from './config.js';
-import { extractToolsArray, loadPlugin, validatePrompts, validateResources } from './loader.js';
+import { extractToolsArray, loadPlugin } from './loader.js';
 import { log } from './logger.js';
 import { buildRegistry } from './registry.js';
 import { ADAPTER_FILENAME, ADAPTER_SOURCE_MAP_FILENAME, TOOLS_FILENAME, isOk } from '@opentabs-dev/shared';
@@ -29,7 +29,7 @@ import { statSync, watch } from 'node:fs';
 import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ServerState, FileWatcherEntry, RegisteredPlugin } from './state.js';
-import type { ManifestPrompt, ManifestResource, ManifestTool } from '@opentabs-dev/shared';
+import type { ManifestTool } from '@opentabs-dev/shared';
 import type { FSWatcher } from 'node:fs';
 
 /** Polling interval for mtime-based fallback detection (ms) */
@@ -229,16 +229,14 @@ const handleIifeChange = async (
 /** Parsed result from a tools.json file */
 interface ParsedManifest {
   tools: ManifestTool[];
-  resources: ManifestResource[];
-  prompts: ManifestPrompt[];
 }
 
 /**
- * Parse a tools.json file contents into tools, resources, and prompts.
- * Supports both legacy array format and current { tools: [...], resources: [...], prompts: [...] } format.
+ * Parse a tools.json file contents into tools.
+ * Supports both legacy array format and current { tools: [...] } format.
  * Returns null if parsing fails.
  */
-const parseToolsJson = (raw: string, filePath: string, pluginName: string): ParsedManifest | null => {
+const parseToolsJson = (raw: string, filePath: string): ParsedManifest | null => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -278,21 +276,7 @@ const parseToolsJson = (raw: string, filePath: string, pluginName: string): Pars
     });
   }
 
-  // Extract resources and prompts (only present in the current { tools: [...] } format)
-  const manifestObj =
-    typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  const resources: ManifestResource[] =
-    manifestObj && Array.isArray(manifestObj.resources)
-      ? validateResources(manifestObj.resources as unknown[], pluginName, filePath)
-      : [];
-  const prompts: ManifestPrompt[] =
-    manifestObj && Array.isArray(manifestObj.prompts)
-      ? validatePrompts(manifestObj.prompts as unknown[], pluginName, filePath)
-      : [];
-
-  return { tools, resources, prompts };
+  return { tools };
 };
 
 /**
@@ -319,9 +303,9 @@ const handleToolsJsonChange = async (
 
   try {
     const raw = await readFileWithRetry(toolsJsonPath);
-    const parsed = parseToolsJson(raw, toolsJsonPath, pluginName);
+    const parsed = parseToolsJson(raw, toolsJsonPath);
     if (!parsed) return;
-    const { tools, resources, prompts } = parsed;
+    const { tools } = parsed;
 
     const plugin = state.registry.plugins.get(pluginName);
     if (!plugin) {
@@ -330,7 +314,7 @@ const handleToolsJsonChange = async (
     }
 
     // Build updated fields for the new plugin object
-    const updatedFields: Partial<RegisteredPlugin> = { tools, resources, prompts };
+    const updatedFields: Partial<RegisteredPlugin> = { tools };
 
     // Re-read IIFE from disk so the extension has the latest adapter code.
     // Use the hash embedded in the IIFE rather than recomputing from the full

@@ -1,22 +1,20 @@
 /**
  * `opentabs-plugin inspect` command — pretty-prints the built plugin manifest.
  * Reads dist/tools.json and package.json from the current directory and displays
- * a human-readable summary of tools, resources, and prompts.
+ * a human-readable summary of tools.
  */
 
 import { TOOLS_FILENAME, parsePluginPackageJson } from '@opentabs-dev/shared';
 import pc from 'picocolors';
 import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ManifestPrompt, ManifestResource, ManifestTool } from '@opentabs-dev/shared';
+import type { ManifestTool } from '@opentabs-dev/shared';
 import type { Command } from 'commander';
 
 /** Shape of dist/tools.json as written by `opentabs-plugin build` */
 interface ToolsJsonManifest {
   sdkVersion?: string;
   tools: ManifestTool[];
-  resources?: ManifestResource[];
-  prompts?: ManifestPrompt[];
 }
 
 /** Extract field names and types from a JSON Schema object */
@@ -107,8 +105,6 @@ const handleInspect = async (options: { json?: boolean }, projectDir: string = p
   }
 
   const tools = manifest.tools;
-  const resources = manifest.resources ?? [];
-  const prompts = manifest.prompts ?? [];
 
   // Header
   console.log('');
@@ -118,11 +114,7 @@ const handleInspect = async (options: { json?: boolean }, projectDir: string = p
   }
 
   // Summary counts
-  const parts: string[] = [];
-  parts.push(`${tools.length} tool${tools.length === 1 ? '' : 's'}`);
-  parts.push(`${resources.length} resource${resources.length === 1 ? '' : 's'}`);
-  parts.push(`${prompts.length} prompt${prompts.length === 1 ? '' : 's'}`);
-  console.log(pc.dim(parts.join(' · ')));
+  console.log(pc.dim(`${tools.length} tool${tools.length === 1 ? '' : 's'}`));
   console.log('');
 
   // Tools
@@ -143,41 +135,6 @@ const handleInspect = async (options: { json?: boolean }, projectDir: string = p
       if (outputFields.length > 0) {
         const fieldStrs = outputFields.map(f => `${f.name}: ${f.type}${f.required ? '' : '?'}`);
         console.log(`    ${pc.dim('Output:')} ${fieldStrs.join(', ')}`);
-      }
-      console.log('');
-    }
-  }
-
-  // Resources
-  if (resources.length > 0) {
-    console.log(pc.bold('Resources'));
-    console.log('');
-    for (const resource of resources) {
-      console.log(`  ${pc.cyan(resource.uri)}  ${pc.bold(resource.name)}`);
-      if (resource.description) {
-        console.log(`    ${resource.description}`);
-      }
-      if (resource.mimeType) {
-        console.log(`    ${pc.dim(`MIME: ${resource.mimeType}`)}`);
-      }
-      console.log('');
-    }
-  }
-
-  // Prompts
-  if (prompts.length > 0) {
-    console.log(pc.bold('Prompts'));
-    console.log('');
-    for (const prompt of prompts) {
-      console.log(`  ${pc.bold(prompt.name)}`);
-      if (prompt.description) {
-        console.log(`    ${prompt.description}`);
-      }
-      if (prompt.arguments && prompt.arguments.length > 0) {
-        const argStrs = prompt.arguments.map(
-          a => `${a.name}${a.required ? '' : '?'}${a.description ? ` — ${a.description}` : ''}`,
-        );
-        console.log(`    ${pc.dim('Args:')} ${argStrs.join(', ')}`);
       }
       console.log('');
     }

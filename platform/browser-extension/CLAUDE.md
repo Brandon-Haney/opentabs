@@ -132,8 +132,6 @@ When the MCP server dispatches a tool call, the extension receives the `tool.dis
 - **Targeted dispatch** (tabId present): Dispatches directly to the specified tab. Validates the tab exists via `chrome.tabs.get()` and that its URL matches the plugin's URL patterns (security check to prevent cross-origin abuse). Returns an error if the tab doesn't exist, the URL doesn't match, or the adapter isn't ready — no fallback to other tabs.
 - **Auto-select dispatch** (tabId absent): Uses `dispatchWithTabFallback` — ranks matching tabs (active tab in focused window > active tab in any window > any tab in focused window > other tabs) and tries each in order until one succeeds.
 
-Resource reads (`handleResourceRead`) and prompt gets (`handlePromptGet`) follow the same two-path dispatch logic.
-
 ### Port Configuration
 
 The MCP server port is configured in the side panel footer, stored in `chrome.storage.local` under the `serverPort` key (number, default 9515). The side panel footer displays the current port on the right side and supports inline editing — click to edit, Enter to save, Escape to cancel. When the port changes, the side panel sends a `port-changed` message through the background script to the offscreen document, which closes the current WebSocket and reconnects to the new port. The port is not stored in `auth.json` — auth.json contains only the secret.

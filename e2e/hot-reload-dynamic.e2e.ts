@@ -59,7 +59,7 @@ interface ManifestToolEntry {
 
 /**
  * Read the tools array from a tools.json file, handling both the legacy plain
- * array format and the current `{ tools: [...], resources: [...], prompts: [...] }`
+ * array format and the current `{ tools: [...] }`
  * object format. Also writes back in the correct format.
  */
 const readToolsFromManifest = (toolsJsonPath: string): ManifestToolEntry[] => {

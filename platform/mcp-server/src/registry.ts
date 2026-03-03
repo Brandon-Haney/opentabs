@@ -8,35 +8,16 @@
  */
 
 import { log } from './logger.js';
-import { prefixedToolName, prefixedResourceUri, prefixedPromptName, freezeRegistryMap } from './state.js';
+import { prefixedToolName, freezeRegistryMap } from './state.js';
 import AjvValidator from 'ajv';
-import type {
-  FailedPlugin,
-  PluginRegistry,
-  RegisteredPlugin,
-  ResourceLookupEntry,
-  PromptLookupEntry,
-  ToolLookupEntry,
-} from './state.js';
-import type { ManifestTool, ManifestResource, ManifestPrompt, TrustTier } from '@opentabs-dev/shared';
+import type { FailedPlugin, PluginRegistry, RegisteredPlugin, ToolLookupEntry } from './state.js';
+import type { ManifestTool, TrustTier } from '@opentabs-dev/shared';
 
 /** Result of looking up a tool in the registry */
 interface ToolLookupResult {
   readonly plugin: RegisteredPlugin;
   readonly tool: ManifestTool;
   readonly lookup: ToolLookupEntry;
-}
-
-/** Result of looking up a resource in the registry */
-interface ResourceLookupResult {
-  readonly plugin: RegisteredPlugin;
-  readonly resource: ManifestResource;
-}
-
-/** Result of looking up a prompt in the registry */
-interface PromptLookupResult {
-  readonly plugin: RegisteredPlugin;
-  readonly prompt: ManifestPrompt;
 }
 
 /** Map trust tier to a human-readable prefix for MCP tool descriptions */
@@ -100,8 +81,6 @@ const buildRegistry = (
   const ajv = new AjvValidator({ allErrors: false });
   const plugins = new Map<string, RegisteredPlugin>();
   const toolLookup = new Map<string, ToolLookupEntry>();
-  const resourceLookup = new Map<string, ResourceLookupEntry>();
-  const promptLookup = new Map<string, PromptLookupEntry>();
 
   for (const plugin of loadedPlugins) {
     plugins.set(plugin.name, plugin);
@@ -110,21 +89,11 @@ const buildRegistry = (
       const { validate, validationErrors } = compileToolValidator(ajv, plugin.name, toolDef.name, toolDef.input_schema);
       toolLookup.set(prefixed, { pluginName: plugin.name, toolName: toolDef.name, validate, validationErrors });
     }
-    for (const resource of plugin.resources) {
-      const prefixed = prefixedResourceUri(plugin.name, resource.uri);
-      resourceLookup.set(prefixed, { pluginName: plugin.name, originalUri: resource.uri });
-    }
-    for (const prompt of plugin.prompts) {
-      const prefixed = prefixedPromptName(plugin.name, prompt.name);
-      promptLookup.set(prefixed, { pluginName: plugin.name, originalName: prompt.name });
-    }
   }
 
   const registry: PluginRegistry = {
     plugins: freezeRegistryMap(plugins),
     toolLookup: freezeRegistryMap(toolLookup),
-    resourceLookup: freezeRegistryMap(resourceLookup),
-    promptLookup: freezeRegistryMap(promptLookup),
     failures,
   };
 
@@ -151,90 +120,5 @@ const getTool = (registry: PluginRegistry, prefixedName: string): ToolLookupResu
   return { plugin, tool, lookup };
 };
 
-/** Look up a resource by its prefixed URI */
-const getResource = (registry: PluginRegistry, prefixedUri: string): ResourceLookupResult | undefined => {
-  const lookup = registry.resourceLookup.get(prefixedUri);
-  if (!lookup) return undefined;
-
-  const plugin = registry.plugins.get(lookup.pluginName);
-  if (!plugin) return undefined;
-
-  const resource = plugin.resources.find(r => r.uri === lookup.originalUri);
-  if (!resource) return undefined;
-
-  return { plugin, resource };
-};
-
-/** Look up a prompt by its prefixed name */
-const getPrompt = (registry: PluginRegistry, prefixedName: string): PromptLookupResult | undefined => {
-  const lookup = registry.promptLookup.get(prefixedName);
-  if (!lookup) return undefined;
-
-  const plugin = registry.plugins.get(lookup.pluginName);
-  if (!plugin) return undefined;
-
-  const prompt = plugin.prompts.find(p => p.name === lookup.originalName);
-  if (!prompt) return undefined;
-
-  return { plugin, prompt };
-};
-
-/** Return all resources from all plugins with prefixed URIs for MCP resources/list responses */
-const listAllResources = (
-  registry: PluginRegistry,
-): Array<{ uri: string; name: string; description?: string; mimeType?: string }> => {
-  const resources: Array<{ uri: string; name: string; description?: string; mimeType?: string }> = [];
-
-  for (const plugin of registry.plugins.values()) {
-    for (const resource of plugin.resources) {
-      resources.push({
-        uri: prefixedResourceUri(plugin.name, resource.uri),
-        name: resource.name,
-        description: resource.description,
-        mimeType: resource.mimeType,
-      });
-    }
-  }
-
-  return resources;
-};
-
-/** Return all prompts from all plugins with prefixed names for MCP prompts/list responses */
-const listAllPrompts = (
-  registry: PluginRegistry,
-): Array<{
-  name: string;
-  description?: string;
-  arguments?: Array<{ name: string; description?: string; required?: boolean }>;
-}> => {
-  const prompts: Array<{
-    name: string;
-    description?: string;
-    arguments?: Array<{ name: string; description?: string; required?: boolean }>;
-  }> = [];
-
-  for (const plugin of registry.plugins.values()) {
-    for (const prompt of plugin.prompts) {
-      prompts.push({
-        name: prefixedPromptName(plugin.name, prompt.name),
-        description: prompt.description,
-        arguments: prompt.arguments,
-      });
-    }
-  }
-
-  return prompts;
-};
-
-export {
-  buildRegistry,
-  emptyRegistry,
-  getPlugin,
-  getPrompt,
-  getResource,
-  getTool,
-  listAllPrompts,
-  listAllResources,
-  trustTierPrefix,
-};
-export type { PromptLookupResult, ResourceLookupResult, ToolLookupResult };
+export { buildRegistry, emptyRegistry, getPlugin, getTool, trustTierPrefix };
+export type { ToolLookupResult };

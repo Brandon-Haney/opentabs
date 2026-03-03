@@ -21,23 +21,12 @@
  *   (dispatchToExtension, sendInvocationStart, etc.).
  */
 
-import { dispatchToExtension, isDispatchError } from './extension-protocol.js';
 import { log } from './logger.js';
 import { handleBrowserToolCall, handlePluginToolCall } from './mcp-tool-dispatch.js';
-import { getResource, getPrompt, listAllResources, listAllPrompts, trustTierPrefix } from './registry.js';
+import { trustTierPrefix } from './registry.js';
 import { prefixedToolName, isToolEnabled, isBrowserToolEnabled } from './state.js';
 import { version } from './version.js';
-import {
-  ListToolsRequestSchema,
-  CallToolRequestSchema,
-  ListResourcesRequestSchema,
-  ReadResourceRequestSchema,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
-  McpError as SdkMcpError,
-  ErrorCode,
-} from '@modelcontextprotocol/sdk/types.js';
-import { toErrorMessage } from '@opentabs-dev/shared';
+import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { RequestHandlerExtra } from './mcp-tool-dispatch.js';
 import type { ServerState, CachedBrowserTool, ToolLookupEntry } from './state.js';
@@ -56,8 +45,6 @@ interface ServerModuleShape {
     options: {
       capabilities: {
         tools: { listChanged: boolean };
-        resources: { listChanged: boolean };
-        prompts: { listChanged: boolean };
         logging: Record<string, never>;
       };
     },
@@ -75,8 +62,6 @@ interface McpServerInstance {
   ) => void;
   connect: (transport: unknown) => Promise<void>;
   sendToolListChanged: () => Promise<void>;
-  sendResourceListChanged: () => Promise<void>;
-  sendPromptListChanged: () => Promise<void>;
   sendLoggingMessage: (params: { level: string; logger?: string; data?: unknown }) => Promise<void>;
 }
 
@@ -131,112 +116,6 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
     tools: getEnabledToolsList(state),
   }));
 
-  // Handler: resources/list — return all resources from all plugins with prefixed URIs.
-  server.setRequestHandler(ListResourcesRequestSchema, () => ({
-    resources: listAllResources(state.registry),
-  }));
-
-  // Handler: resources/read — dispatch to extension to read resource in page context.
-  server.setRequestHandler(ReadResourceRequestSchema, async request => {
-    const uri = request.params.uri;
-    if (typeof uri !== 'string' || uri.length === 0) {
-      throw new SdkMcpError(ErrorCode.InvalidParams, 'Missing or invalid "uri" parameter');
-    }
-
-    const result = getResource(state.registry, uri);
-    if (!result) {
-      throw new SdkMcpError(ErrorCode.InvalidParams, `Resource not found: ${uri}`);
-    }
-
-    const { plugin, resource } = result;
-    log.debug('resource.read:', uri, '→', plugin.name + '/' + resource.uri);
-
-    if (!state.extensionWs) {
-      throw new SdkMcpError(
-        ErrorCode.InternalError,
-        'Extension not connected. Please ensure the OpenTabs Chrome extension is running.',
-      );
-    }
-
-    try {
-      const dispatchResult = await dispatchToExtension(
-        state,
-        'resource.read',
-        { plugin: plugin.name, uri: resource.uri },
-        { label: `${plugin.name}/resource:${resource.uri}` },
-      );
-      // Extension wraps adapter output in { output: ... } — unwrap it
-      const raw = dispatchResult as Record<string, unknown>;
-      const contents = (raw.output ?? raw) as { uri?: string; text?: string; blob?: string; mimeType?: string };
-      return {
-        contents: [
-          {
-            uri,
-            text: contents.text,
-            blob: contents.blob,
-            mimeType: contents.mimeType ?? resource.mimeType,
-          },
-        ],
-      };
-    } catch (err) {
-      if (isDispatchError(err)) {
-        throw new SdkMcpError(err.code, err.message);
-      }
-      const msg = toErrorMessage(err);
-      throw new SdkMcpError(ErrorCode.InternalError, `Resource read error: ${msg}`);
-    }
-  });
-
-  // Handler: prompts/list — return all prompts from all plugins with prefixed names.
-  server.setRequestHandler(ListPromptsRequestSchema, () => ({
-    prompts: listAllPrompts(state.registry),
-  }));
-
-  // Handler: prompts/get — dispatch to extension to render prompt in page context.
-  server.setRequestHandler(GetPromptRequestSchema, async request => {
-    const promptName = request.params.name;
-    if (typeof promptName !== 'string' || promptName.length === 0) {
-      throw new SdkMcpError(ErrorCode.InvalidParams, 'Missing or invalid "name" parameter');
-    }
-
-    const result = getPrompt(state.registry, promptName);
-    if (!result) {
-      throw new SdkMcpError(ErrorCode.InvalidParams, `Prompt not found: ${promptName}`);
-    }
-
-    const { plugin, prompt } = result;
-    const args = request.params.arguments ?? {};
-    log.debug('prompt.get:', promptName, '→', plugin.name + '/' + prompt.name);
-
-    if (!state.extensionWs) {
-      throw new SdkMcpError(
-        ErrorCode.InternalError,
-        'Extension not connected. Please ensure the OpenTabs Chrome extension is running.',
-      );
-    }
-
-    try {
-      const dispatchResult = await dispatchToExtension(
-        state,
-        'prompt.get',
-        { plugin: plugin.name, prompt: prompt.name, arguments: args },
-        { label: `${plugin.name}/prompt:${prompt.name}` },
-      );
-      // Extension wraps adapter output in { output: ... } — unwrap it
-      const raw = dispatchResult as Record<string, unknown>;
-      const messages = (raw.output ?? raw) as Array<{ role: string; content: { type: string; text: string } }>;
-      return {
-        messages: Array.isArray(messages) ? messages : [],
-      };
-    } catch (err) {
-      if (isDispatchError(err)) {
-        throw new SdkMcpError(err.code, err.message);
-      }
-      const msg = toErrorMessage(err);
-      throw new SdkMcpError(ErrorCode.InternalError, `Prompt get error: ${msg}`);
-    }
-  });
-
   // Handler: tools/call — dispatch to extension or handle browser tool locally.
   // Delegates to handleBrowserToolCall or handlePluginToolCall for the actual logic.
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
@@ -279,8 +158,6 @@ const createMcpServer = async (state: ServerState): Promise<McpServerInstance> =
     {
       capabilities: {
         tools: { listChanged: true },
-        resources: { listChanged: true },
-        prompts: { listChanged: true },
         logging: {},
       },
     },
@@ -299,24 +176,6 @@ const createMcpServer = async (state: ServerState): Promise<McpServerInstance> =
 const notifyToolListChanged = (server: McpServerInstance): void => {
   server.sendToolListChanged().catch((err: unknown) => {
     log.warn('Failed to notify tool list change:', err);
-  });
-};
-
-/**
- * Notify a connected MCP client that the resource list has changed.
- */
-const notifyResourceListChanged = (server: McpServerInstance): void => {
-  server.sendResourceListChanged().catch((err: unknown) => {
-    log.warn('Failed to notify resource list change:', err);
-  });
-};
-
-/**
- * Notify a connected MCP client that the prompt list has changed.
- */
-const notifyPromptListChanged = (server: McpServerInstance): void => {
-  server.sendPromptListChanged().catch((err: unknown) => {
-    log.warn('Failed to notify prompt list change:', err);
   });
 };
 
@@ -399,11 +258,4 @@ export const checkToolCallable = (state: ServerState, prefixedToolName: string):
 // (tests, reload.ts) can continue importing from mcp-setup.js.
 export { sanitizeOutput } from './mcp-tool-dispatch.js';
 export type { McpServerInstance, RequestHandlerExtra };
-export {
-  createMcpServer,
-  registerMcpHandlers,
-  rebuildCachedBrowserTools,
-  notifyToolListChanged,
-  notifyResourceListChanged,
-  notifyPromptListChanged,
-};
+export { createMcpServer, registerMcpHandlers, rebuildCachedBrowserTools, notifyToolListChanged };

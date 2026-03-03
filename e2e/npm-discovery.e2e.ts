@@ -77,10 +77,7 @@ const createNpmPrefixWithPlugin = (
     },
   }));
 
-  fs.writeFileSync(
-    path.join(pluginDir, 'dist', 'tools.json'),
-    JSON.stringify({ tools: toolDefs, resources: [], prompts: [] }),
-  );
+  fs.writeFileSync(path.join(pluginDir, 'dist', 'tools.json'), JSON.stringify({ tools: toolDefs }));
 
   const iife = [
     '(function() {',
@@ -283,8 +280,6 @@ test.describe('npm auto-discovery pipeline', () => {
             },
           },
         ],
-        resources: [],
-        prompts: [],
       }),
     );
 

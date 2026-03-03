@@ -25,11 +25,11 @@
                                                              └──────────────────┘
 ```
 
-**MCP Server** (`platform/mcp-server`): Plugin discovery, tool/resource/prompt dispatch via WebSocket, browser tools, audit log. See `platform/mcp-server/CLAUDE.md` for details.
+**MCP Server** (`platform/mcp-server`): Plugin discovery, tool dispatch via WebSocket, browser tools, audit log. See `platform/mcp-server/CLAUDE.md` for details.
 
 **Chrome Extension** (`platform/browser-extension`): Adapter injection, tool dispatch relay, React side panel UI. Published to npm as `@opentabs-dev/browser-extension` and bundled as a CLI dependency so `opentabs start` can auto-install it. See `platform/browser-extension/CLAUDE.md` for details.
 
-**Plugin SDK** (`platform/plugin-sdk`): `OpenTabsPlugin` base class, `defineTool`/`defineResource`/`definePrompt` factories, SDK utilities, structured errors. See `platform/plugin-sdk/CLAUDE.md` for details.
+**Plugin SDK** (`platform/plugin-sdk`): `OpenTabsPlugin` base class, `defineTool` factory, SDK utilities, structured errors. See `platform/plugin-sdk/CLAUDE.md` for details.
 
 **Plugin Tools** (`platform/plugin-tools`): Plugin developer CLI (`opentabs-plugin build`). See `platform/plugin-tools/CLAUDE.md` for details.
 
@@ -67,9 +67,7 @@ Each subdirectory has its own `CLAUDE.md` with package-specific details.
 
 ### Key Concepts
 
-**Tool and prompt name prefixing**: Plugin tools and prompts are exposed to MCP clients with a `<plugin>_<name>` prefix (e.g., `slack_send_message`). This prevents name collisions across plugins.
-
-**Resource URI prefixing**: Plugin resource URIs are prefixed with `opentabs+<plugin>://` to make them globally unique across plugins.
+**Tool name prefixing**: Plugin tools are exposed to MCP clients with a `<plugin>_<name>` prefix (e.g., `slack_send_message`). This prevents name collisions across plugins.
 
 **Tab state machine**: Each plugin has three tab states: `closed`, `unavailable`, and `ready`. The extension reports all matching tabs per plugin (with per-tab readiness) to the MCP server via `tab.syncAll` and `tab.stateChanged`.
 

@@ -26,11 +26,6 @@ vi.mock('./tool-dispatch.js', () => ({
   notifyDispatchProgress: vi.fn(),
 }));
 
-vi.mock('./resource-prompt-dispatch.js', () => ({
-  handleResourceRead: vi.fn(),
-  handlePromptGet: vi.fn(),
-}));
-
 vi.mock('./browser-commands/index.js', () => ({
   handleBrowserListTabs: vi.fn(asyncNoop),
   handleBrowserOpenTab: vi.fn(asyncNoop),

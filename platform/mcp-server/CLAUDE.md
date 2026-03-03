@@ -2,7 +2,7 @@
 
 ## Overview
 
-Discovers plugins, registers their tools, resources, and prompts as MCP capabilities, dispatches tool calls, resource reads, and prompt gets to the Chrome extension via WebSocket, receives plugin log entries and forwards them to MCP clients via the logging capability, converts tool progress notifications into MCP `notifications/progress` events, and serves health/config endpoints. The server maintains an in-memory audit log of the last 500 tool invocations, queryable via `GET /audit` (with Bearer auth), with aggregate stats included in the `/health` response's `auditSummary` field.
+Discovers plugins, registers their tools as MCP capabilities, dispatches tool calls to the Chrome extension via WebSocket, receives plugin log entries and forwards them to MCP clients via the logging capability, converts tool progress notifications into MCP `notifications/progress` events, and serves health/config endpoints. The server maintains an in-memory audit log of the last 500 tool invocations, queryable via `GET /audit` (with Bearer auth), with aggregate stats included in the `/health` response's `auditSummary` field.
 
 ## Key Files
 
@@ -15,9 +15,9 @@ platform/mcp-server/src/
 ├── discovery.ts          # Discovery orchestrator (resolve → load → register)
 ├── resolver.ts           # Plugin specifier resolution (npm + local paths)
 ├── loader.ts             # Plugin artifact loading (package.json, IIFE, tools.json)
-├── registry.ts           # Immutable PluginRegistry with O(1) tool, resource, and prompt lookup
+├── registry.ts           # Immutable PluginRegistry with O(1) tool lookup
 ├── extension-protocol.ts # JSON-RPC protocol with Chrome extension
-├── mcp-setup.ts          # MCP tool, resource, and prompt registration from discovered plugins
+├── mcp-setup.ts          # MCP tool registration from discovered plugins
 ├── state.ts              # In-memory server state (PluginRegistry)
 ├── log-buffer.ts         # Per-plugin circular log buffer (last 1000 entries)
 ├── file-watcher.ts       # Watches local plugin dist/ directories (dev mode only)
@@ -26,7 +26,7 @@ platform/mcp-server/src/
 
 ## Plugin Discovery
 
-The MCP server discovers plugins from two sources: (1) **npm auto-discovery** scans global `node_modules` for packages matching `opentabs-plugin-*` and `@*/opentabs-plugin-*` patterns, and (2) **local plugins** listed in the `localPlugins` array in `~/.opentabs/config.json` (filesystem paths to plugins under active development). Each discovered plugin is loaded by reading `package.json` (with an `opentabs` field for metadata), `dist/adapter.iife.js` (the adapter bundle), and `dist/tools.json` (tool schemas, resource metadata, and prompt metadata). Local plugins override npm plugins of the same name. Discovery is a four-phase pipeline: resolve → load → determine trust tier → build an immutable registry.
+The MCP server discovers plugins from two sources: (1) **npm auto-discovery** scans global `node_modules` for packages matching `opentabs-plugin-*` and `@*/opentabs-plugin-*` patterns, and (2) **local plugins** listed in the `localPlugins` array in `~/.opentabs/config.json` (filesystem paths to plugins under active development). Each discovered plugin is loaded by reading `package.json` (with an `opentabs` field for metadata), `dist/adapter.iife.js` (the adapter bundle), and `dist/tools.json` (tool schemas). Local plugins override npm plugins of the same name. Discovery is a four-phase pipeline: resolve → load → determine trust tier → build an immutable registry.
 
 ## Dispatch Pipeline
 
@@ -39,10 +39,6 @@ Tool dispatch uses a 30s timeout (`DISPATCH_TIMEOUT_MS`) by default. When a tool
 ### Progress Reporting
 
 Long-running tools can report incremental progress to MCP clients via an optional second argument to `handle()`. The `handle(params, context?)` signature provides a `ToolHandlerContext` with a `reportProgress({ progress, total, message? })` callback. Progress flows from the adapter (MAIN world `CustomEvent`) → ISOLATED world content script relay → `chrome.runtime.sendMessage` → extension background → WebSocket `tool.progress` JSON-RPC notification → MCP server → `notifications/progress` to MCP clients. The wire format from extension to server is `{ jsonrpc: '2.0', method: 'tool.progress', params: { dispatchId, progress, total, message? } }`. The `dispatchId` correlates progress back to the pending dispatch via the JSON-RPC request ID. Progress notifications are fire-and-forget — errors in the progress chain do not affect the tool result. The MCP server only emits `notifications/progress` if the MCP client included a `progressToken` in the tools/call request's `_meta`; otherwise progress is silently dropped.
-
-### Resource and Prompt Dispatch
-
-Resources and prompts follow the same dispatch pipeline as tools: MCP server → WebSocket → Chrome extension → adapter IIFE → page context. The `resource.read` dispatch sends a URI to the adapter's `resource.read(uri)` function and returns `ResourceContent`. The `prompt.get` dispatch sends a prompt name and arguments to the adapter's `prompt.render(args)` function and returns `PromptMessage[]`. Unlike tool dispatch, resource reads and prompt gets do not support progress reporting or invocation lifecycle hooks. The `dist/tools.json` manifest file stores resource metadata (`{ uri, name, description, mimeType }`) and prompt metadata (`{ name, description, arguments }`) alongside tool schemas — the `read()` and `render()` runtime functions exist only in the adapter IIFE.
 
 ## Plugin Logging
 

@@ -370,8 +370,6 @@ describe('handleExtensionMessage — tab.stateChanged', () => {
     source: 'local' as const,
     iife: '// noop',
     tools: [],
-    resources: [],
-    prompts: [],
   });
 
   test('updates a single entry in state.tabMapping', () => {
@@ -590,8 +588,6 @@ describe('sendSyncFull', () => {
     source: 'local' as const,
     iife: '// noop',
     tools: [],
-    resources: [],
-    prompts: [],
     ...overrides,
   });
 
@@ -1036,8 +1032,6 @@ describe('handleExtensionMessage — config.getState', () => {
     source: 'local' as const,
     iife: '// noop',
     tools: [],
-    resources: [],
-    prompts: [],
     ...overrides,
   });
 
@@ -1427,8 +1421,6 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
     source: 'local' as const,
     iife: '// noop',
     tools: [],
-    resources: [],
-    prompts: [],
     ...overrides,
   });
 
@@ -1813,8 +1805,6 @@ describe('handleExtensionMessage — config.setAllToolsEnabled', () => {
     source: 'local' as const,
     iife: '// noop',
     tools: [],
-    resources: [],
-    prompts: [],
     ...overrides,
   });
 

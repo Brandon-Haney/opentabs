@@ -100,8 +100,6 @@ Multiple concurrent MCP clients are supported — each gets an independent sessi
 The server exposes these MCP capabilities:
 
 - **Tools** — plugin tools (prefixed as `<plugin>_<tool>`) and built-in browser tools (`browser_*`, `extension_*`)
-- **Resources** — plugin resources with URI prefix `opentabs+<plugin>://`. Read via the `resources/read` MCP method.
-- **Prompts** — plugin prompts (prefixed as `<plugin>_<prompt>`). Rendered via the `prompts/get` MCP method.
 - **Logging** — plugin log entries forwarded as `notifications/message` to connected clients
 - **Progress** — tool progress notifications forwarded as `notifications/progress` (requires `progressToken` in request `_meta`)
 
@@ -401,16 +399,6 @@ Admin endpoints (`/reload`, `/extension/reload`) are rate-limited to 10 requests
       <Table.Cell className="font-medium">`tool.dispatch`</Table.Cell>
       <Table.Cell>Request</Table.Cell>
       <Table.Cell>Dispatch a tool call to the correct tab's adapter.</Table.Cell>
-    </Table.Row>
-    <Table.Row>
-      <Table.Cell className="font-medium">`resource.read`</Table.Cell>
-      <Table.Cell>Request</Table.Cell>
-      <Table.Cell>Read a resource from the adapter in the correct tab.</Table.Cell>
-    </Table.Row>
-    <Table.Row>
-      <Table.Cell className="font-medium">`prompt.get`</Table.Cell>
-      <Table.Cell>Request</Table.Cell>
-      <Table.Cell>Render a prompt template in the adapter in the correct tab.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`tool.invocationStart`</Table.Cell>

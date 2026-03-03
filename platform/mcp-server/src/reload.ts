@@ -21,13 +21,7 @@ import { startConfigWatching, startFileWatching, stopFileWatching } from './file
 import { sweepStaleSessions } from './http-routes.js';
 import { pruneStaleBuffers } from './log-buffer.js';
 import { log } from './logger.js';
-import {
-  registerMcpHandlers,
-  rebuildCachedBrowserTools,
-  notifyToolListChanged,
-  notifyResourceListChanged,
-  notifyPromptListChanged,
-} from './mcp-setup.js';
+import { registerMcpHandlers, rebuildCachedBrowserTools, notifyToolListChanged } from './mcp-setup.js';
 import { buildRegistry } from './registry.js';
 import { isCliSkipPermissions } from './skip-permissions.js';
 import { prefixedToolName } from './state.js';
@@ -156,8 +150,6 @@ const createFileWatcherCallbacks = (
   const notifyAllClients = (): void => {
     for (const srv of sessionServers) {
       notifyToolListChanged(srv);
-      notifyResourceListChanged(srv);
-      notifyPromptListChanged(srv);
     }
   };
 
@@ -434,8 +426,6 @@ const performReload = async (
       );
       for (const srv of sessionServers) {
         notifyToolListChanged(srv);
-        notifyResourceListChanged(srv);
-        notifyPromptListChanged(srv);
       }
     }
 
@@ -491,8 +481,6 @@ const performConfigReload = async (
     // so reloadCore itself does not notify — each caller is responsible.)
     for (const srv of sessionServers) {
       notifyToolListChanged(srv);
-      notifyResourceListChanged(srv);
-      notifyPromptListChanged(srv);
     }
 
     log.info(`Config reload complete: ${state.registry.plugins.size} plugin(s) in ${Date.now() - startTs}ms`);

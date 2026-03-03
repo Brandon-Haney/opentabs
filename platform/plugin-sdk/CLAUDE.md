@@ -2,13 +2,13 @@
 
 ## Overview
 
-Provides the `OpenTabsPlugin` base class, `defineTool`, `defineResource`, and `definePrompt` factory functions, and `ToolHandlerContext` interface for progress reporting. Plugins extend `OpenTabsPlugin` and define tools (with Zod schemas), resources, and prompts.
+Provides the `OpenTabsPlugin` base class, `defineTool` factory function, and `ToolHandlerContext` interface for progress reporting. Plugins extend `OpenTabsPlugin` and define tools with Zod schemas.
 
 ## Key Files
 
 ```
 platform/plugin-sdk/src/
-├── index.ts        # OpenTabsPlugin, defineTool, defineResource, definePrompt, log exports
+├── index.ts        # OpenTabsPlugin, defineTool, log exports
 ├── log.ts          # Structured logging API (sdk.log namespace)
 ├── dom.ts          # DOM utilities
 ├── fetch.ts        # Fetch utilities
@@ -106,3 +106,15 @@ Plugin tool schemas are serialized to JSON Schema (via `z.toJSONSchema()`) for t
 - **Avoid Zod features that don't map to JSON Schema** — `.transform()`, `.pipe()`, `.preprocess()`, and effects produce runtime-only behavior that `z.toJSONSchema()` cannot serialize. If the serializer throws, the build breaks. Keep schemas declarative (primitives, objects, arrays, unions, literals, enums, refinements with standard validations).
 - **Fix the source, not the serializer** — when a schema feature conflicts with JSON Schema serialization, the correct fix is always to simplify the schema and move logic to the handler. Do not work around serialization limitations with options like `io: 'input'` — that hides the problem and produces a schema that doesn't match the handler's actual behavior.
 - **`.refine()` callbacks must never throw** — Zod 4 runs `.refine()` callbacks even when the preceding validator has already failed (e.g., `z.url().refine(fn)` calls `fn` even on non-URL strings). If the callback calls a function that can throw on invalid input (like `new URL()`), wrap it in try-catch and return `false`. Never assume the refine callback only receives values that passed the base validator.
+
+## Why Resources and Prompts Are Not Supported
+
+The MCP spec defines resources (read-only data sources) and prompts (parameterized message templates) alongside tools. OpenTabs intentionally does not support these primitives:
+
+1. **Tools are strictly more capable** — a tool can do everything a resource can do, with the addition of input validation, progress reporting, lifecycle hooks, and output schemas. There is no plugin use case where a resource is the right choice over a tool.
+
+2. **Prompts have no practical use case in browser-session plugins** — generating prompt templates does not require an authenticated browser session. If prompts are static, they don't need a browser. If they're dynamic based on page state, a tool should read that state.
+
+3. **Every real-world plugin is fundamentally about actions** — send message, create ticket, query metrics. The read operations that come along are naturally tools with parameters.
+
+4. **Fewer primitives, simpler platform** — removing resources and prompts reduces the SDK surface area, simplifies the build pipeline, dispatch chain, and server internals.

@@ -26,8 +26,6 @@ const makePlugin = (overrides: Partial<RegisteredPlugin> = {}): RegisteredPlugin
   source: 'local' as const,
   iife: '(function(){})()',
   tools: [],
-  resources: [],
-  prompts: [],
   ...overrides,
 });
 
@@ -375,38 +373,6 @@ const makeToolsJson = (overrides: Array<Record<string, unknown>> | null = null):
     ],
   );
 
-/**
- * Build a valid dist/tools.json in { tools, resources, prompts } format.
- */
-const makeFullManifestJson = (): string =>
-  JSON.stringify({
-    tools: [
-      {
-        name: 'do_something',
-        displayName: 'Do Something',
-        description: 'Does something useful',
-        icon: 'wrench',
-        input_schema: { type: 'object' },
-        output_schema: { type: 'object' },
-      },
-    ],
-    resources: [
-      {
-        uri: 'opentabs+test://config',
-        name: 'config',
-        description: 'Plugin configuration',
-        mimeType: 'application/json',
-      },
-    ],
-    prompts: [
-      {
-        name: 'greet',
-        description: 'Greet the user',
-        arguments: [{ name: 'name', description: 'User name', required: true }],
-      },
-    ],
-  });
-
 /** 64-char hex string to use as an embedded adapter hash */
 const EMBEDDED_HASH = 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890';
 
@@ -499,28 +465,6 @@ describe('handleToolsJsonChange', () => {
 
     // The embedded hash from the IIFE should be set
     expect(state.registry.plugins.get('test-plugin')?.adapterHash).toBe(EMBEDDED_HASH);
-  });
-
-  test('resource and prompt changes in tools.json are picked up by the file watcher', async () => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'htchange-'));
-    const pluginDir = join(tmpDir, 'test-plugin');
-    mkdirSync(join(pluginDir, 'dist'), { recursive: true });
-    writeFileSync(join(pluginDir, 'dist', 'tools.json'), makeFullManifestJson());
-
-    const state = createState();
-    // Start with empty resources and prompts
-    state.registry = buildRegistry([makePlugin({ resources: [], prompts: [] })], []);
-
-    await handleToolsJsonChange(state, 'test-plugin', pluginDir, noopCallbacks);
-
-    const plugin = state.registry.plugins.get('test-plugin');
-    expect(plugin?.resources).toHaveLength(1);
-    expect(plugin?.resources[0]?.uri).toBe('opentabs+test://config');
-    expect(plugin?.resources[0]?.name).toBe('config');
-    expect(plugin?.prompts).toHaveLength(1);
-    expect(plugin?.prompts[0]?.name).toBe('greet');
-    expect(plugin?.prompts[0]?.arguments).toHaveLength(1);
-    expect(plugin?.prompts[0]?.arguments?.[0]?.name).toBe('name');
   });
 });
 

@@ -13,7 +13,7 @@ import type { PluginMeta } from './extension-messages.js';
 
 /**
  * Structured result from a MAIN-world adapter script execution.
- * Covers tool, resource, and prompt dispatches.
+ * Covers tool dispatches.
  */
 type DispatchResult =
   | {

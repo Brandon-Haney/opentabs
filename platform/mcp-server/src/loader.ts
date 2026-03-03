@@ -27,14 +27,7 @@ import {
 import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { PluginSource } from './state.js';
-import type {
-  ManifestPrompt,
-  ManifestPromptArgument,
-  ManifestResource,
-  ManifestTool,
-  Result,
-  TrustTier,
-} from '@opentabs-dev/shared';
+import type { ManifestTool, Result, TrustTier } from '@opentabs-dev/shared';
 
 /** Browser tool names derived from the static catalog — used for prompt injection detection. */
 const browserToolNames: readonly string[] = BROWSER_TOOLS_CATALOG.map(t => t.name);
@@ -52,8 +45,6 @@ interface LoadedPlugin {
   readonly trustTier: TrustTier;
   readonly iife: string;
   readonly tools: ManifestTool[];
-  readonly resources: ManifestResource[];
-  readonly prompts: ManifestPrompt[];
   readonly source: PluginSource;
   readonly sourcePath: string;
   readonly adapterHash: string | undefined;
@@ -117,7 +108,7 @@ const checkBrowserToolReferences = (
  * Extract the tools array from a parsed tools.json manifest.
  * Supports two formats:
  *   - Legacy: a plain array of tool definitions
- *   - Current: { tools: [...], resources: [...], prompts: [...] }
+ *   - Current: { tools: [...] }
  * Returns null if the format is unrecognized or tools is not an array.
  */
 const extractToolsArray = (raw: unknown): unknown[] | null => {
@@ -200,120 +191,6 @@ const validateTools = (tools: unknown, sourcePath: string): Result<ManifestTool[
   }
 
   return ok(validated);
-};
-
-/**
- * Validate an array of resource definitions from dist/tools.json.
- * Invalid entries are filtered out with a warning, not a hard failure.
- */
-const validateResources = (resources: unknown[], pluginName: string, sourcePath: string): ManifestResource[] => {
-  const validated: ManifestResource[] = [];
-  for (let i = 0; i < resources.length; i++) {
-    const raw: unknown = resources[i];
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-      log.warn(`Plugin "${pluginName}" resources[${i}] at ${sourcePath} is not an object — skipping`);
-      continue;
-    }
-    const r = raw as Record<string, unknown>;
-
-    if (typeof r.uri !== 'string' || r.uri.length === 0) {
-      log.warn(`Plugin "${pluginName}" resources[${i}] at ${sourcePath} has invalid uri — skipping`);
-      continue;
-    }
-    if (typeof r.name !== 'string' || r.name.length === 0) {
-      log.warn(`Plugin "${pluginName}" resources[${i}] at ${sourcePath} has invalid name — skipping`);
-      continue;
-    }
-    if (r.description !== undefined && typeof r.description !== 'string') {
-      log.warn(`Plugin "${pluginName}" resources[${i}] at ${sourcePath} has invalid description — skipping`);
-      continue;
-    }
-    if (r.mimeType !== undefined && typeof r.mimeType !== 'string') {
-      log.warn(`Plugin "${pluginName}" resources[${i}] at ${sourcePath} has invalid mimeType — skipping`);
-      continue;
-    }
-
-    validated.push({
-      uri: r.uri,
-      name: r.name,
-      description: typeof r.description === 'string' ? r.description : undefined,
-      mimeType: typeof r.mimeType === 'string' ? r.mimeType : undefined,
-    });
-  }
-  return validated;
-};
-
-/**
- * Validate an array of prompt definitions from dist/tools.json.
- * Invalid entries are filtered out with a warning, not a hard failure.
- */
-const validatePrompts = (prompts: unknown[], pluginName: string, sourcePath: string): ManifestPrompt[] => {
-  const validated: ManifestPrompt[] = [];
-  for (let i = 0; i < prompts.length; i++) {
-    const raw: unknown = prompts[i];
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-      log.warn(`Plugin "${pluginName}" prompts[${i}] at ${sourcePath} is not an object — skipping`);
-      continue;
-    }
-    const p = raw as Record<string, unknown>;
-
-    if (typeof p.name !== 'string' || p.name.length === 0) {
-      log.warn(`Plugin "${pluginName}" prompts[${i}] at ${sourcePath} has invalid name — skipping`);
-      continue;
-    }
-    if (p.description !== undefined && typeof p.description !== 'string') {
-      log.warn(`Plugin "${pluginName}" prompts[${i}] at ${sourcePath} has invalid description — skipping`);
-      continue;
-    }
-    if (p.arguments !== undefined && !Array.isArray(p.arguments)) {
-      log.warn(`Plugin "${pluginName}" prompts[${i}] at ${sourcePath} has invalid arguments — skipping`);
-      continue;
-    }
-
-    validated.push({
-      name: p.name,
-      description: typeof p.description === 'string' ? p.description : undefined,
-      arguments: Array.isArray(p.arguments)
-        ? validatePromptArguments(p.arguments, pluginName, i, sourcePath)
-        : undefined,
-    });
-  }
-  return validated;
-};
-
-/**
- * Validate prompt arguments within a prompt entry.
- * Invalid arguments are filtered out with a warning.
- */
-const validatePromptArguments = (
-  args: unknown[],
-  pluginName: string,
-  promptIndex: number,
-  sourcePath: string,
-): ManifestPromptArgument[] => {
-  const validated: ManifestPromptArgument[] = [];
-  for (let j = 0; j < args.length; j++) {
-    const raw: unknown = args[j];
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-      log.warn(
-        `Plugin "${pluginName}" prompts[${promptIndex}].arguments[${j}] at ${sourcePath} is not an object — skipping`,
-      );
-      continue;
-    }
-    const a = raw as Record<string, unknown>;
-    if (typeof a.name !== 'string' || a.name.length === 0) {
-      log.warn(
-        `Plugin "${pluginName}" prompts[${promptIndex}].arguments[${j}] at ${sourcePath} has invalid name — skipping`,
-      );
-      continue;
-    }
-    validated.push({
-      name: a.name,
-      description: typeof a.description === 'string' ? a.description : undefined,
-      required: typeof a.required === 'boolean' ? a.required : undefined,
-    });
-  }
-  return validated;
 };
 
 /**
@@ -450,8 +327,8 @@ const loadPlugin = async (
 
   // Read and validate tools.json
   // Supports two formats:
-  //   - Legacy: a plain array of tool definitions (pre-resources/prompts)
-  //   - Current: { tools: [...], resources: [...], prompts: [...] }
+  //   - Legacy: a plain array of tool definitions
+  //   - Current: { tools: [...] }
   const toolsJsonPath = join(dir, 'dist', TOOLS_FILENAME);
   let manifestRaw: unknown;
   try {
@@ -475,16 +352,6 @@ const loadPlugin = async (
     return err(toolsResult.error);
   }
   const tools = toolsResult.value;
-
-  // Extract and validate resources and prompts (default to [] for legacy format)
-  const resources: ManifestResource[] =
-    manifestObj && Array.isArray(manifestObj.resources)
-      ? validateResources(manifestObj.resources as unknown[], pluginName, dir)
-      : [];
-  const prompts: ManifestPrompt[] =
-    manifestObj && Array.isArray(manifestObj.prompts)
-      ? validatePrompts(manifestObj.prompts as unknown[], pluginName, dir)
-      : [];
 
   // Extract sdkVersion and check compatibility
   const pluginSdkVersion =
@@ -540,8 +407,6 @@ const loadPlugin = async (
     trustTier,
     iife,
     tools,
-    resources,
-    prompts,
     source,
     sourcePath: dir,
     adapterHash,
@@ -560,8 +425,6 @@ export {
   loadPlugin,
   parseMajorMinor,
   pluginNameFromPackage,
-  validatePrompts,
-  validateResources,
   validateTools,
 };
 export type { LoadedPlugin };

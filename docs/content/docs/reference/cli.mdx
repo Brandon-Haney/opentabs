@@ -819,7 +819,7 @@ opentabs-plugin build [options]
   </Table.Body>
 </Table>
 
-Reads plugin metadata from `package.json`'s `opentabs` field and serializes tool/resource/prompt schemas from the plugin module. On success, notifies the running MCP server via `POST /reload` so the updated plugin is picked up immediately without a server restart.
+Reads plugin metadata from `package.json`'s `opentabs` field and serializes tool schemas from the plugin module. On success, notifies the running MCP server via `POST /reload` so the updated plugin is picked up immediately without a server restart.
 
 ```bash
 # Build once
@@ -852,7 +852,7 @@ opentabs-plugin inspect [options]
   </Table.Body>
 </Table>
 
-Displays the plugin name, version, SDK version, tool count, resource count, and prompt count. For each tool, shows the display name, description, and input/output field names and types. For each resource, shows the URI, name, and MIME type. For each prompt, shows the name, description, and argument list.
+Displays the plugin name, version, SDK version, and tool count. For each tool, shows the display name, description, and input/output field names and types.
 
 ```bash
 # Pretty-print the manifest

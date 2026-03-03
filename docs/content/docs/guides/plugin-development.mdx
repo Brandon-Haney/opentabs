@@ -102,9 +102,7 @@ Here's what each field does:
 - **`tools`** — array of tool definitions (covered below).
 - **`isReady()`** — return `true` when the user is authenticated. The extension calls this to determine whether the plugin's tab is ready for tool dispatch.
 
-Beyond tools, your plugin can also declare `resources` (read-only data the agent can browse) and `prompts` (reusable message templates). Both require the `override` keyword because they are non-abstract properties declared on the base class — `tools` is abstract and does not require `override`. See [Resources & Prompts](/docs/guides/resources-prompts) for the full guide.
-
-Similarly, lifecycle hooks (`onActivate`, `onDeactivate`, `onNavigate`, `onToolInvocationStart`, `onToolInvocationEnd`) require `override` because they are optional methods defined on the base class (TypeScript's `noImplicitOverride` rule enforces this). See [Lifecycle Hooks](/docs/sdk/lifecycle-hooks) for usage examples.
+Lifecycle hooks (`onActivate`, `onDeactivate`, `onNavigate`, `onToolInvocationStart`, `onToolInvocationEnd`) require `override` because they are optional methods defined on the base class (TypeScript's `noImplicitOverride` rule enforces this). See [Lifecycle Hooks](/docs/sdk/lifecycle-hooks) for usage examples.
 
 ### Implementing isReady()
 
@@ -543,6 +541,5 @@ The MCP server auto-discovers packages matching `opentabs-plugin-*` in global `n
 
 - [Error Handling](/docs/guides/error-handling) — structured errors for AI agent retry logic
 - [Logging & Debugging](/docs/guides/logging-debugging) — debug your plugin with `opentabs logs` and `opentabs doctor`
-- [Resources & Prompts](/docs/guides/resources-prompts) — expose read-only data and prompt templates
 - [Streaming & Progress](/docs/guides/streaming-progress) — report progress for long-running tools
 - [SDK Reference](/docs/sdk/plugin-class) — full API reference for `OpenTabsPlugin`, `defineTool`, and utilities

@@ -436,7 +436,14 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, sender, sendResp
         let resolvedUrl = rawUrl;
         const result = await fetchWsInfo(httpBase);
         if ('response' in result && result.response.ok) {
-          const wsInfo = (await result.response.json()) as { wsUrl?: string };
+          let wsInfo: { wsUrl?: string };
+          try {
+            wsInfo = (await result.response.json()) as { wsUrl?: string };
+          } catch {
+            console.warn('[opentabs:offscreen] Failed to parse /ws-info response as JSON');
+            sendResponse({ ok: false, reason: 'Invalid /ws-info response' });
+            return;
+          }
           if (typeof wsInfo.wsUrl === 'string' && wsInfo.wsUrl !== '') {
             if (isValidWsOrigin(wsInfo.wsUrl, httpBase)) {
               resolvedUrl = wsInfo.wsUrl;

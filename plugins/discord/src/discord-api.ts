@@ -134,6 +134,7 @@ const AUTH_ERRORS = new Set([
   0, // General auth failure
   40001, // Unauthorized
   40002, // Verification required
+  50014, // Invalid authentication token
 ]);
 
 const NOT_FOUND_ERRORS = new Set([
@@ -154,7 +155,6 @@ const VALIDATION_ERRORS = new Set([
   50007, // Cannot send messages to this user
   50008, // Cannot edit message by another user
   50013, // Missing Permissions
-  50014, // Invalid authentication token
   50035, // Invalid Form Body
   50109, // Request body contains invalid JSON
 ]);
@@ -266,6 +266,7 @@ export const discordApi = async <T extends Record<string, unknown>>(
         throw ToolError.notFound(`Discord API error: ${discordMessage ?? errorBody} (code ${String(discordCode)})`);
       }
       if (AUTH_ERRORS.has(discordCode)) {
+        clearAuthCache();
         throw ToolError.auth(`Discord API error: ${discordMessage ?? errorBody} (code ${String(discordCode)})`);
       }
     }

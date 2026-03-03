@@ -28,10 +28,6 @@ export const navConfig: INavigationConfig = {
           href: '/docs/guides/logging-debugging',
         },
         {
-          title: 'Resources & Prompts',
-          href: '/docs/guides/resources-prompts',
-        },
-        {
           title: 'Streaming & Progress',
           href: '/docs/guides/streaming-progress',
         },
@@ -42,8 +38,6 @@ export const navConfig: INavigationConfig = {
       children: [
         { title: 'Plugin Class', href: '/docs/sdk/plugin-class' },
         { title: 'Tools', href: '/docs/sdk/tools' },
-        { title: 'Resources', href: '/docs/sdk/resources' },
-        { title: 'Prompts', href: '/docs/sdk/prompts' },
         { title: 'Utilities', href: '/docs/sdk/utilities' },
         { title: 'Lifecycle Hooks', href: '/docs/sdk/lifecycle-hooks' },
         { title: 'Error Types', href: '/docs/sdk/error-types' },

@@ -4,7 +4,7 @@ description: API reference for OpenTabsPlugin — the abstract base class every 
 lastUpdated: 2026-03-01
 ---
 
-Every OpenTabs plugin extends `OpenTabsPlugin` from the SDK. This class defines your plugin's identity, URL matching, readiness probe, and tool/resource/prompt registrations.
+Every OpenTabs plugin extends `OpenTabsPlugin` from the SDK. This class defines your plugin's identity, URL matching, readiness probe, and tool registrations.
 
 ## Import
 
@@ -21,8 +21,6 @@ abstract class OpenTabsPlugin {
   abstract readonly description: string;
   abstract readonly urlPatterns: string[];
   abstract readonly tools: ToolDefinition[];
-  readonly resources?: ResourceDefinition[];
-  readonly prompts?: PromptDefinition[];
 
   abstract isReady(): Promise<boolean>;
   teardown?(): void;
@@ -73,30 +71,6 @@ These properties are required — your subclass must define them.
       <Table.Cell className="font-medium">`tools`</Table.Cell>
       <Table.Cell>`ToolDefinition[]`</Table.Cell>
       <Table.Cell>Array of tool definitions. See [Tools](/docs/sdk/tools).</Table.Cell>
-    </Table.Row>
-  </Table.Body>
-</Table>
-
-## Optional Properties
-
-<Table>
-  <Table.Header>
-    <Table.Row>
-      <Table.Head>Property</Table.Head>
-      <Table.Head>Type</Table.Head>
-      <Table.Head>Description</Table.Head>
-    </Table.Row>
-  </Table.Header>
-  <Table.Body>
-    <Table.Row>
-      <Table.Cell className="font-medium">`resources`</Table.Cell>
-      <Table.Cell>`ResourceDefinition[]`</Table.Cell>
-      <Table.Cell>Read-only data exposed to AI agents. See [Resources](/docs/sdk/resources).</Table.Cell>
-    </Table.Row>
-    <Table.Row>
-      <Table.Cell className="font-medium">`prompts`</Table.Cell>
-      <Table.Cell>`PromptDefinition[]`</Table.Cell>
-      <Table.Cell>Prompt templates for AI agents. See [Prompts](/docs/sdk/prompts).</Table.Cell>
     </Table.Row>
   </Table.Body>
 </Table>

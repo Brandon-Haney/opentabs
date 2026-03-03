@@ -5,7 +5,6 @@ import { CliCommand } from './ComponentInstall';
 import {
   ArchitectureIllustration,
   ConfigDirectory,
-  DispatchFlow,
   ErrorCategories,
   FirstPluginFlow,
   HowItWorks,
@@ -119,7 +118,6 @@ const docComponents = {
   CliCommand,
   ArchitectureIllustration,
   ConfigDirectory,
-  DispatchFlow,
   ErrorCategories,
   FirstPluginFlow,
   HowItWorks,

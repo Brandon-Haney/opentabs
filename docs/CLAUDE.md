@@ -99,7 +99,6 @@ All illustrations live in `docs/components/illustrations.tsx` and are registered
 | `QuickStartFlow`           | `docs/content/docs/quick-start.mdx`               | Quick start installation steps        |
 | `ConfigDirectory`          | `docs/content/docs/reference/configuration.mdx`   | Config directory tree structure       |
 | `MonorepoStructure`        | `docs/content/docs/contributing/dev-setup.mdx`    | Monorepo project layout               |
-| `DispatchFlow`             | `docs/content/docs/guides/resources-prompts.mdx`  | Resource and prompt dispatch pipeline |
 | `PluginStructure`          | `docs/content/docs/guides/plugin-development.mdx` | Plugin directory structure            |
 | `ProgressFlow`             | `docs/content/docs/guides/streaming-progress.mdx` | 6-step progress notification pipeline |
 | `LifecycleSequence`        | `docs/content/docs/sdk/lifecycle-hooks.mdx`       | Lifecycle hooks execution timeline    |

@@ -371,6 +371,11 @@ if (process.platform !== 'win32') {
   });
 }
 
+// Enable dev mode for extension build scripts. When set, build-side-panel.ts
+// and build-extension.ts prepend WebSocket reload clients to their bundles,
+// enabling granular hot reload (side panel refresh or full extension reload).
+process.env.OPENTABS_DEV = '1';
+
 // 1. Start tsc --build --watch
 const devPrefix = `${MAGENTA}${BOLD}[dev]${RESET}`;
 console.log(`${devPrefix} Starting tsc --build --watch...`);

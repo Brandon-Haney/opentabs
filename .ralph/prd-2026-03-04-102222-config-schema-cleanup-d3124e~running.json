@@ -91,7 +91,7 @@
         "npm run test passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "e2eCheckpoint": false,
       "model": "sonnet",
       "notes": "Mechanical rename in platform/cli/src/commands/config.ts:\n- Line 54: CANONICAL_CONFIG_SECTIONS = ['localPlugins', 'permissions']\n- Line 58: comment\n- Line 71: normalized.permissions = config.permissions ?? {}\n- Lines 124, 126: key === 'permissions' and pc.cyan('permissions')\n- Lines 195-224: ensurePluginEntry and pruneEmptyPluginEntries — all config.plugins → config.permissions\n\nplatform/cli/src/commands/config.test.ts: all 'plugins' → 'permissions' in test fixtures."

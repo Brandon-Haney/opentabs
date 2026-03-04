@@ -10,7 +10,7 @@ import { PluginIcon } from './PluginIcon.js';
 import { Accordion } from './retro/Accordion.js';
 import { Alert } from './retro/Alert.js';
 import { Badge } from './retro/Badge.js';
-import { ToolRow } from './ToolRow.js';
+import { PermissionSelect, ToolRow } from './ToolRow.js';
 
 /** Raw SVG string for the Chrome logo, rendered via PluginIcon's sanitized SVG path. */
 const CHROME_ICON_SVG = [
@@ -137,23 +137,13 @@ const BrowserToolsCard = ({
           <ChevronDown className="chevron h-4 w-4 shrink-0 transition-transform duration-200" />
         </AccordionPrimitive.Trigger>
         <BrowserToolsMenu serverVersion={serverVersion} className="flex shrink-0 items-center px-1" />
-        <div
-          className="flex shrink-0 items-center px-3"
-          onClick={(e: React.MouseEvent) => e.stopPropagation()}
-          onKeyDown={(e: React.KeyboardEvent) => {
-            if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
-          }}
-          role="presentation">
-          <select
+        <div className="flex shrink-0 items-center px-3">
+          <PermissionSelect
             value={browserPermission}
-            onChange={e => handleBrowserPermissionChange(e.target.value as ToolPermission)}
-            disabled={skipPermissions}
-            aria-label="Permission for browser tools"
-            className="rounded border-2 border-border bg-card px-1 py-0.5 font-mono text-xs focus:shadow-[2px_2px_0_0_var(--color-border)] focus:outline-none">
-            <option value="off">Off</option>
-            <option value="ask">Ask</option>
-            <option value="auto">Auto</option>
-          </select>
+            onValueChange={handleBrowserPermissionChange}
+            disabled={skipPermissions ?? false}
+            ariaLabel="Permission for browser tools"
+          />
         </div>
       </AccordionPrimitive.Header>
 

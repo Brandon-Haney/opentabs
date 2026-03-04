@@ -49,7 +49,7 @@
         "npm run test passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "e2eCheckpoint": false,
       "model": "opus",
       "notes": "Key files:\n\n1. platform/mcp-server/src/config.ts:\n   - Remove 'skipPermissions?: boolean' from OpentabsConfig\n   - Remove the skipPermissions/skipConfirmation parsing block (lines 228-234)\n   - Remove skipPermissions from return (line 236) — after US-001 this returns { localPlugins, permissions }\n   - Remove 'skipPermissions: current.skipPermissions' from savePluginPermissions (line 330)\n\n2. platform/mcp-server/src/skip-permissions.ts (entire file, ~24 lines):\n   - Remove process.argv.includes('--dangerously-skip-confirmation')\n   - Remove process.env.OPENTABS_SKIP_CONFIRMATION === '1'\n   - Remove comments about legacy aliases\n   - Keep ONLY: process.argv.includes('--dangerously-skip-permissions') and process.env.OPENTABS_SKIP_PERMISSIONS === '1'\n\n3. platform/mcp-server/src/reload.ts:\n   - Line 224: Change `isCliSkipPermissions() || config.skipPermissions === true` to just `isCliSkipPermissions()`\n\n4. platform/mcp-server/src/config.test.ts:\n   - Remove 'preserves skipPermissions flag' test\n   - Remove 'migrates legacy skipConfirmation to skipPermissions' test\n\nstate.skipPermissions, isCliSkipPermissions(), and all runtime skip-permission logic STAYS — only the config file path and legacy aliases are removed."

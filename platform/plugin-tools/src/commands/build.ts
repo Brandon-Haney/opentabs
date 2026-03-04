@@ -589,6 +589,7 @@ const generateToolsManifest = (plugin: OpenTabsPlugin): ManifestTool[] =>
       name: tool.name,
       displayName: tool.displayName || deriveDisplayName(tool.name),
       description: tool.description,
+      ...(tool.summary ? { summary: tool.summary } : {}),
       icon: tool.icon || 'wrench',
       ...(tool.group ? { group: tool.group } : {}),
       input_schema: inputSchema,

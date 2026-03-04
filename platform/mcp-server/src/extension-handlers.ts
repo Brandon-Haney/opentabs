@@ -122,6 +122,7 @@ const serializePluginForExtension = (
     name: string;
     displayName: string;
     description: string;
+    summary?: string;
     icon: string;
     iconSvg?: string;
     iconInactiveSvg?: string;
@@ -146,6 +147,7 @@ const serializePluginForExtension = (
       name: t.name,
       displayName: t.displayName,
       description: t.description,
+      ...(t.summary ? { summary: t.summary } : {}),
       icon: t.icon,
       ...(t.iconSvg ? { iconSvg: t.iconSvg } : {}),
       ...(t.iconInactiveSvg ? { iconInactiveSvg: t.iconInactiveSvg } : {}),
@@ -313,6 +315,7 @@ const buildConfigStatePayload = (state: ServerState): ConfigStateResult => {
     .map(ct => ({
       name: ct.name,
       description: ct.description,
+      ...(ct.summary ? { summary: ct.summary } : {}),
       permission: getToolPermission(state, 'browser', ct.name),
       ...(ct.icon ? { icon: ct.icon } : {}),
       ...(ct.group ? { group: ct.group } : {}),

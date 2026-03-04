@@ -90,6 +90,7 @@ const rebuildCachedBrowserTools = (state: ServerState): void => {
     return {
       name: bt.name,
       description: bt.description,
+      ...(bt.summary ? { summary: bt.summary } : {}),
       ...(bt.icon ? { icon: bt.icon } : {}),
       ...(bt.group ? { group: bt.group } : {}),
       inputSchema: schema,

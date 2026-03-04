@@ -391,6 +391,166 @@ const MixedGroupedUngrouped: Story = {
   render: () => <MixedGroupedUngroupedDemo />,
 };
 
+/** Tools assigned to different groups — group header dividers with Switch toggles appear between sections. */
+const WithGroupsDemo = () => {
+  const [plugins, setPlugins] = useState([
+    mockPlugin({
+      tools: [
+        {
+          name: 'send_message',
+          displayName: 'Send Message',
+          description: 'Send a message to a channel or DM',
+          icon: 'send',
+          permission: 'auto',
+          group: 'Messaging',
+        },
+        {
+          name: 'read_messages',
+          displayName: 'Read Messages',
+          description: 'Read recent messages from a channel',
+          icon: 'message-square',
+          permission: 'auto',
+          group: 'Messaging',
+        },
+        {
+          name: 'list_channels',
+          displayName: 'List Channels',
+          description: 'List all channels in the workspace',
+          icon: 'list',
+          permission: 'auto',
+          group: 'Channels',
+        },
+        {
+          name: 'create_channel',
+          displayName: 'Create Channel',
+          description: 'Create a new channel',
+          icon: 'plus',
+          permission: 'auto',
+          group: 'Channels',
+        },
+        {
+          name: 'list_users',
+          displayName: 'List Users',
+          description: 'List all users in the workspace',
+          icon: 'users',
+          permission: 'auto',
+          group: 'Users',
+        },
+        {
+          name: 'get_user_profile',
+          displayName: 'Get User Profile',
+          description: 'Get profile details for a user',
+          icon: 'user',
+          permission: 'auto',
+          group: 'Users',
+        },
+        {
+          name: 'upload_file',
+          displayName: 'Upload File',
+          description: 'Upload a file to a channel',
+          icon: 'upload',
+          permission: 'off',
+          group: 'Files',
+        },
+      ],
+    }),
+  ]);
+  const plugin = plugins[0];
+  if (!plugin) return null;
+  return <PluginCard plugin={plugin} activeTools={new Set()} setPlugins={setPlugins} />;
+};
+
+const WithGroups: Story = {
+  render: () => <WithGroupsDemo />,
+};
+
+/** No tools have a group field — renders as a flat list with no group headers. */
+const NoGroupsDemo = () => {
+  const [plugins, setPlugins] = useState([
+    mockPlugin({
+      tools: [
+        {
+          name: 'send_message',
+          displayName: 'Send Message',
+          description: 'Send a message to a channel',
+          icon: 'send',
+          permission: 'auto',
+        },
+        {
+          name: 'list_channels',
+          displayName: 'List Channels',
+          description: 'List all channels',
+          icon: 'list',
+          permission: 'auto',
+        },
+        {
+          name: 'search',
+          displayName: 'Search',
+          description: 'Search messages',
+          icon: 'search',
+          permission: 'off',
+        },
+      ],
+    }),
+  ]);
+  const plugin = plugins[0];
+  if (!plugin) return null;
+  return <PluginCard plugin={plugin} activeTools={new Set()} setPlugins={setPlugins} />;
+};
+
+const NoGroups: Story = {
+  render: () => <NoGroupsDemo />,
+};
+
+/** All tools share the same group — a single group header appears above all tools. */
+const SingleGroupDemo = () => {
+  const [plugins, setPlugins] = useState([
+    mockPlugin({
+      tools: [
+        {
+          name: 'send_message',
+          displayName: 'Send Message',
+          description: 'Send a message to a channel or DM',
+          icon: 'send',
+          permission: 'auto',
+          group: 'Messaging',
+        },
+        {
+          name: 'read_messages',
+          displayName: 'Read Messages',
+          description: 'Read recent messages from a channel',
+          icon: 'message-square',
+          permission: 'auto',
+          group: 'Messaging',
+        },
+        {
+          name: 'search_messages',
+          displayName: 'Search Messages',
+          description: 'Search across all channels',
+          icon: 'search',
+          permission: 'auto',
+          group: 'Messaging',
+        },
+        {
+          name: 'edit_message',
+          displayName: 'Edit Message',
+          description: 'Edit a previously sent message',
+          icon: 'pencil',
+          permission: 'off',
+          group: 'Messaging',
+        },
+      ],
+    }),
+  ]);
+  const plugin = plugins[0];
+  if (!plugin) return null;
+  return <PluginCard plugin={plugin} activeTools={new Set()} setPlugins={setPlugins} />;
+};
+
+const SingleGroup: Story = {
+  render: () => <SingleGroupDemo />,
+};
+
 const SkipPermissionsDemo = () => {
   const [plugins, setPlugins] = useState([mockPlugin()]);
   const plugin = plugins[0];
@@ -415,5 +575,8 @@ export {
   RemovingState,
   GroupedTools,
   MixedGroupedUngrouped,
+  WithGroups,
+  NoGroups,
+  SingleGroup,
   SkipPermissions,
 };

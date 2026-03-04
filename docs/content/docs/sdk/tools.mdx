@@ -1,7 +1,7 @@
 ---
 title: Tools
 description: API reference for defineTool — define type-safe MCP tools with Zod schemas and handlers that run in the browser.
-lastUpdated: 2026-02-21
+lastUpdated: 2026-03-03
 ---
 
 Tools are the primary way plugins expose actions to AI agents. Each tool has a name, input/output Zod schemas, and a handler that runs in the browser page context with full access to the page's session.
@@ -35,6 +35,7 @@ interface ToolDefinition<
   displayName?: string;
   description: string;
   icon?: LucideIconName;
+  group?: string;
   input: TInput;
   output: TOutput;
   handle(params: z.infer<TInput>, context?: ToolHandlerContext): Promise<z.infer<TOutput>>;
@@ -71,6 +72,11 @@ interface ToolDefinition<
       <Table.Cell className="font-medium">`icon`</Table.Cell>
       <Table.Cell>`LucideIconName`</Table.Cell>
       <Table.Cell>Lucide icon in kebab-case (e.g., `'message-square'`). Displayed in the side panel. Optional — defaults to `'wrench'` during build when omitted. See [lucide.dev/icons](https://lucide.dev/icons).</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`group`</Table.Cell>
+      <Table.Cell>`string`</Table.Cell>
+      <Table.Cell>Optional group name for visual grouping in the side panel. Tools with the same group render together under a section header.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`input`</Table.Cell>

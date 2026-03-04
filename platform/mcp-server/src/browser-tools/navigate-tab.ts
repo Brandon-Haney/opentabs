@@ -10,6 +10,7 @@ import { safeUrl } from './url-validation.js';
 const navigateTab = defineBrowserTool({
   name: 'browser_navigate_tab',
   description: 'Navigate an existing browser tab to a new URL. Use browser_list_tabs to find tab IDs.',
+  summary: 'Navigate a tab to a new URL',
   icon: 'compass',
   group: 'Tabs',
   input: z.object({

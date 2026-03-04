@@ -14,6 +14,7 @@ const getResourceContent = defineBrowserTool({
     'Use browser_list_resources first to find the resource URL you want to read. ' +
     'Useful for reading minified JavaScript to understand API patterns, endpoints, data models, and authentication. ' +
     'Text content is returned as a string; binary resources (images, fonts, wasm) are returned as base64.',
+  summary: 'Read a page resource from cache',
   icon: 'file-code',
   group: 'Page Inspection',
   input: z.object({

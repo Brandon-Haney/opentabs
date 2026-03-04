@@ -15,6 +15,7 @@ const listResources = defineBrowserTool({
     'CDP resource types: Document, Stylesheet, Image, Media, Font, Script, TextTrack, XHR, Fetch, Prefetch, ' +
     'EventSource, WebSocket, Manifest, SignedExchange, Ping, CSPViolationReport, Preflight, Other. ' +
     'Pair with browser_get_resource_content to read the source of a specific resource.',
+  summary: 'List resources loaded by a page',
   icon: 'folder-tree',
   group: 'Page Inspection',
   input: z.object({

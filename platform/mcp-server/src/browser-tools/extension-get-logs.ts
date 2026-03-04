@@ -14,6 +14,7 @@ const extensionGetLogs = defineBrowserTool({
     'Retrieve internal logs from the OpenTabs Chrome extension (background script and offscreen document). ' +
     'Returns log entries with timestamp, level, source, and message. ' +
     'Use this to see error messages, WebSocket events, and plugin injection warnings without opening DevTools.',
+  summary: 'Get extension internal logs',
   icon: 'scroll-text',
   group: 'Extension',
   input: z.object({

@@ -170,6 +170,9 @@ const validateTools = (tools: unknown, sourcePath: string): Result<ManifestTool[
     const iconSvg = typeof toolRecord.iconSvg === 'string' ? toolRecord.iconSvg : undefined;
     const iconInactiveSvg = typeof toolRecord.iconInactiveSvg === 'string' ? toolRecord.iconInactiveSvg : undefined;
 
+    // Optional short human-readable summary for the UI
+    const summary = typeof toolRecord.summary === 'string' ? toolRecord.summary : undefined;
+
     // Optional group for visual grouping in the side panel
     const group = typeof toolRecord.group === 'string' ? toolRecord.group : undefined;
 
@@ -187,6 +190,7 @@ const validateTools = (tools: unknown, sourcePath: string): Result<ManifestTool[
       name,
       displayName,
       description,
+      ...(summary ? { summary } : {}),
       icon,
       ...(group ? { group } : {}),
       iconSvg,

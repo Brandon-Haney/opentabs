@@ -44,6 +44,8 @@ export interface ToolDefinition<
   displayName?: string;
   /** Human-readable description shown to MCP clients / AI agents */
   description: string;
+  /** Short human-readable summary for the UI. Falls back to description if omitted. */
+  summary?: string;
   /** Lucide icon name (kebab-case) displayed in the side panel. Defaults to 'wrench' during build when omitted. See https://lucide.dev/icons */
   icon?: LucideIconName;
   /** Optional group name for visual grouping in the side panel. Tools with the same group are rendered together under a section header. */

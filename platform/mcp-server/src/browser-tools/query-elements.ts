@@ -14,6 +14,7 @@ const queryElements = defineBrowserTool({
     'Query all elements matching a CSS selector and return their tag names, trimmed text content (first 200 chars), ' +
     'and specified HTML attributes. Useful for understanding page structure, finding interactive elements, and ' +
     'inspecting forms. Returns up to limit elements.',
+  summary: 'Query elements by CSS selector',
   icon: 'search',
   group: 'Page Inspection',
   input: z.object({

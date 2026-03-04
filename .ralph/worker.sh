@@ -382,18 +382,6 @@ You are an autonomous coding agent running in a git worktree. The safety net ver
     # The branch is unique to this worker — no conflicts possible.
     local branch_name
     branch_name=$(git -C "$WORKTREE_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)
-
-    # Commit the updated PRD (with passes flags) to the branch so progress
-    # survives consumer restarts. The PRD is normally gitignored (/.ralph/prd-*),
-    # so we force-add it. This commit is a progress checkpoint, not a code change.
-    local wt_prd="$WORKTREE_DIR/.ralph/$PRD_BASENAME"
-    if [ -f "$wt_prd" ]; then
-      git -C "$WORKTREE_DIR" add -f ".ralph/$PRD_BASENAME" 2>/dev/null || true
-      if ! git -C "$WORKTREE_DIR" diff --cached --quiet 2>/dev/null; then
-        git -C "$WORKTREE_DIR" commit -m "chore: save PRD progress [ralph]" --quiet 2>/dev/null || true
-      fi
-    fi
-
     local unpushed
     unpushed=$(git -C "$WORKTREE_DIR" rev-list --count "origin/main..$branch_name" 2>/dev/null || echo "0")
     local remote_exists

@@ -13,6 +13,7 @@ const extensionGetSidePanel = defineBrowserTool({
     'Get the side panel state and rendered HTML. ' +
     'Returns the React state (connected, loading, plugins) and the root innerHTML. ' +
     'If the side panel is not open, returns { open: false }.',
+  summary: 'Get side panel state and HTML',
   icon: 'panel-right',
   group: 'Extension',
   input: z.object({}),

@@ -12,6 +12,7 @@ const openTab = defineBrowserTool({
   description:
     'Open a new browser tab with the specified URL. Returns the new tab ID, ' +
     'which can be used with browser_navigate_tab, browser_close_tab, and browser_execute_script.',
+  summary: 'Open a new browser tab',
   icon: 'plus',
   group: 'Tabs',
   input: z.object({

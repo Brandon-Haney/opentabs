@@ -11,6 +11,7 @@ const typeText = defineBrowserTool({
   description:
     'Type text into an input field or textarea matching the CSS selector. Focuses the element, optionally clears ' +
     'existing content, sets the value, and dispatches input and change events to trigger any attached event listeners.',
+  summary: 'Type text into an input field',
   icon: 'keyboard',
   group: 'Page Interaction',
   input: z.object({

@@ -138,6 +138,8 @@ export interface ManifestTool {
   /** Human-readable display name shown in the side panel */
   displayName: string;
   description: string;
+  /** Short human-readable summary for the UI. Falls back to description if omitted. */
+  summary?: string;
   /** Lucide icon name (kebab-case) displayed in the side panel */
   icon: string;
   /** Tool group for visual grouping in the side panel */
@@ -203,6 +205,8 @@ export interface WireToolDef {
   /** Human-readable display name shown in the side panel */
   displayName: string;
   description: string;
+  /** Short human-readable summary for the UI. Falls back to description if omitted. */
+  summary?: string;
   /** Lucide icon name (kebab-case) displayed in the side panel */
   icon: string;
   /** Tool group for visual grouping in the side panel */
@@ -327,6 +331,8 @@ export interface ConfigStateFailedPlugin {
 export interface ConfigStateBrowserTool {
   name: string;
   description: string;
+  /** Short human-readable summary for the UI. Falls back to description if omitted. */
+  summary?: string;
   permission: ToolPermission;
   /** Lucide icon name (kebab-case) for the side panel */
   icon?: string;

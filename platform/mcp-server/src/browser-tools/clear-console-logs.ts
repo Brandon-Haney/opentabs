@@ -9,6 +9,7 @@ import { defineBrowserTool } from './definition.js';
 const clearConsoleLogs = defineBrowserTool({
   name: 'browser_clear_console_logs',
   description: 'Clear the console log buffer for a browser tab without disabling capture.',
+  summary: 'Clear captured console logs for a tab',
   icon: 'eraser',
   group: 'Page Inspection',
   input: z.object({

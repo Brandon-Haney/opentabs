@@ -18,6 +18,8 @@ import type { ServerState } from '../state.js';
 interface BrowserToolDefinition<TInput extends z.ZodObject = z.ZodObject> {
   name: string;
   description: string;
+  /** Short human-readable summary for the UI. Falls back to description if omitted. */
+  summary?: string;
   /** Lucide icon name (kebab-case) displayed in the side panel. Defaults to 'globe' if omitted. */
   icon?: string;
   /** Logical group name for displaying this tool in the side panel (e.g. 'Tabs', 'Network'). */

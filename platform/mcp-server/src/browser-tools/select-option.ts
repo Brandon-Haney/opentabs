@@ -11,6 +11,7 @@ const selectOption = defineBrowserTool({
   description:
     'Select an option from a <select> dropdown element by option value or visible label text. Dispatches a change ' +
     'event after selection. Specify either value or label — value takes precedence if both provided.',
+  summary: 'Select an option from a dropdown',
   icon: 'chevrons-up-down',
   group: 'Page Interaction',
   input: z.object({

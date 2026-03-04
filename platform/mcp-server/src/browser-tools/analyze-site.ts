@@ -29,6 +29,7 @@ const analyzeSiteTool = defineBrowserTool({
     'descriptions, and implementation approaches. ' +
     'Use this when starting to develop a new plugin for a website — it tells you everything you need ' +
     'to know about how the site works.',
+  summary: 'Analyze a site for plugin development',
   icon: 'scan-search',
   group: 'Plugins',
   input: z.object({

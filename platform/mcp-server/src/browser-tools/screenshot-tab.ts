@@ -12,6 +12,7 @@ const screenshotTab = defineBrowserTool({
     'Capture a screenshot of the visible area of a browser tab as a base64-encoded PNG image. ' +
     'The tab is automatically focused before capture. Returns the image as a base64 string ' +
     'without the data URI prefix.',
+  summary: 'Capture a screenshot of a tab',
   icon: 'camera',
   group: 'Page Inspection',
   input: z.object({

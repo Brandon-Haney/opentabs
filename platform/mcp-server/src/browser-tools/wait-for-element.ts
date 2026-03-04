@@ -12,6 +12,7 @@ const waitForElement = defineBrowserTool({
     'Wait for an element matching the CSS selector to appear in the DOM. Polls the page until the element is found ' +
     'or timeout expires. For SPAs where content loads asynchronously. Set visible=true to also require the element ' +
     'to be visible (not hidden by CSS).',
+  summary: 'Wait for an element to appear',
   icon: 'clock',
   group: 'Page Inspection',
   input: z.object({

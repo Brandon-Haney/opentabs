@@ -31,7 +31,7 @@ try {
 
 // Dynamic import of the compiled barrel to get actual tool definitions
 const { browserTools } = (await import(barrelPath)) as {
-  browserTools: readonly { name: string; description: string; icon?: string; group?: string }[];
+  browserTools: readonly { name: string; description: string; summary?: string; icon?: string; group?: string }[];
 };
 
 /** Escape a string for use inside a single-quoted TypeScript string literal */
@@ -42,6 +42,7 @@ const entries = browserTools
   .map(t => ({
     name: t.name,
     description: t.description,
+    ...(t.summary ? { summary: t.summary } : {}),
     icon: t.icon ?? 'globe',
     group: t.group,
   }))
@@ -59,6 +60,8 @@ const lines: string[] = [
   'export interface BrowserToolMeta {',
   '  readonly name: string;',
   '  readonly description: string;',
+  '  /** Short human-readable summary for the UI. Falls back to description if omitted. */',
+  '  readonly summary?: string;',
   '  readonly icon: string;',
   '  readonly group?: string;',
   '}',
@@ -70,6 +73,7 @@ for (const entry of entries) {
   lines.push('  {');
   lines.push(`    name: ${singleQuote(entry.name)},`);
   lines.push(`    description: ${singleQuote(entry.description)},`);
+  if (entry.summary) lines.push(`    summary: ${singleQuote(entry.summary)},`);
   lines.push(`    icon: ${singleQuote(entry.icon)},`);
   if (entry.group) lines.push(`    group: ${singleQuote(entry.group)},`);
   lines.push('  },');

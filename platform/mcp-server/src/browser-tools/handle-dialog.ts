@@ -15,6 +15,7 @@ const handleDialog = defineBrowserTool({
     'For prompt() dialogs, provide promptText with the text to enter before accepting. ' +
     'Common scenario: a tool call times out or errors because a dialog appeared — call this tool to dismiss it, ' +
     'then retry the original action.',
+  summary: 'Handle a JavaScript dialog',
   icon: 'message-square',
   group: 'Page Interaction',
   input: z.object({

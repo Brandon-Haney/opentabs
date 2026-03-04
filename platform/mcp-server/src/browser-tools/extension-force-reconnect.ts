@@ -15,6 +15,7 @@ const extensionForceReconnect = defineBrowserTool({
     'This tears down the current connection, resets the backoff timer, and initiates an immediate ' +
     'reconnection attempt. The normal sync.full flow resumes after reconnection. ' +
     'Use this to recover from stale connections without a full extension reload.',
+  summary: 'Force WebSocket reconnection',
   icon: 'refresh-cw',
   group: 'Extension',
   input: z.object({}),

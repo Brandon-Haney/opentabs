@@ -57,6 +57,29 @@ const LongDescription: Story = {
   },
 };
 
+const WithSummary: Story = {
+  args: {
+    ...Auto.args,
+    name: 'create_pull_request',
+    displayName: 'Create Pull Request',
+    description:
+      'Create a new pull request from a head branch to a base branch with title, body, reviewers, and labels. Supports draft mode and auto-merge configuration.',
+    summary: 'Create a new pull request',
+    icon: 'git-pull-request',
+  },
+};
+
+const WithoutSummary: Story = {
+  args: {
+    ...Auto.args,
+    name: 'create_pull_request',
+    displayName: 'Create Pull Request',
+    description:
+      'Create a new pull request from a head branch to a base branch with title, body, reviewers, and labels. Supports draft mode and auto-merge configuration.',
+    icon: 'git-pull-request',
+  },
+};
+
 const InteractiveDemo = () => {
   const [permission, setPermission] = useState<ToolPermission>('auto');
   return (
@@ -136,4 +159,4 @@ const ToolList: Story = {
 };
 
 export default meta;
-export { Off, Ask, Auto, Active, Disabled, LongDescription, Interactive, ToolList };
+export { Off, Ask, Auto, Active, Disabled, LongDescription, WithSummary, WithoutSummary, Interactive, ToolList };

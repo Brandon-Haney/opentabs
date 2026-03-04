@@ -46,16 +46,25 @@ const clearPersistedAuth = (): void => {
 // Auth extraction
 // ---------------------------------------------------------------------------
 
-const extractFuidFromCookie = (): string | null => {
+const decodeRecentUserData = (): Record<string, unknown> | null => {
   const raw = getCookie('recent_user_data');
   if (!raw) return null;
+  // Cookie value is: URL-encoded → JSON string → base64 → JSON object
+  try {
+    const unquoted = JSON.parse(raw) as string;
+    return JSON.parse(atob(unquoted)) as Record<string, unknown>;
+  } catch {}
+  // Fallback: plain double-JSON
   try {
     const outer = JSON.parse(raw) as string;
-    const data = JSON.parse(outer) as { fileBrowserUserId?: string };
-    return data.fileBrowserUserId ?? null;
-  } catch {
-    return null;
-  }
+    return JSON.parse(outer) as Record<string, unknown>;
+  } catch {}
+  return null;
+};
+
+const extractFuidFromCookie = (): string | null => {
+  const data = decodeRecentUserData() as { fileBrowserUserId?: string } | null;
+  return data?.fileBrowserUserId ?? null;
 };
 
 const extractTeamIdFromUrl = (): string | null => {
@@ -83,15 +92,10 @@ const extractFromInitialOptions = (): { fuid?: string; teamId?: string } => {
 };
 
 const extractTeamIdFromUserState = (): string | null => {
-  const raw = getCookie('recent_user_data');
-  if (!raw) return null;
-  try {
-    const outer = JSON.parse(raw) as string;
-    const data = JSON.parse(outer) as { userIdToPlan?: Record<string, [string, string]> };
-    if (!data.userIdToPlan) return null;
-    const plans = Object.values(data.userIdToPlan);
-    if (plans.length > 0 && plans[0] && plans[0].length >= 2) return plans[0][1] ?? null;
-  } catch {}
+  const data = decodeRecentUserData() as { userIdToPlan?: Record<string, [string, string]> } | null;
+  if (!data?.userIdToPlan) return null;
+  const plans = Object.values(data.userIdToPlan);
+  if (plans.length > 0 && plans[0] && plans[0].length >= 2) return plans[0][1] ?? null;
   return null;
 };
 

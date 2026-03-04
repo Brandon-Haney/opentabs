@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Solutions for common OpenTabs issues — connection problems, plugin state issues, timeouts, diagnostics, and build errors.
-lastUpdated: 2026-03-01
+lastUpdated: 2026-03-03
 ---
 
 ## First steps
@@ -173,7 +173,7 @@ The Chrome extension does not auto-reload. After rebuilding:
     <Table.Row>
       <Table.Cell className="font-medium">Plugin name validation</Table.Cell>
       <Table.Cell>Name has invalid characters or is reserved</Table.Cell>
-      <Table.Cell>Names must match `^[a-z][a-z0-9-]*$` and not be reserved (e.g., `browser`, `extension`).</Table.Cell>
+      <Table.Cell>Names must match `^[a-z0-9]+(-[a-z0-9]+)*$` (lowercase alphanumeric segments separated by single hyphens) and not be reserved (e.g., `browser`, `extension`).</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">Missing dependencies</Table.Cell>

@@ -10,6 +10,7 @@ const closeTab = defineBrowserTool({
   name: 'browser_close_tab',
   description: 'Close a browser tab by its tab ID. Use browser_list_tabs to find tab IDs.',
   icon: 'x',
+  group: 'Tabs',
   input: z.object({
     tabId: z.number().int().positive().describe('The tab ID to close'),
   }),

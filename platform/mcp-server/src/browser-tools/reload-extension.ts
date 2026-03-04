@@ -16,6 +16,7 @@ const reloadExtension = defineBrowserTool({
   description:
     'Reload the OpenTabs Chrome extension. The extension will briefly disconnect and automatically reconnect.',
   icon: 'rotate-cw',
+  group: 'Extension',
   input: z.object({}),
   handler: (_args, state) => {
     if (!state.extensionWs) {

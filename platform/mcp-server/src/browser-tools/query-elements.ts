@@ -15,6 +15,7 @@ const queryElements = defineBrowserTool({
     'and specified HTML attributes. Useful for understanding page structure, finding interactive elements, and ' +
     'inspecting forms. Returns up to limit elements.',
   icon: 'search',
+  group: 'Page Inspection',
   input: z.object({
     tabId: z.number().int().positive().describe('Tab ID of the page to query'),
     selector: z.string().min(1).describe('CSS selector to query'),

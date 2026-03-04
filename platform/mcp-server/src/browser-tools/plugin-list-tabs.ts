@@ -15,6 +15,7 @@ const pluginListTabs = defineBrowserTool({
     'status for each matching tab. Use this to discover which tabs are available before targeting a specific one ' +
     'with the tabId parameter on plugin tools. When called without a plugin argument, returns tabs for all plugins.',
   icon: 'list',
+  group: 'Plugins',
   input: z.object({
     plugin: z
       .string()

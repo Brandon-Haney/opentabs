@@ -14,6 +14,7 @@ const extensionGetSidePanel = defineBrowserTool({
     'Returns the React state (connected, loading, plugins) and the root innerHTML. ' +
     'If the side panel is not open, returns { open: false }.',
   icon: 'panel-right',
+  group: 'Extension',
   input: z.object({}),
   handler: async (_args, state) => dispatchToExtension(state, 'extension.getSidePanel', {}),
 });

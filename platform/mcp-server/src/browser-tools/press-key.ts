@@ -15,6 +15,7 @@ const pressKey = defineBrowserTool({
     'menus/dropdowns, Ctrl+K or Cmd+K for search. Supports Ctrl and Meta (Cmd) as independent modifiers. ' +
     'Uses standard KeyboardEvent.key values.',
   icon: 'command',
+  group: 'Page Interaction',
   input: z.object({
     tabId: z.number().int().positive().describe('Tab ID of the page to interact with'),
     key: z

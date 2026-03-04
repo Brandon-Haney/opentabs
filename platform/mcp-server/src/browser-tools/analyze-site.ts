@@ -30,6 +30,7 @@ const analyzeSiteTool = defineBrowserTool({
     'Use this when starting to develop a new plugin for a website — it tells you everything you need ' +
     'to know about how the site works.',
   icon: 'scan-search',
+  group: 'Plugins',
   input: z.object({
     url: safeUrl.describe('URL of the site to analyze'),
     waitSeconds: z

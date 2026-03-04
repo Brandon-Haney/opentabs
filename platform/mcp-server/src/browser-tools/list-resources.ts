@@ -16,6 +16,7 @@ const listResources = defineBrowserTool({
     'EventSource, WebSocket, Manifest, SignedExchange, Ping, CSPViolationReport, Preflight, Other. ' +
     'Pair with browser_get_resource_content to read the source of a specific resource.',
   icon: 'folder-tree',
+  group: 'Page Inspection',
   input: z.object({
     tabId: z.number().int().positive().describe('Tab ID to list resources for'),
     type: z

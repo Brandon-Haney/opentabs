@@ -15,6 +15,7 @@ const extensionGetLogs = defineBrowserTool({
     'Returns log entries with timestamp, level, source, and message. ' +
     'Use this to see error messages, WebSocket events, and plugin injection warnings without opening DevTools.',
   icon: 'scroll-text',
+  group: 'Extension',
   input: z.object({
     level: z
       .enum(['log', 'warn', 'error', 'info', 'all'])

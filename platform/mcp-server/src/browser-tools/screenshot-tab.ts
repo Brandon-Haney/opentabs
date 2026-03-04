@@ -13,6 +13,7 @@ const screenshotTab = defineBrowserTool({
     'The tab is automatically focused before capture. Returns the image as a base64 string ' +
     'without the data URI prefix.',
   icon: 'camera',
+  group: 'Page Inspection',
   input: z.object({
     tabId: z
       .number()

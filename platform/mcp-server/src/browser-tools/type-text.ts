@@ -12,6 +12,7 @@ const typeText = defineBrowserTool({
     'Type text into an input field or textarea matching the CSS selector. Focuses the element, optionally clears ' +
     'existing content, sets the value, and dispatches input and change events to trigger any attached event listeners.',
   icon: 'keyboard',
+  group: 'Page Interaction',
   input: z.object({
     tabId: z.number().int().positive().describe('Tab ID of the page to interact with'),
     selector: z.string().min(1).describe('CSS selector of the input or textarea'),

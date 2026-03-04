@@ -17,6 +17,7 @@ const extensionCheckAdapter = defineBrowserTool({
     "Use this tool to diagnose why a plugin's tools are failing — common issues include adapter not injected, " +
     'stale adapter hash, or isReady() returning false.',
   icon: 'plug',
+  group: 'Extension',
   input: z.object({
     plugin: z.string().describe('The plugin name to check (e.g., "slack", "e2e-test")'),
   }),

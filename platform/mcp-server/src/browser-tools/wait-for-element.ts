@@ -13,6 +13,7 @@ const waitForElement = defineBrowserTool({
     'or timeout expires. For SPAs where content loads asynchronously. Set visible=true to also require the element ' +
     'to be visible (not hidden by CSS).',
   icon: 'clock',
+  group: 'Page Inspection',
   input: z.object({
     tabId: z.number().int().positive().describe('Tab ID of the page to wait on'),
     selector: z.string().min(1).describe('CSS selector to wait for'),

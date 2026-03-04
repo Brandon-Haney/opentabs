@@ -13,6 +13,7 @@ const listTabs = defineBrowserTool({
     'Use the returned tab IDs with browser_close_tab, browser_navigate_tab, and browser_execute_script. ' +
     'Note: Returns ALL open tabs including potentially sensitive ones (banking, email, etc.). Tab URLs and titles may contain private information. Do not share tab information with plugin tools unless the user explicitly requests it.',
   icon: 'layout-list',
+  group: 'Tabs',
   input: z.object({}),
   handler: async (_args, state) => dispatchToExtension(state, 'browser.listTabs', {}),
 });

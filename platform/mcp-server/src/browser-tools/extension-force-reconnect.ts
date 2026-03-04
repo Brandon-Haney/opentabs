@@ -16,6 +16,7 @@ const extensionForceReconnect = defineBrowserTool({
     'reconnection attempt. The normal sync.full flow resumes after reconnection. ' +
     'Use this to recover from stale connections without a full extension reload.',
   icon: 'refresh-cw',
+  group: 'Extension',
   input: z.object({}),
   handler: async (_args, state) => dispatchToExtension(state, 'extension.forceReconnect', {}),
 });

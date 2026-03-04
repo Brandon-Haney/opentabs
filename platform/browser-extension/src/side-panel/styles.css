@@ -168,6 +168,38 @@ body {
   animation: activity-border-fade-out 0.5s ease-out forwards;
 }
 
+/* Plugin group transition: fade in + slide up for ready plugins */
+@keyframes group-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-group-fade-in {
+  animation: group-fade-in 200ms ease-out forwards;
+}
+
+/* Plugin group transition: fade in + slide up for not-ready plugins (ends at reduced opacity) */
+@keyframes group-fade-in-dim {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 0.7;
+    transform: translateY(0);
+  }
+}
+
+.animate-group-fade-in-dim {
+  animation: group-fade-in-dim 200ms ease-out forwards;
+}
+
 /* Hide native number input spinner — replaced by custom chevron buttons */
 .hide-number-spinner::-webkit-outer-spin-button,
 .hide-number-spinner::-webkit-inner-spin-button {

@@ -27,6 +27,7 @@ const PluginCard = ({
   removingPlugin,
   actionError,
   skipPermissions,
+  transitionClass,
 }: {
   plugin: PluginState;
   activeTools: Set<string>;
@@ -38,6 +39,7 @@ const PluginCard = ({
   removingPlugin?: boolean;
   actionError?: string | null;
   skipPermissions?: boolean;
+  transitionClass?: string;
 }) => {
   const [toggleError, setToggleError] = useState<string | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -120,11 +122,12 @@ const PluginCard = ({
     <Accordion.Item
       value={plugin.name}
       className={
-        removingPlugin
+        transitionClass ??
+        (removingPlugin
           ? 'pointer-events-none opacity-60 transition-opacity'
           : plugin.tabState !== 'ready'
             ? 'opacity-70 transition-opacity'
-            : undefined
+            : undefined)
       }>
       <AccordionPrimitive.Header className="flex">
         <AccordionPrimitive.Trigger className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-3 py-2 focus:outline-hidden [&[data-state=open]>svg]:rotate-180">

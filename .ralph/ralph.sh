@@ -18,7 +18,7 @@
 #   prd-YYYY-MM-DD-HHMMSS-objective.json           — ready to be picked up
 #   prd-YYYY-MM-DD-HHMMSS-objective~running.json   — currently being executed
 #   prd-YYYY-MM-DD-HHMMSS-objective~done.json      — completed, pending archive
-#   archived to .ralph/archive/                     — final resting place
+#   archived to .ralph/archive/YYYY-MM-DD/           — final resting place
 #
 # Multiple PRDs can be ~running simultaneously (one per worker).
 #
@@ -510,7 +510,10 @@ archive_run() {
   local tag="$3"
   local base
   base=$(basename "$prd_file" .json)
-  local archive_folder="$ARCHIVE_DIR/$base"
+  # Extract date from PRD name: prd-YYYY-MM-DD-... → YYYY-MM-DD
+  local date_part
+  date_part=$(echo "$base" | sed 's/^prd-\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)-.*/\1/')
+  local archive_folder="$ARCHIVE_DIR/$date_part/$base"
 
   mkdir -p "$archive_folder" || return 1
 

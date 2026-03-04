@@ -59,7 +59,7 @@ docker ps --filter "name=ralph-worker-"
 ├── RALPH.md              # Agent instructions (injected into workers)
 ├── CLAUDE.md             # This file
 ├── ralph.log             # Daemon log output
-├── archive/              # Completed PRDs
+├── archive/              # Completed PRDs (organized by date: YYYY-MM-DD/)
 └── worktrees/            # Git worktrees (ephemeral)
 ```
 

@@ -13,9 +13,8 @@ import { PluginMenu } from './PluginMenu.js';
 import { Accordion } from './retro/Accordion.js';
 import { Alert } from './retro/Alert.js';
 import { Badge } from './retro/Badge.js';
-import { Switch } from './retro/Switch.js';
 import { Tooltip } from './retro/Tooltip.js';
-import { ToolRow } from './ToolRow.js';
+import { PermissionSelect, ToolRow } from './ToolRow.js';
 
 const PluginCard = ({
   plugin,
@@ -85,22 +84,6 @@ const PluginCard = ({
         updatePluginTools(() => preToggleRef.current);
       }
       showToggleError(`Failed to update ${toolName}`);
-    });
-  };
-
-  const handleToggleGroup = (groupTools: WireToolDef[], checked: boolean) => {
-    const myVersion = ++toggleCounter.current;
-    const permission: ToolPermission = checked ? 'auto' : 'off';
-    const groupToolNames = new Set(groupTools.map(t => t.name));
-    updatePluginTools(prev => {
-      preToggleRef.current = prev;
-      return prev.map(t => (groupToolNames.has(t.name) ? { ...t, permission } : t));
-    });
-    void Promise.all(groupTools.map(t => setToolPermission(plugin.name, t.name, permission))).catch(() => {
-      if (toggleCounter.current === myVersion) {
-        updatePluginTools(() => preToggleRef.current);
-      }
-      showToggleError('Failed to toggle group');
     });
   };
 
@@ -192,23 +175,13 @@ const PluginCard = ({
           removing={removingPlugin ?? false}
           className="flex shrink-0 items-center px-1"
         />
-        <div
-          className="flex shrink-0 items-center px-3"
-          onClick={(e: React.MouseEvent) => e.stopPropagation()}
-          onKeyDown={(e: React.KeyboardEvent) => {
-            if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
-          }}
-          role="presentation">
-          <select
+        <div className="flex shrink-0 items-center px-3">
+          <PermissionSelect
             value={plugin.permission}
-            onChange={e => handlePluginPermissionChange(e.target.value as ToolPermission)}
-            disabled={skipPermissions}
-            aria-label={`Permission for ${plugin.name} plugin`}
-            className="rounded border-2 border-border bg-card px-1 py-0.5 font-mono text-xs focus:shadow-[2px_2px_0_0_var(--color-border)] focus:outline-none">
-            <option value="off">Off</option>
-            <option value="ask">Ask</option>
-            <option value="auto">Auto</option>
-          </select>
+            onValueChange={handlePluginPermissionChange}
+            disabled={skipPermissions ?? false}
+            ariaLabel={`Permission for ${plugin.name} plugin`}
+          />
         </div>
       </AccordionPrimitive.Header>
 
@@ -232,16 +205,8 @@ const PluginCard = ({
         {hasAnyGroup
           ? toolGroups.map(group => (
               <div key={group.name}>
-                <div className="flex items-center gap-2 border-border border-b bg-muted/20 px-3 py-1">
-                  <span className="flex-1 font-head text-muted-foreground text-xs uppercase tracking-wider">
-                    {group.name}
-                  </span>
-                  <Switch
-                    checked={group.tools.every(t => t.permission !== 'off')}
-                    onCheckedChange={checked => handleToggleGroup(group.tools, checked)}
-                    disabled={skipPermissions}
-                    aria-label={`Toggle all ${group.name} tools`}
-                  />
+                <div className="border-border border-b bg-muted/20 px-3 py-1">
+                  <span className="font-head text-muted-foreground text-xs uppercase tracking-wider">{group.name}</span>
                 </div>
                 {group.tools.map(tool => (
                   <ToolRow

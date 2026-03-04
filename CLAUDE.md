@@ -294,6 +294,18 @@ git config user.email "ralph@opentabs.dev"
 
 ## Committing and Pushing
 
+### Pre-Commit Review
+
+When the user asks to commit, **review every changed line before staging.** This is the last gate before code enters the repository — treat it as a code review, not a formality.
+
+- **Read the full diff** (`git diff` for unstaged, `git diff --cached` for staged). Do not commit changes you have not re-read.
+- **Verify the code meets the highest standard.** No workarounds. No monkey patches. No "good enough for now." Every function must be clean, well-named, and correctly abstracted. If a change is a hack that papers over a bug rather than fixing the root cause, stop and fix it properly before committing.
+- **Verify no dead code, debug artifacts, or commented-out lines** made it in.
+- **Verify the change is complete.** All call sites updated, all types correct, all tests passing, all related files consistent. A partial change is worse than no change.
+- **If anything looks wrong, fix it first.** Do not commit with a mental note to "clean up later." Later never comes.
+
+### Push Protocol
+
 When asked to commit and push, always pull first to rebase on the latest remote before pushing. The pre-push hook runs the full build and test suite, so pushes can take a few minutes.
 
 ```bash

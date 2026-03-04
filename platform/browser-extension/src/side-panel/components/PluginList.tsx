@@ -2,106 +2,78 @@ import type { TabState } from '@opentabs-dev/shared';
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from 'react';
 import type { FailedPluginState, PluginState } from '../bridge.js';
 import { matchesTool } from '../bridge.js';
+import {
+  buildStateSnapshot,
+  collapseTransitioningItems,
+  detectGroupChanges,
+  FADE_IN_MS,
+  getTransitionClass,
+  groupPlugins,
+} from '../group-transitions.js';
 import { FailedPluginCard } from './FailedPluginCard.js';
 import { PluginCard } from './PluginCard.js';
 import { Accordion } from './retro/Accordion.js';
 
-/** Duration for fade-out at old position (ms) */
-const FADE_OUT_MS = 150;
-/** Duration for fade-in at new position (ms) */
-const FADE_IN_MS = 200;
-
-type TransitionPhase = 'fading-out' | 'fading-in';
-
 /**
- * Track plugins transitioning between ready and not-ready groups.
- * Returns a map of plugin name → current transition phase, plus CSS class helpers.
+ * React hook that tracks which plugins are currently animating after a group change.
+ * Uses per-plugin timers to clear the animation class after FADE_IN_MS.
  */
 function useGroupTransitions(plugins: PluginState[], isFiltering: boolean) {
   const prevStates = useRef<Map<string, TabState>>(new Map());
-  const [transitioning, setTransitioning] = useState<Map<string, TransitionPhase>>(new Map());
+  const [animating, setAnimating] = useState<Set<string>>(new Set());
+  const clearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-  // Detect plugins that changed groups
   useEffect(() => {
     if (isFiltering) {
-      prevStates.current = new Map(plugins.map(p => [p.name, p.tabState]));
+      prevStates.current = buildStateSnapshot(plugins);
       return;
     }
 
-    const newTransitions = new Map<string, TransitionPhase>();
+    const changed = detectGroupChanges(prevStates.current, plugins);
+    prevStates.current = buildStateSnapshot(plugins);
 
-    for (const plugin of plugins) {
-      const prev = prevStates.current.get(plugin.name);
-      if (prev === undefined) continue;
+    if (changed.size === 0) return;
 
-      const wasReady = prev === 'ready';
-      const isReady = plugin.tabState === 'ready';
-
-      if (wasReady !== isReady) {
-        newTransitions.set(plugin.name, 'fading-out');
-      }
-    }
-
-    // Update stored states
-    prevStates.current = new Map(plugins.map(p => [p.name, p.tabState]));
-
-    if (newTransitions.size === 0) return;
-
-    // Start fade-out phase
-    setTransitioning(prev => {
-      const next = new Map(prev);
-      for (const [name, phase] of newTransitions) {
-        next.set(name, phase);
-      }
+    setAnimating(prev => {
+      const next = new Set(prev);
+      for (const name of changed) next.add(name);
       return next;
     });
 
-    let fadeInTimer: ReturnType<typeof setTimeout> | undefined;
-
-    // After fade-out, switch to fade-in phase
-    const fadeOutTimer = setTimeout(() => {
-      setTransitioning(prev => {
-        const next = new Map<string, TransitionPhase>();
-        for (const [name, phase] of prev) {
-          if (newTransitions.has(name) && phase === 'fading-out') {
-            next.set(name, 'fading-in');
-          } else {
-            next.set(name, phase);
-          }
-        }
-        return next;
-      });
-
-      // After fade-in, clear transitions
-      fadeInTimer = setTimeout(() => {
-        setTransitioning(prev => {
-          const next = new Map(prev);
-          for (const name of newTransitions.keys()) {
+    // Per-plugin timer so rapid successive transitions don't cancel each other
+    for (const name of changed) {
+      const existing = clearTimers.current.get(name);
+      if (existing) clearTimeout(existing);
+      clearTimers.current.set(
+        name,
+        setTimeout(() => {
+          clearTimers.current.delete(name);
+          setAnimating(prev => {
+            if (!prev.has(name)) return prev;
+            const next = new Set(prev);
             next.delete(name);
-          }
-          return next.size === 0 ? new Map() : next;
-        });
-      }, FADE_IN_MS);
-    }, FADE_OUT_MS);
-
-    return () => {
-      clearTimeout(fadeOutTimer);
-      clearTimeout(fadeInTimer);
-    };
+            return next;
+          });
+        }, FADE_IN_MS),
+      );
+    }
   }, [plugins, isFiltering]);
 
-  const getTransitionClass = useCallback(
-    (pluginName: string, isReady: boolean): string | undefined => {
-      const phase = transitioning.get(pluginName);
-      if (!phase) return undefined;
-      if (phase === 'fading-out') return 'opacity-0 transition-opacity duration-150';
-      // Fade-in: use different animation depending on target group opacity
-      return isReady ? 'animate-group-fade-in' : 'animate-group-fade-in-dim';
+  // Cleanup all timers on unmount
+  useEffect(
+    () => () => {
+      for (const timer of clearTimers.current.values()) clearTimeout(timer);
     },
-    [transitioning],
+    [],
   );
 
-  return { transitioning, getTransitionClass };
+  const resolveTransitionClass = useCallback(
+    (pluginName: string, isReadyGroup: boolean): string | undefined =>
+      getTransitionClass(pluginName, isReadyGroup, animating),
+    [animating],
+  );
+
+  return { animating, resolveTransitionClass };
 }
 
 const PluginList = ({
@@ -136,43 +108,30 @@ const PluginList = ({
   // Hide failed plugins when filtering tools
   const visibleFailed = filterLower ? [] : failedPlugins;
 
-  const { transitioning, getTransitionClass } = useGroupTransitions(plugins, !!filterLower);
+  const { animating, resolveTransitionClass } = useGroupTransitions(plugins, !!filterLower);
+
+  // Controlled accordion state — collapse cards when they change groups
+  const [openReady, setOpenReady] = useState<string[]>([]);
+  const [openNotReady, setOpenNotReady] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (animating.size === 0) return;
+    setOpenReady(prev => collapseTransitioningItems(prev, animating));
+    setOpenNotReady(prev => collapseTransitioningItems(prev, animating));
+  }, [animating]);
+
+  // Group plugins by readiness (only when not filtering)
+  const { ready: readyPlugins, notReady: notReadyPlugins } = filterLower
+    ? { ready: [], notReady: [] }
+    : groupPlugins(visiblePlugins);
+
+  const hasNotReady = notReadyPlugins.length > 0;
 
   // Track whether the not-ready section was previously visible for label animation
   const prevHadNotReady = useRef(false);
   const [labelVisible, setLabelVisible] = useState(false);
   const [labelMounted, setLabelMounted] = useState(false);
 
-  // Group plugins, accounting for fade-out: during fade-out a plugin stays in its old group
-  const readyPlugins: PluginState[] = [];
-  const notReadyPlugins: PluginState[] = [];
-
-  if (!filterLower) {
-    for (const plugin of visiblePlugins) {
-      const phase = transitioning.get(plugin.name);
-      if (phase === 'fading-out') {
-        // During fade-out, keep in OLD group (opposite of current state)
-        if (plugin.tabState === 'ready') {
-          // Now ready → was not-ready → keep in not-ready during fade-out
-          notReadyPlugins.push(plugin);
-        } else {
-          // Now not-ready → was ready → keep in ready during fade-out
-          readyPlugins.push(plugin);
-        }
-      } else {
-        // Normal or fading-in: use current state
-        if (plugin.tabState === 'ready') {
-          readyPlugins.push(plugin);
-        } else {
-          notReadyPlugins.push(plugin);
-        }
-      }
-    }
-  }
-
-  const hasNotReady = notReadyPlugins.length > 0;
-
-  // Manage label mount/visibility for smooth fade in/out
   useEffect(() => {
     let unmountTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -181,7 +140,6 @@ const PluginList = ({
       setLabelVisible(false);
       prevHadNotReady.current = false;
     } else if (hasNotReady && !prevHadNotReady.current) {
-      // Not-ready section appearing — mount label, then make visible next frame
       setLabelMounted(true);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -190,12 +148,10 @@ const PluginList = ({
       });
       prevHadNotReady.current = hasNotReady;
     } else if (!hasNotReady && prevHadNotReady.current) {
-      // Not-ready section disappearing — start fade out, then unmount
       setLabelVisible(false);
       unmountTimer = setTimeout(() => setLabelMounted(false), FADE_IN_MS);
       prevHadNotReady.current = hasNotReady;
     } else if (hasNotReady) {
-      // Already visible — ensure state is correct
       setLabelMounted(true);
       setLabelVisible(true);
       prevHadNotReady.current = hasNotReady;
@@ -222,7 +178,7 @@ const PluginList = ({
       removingPlugin={removingPlugins?.has(plugin.name)}
       actionError={pluginErrors?.get(plugin.name) ?? null}
       skipPermissions={skipPermissions}
-      transitionClass={getTransitionClass(plugin.name, isReadyGroup)}
+      transitionClass={resolveTransitionClass(plugin.name, isReadyGroup)}
     />
   );
 
@@ -242,7 +198,7 @@ const PluginList = ({
       ) : (
         <>
           {readyPlugins.length > 0 && (
-            <Accordion type="multiple" className="space-y-2">
+            <Accordion type="multiple" value={openReady} onValueChange={setOpenReady} className="space-y-2">
               {readyPlugins.map(p => renderCard(p, true))}
             </Accordion>
           )}
@@ -253,7 +209,7 @@ const PluginList = ({
             </div>
           )}
           {notReadyPlugins.length > 0 && (
-            <Accordion type="multiple" className="space-y-2">
+            <Accordion type="multiple" value={openNotReady} onValueChange={setOpenNotReady} className="space-y-2">
               {notReadyPlugins.map(p => renderCard(p, false))}
             </Accordion>
           )}

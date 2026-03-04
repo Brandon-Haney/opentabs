@@ -110,8 +110,16 @@ const restartBackgroundServer = async (port: number): Promise<void> => {
   const { pid } = pidData;
   const restartPort = pidData.port ?? port;
 
-  process.kill(pid, 'SIGTERM');
-  const exited = await waitForExit(pid, 5_000);
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch (err: unknown) {
+    if (err instanceof Error && 'code' in err && err.code === 'ESRCH') {
+      // Process already exited between the alive check and SIGTERM — proceed to restart.
+    } else {
+      throw err;
+    }
+  }
+  const exited = isProcessAlive(pid) ? await waitForExit(pid, 5_000) : true;
   if (!exited) {
     console.log(pc.yellow('Warning: Old server did not stop in time. Restart manually:'));
     console.log(pc.dim('  opentabs start --background'));

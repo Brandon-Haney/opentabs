@@ -214,6 +214,7 @@ const handleBgGetFullState: MessageHandler = (_message, sendResponse) => {
         tools,
         tabState,
         source: serverPlugin?.source ?? 'local',
+        reviewed: serverPlugin?.reviewed ?? false,
         sdkVersion: serverPlugin?.sdkVersion,
         update: serverPlugin?.update,
       };

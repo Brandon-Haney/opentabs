@@ -11,6 +11,7 @@ const mockNpmPlugin = (overrides?: Partial<PluginState>): PluginState => ({
   tabState: 'ready',
   urlPatterns: ['*://*.slack.com/*'],
   sdkVersion: '0.0.3',
+  reviewed: true,
   tools: [
     {
       name: 'send_message',

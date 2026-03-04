@@ -315,6 +315,8 @@ export interface ConfigStatePlugin {
   iconDarkSvg?: string;
   /** Optional SVG icon for dark mode inactive state */
   iconDarkInactiveSvg?: string;
+  /** Whether this plugin's current version has been reviewed (reviewedVersion matches installed version) */
+  reviewed: boolean;
   /** Present when a newer version of this plugin is available on npm */
   update?: { latestVersion: string; updateCommand: string };
 }

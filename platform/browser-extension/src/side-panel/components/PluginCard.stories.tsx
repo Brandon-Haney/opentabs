@@ -13,6 +13,7 @@ const mockPlugin = (overrides?: Partial<PluginState>): PluginState => ({
   tabState: 'ready',
   urlPatterns: ['*://*.slack.com/*'],
   sdkVersion: '0.0.3',
+  reviewed: true,
   tools: [
     {
       name: 'send_message',
@@ -402,6 +403,28 @@ const SkipPermissions: Story = {
   render: () => <SkipPermissionsDemo />,
 };
 
+const ReviewedDemo = () => {
+  const [plugins, setPlugins] = useState([mockPlugin({ reviewed: true })]);
+  const plugin = plugins[0];
+  if (!plugin) return null;
+  return <PluginCard plugin={plugin} activeTools={new Set()} setPlugins={setPlugins} />;
+};
+
+const Reviewed: Story = {
+  render: () => <ReviewedDemo />,
+};
+
+const UnreviewedDemo = () => {
+  const [plugins, setPlugins] = useState([mockPlugin({ reviewed: false })]);
+  const plugin = plugins[0];
+  if (!plugin) return null;
+  return <PluginCard plugin={plugin} activeTools={new Set()} setPlugins={setPlugins} />;
+};
+
+const Unreviewed: Story = {
+  render: () => <UnreviewedDemo />,
+};
+
 export default meta;
 export {
   Ready,
@@ -416,4 +439,6 @@ export {
   GroupedTools,
   MixedGroupedUngrouped,
   SkipPermissions,
+  Reviewed,
+  Unreviewed,
 };

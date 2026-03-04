@@ -2,7 +2,7 @@
 
 import type { ToolPermission } from '@opentabs-dev/shared';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, ShieldQuestionMark } from 'lucide-react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import type { PluginState, WireToolDef } from '../bridge.js';
@@ -179,6 +179,14 @@ const PluginCard = ({
                   </Badge>
                 </Tooltip.Trigger>
                 <Tooltip.Content>SDK version mismatch — rebuild plugin</Tooltip.Content>
+              </Tooltip>
+            )}
+            {!plugin.reviewed && (
+              <Tooltip>
+                <Tooltip.Trigger asChild>
+                  <ShieldQuestionMark className="inline-block h-3.5 w-3.5 align-middle text-muted-foreground" />
+                </Tooltip.Trigger>
+                <Tooltip.Content>This plugin version has not been reviewed</Tooltip.Content>
               </Tooltip>
             )}
           </div>

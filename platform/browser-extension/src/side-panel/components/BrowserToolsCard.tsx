@@ -115,6 +115,30 @@ const BrowserToolsCard = ({
     : tools;
   const hasActiveTool = tools.some(t => activeTools.has(`browser:${t.name}`));
 
+  // Group tools by their group field, preserving first-seen order
+  const hasAnyGroup = visibleTools.some(t => t.group);
+  const toolGroups: { name: string; tools: BrowserToolState[] }[] = [];
+  if (hasAnyGroup) {
+    const groupMap = new Map<string, BrowserToolState[]>();
+    for (const tool of visibleTools) {
+      const groupName = tool.group ?? 'Other';
+      let bucket = groupMap.get(groupName);
+      if (!bucket) {
+        bucket = [];
+        groupMap.set(groupName, bucket);
+      }
+      bucket.push(tool);
+    }
+    const otherBucket = groupMap.get('Other');
+    groupMap.delete('Other');
+    for (const [name, groupTools] of groupMap) {
+      toolGroups.push({ name, tools: groupTools });
+    }
+    if (otherBucket) {
+      toolGroups.push({ name: 'Other', tools: otherBucket });
+    }
+  }
+
   return (
     <Accordion.Item value="browser-tools">
       <AccordionPrimitive.Header className="flex">
@@ -169,19 +193,40 @@ const BrowserToolsCard = ({
             {visibleTools.length} of {tools.length} tools
           </div>
         )}
-        {visibleTools.map(tool => (
-          <ToolRow
-            key={tool.name}
-            name={tool.name}
-            displayName={toDisplayName(tool.name)}
-            description={tool.description}
-            icon={tool.icon ?? 'globe'}
-            permission={tool.permission}
-            active={activeTools.has(`browser:${tool.name}`)}
-            disabled={skipPermissions}
-            onPermissionChange={handleToolPermissionChange}
-          />
-        ))}
+        {hasAnyGroup
+          ? toolGroups.map(group => (
+              <div key={group.name}>
+                <div className="border-border border-b bg-muted/20 px-3 py-1">
+                  <span className="font-head text-muted-foreground text-xs uppercase tracking-wider">{group.name}</span>
+                </div>
+                {group.tools.map(tool => (
+                  <ToolRow
+                    key={tool.name}
+                    name={tool.name}
+                    displayName={toDisplayName(tool.name)}
+                    description={tool.description}
+                    icon={tool.icon ?? 'globe'}
+                    permission={tool.permission}
+                    active={activeTools.has(`browser:${tool.name}`)}
+                    disabled={skipPermissions}
+                    onPermissionChange={handleToolPermissionChange}
+                  />
+                ))}
+              </div>
+            ))
+          : visibleTools.map(tool => (
+              <ToolRow
+                key={tool.name}
+                name={tool.name}
+                displayName={toDisplayName(tool.name)}
+                description={tool.description}
+                icon={tool.icon ?? 'globe'}
+                permission={tool.permission}
+                active={activeTools.has(`browser:${tool.name}`)}
+                disabled={skipPermissions}
+                onPermissionChange={handleToolPermissionChange}
+              />
+            ))}
       </Accordion.Content>
     </Accordion.Item>
   );

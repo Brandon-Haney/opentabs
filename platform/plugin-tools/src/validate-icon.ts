@@ -201,6 +201,17 @@ const hslToRgb = (hue: number, saturation: number, lightness: number): [number, 
 const toLuminanceGray = (red: number, green: number, blue: number): number =>
   Math.round(0.2126 * red + 0.7152 * green + 0.0722 * blue);
 
+/**
+ * Minimum gray value (0-255) for auto-generated inactive icons. Icons with
+ * luminance below this threshold (e.g. black, very dark colors) are clamped
+ * upward so the inactive variant is visibly lighter than the active one.
+ * 153 corresponds to #999999 / HSL lightness 60%.
+ */
+const MIN_INACTIVE_GRAY = 153;
+
+/** Equivalent HSL lightness (%) for MIN_INACTIVE_GRAY */
+const MIN_INACTIVE_LIGHTNESS = Math.round((MIN_INACTIVE_GRAY / 255) * 100);
+
 // ---------------------------------------------------------------------------
 // Dark mode icon generation helpers
 // ---------------------------------------------------------------------------
@@ -477,25 +488,25 @@ const convertColorToGray = (value: string): string => {
   if (PASSTHROUGH_VALUES.has(lowerValue)) return trimmedValue;
   if (lowerValue.startsWith('url(')) return trimmedValue;
 
-  // hsl/hsla — comma-separated (legacy): set saturation to 0, preserve everything else
-  const hslaMatch = lowerValue.match(/^(hsla?)\(\s*([\d.]+)\s*,\s*[\d.]+%\s*,\s*([\d.]+%)\s*(?:,\s*([\d.]+))?\s*\)/);
+  // hsl/hsla — comma-separated (legacy): set saturation to 0, clamp lightness to minimum
+  const hslaMatch = lowerValue.match(/^(hsla?)\(\s*([\d.]+)\s*,\s*[\d.]+%\s*,\s*([\d.]+)(%)\s*(?:,\s*([\d.]+))?\s*\)/);
   if (hslaMatch) {
     const fn = hslaMatch[1] ?? 'hsl';
     const hue = hslaMatch[2] ?? '0';
-    const lightness = hslaMatch[3] ?? '50%';
-    const alpha = hslaMatch[4];
+    const lightness = Math.max(MIN_INACTIVE_LIGHTNESS, parseFloat(hslaMatch[3] ?? '50'));
+    const alpha = hslaMatch[5];
     if (alpha !== undefined) {
-      return `${fn}(${hue}, 0%, ${lightness}, ${alpha})`;
+      return `${fn}(${hue}, 0%, ${lightness}%, ${alpha})`;
     }
-    return `${fn}(${hue}, 0%, ${lightness})`;
+    return `${fn}(${hue}, 0%, ${lightness}%)`;
   }
 
-  // hsl/hsla — space-separated (CSS4): set saturation to 0, preserve hue, lightness, and optional alpha
+  // hsl/hsla — space-separated (CSS4): set saturation to 0, clamp lightness to minimum
   const modernHslaMatch = lowerValue.match(/^(hsla?)\(\s*([\d.]+)\s+[\d.]+%\s+([\d.]+)%(.*)\)$/);
   if (modernHslaMatch) {
     const fn = modernHslaMatch[1] ?? 'hsl';
     const hue = modernHslaMatch[2] ?? '0';
-    const lightness = modernHslaMatch[3] ?? '50';
+    const lightness = Math.max(MIN_INACTIVE_LIGHTNESS, parseFloat(modernHslaMatch[3] ?? '50'));
     const rest = modernHslaMatch[4] ?? '';
     return `${fn}(${hue} 0% ${lightness}%${rest})`;
   }
@@ -508,7 +519,7 @@ const convertColorToGray = (value: string): string => {
     const green = parseRgbComponent(rgbaMatch[2] ?? '0');
     const blue = parseRgbComponent(rgbaMatch[3] ?? '0');
     const alpha = rgbaMatch[4] ?? '1';
-    const gray = toLuminanceGray(red, green, blue);
+    const gray = Math.max(MIN_INACTIVE_GRAY, toLuminanceGray(red, green, blue));
     return `rgba(${gray}, ${gray}, ${gray}, ${alpha})`;
   }
 
@@ -519,7 +530,7 @@ const convertColorToGray = (value: string): string => {
     const red = parseRgbComponent(rgbMatch[1] ?? '0');
     const green = parseRgbComponent(rgbMatch[2] ?? '0');
     const blue = parseRgbComponent(rgbMatch[3] ?? '0');
-    const gray = toLuminanceGray(red, green, blue);
+    const gray = Math.max(MIN_INACTIVE_GRAY, toLuminanceGray(red, green, blue));
     return grayToHex(gray);
   }
 
@@ -532,7 +543,7 @@ const convertColorToGray = (value: string): string => {
     const green = parseRgbComponent(modernRgbConvertMatch[2] ?? '0');
     const blue = parseRgbComponent(modernRgbConvertMatch[3] ?? '0');
     const alpha = modernRgbConvertMatch[4];
-    const gray = toLuminanceGray(red, green, blue);
+    const gray = Math.max(MIN_INACTIVE_GRAY, toLuminanceGray(red, green, blue));
     if (alpha !== undefined) {
       return `rgba(${gray}, ${gray}, ${gray}, ${alpha})`;
     }
@@ -543,7 +554,7 @@ const convertColorToGray = (value: string): string => {
   if (trimmedValue.startsWith('#')) {
     const rgb = parseHex(trimmedValue);
     if (rgb) {
-      const gray = toLuminanceGray(rgb[0], rgb[1], rgb[2]);
+      const gray = Math.max(MIN_INACTIVE_GRAY, toLuminanceGray(rgb[0], rgb[1], rgb[2]));
       return grayToHex(gray);
     }
     return trimmedValue;
@@ -552,7 +563,7 @@ const convertColorToGray = (value: string): string => {
   // Named colors
   const named = NAMED_COLORS[lowerValue];
   if (named) {
-    const gray = toLuminanceGray(named[0], named[1], named[2]);
+    const gray = Math.max(MIN_INACTIVE_GRAY, toLuminanceGray(named[0], named[1], named[2]));
     return grayToHex(gray);
   }
 
@@ -720,6 +731,7 @@ export {
   generateInactiveIcon,
   MAX_ICON_SIZE,
   MIN_ICON_CONTRAST,
+  MIN_INACTIVE_GRAY,
   validateIconSvg,
   validateInactiveIconColors,
 };

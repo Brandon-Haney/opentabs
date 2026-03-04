@@ -5,6 +5,7 @@ import {
   generateInactiveIcon,
   MAX_ICON_SIZE,
   MIN_ICON_CONTRAST,
+  MIN_INACTIVE_GRAY,
   validateIconSvg,
   validateInactiveIconColors,
 } from './validate-icon.js';
@@ -448,12 +449,29 @@ describe('validateInactiveIconColors', () => {
 // ---------------------------------------------------------------------------
 
 describe('generateInactiveIcon', () => {
+  test('MIN_INACTIVE_GRAY is 153 (#999999)', () => {
+    expect(MIN_INACTIVE_GRAY).toBe(153);
+  });
+
+  test('gray value above threshold is not clamped (rgb(100, 200, 50) → gray 168 → #a8a8a8)', () => {
+    const svg = svgWrap('<rect fill="rgb(100, 200, 50)"/>');
+    const result = generateInactiveIcon(svg);
+    // 168 > 153, so no clamping
+    expect(result).toContain('fill="#a8a8a8"');
+  });
+
+  test('HSL lightness above threshold is not clamped (hsl(0, 100%, 70%) → hsl(0, 0%, 70%))', () => {
+    const svg = svgWrap('<rect fill="hsl(0, 100%, 70%)"/>');
+    const result = generateInactiveIcon(svg);
+    expect(result).toContain('fill="hsl(0, 0%, 70%)"');
+  });
+
   // -- Hex color conversion --
 
-  test('fill="#ff0000" (pure red) → luminance 54 → fill="#363636"', () => {
+  test('fill="#ff0000" (pure red) → luminance 54 → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="#ff0000"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#363636"');
+    expect(result).toContain('fill="#999999"');
   });
 
   test('fill="#00ff00" (pure green) → luminance 182 → fill="#b6b6b6"', () => {
@@ -462,10 +480,10 @@ describe('generateInactiveIcon', () => {
     expect(result).toContain('fill="#b6b6b6"');
   });
 
-  test('fill="#0000ff" (pure blue) → luminance 18 → fill="#121212"', () => {
+  test('fill="#0000ff" (pure blue) → luminance 18 → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="#0000ff"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#121212"');
+    expect(result).toContain('fill="#999999"');
   });
 
   test('fill="#ffffff" (white) → luminance 255 → fill="#ffffff"', () => {
@@ -474,38 +492,38 @@ describe('generateInactiveIcon', () => {
     expect(result).toContain('fill="#ffffff"');
   });
 
-  test('fill="#000000" (black) → luminance 0 → fill="#000000"', () => {
+  test('fill="#000000" (black) → luminance 0 → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="#000000"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#000000"');
+    expect(result).toContain('fill="#999999"');
   });
 
-  test('fill="#808080" (mid gray) → luminance 128 → fill="#808080"', () => {
+  test('fill="#808080" (mid gray) → luminance 128 → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="#808080"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#808080"');
+    expect(result).toContain('fill="#999999"');
   });
 
-  test('fill="#f00" (shorthand red) → same as #ff0000 → fill="#363636"', () => {
+  test('fill="#f00" (shorthand red) → same as #ff0000 → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="#f00"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#363636"');
+    expect(result).toContain('fill="#999999"');
   });
 
-  test('fill="#4F46E5" (indigo) → correct luminance gray', () => {
+  test('fill="#4F46E5" (indigo) → luminance 83 → clamped to #999999', () => {
     // R=79, G=70, B=229: gray = round(0.2126*79 + 0.7152*70 + 0.0722*229)
-    // = round(16.80 + 50.06 + 16.53) = round(83.39) = 83 → #535353
+    // = round(16.80 + 50.06 + 16.53) = round(83.39) = 83 → clamped to 153
     const svg = svgWrap('<rect fill="#4F46E5"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#535353"');
+    expect(result).toContain('fill="#999999"');
   });
 
   // -- rgb()/rgba() conversion --
 
-  test('fill="rgb(255, 0, 0)" → #363636', () => {
+  test('fill="rgb(255, 0, 0)" → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="rgb(255, 0, 0)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#363636"');
+    expect(result).toContain('fill="#999999"');
   });
 
   test('fill="rgb(100, 200, 50)" → compute luminance → all channels equal', () => {
@@ -516,70 +534,70 @@ describe('generateInactiveIcon', () => {
     expect(result).toContain('fill="#a8a8a8"');
   });
 
-  test('fill="rgba(255, 0, 0, 0.5)" → gray conversion preserves alpha', () => {
+  test('fill="rgba(255, 0, 0, 0.5)" → gray clamped, alpha preserved', () => {
     const svg = svgWrap('<rect fill="rgba(255, 0, 0, 0.5)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="rgba(54, 54, 54, 0.5)"');
+    expect(result).toContain('fill="rgba(153, 153, 153, 0.5)"');
   });
 
-  test('fill="rgba(255, 0, 0)" (rgba without alpha) → hex gray #363636', () => {
+  test('fill="rgba(255, 0, 0)" (rgba without alpha) → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="rgba(255, 0, 0)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#363636"');
+    expect(result).toContain('fill="#999999"');
   });
 
-  test('fill="rgba(255, 0, 0, 50%)" (percentage alpha) → gray conversion preserves percentage alpha', () => {
+  test('fill="rgba(255, 0, 0, 50%)" (percentage alpha) → gray clamped, percentage alpha preserved', () => {
     const svg = svgWrap('<rect fill="rgba(255, 0, 0, 50%)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="rgba(54, 54, 54, 50%)"');
+    expect(result).toContain('fill="rgba(153, 153, 153, 50%)"');
   });
 
-  test('stroke="rgb(0, 128, 255)" → stroke attribute is converted', () => {
+  test('stroke="rgb(0, 128, 255)" → stroke attribute is clamped', () => {
     // gray = round(0.2126*0 + 0.7152*128 + 0.0722*255)
-    // = round(0 + 91.55 + 18.41) = round(109.96) = 110 → #6e6e6e
+    // = round(0 + 91.55 + 18.41) = round(109.96) = 110 → clamped to 153
     const svg = svgWrap('<rect stroke="rgb(0, 128, 255)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('stroke="#6e6e6e"');
+    expect(result).toContain('stroke="#999999"');
   });
 
   // -- hsl()/hsla() conversion --
 
-  test('fill="hsl(0, 100%, 50%)" (pure red via HSL) → saturation set to 0%', () => {
+  test('fill="hsl(0, 100%, 50%)" (pure red via HSL) → saturation 0%, lightness clamped to 60%', () => {
     const svg = svgWrap('<rect fill="hsl(0, 100%, 50%)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="hsl(0, 0%, 50%)"');
+    expect(result).toContain('fill="hsl(0, 0%, 60%)"');
   });
 
-  test('fill="hsl(120, 80%, 40%)" → hsl with saturation 0%', () => {
+  test('fill="hsl(120, 80%, 40%)" → saturation 0%, lightness clamped to 60%', () => {
     const svg = svgWrap('<rect fill="hsl(120, 80%, 40%)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="hsl(120, 0%, 40%)"');
+    expect(result).toContain('fill="hsl(120, 0%, 60%)"');
   });
 
-  test('fill="hsla(240, 100%, 50%, 0.8)" → alpha preserved', () => {
+  test('fill="hsla(240, 100%, 50%, 0.8)" → lightness clamped to 60%, alpha preserved', () => {
     const svg = svgWrap('<rect fill="hsla(240, 100%, 50%, 0.8)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="hsla(240, 0%, 50%, 0.8)"');
+    expect(result).toContain('fill="hsla(240, 0%, 60%, 0.8)"');
   });
 
-  test('fill="hsl(0, 0%, 50%)" (already gray) → unchanged', () => {
+  test('fill="hsl(0, 0%, 50%)" (already gray, below threshold) → lightness clamped to 60%', () => {
     const svg = svgWrap('<rect fill="hsl(0, 0%, 50%)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="hsl(0, 0%, 50%)"');
+    expect(result).toContain('fill="hsl(0, 0%, 60%)"');
   });
 
   // -- Named color conversion --
 
-  test('fill="red" → lookup #ff0000, compute luminance → fill="#363636"', () => {
+  test('fill="red" → lookup #ff0000, luminance 54 → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="red"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#363636"');
+    expect(result).toContain('fill="#999999"');
   });
 
-  test('fill="blue" → lookup #0000ff → fill="#121212"', () => {
+  test('fill="blue" → lookup #0000ff, luminance 18 → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="blue"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#121212"');
+    expect(result).toContain('fill="#999999"');
   });
 
   test('fill="white" → fill="#ffffff"', () => {
@@ -588,10 +606,10 @@ describe('generateInactiveIcon', () => {
     expect(result).toContain('fill="#ffffff"');
   });
 
-  test('fill="black" → fill="#000000"', () => {
+  test('fill="black" → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="black"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#000000"');
+    expect(result).toContain('fill="#999999"');
   });
 
   test('fill="gold" → lookup #ffd700, compute luminance → correct gray', () => {
@@ -639,34 +657,34 @@ describe('generateInactiveIcon', () => {
   test('rect fill="#ff0000" and circle fill="#00ff00" → different grays', () => {
     const svg = svgWrap('<rect fill="#ff0000"/><circle fill="#00ff00"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#363636"'); // red
-    expect(result).toContain('fill="#b6b6b6"'); // green
+    expect(result).toContain('fill="#999999"'); // red (clamped)
+    expect(result).toContain('fill="#b6b6b6"'); // green (above threshold)
   });
 
   test('both fill and stroke on same element → both converted independently', () => {
     const svg = svgWrap('<rect fill="#ff0000" stroke="#00ff00"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#363636"');
+    expect(result).toContain('fill="#999999"');
     expect(result).toContain('stroke="#b6b6b6"');
   });
 
   test('colors in inline style attribute → both converted', () => {
     const svg = svgWrap('<rect style="fill: #ff0000; stroke: #00ff00"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill: #363636');
+    expect(result).toContain('fill: #999999');
     expect(result).toContain('stroke: #b6b6b6');
   });
 
   test('stop-color in gradient stops → converted', () => {
     const svg = svgWrap('<linearGradient><stop stop-color="#ff0000"/></linearGradient>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('stop-color="#363636"');
+    expect(result).toContain('stop-color="#999999"');
   });
 
   test('flood-color attribute → converted', () => {
     const svg = svgWrap('<feFlood flood-color="#ff0000"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('flood-color="#363636"');
+    expect(result).toContain('flood-color="#999999"');
   });
 
   // -- Roundtrip validation --
@@ -703,16 +721,16 @@ describe('generateInactiveIcon', () => {
         '<stop stop-color="hsl(0, 100%, 50%)"/>',
     );
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#363636"'); // hex red
-    expect(result).toContain('fill="#b6b6b6"'); // rgb green (luminance 182 → #b6b6b6)
-    expect(result).toContain('stroke="#121212"'); // named blue
-    expect(result).toContain('stop-color="hsl(0, 0%, 50%)"'); // hsl red
+    expect(result).toContain('fill="#999999"'); // hex red (clamped)
+    expect(result).toContain('fill="#b6b6b6"'); // rgb green (luminance 182 → above threshold)
+    expect(result).toContain('stroke="#999999"'); // named blue (clamped)
+    expect(result).toContain('stop-color="hsl(0, 0%, 60%)"'); // hsl red (lightness clamped)
   });
 
   test('color values with extra whitespace handled correctly', () => {
     const svg = svgWrap('<rect fill=" #ff0000 "/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#363636"');
+    expect(result).toContain('fill="#999999"');
   });
 
   test('empty SVG (just <svg></svg> with viewBox) → returned unchanged', () => {
@@ -723,10 +741,10 @@ describe('generateInactiveIcon', () => {
 
   // -- Additional edge cases for coverage --
 
-  test('fill="#000" (shorthand black) → fill="#000000"', () => {
+  test('fill="#000" (shorthand black) → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="#000"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#000000"');
+    expect(result).toContain('fill="#999999"');
   });
 
   test('fill="#fff" (shorthand white) → fill="#ffffff"', () => {
@@ -735,29 +753,29 @@ describe('generateInactiveIcon', () => {
     expect(result).toContain('fill="#ffffff"');
   });
 
-  test('multiple stop-colors in gradient → each converted', () => {
+  test('multiple stop-colors in gradient → each clamped', () => {
     const svg = svgWrap(
       '<linearGradient>' + '<stop stop-color="#ff0000"/>' + '<stop stop-color="#0000ff"/>' + '</linearGradient>',
     );
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('stop-color="#363636"'); // red
-    expect(result).toContain('stop-color="#121212"'); // blue
+    // Both red (54) and blue (18) are below threshold, so both clamp to #999999
+    expect(result).toContain('stop-color="#999999"');
   });
 
   test('inline style with multiple color properties → all converted', () => {
     const svg = svgWrap('<rect style="fill: red; stroke: blue; stop-color: gold"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill: #363636');
-    expect(result).toContain('stroke: #121212');
-    expect(result).toContain('stop-color: #d0d0d0');
+    expect(result).toContain('fill: #999999'); // red (clamped)
+    expect(result).toContain('stroke: #999999'); // blue (clamped)
+    expect(result).toContain('stop-color: #d0d0d0'); // gold (above threshold)
   });
 
   // -- 8-digit and 4-digit hex (#RRGGBBAA, #RGBA) --
 
-  test('fill="#FF0000FF" (#RRGGBBAA red with full opacity) → luminance 54 → fill="#363636"', () => {
+  test('fill="#FF0000FF" (#RRGGBBAA red with full opacity) → luminance 54 → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="#FF0000FF"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#363636"');
+    expect(result).toContain('fill="#999999"');
   });
 
   test('fill="#00FF00FF" (#RRGGBBAA green with full opacity) → luminance 182 → fill="#b6b6b6"', () => {
@@ -766,10 +784,10 @@ describe('generateInactiveIcon', () => {
     expect(result).toContain('fill="#b6b6b6"');
   });
 
-  test('fill="#f00f" (#RGBA red with full opacity) → luminance 54 → fill="#363636"', () => {
+  test('fill="#f00f" (#RGBA red with full opacity) → luminance 54 → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="#f00f"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#363636"');
+    expect(result).toContain('fill="#999999"');
   });
 
   test('fill="#ffff" (#RGBA white) → luminance 255 → fill="#ffffff"', () => {
@@ -780,43 +798,43 @@ describe('generateInactiveIcon', () => {
 
   // -- <style> block conversion --
 
-  test('<style> block fill: red → converted to grayscale hex', () => {
+  test('<style> block fill: red → clamped to #999999', () => {
     const svg = svgWrap('<style>circle { fill: red; }</style><circle/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill: #363636');
+    expect(result).toContain('fill: #999999');
     expect(result).not.toContain('fill: red');
   });
 
-  test('<style> block stroke: #ff0000 → converted to grayscale', () => {
+  test('<style> block stroke: #ff0000 → clamped to #999999', () => {
     const svg = svgWrap('<style>.cls { stroke: #ff0000; }</style><rect class="cls"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('stroke: #363636');
+    expect(result).toContain('stroke: #999999');
   });
 
-  test('<style> block fill: rgb(255, 0, 0) → converted to grayscale', () => {
+  test('<style> block fill: rgb(255, 0, 0) → clamped to #999999', () => {
     const svg = svgWrap('<style>rect { fill: rgb(255, 0, 0); }</style><rect/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill: #363636');
+    expect(result).toContain('fill: #999999');
   });
 
-  test('<style> block fill: hsl(0, 100%, 50%) → saturation set to 0%', () => {
+  test('<style> block fill: hsl(0, 100%, 50%) → saturation 0%, lightness clamped to 60%', () => {
     const svg = svgWrap('<style>rect { fill: hsl(0, 100%, 50%); }</style><rect/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill: hsl(0, 0%, 50%)');
+    expect(result).toContain('fill: hsl(0, 0%, 60%)');
   });
 
-  test('<style> block with multiple color properties → all converted', () => {
+  test('<style> block with multiple color properties → all clamped', () => {
     const svg = svgWrap('<style>rect { fill: red; stroke: blue; }</style><rect/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill: #363636');
-    expect(result).toContain('stroke: #121212');
+    expect(result).toContain('fill: #999999');
+    expect(result).toContain('stroke: #999999');
   });
 
-  test('<style> block with achromatic colors → unchanged values', () => {
+  test('<style> block with achromatic colors → clamped to minimum', () => {
     const svg = svgWrap('<style>rect { fill: #333333; stroke: gray; }</style><rect/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill: #333333');
-    expect(result).toContain('stroke: #808080');
+    expect(result).toContain('fill: #999999'); // #333333 (gray=51) clamped
+    expect(result).toContain('stroke: #999999'); // gray (gray=128) clamped
   });
 
   test('<style> block with fill: none → unchanged', () => {
@@ -825,10 +843,10 @@ describe('generateInactiveIcon', () => {
     expect(result).toContain('fill: none');
   });
 
-  test('<style> block stop-color → converted', () => {
+  test('<style> block stop-color → clamped', () => {
     const svg = svgWrap('<style>.stop { stop-color: #ff0000; }</style>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('stop-color: #363636');
+    expect(result).toContain('stop-color: #999999');
   });
 
   test('<style> block flood-color → converted', () => {
@@ -847,16 +865,16 @@ describe('generateInactiveIcon', () => {
   test('mixed <style> blocks and attribute colors → all converted', () => {
     const svg = svgWrap('<style>.cls { fill: red; }</style>' + '<rect class="cls" stroke="#00ff00"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill: #363636');
+    expect(result).toContain('fill: #999999');
     expect(result).toContain('stroke="#b6b6b6"');
   });
 
   // -- Modern CSS Color Level 4 space-separated rgb() syntax --
 
-  test('fill="rgb(255 0 0)" (modern syntax) → #363636', () => {
+  test('fill="rgb(255 0 0)" (modern syntax) → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="rgb(255 0 0)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#363636"');
+    expect(result).toContain('fill="#999999"');
   });
 
   test('fill="rgb(0 255 0)" (modern syntax, green) → #b6b6b6', () => {
@@ -865,30 +883,31 @@ describe('generateInactiveIcon', () => {
     expect(result).toContain('fill="#b6b6b6"');
   });
 
-  test('fill="rgb(255 0 0 / 0.5)" (modern syntax with alpha) → rgba(54, 54, 54, 0.5)', () => {
+  test('fill="rgb(255 0 0 / 0.5)" (modern syntax with alpha) → clamped rgba(153, 153, 153, 0.5)', () => {
     const svg = svgWrap('<rect fill="rgb(255 0 0 / 0.5)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="rgba(54, 54, 54, 0.5)"');
+    expect(result).toContain('fill="rgba(153, 153, 153, 0.5)"');
   });
 
-  test('fill="rgba(255 0 0 / 0.5)" (modern rgba syntax) → rgba(54, 54, 54, 0.5)', () => {
+  test('fill="rgba(255 0 0 / 0.5)" (modern rgba syntax) → clamped rgba(153, 153, 153, 0.5)', () => {
     const svg = svgWrap('<rect fill="rgba(255 0 0 / 0.5)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="rgba(54, 54, 54, 0.5)"');
+    expect(result).toContain('fill="rgba(153, 153, 153, 0.5)"');
   });
 
-  test('fill="rgb(100% 0% 0%)" (modern percentage syntax) → #363636', () => {
+  test('fill="rgb(100% 0% 0%)" (modern percentage syntax) → clamped to #999999', () => {
     const svg = svgWrap('<rect fill="rgb(100% 0% 0%)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#363636"');
+    expect(result).toContain('fill="#999999"');
   });
 
-  test('fill="rgb(100% 50% 0% / 0.5)" (modern percentage with alpha) → rgba(145, 145, 145, 0.5)', () => {
+  test('fill="rgb(100% 50% 0% / 0.5)" (modern percentage with alpha) → clamped rgba(153, 153, 153, 0.5)', () => {
     // R=255, G=round(50*2.55)=127 (fp: 50*2.55=127.499...), B=0
     // gray = round(0.2126*255 + 0.7152*127 + 0.0722*0) = round(54.213 + 90.830 + 0) = round(145.043) = 145
+    // 145 < 153 → clamped to 153
     const svg = svgWrap('<rect fill="rgb(100% 50% 0% / 0.5)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="rgba(145, 145, 145, 0.5)"');
+    expect(result).toContain('fill="rgba(153, 153, 153, 0.5)"');
   });
 
   test('generateInactiveIcon output with modern syntax passes validateInactiveIconColors', () => {
@@ -901,17 +920,17 @@ describe('generateInactiveIcon', () => {
 
   // -- Legacy comma-separated percentage rgb() syntax --
 
-  test('fill="rgb(100%, 0%, 0%)" (legacy comma percentage syntax) → #363636', () => {
-    // R=round(100*2.55)=255, G=0, B=0 → gray=round(0.2126*255)=54 → #363636
+  test('fill="rgb(100%, 0%, 0%)" (legacy comma percentage syntax) → clamped to #999999', () => {
+    // R=round(100*2.55)=255, G=0, B=0 → gray=round(0.2126*255)=54 → clamped to 153
     const svg = svgWrap('<rect fill="rgb(100%, 0%, 0%)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="#363636"');
+    expect(result).toContain('fill="#999999"');
   });
 
-  test('fill="rgba(100%, 0%, 0%, 0.5)" (legacy comma percentage syntax with alpha) → rgba(54, 54, 54, 0.5)', () => {
+  test('fill="rgba(100%, 0%, 0%, 0.5)" (legacy comma percentage syntax with alpha) → clamped rgba(153, 153, 153, 0.5)', () => {
     const svg = svgWrap('<rect fill="rgba(100%, 0%, 0%, 0.5)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="rgba(54, 54, 54, 0.5)"');
+    expect(result).toContain('fill="rgba(153, 153, 153, 0.5)"');
   });
 
   test('generateInactiveIcon output with legacy comma percentage syntax passes validateInactiveIconColors', () => {
@@ -922,28 +941,28 @@ describe('generateInactiveIcon', () => {
 
   // -- Modern CSS4 space-separated HSL syntax --
 
-  test('fill="hsl(120 50% 50%)" (modern HSL, chromatic) → saturation set to 0%', () => {
+  test('fill="hsl(120 50% 50%)" (modern HSL, chromatic) → saturation 0%, lightness clamped to 60%', () => {
     const svg = svgWrap('<rect fill="hsl(120 50% 50%)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="hsl(120 0% 50%)"');
+    expect(result).toContain('fill="hsl(120 0% 60%)"');
   });
 
-  test('fill="hsl(0 0% 50%)" (modern HSL, already achromatic) → unchanged saturation', () => {
+  test('fill="hsl(0 0% 50%)" (modern HSL, already achromatic) → lightness clamped to 60%', () => {
     const svg = svgWrap('<rect fill="hsl(0 0% 50%)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="hsl(0 0% 50%)"');
+    expect(result).toContain('fill="hsl(0 0% 60%)"');
   });
 
-  test('fill="hsla(120 50% 50% / 0.5)" (modern HSLA) → saturation set to 0%, alpha preserved', () => {
+  test('fill="hsla(120 50% 50% / 0.5)" (modern HSLA) → saturation 0%, lightness clamped, alpha preserved', () => {
     const svg = svgWrap('<rect fill="hsla(120 50% 50% / 0.5)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="hsla(120 0% 50% / 0.5)"');
+    expect(result).toContain('fill="hsla(120 0% 60% / 0.5)"');
   });
 
-  test('fill="hsl(120 50% 50% / 1)" (modern HSL with alpha) → saturation set to 0%', () => {
+  test('fill="hsl(120 50% 50% / 1)" (modern HSL with alpha) → saturation 0%, lightness clamped to 60%', () => {
     const svg = svgWrap('<rect fill="hsl(120 50% 50% / 1)"/>');
     const result = generateInactiveIcon(svg);
-    expect(result).toContain('fill="hsl(120 0% 50% / 1)"');
+    expect(result).toContain('fill="hsl(120 0% 60% / 1)"');
   });
 
   test('generateInactiveIcon output with modern HSL syntax passes validateInactiveIconColors', () => {

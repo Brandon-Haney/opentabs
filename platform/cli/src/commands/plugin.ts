@@ -409,19 +409,17 @@ const handlePluginSearch = (query?: string): void => {
   const termWidth = process.stdout.columns || 80;
 
   // Compute the max visible width used by non-description parts across all results.
-  // Line format: "  [label] name vVersion — desc by author"
-  const maxLabelLen = 11; // "[community]" is the longest label
+  // Line format: "  name vVersion — desc by author"
   const overheadPerPkg = results.map(pkg => {
     const author = pkg.publisher?.username ?? 'unknown';
-    // 2 indent + label + 1 space + name + 1 space + "v" + version + " — " + " by " + author
-    return 2 + maxLabelLen + 1 + pkg.name.length + 1 + 1 + pkg.version.length + 3 + 4 + author.length;
+    // 2 indent + name + 1 space + "v" + version + " — " + " by " + author
+    return 2 + pkg.name.length + 1 + 1 + pkg.version.length + 3 + 4 + author.length;
   });
   const maxOverhead = Math.max(...overheadPerPkg);
   const descWidth = Math.max(30, termWidth - maxOverhead);
 
   console.log();
   for (const pkg of results) {
-    const label = pkg.name.startsWith('@opentabs-dev/') ? pc.blue('[official]') : pc.dim('[community]');
     const desc = pkg.description
       ? pkg.description.length > descWidth
         ? `${pkg.description.slice(0, descWidth - 3)}...`
@@ -430,7 +428,7 @@ const handlePluginSearch = (query?: string): void => {
     const author = pkg.publisher?.username ?? 'unknown';
 
     console.log(
-      `  ${label} ${pc.bold(pkg.name)} ${pc.dim(`v${pkg.version}`)}${desc ? ` — ${desc}` : ''} ${pc.dim(`by ${author}`)}`,
+      `  ${pc.bold(pkg.name)} ${pc.dim(`v${pkg.version}`)}${desc ? ` — ${desc}` : ''} ${pc.dim(`by ${author}`)}`,
     );
   }
   console.log();

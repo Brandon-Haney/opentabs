@@ -6,7 +6,15 @@ import { existsSync } from 'node:fs';
 import { access, mkdir, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { atomicWrite, DEFAULT_HOST, DEFAULT_PORT, generateSecret, toErrorMessage } from '@opentabs-dev/shared';
+import {
+  atomicWrite,
+  DEFAULT_HOST,
+  DEFAULT_PORT,
+  generateSecret,
+  type PluginPermissionConfig,
+  type ToolPermission,
+  toErrorMessage,
+} from '@opentabs-dev/shared';
 import type { Command } from 'commander';
 import pc from 'picocolors';
 import {
@@ -35,12 +43,20 @@ const maskSecret = (secret: string): string => {
   return '****';
 };
 
-const CANONICAL_CONFIG_SECTIONS = ['localPlugins', 'tools', 'browserToolPolicy', 'permissions'] as const;
+const VALID_PERMISSIONS: ReadonlySet<string> = new Set(['off', 'ask', 'auto']);
+
+const colorPermission = (perm: string): string => {
+  if (perm === 'auto') return pc.green('auto');
+  if (perm === 'ask') return pc.yellow('ask');
+  return pc.red('off');
+};
+
+const CANONICAL_CONFIG_SECTIONS = ['localPlugins', 'plugins'] as const;
 
 /**
  * Normalize a raw config object for display: ensures expected sections always appear
- * in canonical order (localPlugins, tools, browserToolPolicy, permissions) regardless
- * of whether they were written to the config file. Does not modify the file.
+ * in canonical order (localPlugins, plugins) regardless of whether they were written
+ * to the config file. Does not modify the file.
  */
 const normalizeConfigForDisplay = (config: Record<string, unknown>): Record<string, unknown> => {
   const normalized: Record<string, unknown> = {};
@@ -52,9 +68,7 @@ const normalizeConfigForDisplay = (config: Record<string, unknown>): Record<stri
   }
   // Canonical sections always appear in defined order with defaults for absent keys
   normalized.localPlugins = config.localPlugins ?? [];
-  normalized.tools = config.tools ?? {};
-  normalized.browserToolPolicy = config.browserToolPolicy ?? {};
-  normalized.permissions = config.permissions ?? {};
+  normalized.plugins = config.plugins ?? {};
   return normalized;
 };
 
@@ -107,81 +121,20 @@ const handleConfigShow = async (options: ConfigShowOptions & { port?: number }):
             console.log(`    - ${String(p)}`);
           }
         }
-      } else if (key === 'tools' && typeof value === 'object' && value !== null) {
+      } else if (key === 'plugins' && typeof value === 'object' && value !== null) {
         const entries = Object.entries(value as Record<string, unknown>);
-        console.log(`  ${pc.cyan('tools')}`);
+        console.log(`  ${pc.cyan('plugins')}`);
         if (entries.length === 0) {
           console.log(`    ${pc.dim('(none)')}`);
         } else {
-          for (const [toolName, enabled] of entries) {
-            const indicator = enabled ? pc.green('enabled') : pc.red('disabled');
-            console.log(`    ${toolName}: ${indicator}`);
-          }
-        }
-      } else if (key === 'browserToolPolicy' && typeof value === 'object' && value !== null) {
-        const entries = Object.entries(value as Record<string, unknown>);
-        console.log(`  ${pc.cyan('browserToolPolicy')}`);
-        if (entries.length === 0) {
-          console.log(`    ${pc.dim('(none)')}`);
-        } else {
-          for (const [toolName, enabled] of entries) {
-            const indicator = enabled ? pc.green('enabled') : pc.red('disabled');
-            console.log(`    ${toolName}: ${indicator}`);
-          }
-        }
-      } else if (key === 'permissions' && typeof value === 'object' && value !== null) {
-        const perms = value as Record<string, unknown>;
-        console.log(`  ${pc.cyan('permissions')}`);
-
-        const trustedDomains = Array.isArray(perms.trustedDomains) ? (perms.trustedDomains as unknown[]) : [];
-        console.log(`    trustedDomains`);
-        if (trustedDomains.length === 0) {
-          console.log(`      ${pc.dim('(none)')}`);
-        } else {
-          for (const d of trustedDomains) {
-            console.log(`      - ${String(d)}`);
-          }
-        }
-
-        const sensitiveDomains = Array.isArray(perms.sensitiveDomains) ? (perms.sensitiveDomains as unknown[]) : [];
-        console.log(`    sensitiveDomains`);
-        if (sensitiveDomains.length === 0) {
-          console.log(`      ${pc.dim('(none)')}`);
-        } else {
-          for (const d of sensitiveDomains) {
-            console.log(`      - ${String(d)}`);
-          }
-        }
-
-        const toolPolicyEntries =
-          typeof perms.toolPolicy === 'object' && perms.toolPolicy !== null && !Array.isArray(perms.toolPolicy)
-            ? Object.entries(perms.toolPolicy as Record<string, unknown>)
-            : [];
-        console.log(`    toolPolicy`);
-        if (toolPolicyEntries.length === 0) {
-          console.log(`      ${pc.dim('(none)')}`);
-        } else {
-          for (const [toolName, policy] of toolPolicyEntries) {
-            console.log(`      ${toolName}: ${String(policy)}`);
-          }
-        }
-
-        const domainToolPolicyEntries =
-          typeof perms.domainToolPolicy === 'object' &&
-          perms.domainToolPolicy !== null &&
-          !Array.isArray(perms.domainToolPolicy)
-            ? Object.entries(perms.domainToolPolicy as Record<string, unknown>)
-            : [];
-        console.log(`    domainToolPolicy`);
-        if (domainToolPolicyEntries.length === 0) {
-          console.log(`      ${pc.dim('(none)')}`);
-        } else {
-          for (const [domain, toolsPolicy] of domainToolPolicyEntries) {
-            console.log(`      ${domain}`);
-            if (typeof toolsPolicy === 'object' && toolsPolicy !== null && !Array.isArray(toolsPolicy)) {
-              for (const [toolName, policy] of Object.entries(toolsPolicy as Record<string, unknown>)) {
-                console.log(`        ${toolName}: ${String(policy)}`);
-              }
+          for (const [pluginName, pluginConfig] of entries) {
+            if (typeof pluginConfig !== 'object' || pluginConfig === null) continue;
+            const cfg = pluginConfig as Record<string, unknown>;
+            const perm = typeof cfg.permission === 'string' ? cfg.permission : 'off';
+            console.log(`    ${pluginName}: ${colorPermission(perm)}`);
+            const tools = typeof cfg.tools === 'object' && cfg.tools !== null ? cfg.tools : {};
+            for (const [toolName, toolPerm] of Object.entries(tools as Record<string, unknown>)) {
+              console.log(`      ${toolName}: ${colorPermission(String(toolPerm))}`);
             }
           }
         }
@@ -210,18 +163,18 @@ const handleConfigShow = async (options: ConfigShowOptions & { port?: number }):
   }
 };
 
-const TOOL_PREFIX = 'tool.';
-const BROWSER_TOOL_PREFIX = 'browser-tool.';
+const TOOL_PERMISSION_PREFIX = 'tool-permission.';
+const PLUGIN_PERMISSION_PREFIX = 'plugin-permission.';
 const LOCAL_PLUGINS_ADD = 'localPlugins.add';
 const LOCAL_PLUGINS_REMOVE = 'localPlugins.remove';
 const PORT_KEY = 'port';
 
 const SUPPORTED_KEYS = `Supported keys:
-  tool.<plugin>_<tool>    Enable/disable a plugin tool (value: enabled | disabled)
-  browser-tool.<name>     Enable/disable a browser tool (value: enabled | disabled)
-  port                    Set the server port (value: 1-65535)
-  localPlugins.add        Add a local plugin path (value: absolute or relative path)
-  localPlugins.remove     Remove a local plugin path (value: path to remove)`;
+  tool-permission.<plugin>.<tool>   Set a per-tool permission (value: off | ask | auto)
+  plugin-permission.<plugin>        Set a plugin-level default permission (value: off | ask | auto)
+  port                              Set the server port (value: 1-65535)
+  localPlugins.add                  Add a local plugin path (value: absolute or relative path)
+  localPlugins.remove               Remove a local plugin path (value: path to remove)`;
 
 const loadConfig = async (): Promise<{ config: Record<string, unknown>; configPath: string }> => {
   const configPath = getConfigPath();
@@ -238,220 +191,112 @@ const loadConfig = async (): Promise<{ config: Record<string, unknown>; configPa
   return { config: result.config, configPath };
 };
 
-interface HealthPluginDetail {
-  name: string;
-  displayName: string;
-  tools: string[];
-}
-
-interface HealthResponse {
-  pluginDetails?: HealthPluginDetail[];
-  browserToolNames?: string[];
-  disabledBrowserTools?: string[];
-}
-
-const fetchToolNames = async (port: number): Promise<string[] | null> => {
-  try {
-    const secret = await readAuthSecret();
-    const headers: Record<string, string> = {};
-    if (secret) headers.Authorization = `Bearer ${secret}`;
-    const res = await fetch(`http://${DEFAULT_HOST}:${port}/health`, {
-      headers,
-      signal: AbortSignal.timeout(3_000),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as HealthResponse;
-    if (!Array.isArray(data.pluginDetails)) return null;
-    return data.pluginDetails.flatMap(p => p.tools);
-  } catch {
-    return null;
+/**
+ * Ensure config.plugins[pluginName] exists and return it.
+ * Mutates config in place.
+ */
+const ensurePluginEntry = (config: Record<string, unknown>, pluginName: string): PluginPermissionConfig => {
+  if (!config.plugins || typeof config.plugins !== 'object' || Array.isArray(config.plugins)) {
+    config.plugins = {};
   }
-};
-
-const fetchBrowserToolNames = async (port: number): Promise<string[] | null> => {
-  try {
-    const secret = await readAuthSecret();
-    const headers: Record<string, string> = {};
-    if (secret) headers.Authorization = `Bearer ${secret}`;
-    const res = await fetch(`http://${DEFAULT_HOST}:${port}/health`, {
-      headers,
-      signal: AbortSignal.timeout(3_000),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as HealthResponse;
-    if (!Array.isArray(data.browserToolNames)) return null;
-    return data.browserToolNames;
-  } catch {
-    return null;
+  const plugins = config.plugins as Record<string, PluginPermissionConfig>;
+  if (!plugins[pluginName]) {
+    plugins[pluginName] = {};
   }
-};
-
-const handleListTools = async (options: { port?: number }): Promise<void> => {
-  const port = resolvePort(options);
-  const tools = await fetchToolNames(port);
-
-  if (!tools) {
-    console.error(pc.yellow('Cannot reach the MCP server to list available tools.'));
-    console.error(`Start it with: ${pc.bold('opentabs start')}`);
-    console.error('');
-    console.error('Tool names use the format <plugin>_<tool>, e.g. slack_send_message');
-    console.error(pc.dim('You can also list installed plugins with: opentabs plugin list'));
-    process.exit(1);
-  }
-
-  if (tools.length === 0) {
-    console.log(pc.dim('No plugin tools available (no plugins installed).'));
-    console.log(pc.dim('Browser tools are managed with: opentabs config set browser-tool.<name> enabled|disabled'));
-    return;
-  }
-
-  console.log(pc.bold('Available tools:'));
-  for (const name of tools) {
-    console.log(`  ${name}`);
-  }
-  console.log('');
-  console.log(pc.dim('Usage: opentabs config set tool.<name> enabled|disabled'));
-};
-
-const handleListBrowserTools = async (options: { port?: number }): Promise<void> => {
-  const port = resolvePort(options);
-  const tools = await fetchBrowserToolNames(port);
-
-  if (!tools) {
-    console.error(pc.yellow('Cannot reach the MCP server to list available browser tools.'));
-    console.error(`Start it with: ${pc.bold('opentabs start')}`);
-    process.exit(1);
-  }
-
-  if (tools.length === 0) {
-    console.log(pc.dim('No browser tools available (extension not connected).'));
-    return;
-  }
-
-  console.log(pc.bold('Available browser tools:'));
-  for (const name of tools) {
-    console.log(`  ${name}`);
-  }
-  console.log('');
-  console.log(pc.dim('Usage: opentabs config set browser-tool.<name> enabled|disabled'));
+  return plugins[pluginName];
 };
 
 /**
- * Apply an enabled/disabled change to a policy map.
- * When enabled (the default), the entry is removed so defaults are not persisted.
- * When disabled, the entry is explicitly set to false.
- * Returns whether the entry was removed (true) or set to false (false).
+ * Remove empty entries from config.plugins to keep the config file clean.
+ * An entry is empty if it has no permission and no tools overrides.
  */
-const applyPolicyEntry = (map: Record<string, boolean>, key: string, enabled: boolean): void => {
-  if (enabled) {
-    Reflect.deleteProperty(map, key);
-  } else {
-    map[key] = false;
+const pruneEmptyPluginEntries = (config: Record<string, unknown>): void => {
+  if (!config.plugins || typeof config.plugins !== 'object' || Array.isArray(config.plugins)) return;
+  const plugins = config.plugins as Record<string, PluginPermissionConfig>;
+  for (const [name, entry] of Object.entries(plugins)) {
+    const hasPermission = entry.permission !== undefined;
+    const hasTools = entry.tools !== undefined && Object.keys(entry.tools).length > 0;
+    if (!hasPermission && !hasTools) {
+      delete plugins[name];
+    }
+  }
+  if (Object.keys(plugins).length === 0) {
+    delete config.plugins;
   }
 };
 
-const handleSetTool = async (key: string, value: string, options: { port?: number }): Promise<void> => {
-  const toolName = key.slice(TOOL_PREFIX.length);
-  if (!toolName || !toolName.includes('_')) {
-    console.error(pc.red(`Invalid tool name: ${toolName || '(empty)'}`));
-    console.error('Tool names use the format <plugin>_<tool>, e.g. slack_send_message');
-    console.error(`Run ${pc.bold('opentabs config set tool.')} to list available tools.`);
+const handleSetToolPermission = async (key: string, value: string, options: { port?: number }): Promise<void> => {
+  const rest = key.slice(TOOL_PERMISSION_PREFIX.length);
+  const dotIdx = rest.indexOf('.');
+  if (dotIdx === -1 || dotIdx === 0 || dotIdx === rest.length - 1) {
+    console.error(pc.red(`Invalid key format: ${key}`));
+    console.error('Expected: tool-permission.<plugin>.<tool>');
+    console.error('Example: tool-permission.slack.send_message');
+    console.error('For browser tools: tool-permission.browser.browser_screenshot');
     process.exit(1);
   }
+  const pluginName = rest.slice(0, dotIdx);
+  const toolName = rest.slice(dotIdx + 1);
 
-  if (value !== 'enabled' && value !== 'disabled') {
-    console.error(pc.red(`Invalid value: ${value}`));
-    console.error('Value must be "enabled" or "disabled".');
+  if (!VALID_PERMISSIONS.has(value)) {
+    console.error(pc.red(`Invalid permission: ${value}`));
+    console.error('Value must be "off", "ask", or "auto".');
     process.exit(1);
   }
+  const permission = value as ToolPermission;
 
   const { config, configPath } = await loadConfig();
+  const entry = ensurePluginEntry(config, pluginName);
 
-  if (!config.tools || typeof config.tools !== 'object' || Array.isArray(config.tools)) {
-    config.tools = {};
-  }
-  const tools = config.tools as Record<string, boolean>;
-  const enabled = value === 'enabled';
-  applyPolicyEntry(tools, toolName, enabled);
-  if (Object.keys(tools).length === 0) {
-    delete config.tools;
+  if (permission === 'off') {
+    if (entry.tools) {
+      delete entry.tools[toolName];
+      if (Object.keys(entry.tools).length === 0) {
+        delete entry.tools;
+      }
+    }
+  } else {
+    if (!entry.tools) entry.tools = {};
+    entry.tools[toolName] = permission;
   }
 
+  pruneEmptyPluginEntries(config);
   await atomicWriteConfig(configPath, `${JSON.stringify(config, null, 2)}\n`);
 
-  const indicator = enabled ? pc.green('enabled') : pc.red('disabled');
-  console.log(`${toolName}: ${indicator}`);
-
-  const port = resolvePort(options);
-  const registeredTools = await fetchToolNames(port);
-  if (registeredTools && !registeredTools.includes(toolName)) {
-    console.log(
-      pc.yellow(`Warning: "${toolName}" does not match any registered tool. Check the name or start the server.`),
-    );
-  } else if (!registeredTools) {
-    console.log(
-      pc.dim(`Note: Could not validate tool name (server not running). Verify with: opentabs config set tool.`),
-    );
-  }
-
+  console.log(`${pluginName}.${toolName}: ${colorPermission(permission)}`);
   await notifyServer({ port: options.port, warnIfNotRunning: true });
 };
 
-const handleSetBrowserTool = async (key: string, value: string, options: { port?: number }): Promise<void> => {
-  let toolName = key.slice(BROWSER_TOOL_PREFIX.length);
-  if (!toolName) {
-    console.error(pc.red('Invalid browser tool name: (empty)'));
-    console.error('Browser tool names start with "browser_" or "extension_", e.g. browser_execute_script');
-    process.exit(1);
-  }
-  if (!toolName.startsWith('browser_') && !toolName.startsWith('extension_')) {
-    toolName = `browser_${toolName}`;
-  }
-
-  if (value !== 'enabled' && value !== 'disabled') {
-    console.error(pc.red(`Invalid value: ${value}`));
-    console.error('Value must be "enabled" or "disabled".');
+const handleSetPluginPermission = async (key: string, value: string, options: { port?: number }): Promise<void> => {
+  const pluginName = key.slice(PLUGIN_PERMISSION_PREFIX.length);
+  if (!pluginName) {
+    console.error(pc.red('Missing plugin name.'));
+    console.error('Expected: plugin-permission.<plugin>');
+    console.error('Example: plugin-permission.slack');
+    console.error('For browser tools: plugin-permission.browser');
     process.exit(1);
   }
 
-  // Validate against the server's registered tool list before writing config.
-  // If the server is reachable and the tool name is not recognized, reject without writing.
-  // If the server is not reachable, proceed with writing and warn instead.
-  const port = resolvePort(options);
-  const registeredBrowserTools = await fetchBrowserToolNames(port);
-  if (registeredBrowserTools && !registeredBrowserTools.includes(toolName)) {
-    console.error(pc.red(`Error: "${toolName}" is not a registered browser tool.`));
-    console.error(pc.dim('Run opentabs config set browser-tool. to list available browser tools.'));
+  if (!VALID_PERMISSIONS.has(value)) {
+    console.error(pc.red(`Invalid permission: ${value}`));
+    console.error('Value must be "off", "ask", or "auto".');
     process.exit(1);
   }
+  const permission = value as ToolPermission;
 
   const { config, configPath } = await loadConfig();
+  const entry = ensurePluginEntry(config, pluginName);
 
-  if (
-    !config.browserToolPolicy ||
-    typeof config.browserToolPolicy !== 'object' ||
-    Array.isArray(config.browserToolPolicy)
-  ) {
-    config.browserToolPolicy = {};
-  }
-  const policy = config.browserToolPolicy as Record<string, boolean>;
-  const enabled = value === 'enabled';
-  applyPolicyEntry(policy, toolName, enabled);
-  if (Object.keys(policy).length === 0) {
-    delete config.browserToolPolicy;
+  if (permission === 'off') {
+    delete entry.permission;
+  } else {
+    entry.permission = permission;
   }
 
+  pruneEmptyPluginEntries(config);
   await atomicWriteConfig(configPath, `${JSON.stringify(config, null, 2)}\n`);
 
-  const indicator = enabled ? pc.green('enabled') : pc.red('disabled');
-  console.log(`${toolName}: ${indicator}`);
-
-  if (!registeredBrowserTools) {
-    console.log(
-      pc.dim(`Note: Could not validate tool name (server not running). Verify with: opentabs config set browser-tool.`),
-    );
-  }
-
+  console.log(`${pluginName}: ${colorPermission(permission)}`);
   await notifyServer({ port: options.port, warnIfNotRunning: true });
 };
 
@@ -576,7 +421,7 @@ const levenshtein = (a: string, b: string): number => {
   return prev[n] ?? 0;
 };
 
-const KNOWN_KEYS = ['tool.', 'browser-tool.', PORT_KEY, LOCAL_PLUGINS_ADD, LOCAL_PLUGINS_REMOVE];
+const KNOWN_KEYS = ['tool-permission.', 'plugin-permission.', PORT_KEY, LOCAL_PLUGINS_ADD, LOCAL_PLUGINS_REMOVE];
 
 const suggestKey = (input: string): string | null => {
   let best: string | null = null;
@@ -606,24 +451,17 @@ const handleConfigSet = async (
   value: string | undefined,
   options: { port?: number; force?: boolean },
 ): Promise<void> => {
-  if (key === TOOL_PREFIX) {
-    return handleListTools(options);
-  }
-  if (key === BROWSER_TOOL_PREFIX) {
-    return handleListBrowserTools(options);
-  }
-
   if (value === undefined || value === '') {
     console.error(pc.red('Missing value.'));
     console.error(SUPPORTED_KEYS);
     process.exit(1);
   }
 
-  if (key.startsWith(TOOL_PREFIX)) {
-    return handleSetTool(key, value, options);
+  if (key.startsWith(TOOL_PERMISSION_PREFIX)) {
+    return handleSetToolPermission(key, value, options);
   }
-  if (key.startsWith(BROWSER_TOOL_PREFIX)) {
-    return handleSetBrowserTool(key, value, options);
+  if (key.startsWith(PLUGIN_PERMISSION_PREFIX)) {
+    return handleSetPluginPermission(key, value, options);
   }
   if (key === PORT_KEY) {
     return handleSetPort(value, options);
@@ -779,12 +617,10 @@ const registerConfigCommand = (program: Command): void => {
       'after',
       `
 Examples:
-  $ opentabs config set tool.                              List available tools
-  $ opentabs config set tool.slack_send_message disabled
-  $ opentabs config set tool.slack_send_message enabled
-  $ opentabs config set browser-tool.                      List available browser tools
-  $ opentabs config set browser-tool.browser_execute_script disabled
-  $ opentabs config set browser-tool.browser_execute_script enabled
+  $ opentabs config set tool-permission.slack.send_message auto
+  $ opentabs config set tool-permission.browser.browser_screenshot ask
+  $ opentabs config set plugin-permission.slack auto
+  $ opentabs config set plugin-permission.browser ask
   $ opentabs config set port 9515
   $ opentabs config set localPlugins.add /path/to/plugin
   $ opentabs config set localPlugins.add /future/path --force
@@ -858,7 +694,6 @@ export {
   levenshtein,
   suggestKey,
   KNOWN_KEYS,
-  applyPolicyEntry,
   handleSetLocalPluginsAdd,
   normalizeConfigForDisplay,
 };

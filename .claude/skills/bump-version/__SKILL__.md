@@ -23,11 +23,17 @@ All platform packages and plugins share the same version number (e.g., `0.0.34`)
 4. **Update root lock file** — run `npm install --package-lock-only` at the repo root
 5. **Scan for hardcoded version strings** in source code (see "Hardcoded Version Scan")
 6. **Verify** — run `npm run build` and `npm run type-check` to confirm nothing broke
-7. **Commit and push** the version bump
+7. **Commit** the version bump (do NOT push yet — see "Push Ordering" below)
 8. **Publish all platform packages** to npm in dependency order (see "Publishing" below)
-9. **Update plugin lock files** — run `npm install` in each plugin directory (now that published packages are available)
-10. **Rebuild plugins** — run `npm run build` in each plugin directory
-11. **Commit and push** the plugin lock file updates
+9. **Update plugin lock files and rebuild** — run `npm run build:plugins` (installs from registry + builds)
+10. **Commit** the plugin lock file updates
+11. **Push** all commits
+
+### Push Ordering
+
+**The pre-push hook runs `npm run build:plugins`, which calls `npm install` in each plugin.** Plugins reference `@opentabs-dev/*` packages via `^x.y.z` semver ranges that resolve from the npm registry. If you push BEFORE publishing, the pre-push hook fails with `ETARGET` ("No matching version found") because the new version does not exist on npm yet.
+
+The correct order is: **commit → publish → build:plugins → commit plugin locks → push**. This ensures the packages exist on the registry before the pre-push hook tries to install them.
 
 ---
 
@@ -128,7 +134,7 @@ Both must exit 0. If they fail, fix the issue before considering the bump comple
 
 ## Publishing
 
-After the version bump is committed and pushed, publish all platform packages to npm.
+After the version bump is committed (but NOT yet pushed), publish all platform packages to npm. Publishing must happen before pushing — see "Push Ordering" above.
 
 ### Prerequisites
 
@@ -164,9 +170,9 @@ cd platform/<package> && npm publish
 
 After all platform packages are published:
 
-1. **Update plugin lock files**: `cd plugins/<name> && npm install` (resolves `^<new-version>` from the registry)
-2. **Rebuild plugins**: `cd plugins/<name> && npm run build` (compiles with the new SDK version)
-3. **Commit and push** the updated lock files
+1. **Install and rebuild all plugins**: `npm run build:plugins` (installs from registry + builds each plugin)
+2. **Commit** the updated lock files
+3. **Push** all commits (version bump + plugin lock updates) — the pre-push hook will now succeed because packages are on the registry
 
 ### npm Registry Propagation Delay
 
@@ -199,12 +205,12 @@ Do not skip the plugin lock file update or commit stale lock files. The retry is
 - [ ] Hardcoded version scan completed — no stale version strings in source code
 - [ ] `npm run build` passes
 - [ ] `npm run type-check` passes
-- [ ] Version bump committed and pushed
+- [ ] Version bump committed (NOT pushed yet)
 
 ### Publish
 
 - [ ] `npm whoami` confirms authenticated with write access
 - [ ] All 7 platform packages published in dependency order
-- [ ] Plugin lock files updated (`npm install` in each plugin, with retry for registry propagation delay)
-- [ ] Plugins rebuilt (`npm run build` in each plugin)
-- [ ] Plugin lock file updates committed and pushed
+- [ ] Plugins installed and rebuilt (`npm run build:plugins`)
+- [ ] Plugin lock file updates committed
+- [ ] All commits pushed (pre-push hook succeeds because packages are on npm)

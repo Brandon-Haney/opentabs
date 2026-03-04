@@ -77,17 +77,12 @@ const ToolRow = ({
         <Tooltip.Content>{description}</Tooltip.Content>
       </Tooltip>
       <div className="flex shrink-0 items-center gap-2">
-        <select
+        <PermissionSelect
           value={permission}
-          onChange={e => onPermissionChange(name, e.target.value as ToolPermission)}
-          onClick={(e: React.MouseEvent) => e.stopPropagation()}
-          disabled={disabled}
-          aria-label={`Permission for ${name} tool`}
-          className="rounded border-2 border-border bg-card px-1 py-0.5 font-mono text-xs focus:shadow-[2px_2px_0_0_var(--color-border)] focus:outline-none">
-          <option value="off">Off</option>
-          <option value="ask">Ask</option>
-          <option value="auto">Auto</option>
-        </select>
+          onValueChange={p => onPermissionChange(name, p)}
+          disabled={disabled ?? false}
+          ariaLabel={`Permission for ${name} tool`}
+        />
       </div>
     </div>
   );

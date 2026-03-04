@@ -4,9 +4,9 @@
  * requiring a side panel reload.
  *
  * These tests exercise the background-only communication architecture where:
- *   1. Tool config change via config reload → plugins.changed → side panel updates
+ *   1. Plugin permission change via config reload → plugins.changed → side panel updates
  *   2. Tab state changes (auth, close) → tab.stateChanged → side panel updates
- *   3. Browser tool policy change via config reload → plugins.changed → side panel updates
+ *   3. Browser tool permission change via config reload → plugins.changed → side panel updates
  *   4. Server disconnect/reconnect → side panel recovers all states
  */
 
@@ -19,8 +19,6 @@ import {
   E2E_TEST_PLUGIN_DIR,
   expect,
   launchExtensionContext,
-  readPluginToolNames,
-  readTestConfig,
   startMcpServer,
   startTestServer,
   test,
@@ -34,28 +32,23 @@ import {
   waitForLog,
 } from './helpers.js';
 
-/** Build a tools map from the e2e-test plugin's prefixed tool names. */
-const buildToolsMap = (): Record<string, boolean> => {
-  const tools: Record<string, boolean> = {};
-  for (const t of readPluginToolNames()) {
-    tools[t] = true;
-  }
-  return tools;
-};
-
 // ---------------------------------------------------------------------------
 // Real-time state propagation tests
 // ---------------------------------------------------------------------------
 
 test.describe('Side panel real-time state propagation', () => {
-  test('tool config change reflects in side panel without reload', async () => {
+  test('plugin permission change reflects in side panel without reload', async () => {
     const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
-    const tools = buildToolsMap();
 
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-realtime-tool-'));
-    writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
+    // Start with all e2e-test tools at 'auto' permission
+    writeTestConfig(configDir, {
+      localPlugins: [absPluginPath],
+      plugins: { 'e2e-test': { permission: 'auto' } },
+    });
 
-    const server = await startMcpServer(configDir, true);
+    // Disable skipPermissions so permission changes are visible in the UI
+    const server = await startMcpServer(configDir, true, undefined, { OPENTABS_SKIP_PERMISSIONS: '' });
     const mcpClient = createMcpClient(server.port, server.secret);
     const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port, server.secret);
     setupAdapterSymlink(configDir, extensionDir);
@@ -73,39 +66,45 @@ test.describe('Side panel real-time state propagation', () => {
       const pluginCard = sidePanelPage.locator('button[aria-expanded]').filter({ hasText: 'E2E Test' });
       await pluginCard.click();
 
-      // Verify echo tool toggle is initially enabled
-      const echoToggle = sidePanelPage.locator('button[role="switch"][aria-label="Toggle echo tool"]');
-      await expect(echoToggle).toBeVisible({ timeout: 5_000 });
-      await expect(echoToggle).toHaveAttribute('aria-checked', 'true', { timeout: 5_000 });
+      // Verify echo tool's permission selector shows 'auto' initially
+      const echoSelect = sidePanelPage.locator('select[aria-label="Permission for echo tool"]');
+      await expect(echoSelect).toBeVisible({ timeout: 5_000 });
+      await expect(echoSelect).toHaveValue('auto', { timeout: 5_000 });
 
-      // Disable the echo tool by modifying config.json and triggering reload.
+      // Change the echo tool to 'off' by modifying config.json and triggering reload.
       // This sends plugins.changed to the extension → background updates cache →
       // side panel receives the push and updates without reload.
-      const disabledTools = { ...tools, 'e2e-test_echo': false };
-      writeTestConfig(configDir, { localPlugins: [absPluginPath], tools: disabledTools });
+      writeTestConfig(configDir, {
+        localPlugins: [absPluginPath],
+        plugins: { 'e2e-test': { permission: 'auto', tools: { echo: 'off' } } },
+      });
       await waitForLog(server, 'Config reload complete', 10_000);
 
-      // Verify the side panel toggle reflects disabled state WITHOUT reloading
-      await expect(echoToggle).toHaveAttribute('aria-checked', 'false', { timeout: 10_000 });
+      // Verify the side panel select reflects 'off' state WITHOUT reloading
+      await expect(echoSelect).toHaveValue('off', { timeout: 10_000 });
 
-      // Verify the MCP server also sees it as disabled via tools/list
+      // Verify the MCP server sees the tool with [Disabled] prefix via tools/list
       await expect
         .poll(
           async () => {
             const toolList = await mcpClient.listTools();
-            return toolList.some(t => t.name === 'e2e-test_echo');
+            const echoTool = toolList.find(t => t.name === 'e2e-test_echo');
+            return echoTool?.description?.startsWith('[Disabled]') ?? false;
           },
           { timeout: 15_000, message: 'MCP server did not reflect echo tool as disabled' },
         )
-        .toBe(false);
+        .toBe(true);
 
-      // Re-enable the tool via config change
-      writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
+      // Re-enable the tool via config change (remove per-tool override)
+      writeTestConfig(configDir, {
+        localPlugins: [absPluginPath],
+        plugins: { 'e2e-test': { permission: 'auto' } },
+      });
       server.logs.length = 0;
       await waitForLog(server, 'Config reload complete', 10_000);
 
-      // Verify the side panel toggle reflects re-enabled state WITHOUT reloading
-      await expect(echoToggle).toHaveAttribute('aria-checked', 'true', { timeout: 10_000 });
+      // Verify the side panel select reflects 'auto' state WITHOUT reloading
+      await expect(echoSelect).toHaveValue('auto', { timeout: 10_000 });
 
       await sidePanelPage.close();
     } finally {
@@ -119,10 +118,9 @@ test.describe('Side panel real-time state propagation', () => {
 
   test('auth off then tab reload shows amber dot without side panel reload', async () => {
     const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
-    const tools = buildToolsMap();
 
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-realtime-auth-'));
-    writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
+    writeTestConfig(configDir, { localPlugins: [absPluginPath], plugins: {} });
 
     const server = await startMcpServer(configDir, true);
     const testServer = await startTestServer();
@@ -177,10 +175,9 @@ test.describe('Side panel real-time state propagation', () => {
 
   test('closing matching tab removes dot without side panel reload', async () => {
     const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
-    const tools = buildToolsMap();
 
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-realtime-close-'));
-    writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
+    writeTestConfig(configDir, { localPlugins: [absPluginPath], plugins: {} });
 
     const server = await startMcpServer(configDir, true);
     const testServer = await startTestServer();
@@ -221,14 +218,18 @@ test.describe('Side panel real-time state propagation', () => {
     }
   });
 
-  test('browser tool policy change reflects in side panel without reload', async () => {
+  test('browser tool permission change reflects in side panel without reload', async () => {
     const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
-    const tools = buildToolsMap();
 
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-realtime-btool-'));
-    writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
+    // Start with browser tools at 'auto' permission
+    writeTestConfig(configDir, {
+      localPlugins: [absPluginPath],
+      plugins: { browser: { permission: 'auto' } },
+    });
 
-    const server = await startMcpServer(configDir, true);
+    // Disable skipPermissions so permission changes are visible in the UI
+    const server = await startMcpServer(configDir, true, undefined, { OPENTABS_SKIP_PERMISSIONS: '' });
     const mcpClient = createMcpClient(server.port, server.secret);
     const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port, server.secret);
     setupAdapterSymlink(configDir, extensionDir);
@@ -246,44 +247,45 @@ test.describe('Side panel real-time state propagation', () => {
       const browserCard = sidePanelPage.locator('button[aria-expanded]').filter({ hasText: 'Browser' });
       await browserCard.click();
 
-      // Pick a browser tool to toggle
+      // Pick a browser tool to toggle — the ToolRow aria-label uses the full prefixed name
       const targetBrowserTool = BROWSER_TOOL_NAMES[0] ?? 'browser_list_tabs';
-      const toolToggle = sidePanelPage.locator(`button[role="switch"][aria-label="Toggle ${targetBrowserTool} tool"]`);
-      await expect(toolToggle).toBeVisible({ timeout: 5_000 });
-      await expect(toolToggle).toHaveAttribute('aria-checked', 'true', { timeout: 5_000 });
+      const toolSelect = sidePanelPage.locator(`select[aria-label="Permission for ${targetBrowserTool} tool"]`);
+      await expect(toolSelect).toBeVisible({ timeout: 5_000 });
+      await expect(toolSelect).toHaveValue('auto', { timeout: 5_000 });
 
-      // Disable the browser tool by writing browserToolPolicy to config.json
-      const config = readTestConfig(configDir);
-      const configWithPolicy = {
-        ...config,
-        browserToolPolicy: { [targetBrowserTool]: false },
-      };
-      writeTestConfig(configDir, configWithPolicy as typeof config);
+      // Disable the browser tool by writing plugins config to config.json
+      // Browser tool permission keys use the full prefixed name
+      writeTestConfig(configDir, {
+        localPlugins: [absPluginPath],
+        plugins: { browser: { permission: 'auto', tools: { [targetBrowserTool]: 'off' } } },
+      });
       await waitForLog(server, 'Config reload complete', 10_000);
 
-      // Verify the side panel toggle reflects disabled state WITHOUT reloading
-      await expect(toolToggle).toHaveAttribute('aria-checked', 'false', { timeout: 10_000 });
+      // Verify the side panel select reflects 'off' state WITHOUT reloading
+      await expect(toolSelect).toHaveValue('off', { timeout: 10_000 });
 
-      // Verify the tool is also removed from MCP tools/list
+      // Verify the tool has [Disabled] prefix in MCP tools/list
       await expect
         .poll(
           async () => {
             const toolList = await mcpClient.listTools();
-            return toolList.some(t => t.name === targetBrowserTool);
+            const tool = toolList.find(t => t.name === targetBrowserTool);
+            return tool?.description?.startsWith('[Disabled]') ?? false;
           },
           { timeout: 15_000, message: `MCP server did not reflect ${targetBrowserTool} as disabled` },
         )
-        .toBe(false);
+        .toBe(true);
 
-      // Re-enable the browser tool by removing the policy
-      const configWithoutPolicy = { ...config };
-      delete (configWithoutPolicy as Record<string, unknown>).browserToolPolicy;
-      writeTestConfig(configDir, configWithoutPolicy as typeof config);
+      // Re-enable the browser tool by removing the per-tool override
+      writeTestConfig(configDir, {
+        localPlugins: [absPluginPath],
+        plugins: { browser: { permission: 'auto' } },
+      });
       server.logs.length = 0;
       await waitForLog(server, 'Config reload complete', 10_000);
 
-      // Verify the side panel toggle reflects re-enabled state WITHOUT reloading
-      await expect(toolToggle).toHaveAttribute('aria-checked', 'true', { timeout: 10_000 });
+      // Verify the side panel select reflects 'auto' state WITHOUT reloading
+      await expect(toolSelect).toHaveValue('auto', { timeout: 10_000 });
 
       await sidePanelPage.close();
     } finally {
@@ -299,10 +301,12 @@ test.describe('Side panel real-time state propagation', () => {
     test.slow();
 
     const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
-    const tools = buildToolsMap();
 
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-realtime-reconn-'));
-    writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
+    writeTestConfig(configDir, {
+      localPlugins: [absPluginPath],
+      plugins: { 'e2e-test': { permission: 'auto' } },
+    });
 
     const server = await startMcpServer(configDir, true);
     const testServer = await startTestServer();
@@ -343,11 +347,11 @@ test.describe('Side panel real-time state propagation', () => {
       // Verify green dot recovers (from sendTabSyncAll → tab.stateChanged push)
       await expect(e2ePluginCard.locator('.bg-success')).toBeVisible({ timeout: 30_000 });
 
-      // Expand plugin card and verify tool toggles are correct
+      // Expand plugin card and verify tool permission selects are correct
       await e2ePluginCard.click();
-      const echoToggle = sidePanelPage.locator('button[role="switch"][aria-label="Toggle echo tool"]');
-      await expect(echoToggle).toBeVisible({ timeout: 5_000 });
-      await expect(echoToggle).toHaveAttribute('aria-checked', 'true', { timeout: 5_000 });
+      const echoSelect = sidePanelPage.locator('select[aria-label="Permission for echo tool"]');
+      await expect(echoSelect).toBeVisible({ timeout: 5_000 });
+      await expect(echoSelect).toHaveValue('auto', { timeout: 5_000 });
 
       await sidePanelPage.close();
       await appTab.close();

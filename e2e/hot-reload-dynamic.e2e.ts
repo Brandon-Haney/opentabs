@@ -9,7 +9,7 @@
  *   1. New plugin installed via config change + hot reload → tools appear
  *   2. Plugin removed via config change + hot reload → tools disappear
  *   3. Plugin re-added after removal → tools reappear
- *   4. Tool disabled via config change + hot reload → tool hidden from list
+ *   4. Tool set to 'off' via config change + hot reload → tool gets [Disabled] prefix
  *   5. File watcher: manifest change adds a tool without hot reload
  *   6. File watcher: IIFE change triggers plugin.update to extension
  *   7. Multiple MCP sessions all receive tools/list_changed
@@ -98,11 +98,9 @@ test.describe
       ]);
 
       try {
-        // Update config to add the new plugin and enable its tools
+        // Update config to add the new plugin
         const config = readTestConfig(mcpServer.configDir);
         config.localPlugins.push(newPluginDir);
-        config.tools['extra-test_do_stuff'] = true;
-        config.tools['extra-test_check_health'] = true;
         writeTestConfig(mcpServer.configDir, config);
 
         // Trigger hot reload
@@ -136,8 +134,6 @@ test.describe
       try {
         const config = readTestConfig(mcpServer.configDir);
         config.localPlugins.push(plugin1Dir, plugin2Dir);
-        config.tools.alpha_ping = true;
-        config.tools.beta_pong = true;
         writeTestConfig(mcpServer.configDir, config);
 
         mcpServer.logs.length = 0;
@@ -227,54 +223,90 @@ test.describe
 // ---------------------------------------------------------------------------
 
 test.describe
-  .serial('Hot reload — tool config changes', () => {
-    test('disabling a tool via config hides it from tools/list after hot reload', async ({ mcpServer, mcpClient }) => {
-      const toolsBefore = await mcpClient.listTools();
-      expect(toolsBefore.map(t => t.name)).toContain('e2e-test_echo');
+  .serial('Hot reload — tool permission changes', () => {
+    test('setting a tool to off via config adds [Disabled] prefix after hot reload', async () => {
+      const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
+      const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-hr-perm-off-'));
+      writeTestConfig(configDir, { localPlugins: [absPluginPath], plugins: { 'e2e-test': { permission: 'auto' } } });
 
-      // Disable the echo tool
-      const config = readTestConfig(mcpServer.configDir);
-      config.tools['e2e-test_echo'] = false;
-      writeTestConfig(mcpServer.configDir, config);
+      // Disable skipPermissions so [Disabled] prefix appears
+      const server = await startMcpServer(configDir, true, undefined, { OPENTABS_SKIP_PERMISSIONS: '' });
+      const client = createMcpClient(server.port, server.secret);
 
-      mcpServer.logs.length = 0;
-      mcpServer.triggerHotReload();
-      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+      try {
+        await client.initialize();
 
-      const toolsAfter = await mcpClient.listTools();
-      expect(toolsAfter.map(t => t.name)).not.toContain('e2e-test_echo');
+        const toolsBefore = await client.listTools();
+        const echoTool = toolsBefore.find(t => t.name === 'e2e-test_echo');
+        expect(echoTool).toBeDefined();
 
-      // Other tools should still be there
-      expect(toolsAfter.map(t => t.name)).toContain('e2e-test_greet');
-      for (const bt of BROWSER_TOOL_NAMES) {
-        expect(toolsAfter.map(t => t.name)).toContain(bt);
+        // Set the echo tool permission to 'off'
+        const config = readTestConfig(configDir);
+        config.plugins = { ...config.plugins, 'e2e-test': { permission: 'auto', tools: { echo: 'off' } } };
+        writeTestConfig(configDir, config);
+
+        server.logs.length = 0;
+        server.triggerHotReload();
+        await waitForLog(server, 'Hot reload complete', 20_000);
+
+        const toolsAfter = await client.listTools();
+        // Tool should still be in the list (all tools always appear)
+        const echoAfter = toolsAfter.find(t => t.name === 'e2e-test_echo');
+        if (!echoAfter) throw new Error('Expected e2e-test_echo to be in tools/list');
+        expect(echoAfter.description).toMatch(/^\[Disabled\]/);
+
+        // Other tools should still be there without prefix
+        expect(toolsAfter.find(t => t.name === 'e2e-test_greet')).toBeDefined();
+        for (const bt of BROWSER_TOOL_NAMES) {
+          expect(toolsAfter.map(t => t.name)).toContain(bt);
+        }
+      } finally {
+        await client.close();
+        await server.kill();
+        cleanupTestConfigDir(configDir);
       }
     });
 
-    test('re-enabling a tool via config restores it in tools/list after hot reload', async ({
-      mcpServer,
-      mcpClient,
-    }) => {
-      // Disable echo
-      const config = readTestConfig(mcpServer.configDir);
-      config.tools['e2e-test_echo'] = false;
-      writeTestConfig(mcpServer.configDir, config);
+    test('re-enabling a tool via config removes [Disabled] prefix after hot reload', async () => {
+      const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
+      const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-hr-perm-reenable-'));
+      writeTestConfig(configDir, { localPlugins: [absPluginPath], plugins: { 'e2e-test': { permission: 'auto' } } });
 
-      mcpServer.logs.length = 0;
-      mcpServer.triggerHotReload();
-      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+      // Disable skipPermissions so [Disabled] prefix appears
+      const server = await startMcpServer(configDir, true, undefined, { OPENTABS_SKIP_PERMISSIONS: '' });
+      const client = createMcpClient(server.port, server.secret);
 
-      expect((await mcpClient.listTools()).map(t => t.name)).not.toContain('e2e-test_echo');
+      try {
+        await client.initialize();
 
-      // Re-enable echo
-      config.tools['e2e-test_echo'] = true;
-      writeTestConfig(mcpServer.configDir, config);
+        // Set echo to off
+        const config = readTestConfig(configDir);
+        config.plugins = { ...config.plugins, 'e2e-test': { permission: 'auto', tools: { echo: 'off' } } };
+        writeTestConfig(configDir, config);
 
-      mcpServer.logs.length = 0;
-      mcpServer.triggerHotReload();
-      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+        server.logs.length = 0;
+        server.triggerHotReload();
+        await waitForLog(server, 'Hot reload complete', 20_000);
 
-      expect((await mcpClient.listTools()).map(t => t.name)).toContain('e2e-test_echo');
+        const echoDisabled = (await client.listTools()).find(t => t.name === 'e2e-test_echo');
+        expect(echoDisabled?.description).toMatch(/^\[Disabled\]/);
+
+        // Remove the per-tool override (reverts to plugin default 'auto')
+        config.plugins = { ...config.plugins, 'e2e-test': { permission: 'auto' } };
+        writeTestConfig(configDir, config);
+
+        server.logs.length = 0;
+        server.triggerHotReload();
+        await waitForLog(server, 'Hot reload complete', 20_000);
+
+        const echoEnabled = (await client.listTools()).find(t => t.name === 'e2e-test_echo');
+        if (!echoEnabled) throw new Error('Expected e2e-test_echo to be in tools/list');
+        expect(echoEnabled.description).not.toMatch(/^\[Disabled\]/);
+      } finally {
+        await client.close();
+        await server.kill();
+        cleanupTestConfigDir(configDir);
+      }
     });
   });
 
@@ -290,12 +322,7 @@ test.describe
       const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-config-'));
 
       // Build config pointing to the copy, pre-enable the future tool
-      const prefixedToolNames = [...readPluginToolNames(), 'e2e-test_dynamic_tool'];
-      const tools: Record<string, boolean> = {};
-      for (const t of prefixedToolNames) {
-        tools[t] = true;
-      }
-      writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
+      writeTestConfig(configDir, { localPlugins: [pluginDir], plugins: {} });
 
       const server = await startMcpServer(configDir, true);
       const client = createMcpClient(server.port, server.secret);
@@ -354,12 +381,7 @@ test.describe
       const { pluginDir, tmpDir } = copyE2eTestPlugin();
       const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-remove-'));
 
-      const prefixedToolNames = readPluginToolNames();
-      const tools: Record<string, boolean> = {};
-      for (const t of prefixedToolNames) {
-        tools[t] = true;
-      }
-      writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
+      writeTestConfig(configDir, { localPlugins: [pluginDir], plugins: {} });
 
       const server = await startMcpServer(configDir, true);
       const client = createMcpClient(server.port, server.secret);
@@ -408,12 +430,7 @@ test.describe('File watcher — IIFE changes', () => {
     const { pluginDir, tmpDir } = copyE2eTestPlugin();
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-iife-'));
 
-    const prefixedToolNames = readPluginToolNames();
-    const tools: Record<string, boolean> = {};
-    for (const t of prefixedToolNames) {
-      tools[t] = true;
-    }
-    writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
+    writeTestConfig(configDir, { localPlugins: [pluginDir], plugins: {} });
 
     const server = await startMcpServer(configDir, true);
 
@@ -475,29 +492,43 @@ test.describe('Hot reload — multiple MCP sessions', () => {
     }
   });
 
-  test('all sessions see config changes after hot reload', async ({ mcpServer, mcpClient }) => {
-    const client2 = createMcpClient(mcpServer.port, mcpServer.secret);
-    await client2.initialize();
+  test('all sessions see config changes after hot reload', async () => {
+    const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-hr-multi-cfg-'));
+    writeTestConfig(configDir, { localPlugins: [absPluginPath], plugins: { 'e2e-test': { permission: 'auto' } } });
+
+    // Disable skipPermissions so [Disabled] prefix appears
+    const server = await startMcpServer(configDir, true, undefined, { OPENTABS_SKIP_PERMISSIONS: '' });
+    const client1 = createMcpClient(server.port, server.secret);
+    const client2 = createMcpClient(server.port, server.secret);
 
     try {
+      await client1.initialize();
+      await client2.initialize();
+
       // Both see echo tool initially
-      expect((await mcpClient.listTools()).map(t => t.name)).toContain('e2e-test_echo');
+      expect((await client1.listTools()).map(t => t.name)).toContain('e2e-test_echo');
       expect((await client2.listTools()).map(t => t.name)).toContain('e2e-test_echo');
 
-      // Disable echo tool and hot reload
-      const config = readTestConfig(mcpServer.configDir);
-      config.tools['e2e-test_echo'] = false;
-      writeTestConfig(mcpServer.configDir, config);
+      // Set echo tool to 'off' and hot reload
+      const config = readTestConfig(configDir);
+      config.plugins = { ...config.plugins, 'e2e-test': { permission: 'auto', tools: { echo: 'off' } } };
+      writeTestConfig(configDir, config);
 
-      mcpServer.logs.length = 0;
-      mcpServer.triggerHotReload();
-      await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+      server.logs.length = 0;
+      server.triggerHotReload();
+      await waitForLog(server, 'Hot reload complete', 20_000);
 
-      // Neither session should see echo tool
-      expect((await mcpClient.listTools()).map(t => t.name)).not.toContain('e2e-test_echo');
-      expect((await client2.listTools()).map(t => t.name)).not.toContain('e2e-test_echo');
+      // Both sessions should see echo tool with [Disabled] prefix
+      const tools1 = await client1.listTools();
+      const tools2 = await client2.listTools();
+      expect(tools1.find(t => t.name === 'e2e-test_echo')?.description).toMatch(/^\[Disabled\]/);
+      expect(tools2.find(t => t.name === 'e2e-test_echo')?.description).toMatch(/^\[Disabled\]/);
     } finally {
+      await client1.close();
       await client2.close();
+      await server.kill();
+      cleanupTestConfigDir(configDir);
     }
   });
 });
@@ -558,7 +589,6 @@ test.describe
       try {
         const config = readTestConfig(mcpServer.configDir);
         config.localPlugins.push(newPluginDir);
-        config.tools['callable-test_hello'] = true;
         writeTestConfig(mcpServer.configDir, config);
 
         mcpServer.logs.length = 0;
@@ -613,7 +643,6 @@ test.describe
       try {
         const config = readTestConfig(mcpServer.configDir);
         config.localPlugins.push(newPluginDir);
-        config.tools['health-test_probe'] = true;
         writeTestConfig(mcpServer.configDir, config);
 
         mcpServer.logs.length = 0;
@@ -652,15 +681,10 @@ test.describe('File watcher + hot reload combined', () => {
     const { pluginDir, tmpDir } = copyE2eTestPlugin();
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-combined-'));
 
-    // Pre-enable a future dynamic tool
-    const prefixedToolNames = [...readPluginToolNames(), 'e2e-test_fw_tool'];
-    const tools: Record<string, boolean> = {};
-    for (const t of prefixedToolNames) {
-      tools[t] = true;
-    }
-    writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
+    // Start with e2e-test at 'auto' permission; disable skipPermissions so [Disabled] prefix appears
+    writeTestConfig(configDir, { localPlugins: [pluginDir], plugins: { 'e2e-test': { permission: 'auto' } } });
 
-    const server = await startMcpServer(configDir, true);
+    const server = await startMcpServer(configDir, true, undefined, { OPENTABS_SKIP_PERMISSIONS: '' });
     const client = createMcpClient(server.port, server.secret);
 
     try {
@@ -694,9 +718,9 @@ test.describe('File watcher + hot reload combined', () => {
         'e2e-test_fw_tool to appear',
       );
 
-      // 2. Now trigger a hot reload (config change: disable a tool)
+      // 2. Now trigger a hot reload (config change: set echo tool to off)
       const config = readTestConfig(configDir);
-      config.tools['e2e-test_echo'] = false;
+      config.plugins = { ...config.plugins, 'e2e-test': { permission: 'auto', tools: { echo: 'off' } } };
       writeTestConfig(configDir, config);
 
       server.logs.length = 0;
@@ -704,9 +728,9 @@ test.describe('File watcher + hot reload combined', () => {
       await waitForLog(server, 'Hot reload complete', 20_000);
 
       // After hot reload: fw_tool should still be discoverable (it's in the
-      // manifest on disk, and discovery re-reads it). echo should be disabled.
+      // manifest on disk, and discovery re-reads it). echo should have [Disabled] prefix.
       const toolsAfter = await client.listTools();
-      expect(toolsAfter.map(t => t.name)).not.toContain('e2e-test_echo');
+      expect(toolsAfter.find(t => t.name === 'e2e-test_echo')?.description).toMatch(/^\[Disabled\]/);
       // The fw_tool was added to the manifest, so discovery will find it
       expect(toolsAfter.map(t => t.name)).toContain('e2e-test_fw_tool');
     } finally {
@@ -727,7 +751,7 @@ test.describe
     test('server starts with no plugins, hot reload adds plugin', async () => {
       // Start with an EMPTY config (no plugins, no tools)
       const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-empty-'));
-      writeTestConfig(configDir, { localPlugins: [], tools: {} });
+      writeTestConfig(configDir, { localPlugins: [], plugins: {} });
 
       const server = await startMcpServer(configDir, true);
       const client = createMcpClient(server.port, server.secret);
@@ -748,11 +772,7 @@ test.describe
         // Add e2e-test plugin via config
         const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
         const prefixedToolNames = readPluginToolNames();
-        const tools: Record<string, boolean> = {};
-        for (const t of prefixedToolNames) {
-          tools[t] = true;
-        }
-        writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
+        writeTestConfig(configDir, { localPlugins: [absPluginPath], plugins: {} });
 
         server.logs.length = 0;
         server.triggerHotReload();
@@ -867,12 +887,7 @@ test.describe
       const { pluginDir, tmpDir } = copyE2eTestPlugin();
       const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-desc-'));
 
-      const prefixedToolNames = readPluginToolNames();
-      const tools: Record<string, boolean> = {};
-      for (const t of prefixedToolNames) {
-        tools[t] = true;
-      }
-      writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
+      writeTestConfig(configDir, { localPlugins: [pluginDir], plugins: {} });
 
       const server = await startMcpServer(configDir, true);
       const client = createMcpClient(server.port, server.secret);
@@ -934,12 +949,7 @@ test.describe('File watcher — corrupted manifest', () => {
     const { pluginDir, tmpDir } = copyE2eTestPlugin();
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-corrupt-'));
 
-    const prefixedToolNames = readPluginToolNames();
-    const tools: Record<string, boolean> = {};
-    for (const t of prefixedToolNames) {
-      tools[t] = true;
-    }
-    writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
+    writeTestConfig(configDir, { localPlugins: [pluginDir], plugins: {} });
 
     const server = await startMcpServer(configDir, true);
     const client = createMcpClient(server.port, server.secret);
@@ -1079,12 +1089,7 @@ test.describe
       const { pluginDir, tmpDir } = copyE2eTestPlugin();
       const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-schema-'));
 
-      const prefixedToolNames = readPluginToolNames();
-      const tools: Record<string, boolean> = {};
-      for (const t of prefixedToolNames) {
-        tools[t] = true;
-      }
-      writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
+      writeTestConfig(configDir, { localPlugins: [pluginDir], plugins: {} });
 
       const server = await startMcpServer(configDir, true);
       const client = createMcpClient(server.port, server.secret);
@@ -1161,12 +1166,7 @@ test.describe
       const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-restart-'));
 
       // Pre-enable a future dynamic tool for the second file watcher change
-      const prefixedToolNames = [...readPluginToolNames(), 'e2e-test_post_reload_tool'];
-      const tools: Record<string, boolean> = {};
-      for (const t of prefixedToolNames) {
-        tools[t] = true;
-      }
-      writeTestConfig(configDir, { localPlugins: [pluginDir], tools });
+      writeTestConfig(configDir, { localPlugins: [pluginDir], plugins: {} });
 
       const server = await startMcpServer(configDir, true);
       const client = createMcpClient(server.port, server.secret);
@@ -1269,12 +1269,7 @@ test.describe
       const { pluginDir, tmpDir } = copyE2eTestPlugin();
       const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-fw-rewrite-'));
 
-      const prefixedToolNames = readPluginToolNames();
-      const toolConfig: Record<string, boolean> = {};
-      for (const t of prefixedToolNames) {
-        toolConfig[t] = true;
-      }
-      writeTestConfig(configDir, { localPlugins: [pluginDir], tools: toolConfig });
+      writeTestConfig(configDir, { localPlugins: [pluginDir], plugins: {} });
 
       const server = await startMcpServer(configDir, true);
       const client = createMcpClient(server.port, server.secret);

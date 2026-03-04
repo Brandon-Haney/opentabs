@@ -424,10 +424,9 @@ fixtureTest.describe('IIFE injection — overlapping URL patterns', () => {
         { name: 'noop', description: 'No-op tool for testing' },
       ]);
       try {
-        // Add the second plugin to the config and enable its tool
+        // Add the second plugin to the config
         const config = readTestConfig(mcpServer.configDir);
         config.localPlugins.push(extraPluginDir);
-        config.tools['extra-plugin_noop'] = true;
         writeTestConfig(mcpServer.configDir, config);
 
         // Trigger hot reload — server discovers both plugins, sends sync.full
@@ -510,10 +509,9 @@ fixtureTest.describe('IIFE injection — overlapping URL patterns', () => {
         ['*://localhost/*'],
       );
       try {
-        // Add the second plugin to the config and enable its tool
+        // Add the second plugin to the config
         const config = readTestConfig(mcpServer.configDir);
         config.localPlugins.push(extraPluginDir);
-        config.tools['diff-pattern-plugin_noop'] = true;
         writeTestConfig(mcpServer.configDir, config);
 
         // Trigger hot reload — server discovers both plugins, sends sync.full

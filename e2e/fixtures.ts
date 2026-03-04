@@ -181,12 +181,26 @@ const parsePortFromLogs = (logs: string[]): number | null => {
 // Config management — per-test isolated config directories
 // ---------------------------------------------------------------------------
 
+/** Per-plugin permission config shape in config.json. */
+interface PluginPermissionConfig {
+  permission?: 'off' | 'ask' | 'auto';
+  tools?: Record<string, 'off' | 'ask' | 'auto'>;
+}
+
 /** Shape of the ~/.opentabs/config.json file written per-test. */
 interface OpentabsConfig {
   /** Filesystem paths to locally-developed plugin directories. */
   localPlugins: string[];
-  /** Map of prefixed tool names to enabled/disabled state. */
-  tools: Record<string, boolean>;
+  /** Per-plugin permission configuration (plugin name → permission config). */
+  plugins?: Record<string, PluginPermissionConfig>;
+  /**
+   * Legacy tool enable/disable map (prefixed tool names → boolean).
+   * Ignored by the server — kept for backward compatibility with tests
+   * that haven't been migrated yet. All E2E tests run with
+   * OPENTABS_SKIP_PERMISSIONS=1, so the plugins map is irrelevant for
+   * most tests. Remove this field once all tests are migrated.
+   */
+  tools?: Record<string, boolean>;
 }
 
 /**
@@ -220,15 +234,9 @@ const createTestConfigDir = (): string => {
 
   const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
 
-  const toolNames = readPluginToolNames();
-  const tools: Record<string, boolean> = {};
-  for (const tool of toolNames) {
-    tools[tool] = true;
-  }
-
   const config: OpentabsConfig = {
     localPlugins: [absPluginPath],
-    tools,
+    plugins: {},
   };
 
   const configPath = path.join(configDir, 'config.json');

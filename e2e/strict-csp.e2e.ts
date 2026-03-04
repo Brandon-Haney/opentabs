@@ -846,10 +846,9 @@ fixtureTest.describe('Strict CSP — multiple plugins on same page', () => {
           { name: 'noop', description: 'No-op tool for strict-CSP multi-plugin test' },
         ]);
 
-        // Add the second plugin to the config and enable its tool
+        // Add the second plugin to the config
         const config = readTestConfig(mcpServer.configDir);
         config.localPlugins.push(extraPluginDir);
-        config.tools['csp-extra-plugin_noop'] = true;
         writeTestConfig(mcpServer.configDir, config);
 
         // Trigger hot reload — server discovers both plugins, sends sync.full
@@ -918,7 +917,6 @@ fixtureTest.describe('Strict CSP — multiple plugins on same page', () => {
 
         const config = readTestConfig(mcpServer.configDir);
         config.localPlugins.push(extraPluginDir);
-        config.tools['csp-dispatch-extra_noop'] = true;
         writeTestConfig(mcpServer.configDir, config);
 
         mcpServer.logs.length = 0;
@@ -980,7 +978,6 @@ fixtureTest.describe('Strict CSP — multiple plugins on same page', () => {
 
         const config = readTestConfig(mcpServer.configDir);
         config.localPlugins.push(extraPluginDir);
-        config.tools['csp-removable_noop'] = true;
         writeTestConfig(mcpServer.configDir, config);
 
         mcpServer.logs.length = 0;
@@ -1017,7 +1014,6 @@ fixtureTest.describe('Strict CSP — multiple plugins on same page', () => {
         // Remove the second plugin from config (keep only e2e-test)
         const updatedConfig = readTestConfig(mcpServer.configDir);
         updatedConfig.localPlugins = updatedConfig.localPlugins.filter(p => !p.includes('csp-removable'));
-        delete updatedConfig.tools['csp-removable_noop'];
         writeTestConfig(mcpServer.configDir, updatedConfig);
 
         // Trigger hot reload — server discovers only e2e-test, sends sync.full

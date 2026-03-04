@@ -1,20 +1,21 @@
 /**
- * Side panel plugin list and tool toggle E2E tests.
+ * Side panel plugin list and tool permission E2E tests.
  *
  * Verifies:
  *   1. Plugin cards display correct name and icon state
- *   2. Clicking a tool toggle sends config.setToolEnabled to the MCP server
- *   3. MCP server receives the tool config change and updates its state
- *   4. Side panel reflects the updated tool enabled/disabled state
+ *   2. Changing a tool permission select sends config.setToolPermission to the MCP server
+ *   3. MCP server receives the permission change and updates its state
+ *   4. Side panel reflects the updated tool permission state
+ *   5. Plugin-level permission select sets all tools' default permission
  *
  * These tests open the side panel as a regular chrome-extension:// page
  * (Playwright cannot open the real Chrome side panel API) and exercise
- * the full background → MCP server communication path for tool toggles.
+ * the full background → MCP server communication path for permission changes.
  */
 
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   cleanupTestConfigDir,
   createMcpClient,
@@ -26,7 +27,7 @@ import {
   startTestServer,
   test,
   writeTestConfig,
-} from "./fixtures.js";
+} from './fixtures.js';
 import {
   BROWSER_TOOL_NAMES,
   openSidePanel,
@@ -35,95 +36,79 @@ import {
   waitForExtensionConnected,
   waitForLog,
   waitForToolResult,
-} from "./helpers.js";
+} from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // Plugin list rendering — name and icon state
 // ---------------------------------------------------------------------------
 
-test.describe("Side panel — plugin list rendering", () => {
-  test("plugin card displays correct name and icon state after connecting", async () => {
+test.describe('Side panel — plugin list rendering', () => {
+  test('plugin card displays correct name and icon state after connecting', async () => {
     const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
-    const prefixedToolNames = readPluginToolNames();
-    const tools: Record<string, boolean> = {};
-    for (const t of prefixedToolNames) {
-      tools[t] = true;
-    }
 
-    const configDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), "opentabs-e2e-sp-render-"),
-    );
-    writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-render-'));
+    writeTestConfig(configDir, { localPlugins: [absPluginPath], plugins: {} });
 
     const server = await startMcpServer(configDir, true);
     const testServer = await startTestServer();
-    const { context, cleanupDir, extensionDir } = await launchExtensionContext(
-      server.port,
-      server.secret,
-    );
+    const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port, server.secret);
     setupAdapterSymlink(configDir, extensionDir);
 
     try {
       await waitForExtensionConnected(server);
-      await waitForLog(server, "tab.syncAll received", 15_000);
+      await waitForLog(server, 'tab.syncAll received', 15_000);
 
       // Open side panel
       const sidePanelPage = await openSidePanel(context);
 
       // Verify plugin card shows display name
-      await expect(sidePanelPage.getByText("E2E Test")).toBeVisible({
+      await expect(sidePanelPage.getByText('E2E Test')).toBeVisible({
         timeout: 30_000,
       });
 
-      const e2ePluginCard = sidePanelPage
-        .locator("button[aria-expanded]")
-        .filter({ hasText: "E2E Test" });
+      const e2ePluginCard = sidePanelPage.locator('button[aria-expanded]').filter({ hasText: 'E2E Test' });
 
       // With no matching tab open, the PluginIcon shows a closed state (no status dot)
-      await expect(e2ePluginCard.locator(".bg-success")).toBeHidden({
+      await expect(e2ePluginCard.locator('.bg-success')).toBeHidden({
         timeout: 5_000,
       });
 
       // Open a matching tab → tab state transitions to 'ready'
       const appTab = await context.newPage();
-      await appTab.goto(testServer.url, { waitUntil: "load" });
+      await appTab.goto(testServer.url, { waitUntil: 'load' });
 
       // Wait for server to report ready state for the plugin
       await expect
         .poll(
           async () => {
             try {
-              const res = await fetch(
-                `http://localhost:${server.port}/health`,
-                {
-                  headers: { Authorization: `Bearer ${server.secret ?? ""}` },
-                  signal: AbortSignal.timeout(3_000),
-                },
-              );
+              const res = await fetch(`http://localhost:${server.port}/health`, {
+                headers: { Authorization: `Bearer ${server.secret ?? ''}` },
+                signal: AbortSignal.timeout(3_000),
+              });
               const body = (await res.json()) as {
                 pluginDetails?: Array<{ name: string; tabState: string }>;
               };
-              return body.pluginDetails?.find((p) => p.name === "e2e-test")
-                ?.tabState;
+              return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
             } catch {
               return undefined;
             }
           },
           {
             timeout: 30_000,
-            message: "Server tab state for e2e-test did not become ready",
+            message: 'Server tab state for e2e-test did not become ready',
           },
         )
-        .toBe("ready");
+        .toBe('ready');
 
       // Reload side panel to pick up latest state
-      await sidePanelPage.reload({ waitUntil: "load" });
-      await expect(sidePanelPage.getByText("E2E Test")).toBeVisible({
+      await sidePanelPage.reload({ waitUntil: 'load' });
+      await expect(sidePanelPage.getByText('E2E Test')).toBeVisible({
         timeout: 15_000,
       });
 
       // The PluginIcon now shows a ready state (green status dot visible)
-      await expect(e2ePluginCard.locator(".bg-success")).toBeVisible({
+      await expect(e2ePluginCard.locator('.bg-success')).toBeVisible({
         timeout: 15_000,
       });
 
@@ -140,107 +125,88 @@ test.describe("Side panel — plugin list rendering", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tool toggle — config.setToolEnabled flow
+// Tool permission — config.setToolPermission flow
 // ---------------------------------------------------------------------------
 
-test.describe("Side panel — tool toggle", () => {
-  test("toggling a tool sends config.setToolEnabled and MCP server updates state", async () => {
+test.describe('Side panel — tool permission change', () => {
+  test('changing a tool permission select sends config.setToolPermission and MCP server updates state', async () => {
     const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
-    const prefixedToolNames = readPluginToolNames();
-    const tools: Record<string, boolean> = {};
-    for (const t of prefixedToolNames) {
-      tools[t] = true;
-    }
 
-    const configDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), "opentabs-e2e-sp-toggle-"),
-    );
-    writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-toggle-'));
+    // Start with e2e-test plugin at 'auto' so all tools default to auto
+    writeTestConfig(configDir, { localPlugins: [absPluginPath], plugins: { 'e2e-test': { permission: 'auto' } } });
 
-    const server = await startMcpServer(configDir, true);
+    // Disable skipPermissions so permission selects are interactive
+    const server = await startMcpServer(configDir, true, undefined, { OPENTABS_SKIP_PERMISSIONS: '' });
     const mcpClient = createMcpClient(server.port, server.secret);
-    const { context, cleanupDir, extensionDir } = await launchExtensionContext(
-      server.port,
-      server.secret,
-    );
+    const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port, server.secret);
     setupAdapterSymlink(configDir, extensionDir);
 
     try {
       await waitForExtensionConnected(server);
-      await waitForLog(server, "tab.syncAll received", 15_000);
+      await waitForLog(server, 'tab.syncAll received', 15_000);
       await mcpClient.initialize();
 
       // Open side panel
       const sidePanelPage = await openSidePanel(context);
-      await expect(sidePanelPage.getByText("E2E Test")).toBeVisible({
+      await expect(sidePanelPage.getByText('E2E Test')).toBeVisible({
         timeout: 30_000,
       });
 
       // Expand the plugin card to reveal tool rows
-      const pluginCard = sidePanelPage
-        .locator("button[aria-expanded]")
-        .filter({ hasText: "E2E Test" });
+      const pluginCard = sidePanelPage.locator('button[aria-expanded]').filter({ hasText: 'E2E Test' });
       await pluginCard.click();
 
-      // Verify tool rows are visible (exact match avoids matching the inline description line)
-      await expect(
-        sidePanelPage.getByText("Echo", { exact: true }),
-      ).toBeVisible({ timeout: 5_000 });
+      // Verify tool rows are visible
+      await expect(sidePanelPage.getByText('Echo', { exact: true })).toBeVisible({ timeout: 5_000 });
 
-      // Find the toggle for the 'echo' tool.
-      // Each ToolRow has an aria-label "Toggle <name> tool" on its switch button.
-      const echoToggle = sidePanelPage.locator(
-        'button[role="switch"][aria-label="Toggle echo tool"]',
-      );
-      await expect(echoToggle).toBeVisible({ timeout: 5_000 });
+      // Find the permission select for the 'echo' tool
+      const echoSelect = sidePanelPage.locator('select[aria-label="Permission for echo tool"]');
+      await expect(echoSelect).toBeVisible({ timeout: 5_000 });
 
-      // Verify initial state: all tools are enabled (aria-checked="true")
-      await expect(echoToggle).toHaveAttribute("aria-checked", "true", {
-        timeout: 5_000,
-      });
+      // Verify initial state: auto (plugin permission is 'auto')
+      await expect(echoSelect).toHaveValue('auto', { timeout: 5_000 });
 
-      // Click the toggle to disable the echo tool
-      await echoToggle.click();
+      // Change the echo tool permission to 'off'
+      await echoSelect.selectOption('off');
 
-      // Verify the toggle UI immediately reflects disabled state
-      await expect(echoToggle).toHaveAttribute("aria-checked", "false", {
-        timeout: 5_000,
-      });
+      // Verify the select UI immediately reflects the new value
+      await expect(echoSelect).toHaveValue('off', { timeout: 5_000 });
 
-      // Verify the MCP server received the tool config change by polling
-      // tools/list — once the server processes the toggle, the tool is removed.
+      // Verify the MCP server received the permission change by polling
+      // tools/list — once the server processes the change, the tool gets
+      // a [Disabled] prefix in its description.
       await expect
         .poll(
           async () => {
             const toolList = await mcpClient.listTools();
-            return toolList.some((t) => t.name === "e2e-test_echo");
+            const echo = toolList.find(t => t.name === 'e2e-test_echo');
+            return echo?.description?.startsWith('[Disabled]') ?? false;
           },
           {
             timeout: 15_000,
-            message: "MCP server did not persist echo tool as disabled",
+            message: 'MCP server did not reflect echo tool as disabled',
           },
         )
-        .toBe(false);
+        .toBe(true);
 
-      // Re-enable the echo tool by clicking the toggle again
-      await echoToggle.click();
+      // Re-enable the echo tool by setting permission to 'auto'
+      await echoSelect.selectOption('auto');
 
-      // Verify the toggle UI reflects enabled state
-      await expect(echoToggle).toHaveAttribute("aria-checked", "true", {
-        timeout: 5_000,
-      });
+      // Verify the select UI reflects the change
+      await expect(echoSelect).toHaveValue('auto', { timeout: 5_000 });
 
-      // Verify the MCP server persisted the re-enabled state by polling tools/list.
-      // Use a longer timeout (30s) because under parallel test load the WebSocket round-trip can be slow.
+      // Verify the MCP server persisted the re-enabled state.
       await expect
         .poll(
           async () => {
             const toolList = await mcpClient.listTools();
-            return toolList.some((t) => t.name === "e2e-test_echo");
+            const echo = toolList.find(t => t.name === 'e2e-test_echo');
+            return echo !== undefined && !echo.description.startsWith('[Disabled]');
           },
           {
             timeout: 30_000,
-            message: "MCP server did not persist echo tool as re-enabled",
+            message: 'MCP server did not reflect echo tool as re-enabled',
           },
         )
         .toBe(true);
@@ -260,121 +226,88 @@ test.describe("Side panel — tool toggle", () => {
 // Disabled tool dispatch rejection
 // ---------------------------------------------------------------------------
 
-test.describe("Side panel — disabled tool dispatch rejection", () => {
+test.describe('Side panel — disabled tool dispatch rejection', () => {
   test('calling a disabled tool via MCP client returns isError with "disabled"', async () => {
     const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
-    const prefixedToolNames = readPluginToolNames();
-    const tools: Record<string, boolean> = {};
-    for (const t of prefixedToolNames) {
-      tools[t] = true;
-    }
 
-    const configDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), "opentabs-e2e-sp-dispatch-"),
-    );
-    writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-dispatch-'));
+    // Start with e2e-test plugin at 'auto' so tools are callable initially
+    writeTestConfig(configDir, { localPlugins: [absPluginPath], plugins: { 'e2e-test': { permission: 'auto' } } });
 
-    const server = await startMcpServer(configDir, true);
+    // Disable skipPermissions so permission selects are interactive
+    const server = await startMcpServer(configDir, true, undefined, { OPENTABS_SKIP_PERMISSIONS: '' });
     const testServer = await startTestServer();
     const mcpClient = createMcpClient(server.port, server.secret);
-    const { context, cleanupDir, extensionDir } = await launchExtensionContext(
-      server.port,
-      server.secret,
-    );
+    const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port, server.secret);
     setupAdapterSymlink(configDir, extensionDir);
 
     try {
       await waitForExtensionConnected(server);
-      await waitForLog(server, "tab.syncAll received", 15_000);
+      await waitForLog(server, 'tab.syncAll received', 15_000);
       await mcpClient.initialize();
 
       // Open a matching tab so the plugin reaches 'ready' state
-      const appTab = await openTestAppTab(
-        context,
-        testServer.url,
-        server,
-        testServer,
-      );
+      const appTab = await openTestAppTab(context, testServer.url, server, testServer);
 
       // Wait until the echo tool is callable (tab state = ready)
-      await waitForToolResult(
-        mcpClient,
-        "e2e-test_echo",
-        { message: "hello" },
-        { isError: false },
-        15_000,
-      );
+      await waitForToolResult(mcpClient, 'e2e-test_echo', { message: 'hello' }, { isError: false }, 15_000);
 
       // Verify tool call succeeds initially
-      const successResult = await mcpClient.callTool("e2e-test_echo", {
-        message: "hello",
-      });
+      const successResult = await mcpClient.callTool('e2e-test_echo', { message: 'hello' });
       expect(successResult.isError).toBe(false);
 
-      // Open side panel and disable the echo tool
+      // Open side panel and change echo tool permission to 'off'
       const sidePanelPage = await openSidePanel(context);
-      await expect(sidePanelPage.getByText("E2E Test")).toBeVisible({
+      await expect(sidePanelPage.getByText('E2E Test')).toBeVisible({
         timeout: 30_000,
       });
 
       // Expand the plugin card
-      const pluginCard = sidePanelPage
-        .locator("button[aria-expanded]")
-        .filter({ hasText: "E2E Test" });
+      const pluginCard = sidePanelPage.locator('button[aria-expanded]').filter({ hasText: 'E2E Test' });
       await pluginCard.click();
 
-      // Find and click the echo tool toggle to disable it
-      const echoToggle = sidePanelPage.locator(
-        'button[role="switch"][aria-label="Toggle echo tool"]',
-      );
-      await expect(echoToggle).toBeVisible({ timeout: 5_000 });
-      await expect(echoToggle).toHaveAttribute("aria-checked", "true", {
-        timeout: 5_000,
-      });
-      await echoToggle.click();
-      await expect(echoToggle).toHaveAttribute("aria-checked", "false", {
-        timeout: 5_000,
-      });
+      // Find the echo tool permission select and set to 'off'
+      const echoSelect = sidePanelPage.locator('select[aria-label="Permission for echo tool"]');
+      await expect(echoSelect).toBeVisible({ timeout: 5_000 });
+      await expect(echoSelect).toHaveValue('auto', { timeout: 5_000 });
+      await echoSelect.selectOption('off');
+      await expect(echoSelect).toHaveValue('off', { timeout: 5_000 });
 
-      // Wait for tools/list to no longer include e2e-test_echo
+      // Wait for tools/list to reflect echo as disabled
       await expect
         .poll(
           async () => {
             const toolList = await mcpClient.listTools();
-            return toolList.some((t) => t.name === "e2e-test_echo");
+            const echo = toolList.find(t => t.name === 'e2e-test_echo');
+            return echo?.description?.startsWith('[Disabled]') ?? false;
           },
           {
             timeout: 15_000,
-            message:
-              "e2e-test_echo should not appear in tools/list after being disabled",
+            message: 'e2e-test_echo should have [Disabled] prefix after being set to off',
           },
         )
-        .toBe(false);
+        .toBe(true);
 
       // Call the disabled tool — should return isError: true with "disabled"
-      const disabledResult = await mcpClient.callTool("e2e-test_echo", {
-        message: "hello",
-      });
+      const disabledResult = await mcpClient.callTool('e2e-test_echo', { message: 'hello' });
       expect(disabledResult.isError).toBe(true);
-      expect(disabledResult.content).toContain("disabled");
+      expect(disabledResult.content).toContain('disabled');
 
       // Re-enable the echo tool
-      await echoToggle.click();
-      await expect(echoToggle).toHaveAttribute("aria-checked", "true", {
-        timeout: 5_000,
-      });
+      await echoSelect.selectOption('auto');
+      await expect(echoSelect).toHaveValue('auto', { timeout: 5_000 });
 
-      // Wait for tool to reappear in tools/list. Use 30s timeout for parallel load headroom.
+      // Wait for tool to no longer have [Disabled] prefix
       await expect
         .poll(
           async () => {
             const toolList = await mcpClient.listTools();
-            return toolList.some((t) => t.name === "e2e-test_echo");
+            const echo = toolList.find(t => t.name === 'e2e-test_echo');
+            return echo !== undefined && !echo.description.startsWith('[Disabled]');
           },
           {
             timeout: 30_000,
-            message:
-              "e2e-test_echo should reappear in tools/list after being re-enabled",
+            message: 'e2e-test_echo should not have [Disabled] prefix after re-enabling',
           },
         )
         .toBe(true);
@@ -382,8 +315,8 @@ test.describe("Side panel — disabled tool dispatch rejection", () => {
       // Verify tool call succeeds again after re-enabling
       const reenabledResult = await waitForToolResult(
         mcpClient,
-        "e2e-test_echo",
-        { message: "world" },
+        'e2e-test_echo',
+        { message: 'world' },
         { isError: false },
         15_000,
       );
@@ -403,34 +336,27 @@ test.describe("Side panel — disabled tool dispatch rejection", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Toggle all tools
+// Plugin-level permission select
 // ---------------------------------------------------------------------------
 
-test.describe("Side panel — toggle all tools", () => {
-  test("master toggle disables and re-enables all plugin tools", async () => {
+test.describe('Side panel — plugin-level permission select', () => {
+  test('plugin permission select changes the default for all tools', async () => {
     const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
     const prefixedToolNames = readPluginToolNames();
-    const tools: Record<string, boolean> = {};
-    for (const t of prefixedToolNames) {
-      tools[t] = true;
-    }
 
-    const configDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), "opentabs-e2e-sp-toggle-all-"),
-    );
-    writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-toggle-all-'));
+    // Start with e2e-test plugin at 'auto' so tools default to auto
+    writeTestConfig(configDir, { localPlugins: [absPluginPath], plugins: { 'e2e-test': { permission: 'auto' } } });
 
-    const server = await startMcpServer(configDir, true);
+    // Disable skipPermissions so permission selects are interactive
+    const server = await startMcpServer(configDir, true, undefined, { OPENTABS_SKIP_PERMISSIONS: '' });
     const mcpClient = createMcpClient(server.port, server.secret);
-    const { context, cleanupDir, extensionDir } = await launchExtensionContext(
-      server.port,
-      server.secret,
-    );
+    const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port, server.secret);
     setupAdapterSymlink(configDir, extensionDir);
 
     try {
       await waitForExtensionConnected(server);
-      await waitForLog(server, "tab.syncAll received", 15_000);
+      await waitForLog(server, 'tab.syncAll received', 15_000);
       await mcpClient.initialize();
 
       // Verify all e2e-test plugin tools initially appear in tools/list
@@ -438,20 +364,19 @@ test.describe("Side panel — toggle all tools", () => {
         .poll(
           async () => {
             const toolList = await mcpClient.listTools();
-            const toolNames = toolList.map((t) => t.name);
-            return prefixedToolNames.every((name) => toolNames.includes(name));
+            const toolNames = toolList.map(t => t.name);
+            return prefixedToolNames.every(name => toolNames.includes(name));
           },
           {
             timeout: 15_000,
-            message:
-              "All e2e-test plugin tools should initially appear in tools/list",
+            message: 'All e2e-test plugin tools should initially appear in tools/list',
           },
         )
         .toBe(true);
 
       // Verify browser tools are present initially
       const initialToolList = await mcpClient.listTools();
-      const initialToolNames = initialToolList.map((t) => t.name);
+      const initialToolNames = initialToolList.map(t => t.name);
       const someBrowserTools = BROWSER_TOOL_NAMES.slice(0, 3);
       for (const bt of someBrowserTools) {
         expect(initialToolNames).toContain(bt);
@@ -459,82 +384,64 @@ test.describe("Side panel — toggle all tools", () => {
 
       // Open side panel
       const sidePanelPage = await openSidePanel(context);
-      await expect(sidePanelPage.getByText("E2E Test")).toBeVisible({
+      await expect(sidePanelPage.getByText('E2E Test')).toBeVisible({
         timeout: 30_000,
       });
 
-      // Find the master toggle for e2e-test plugin
-      const masterToggle = sidePanelPage.locator(
-        'button[role="switch"][aria-label="Toggle all tools for e2e-test"]',
-      );
-      await expect(masterToggle).toBeVisible({ timeout: 5_000 });
+      // Find the plugin-level permission select
+      const pluginSelect = sidePanelPage.locator('select[aria-label="Permission for e2e-test plugin"]');
+      await expect(pluginSelect).toBeVisible({ timeout: 5_000 });
 
-      // Click the master toggle to disable all tools
-      await masterToggle.click();
+      // Set plugin permission to 'off'
+      await pluginSelect.selectOption('off');
 
-      // Wait for all e2e-test plugin tools to disappear from tools/list
+      // Wait for all e2e-test plugin tools to get [Disabled] prefix
       await expect
         .poll(
           async () => {
             const toolList = await mcpClient.listTools();
-            const toolNames = toolList.map((t) => t.name);
-            return prefixedToolNames.some((name) => toolNames.includes(name));
+            return prefixedToolNames.every(name => {
+              const tool = toolList.find(t => t.name === name);
+              return tool?.description?.startsWith('[Disabled]') ?? false;
+            });
           },
           {
             timeout: 15_000,
-            message:
-              "All e2e-test plugin tools should disappear from tools/list",
-          },
-        )
-        .toBe(false);
-
-      // Verify all e2e-test tools are absent from tools/list (confirming the server
-      // processed the config change — equivalent to verifying config persistence).
-      await expect
-        .poll(
-          async () => {
-            const toolList = await mcpClient.listTools();
-            const toolNames = toolList.map((t) => t.name);
-            return prefixedToolNames.every((name) => !toolNames.includes(name));
-          },
-          {
-            timeout: 15_000,
-            message: "All e2e-test tools should be set to false in config.json",
+            message: 'All e2e-test plugin tools should have [Disabled] prefix',
           },
         )
         .toBe(true);
 
-      // Verify browser tools are NOT affected by the toggle
+      // Verify browser tools are NOT affected
       const toolListAfterDisable = await mcpClient.listTools();
-      const toolNamesAfterDisable = toolListAfterDisable.map((t) => t.name);
       for (const bt of someBrowserTools) {
-        expect(toolNamesAfterDisable).toContain(bt);
+        expect(toolListAfterDisable.map(t => t.name)).toContain(bt);
       }
 
-      // Click the master toggle again to re-enable all tools
-      await masterToggle.click();
+      // Set plugin permission back to 'auto'
+      await pluginSelect.selectOption('auto');
 
-      // Wait for all e2e-test plugin tools to reappear in tools/list. Use a longer timeout
-      // (30s) because under parallel test load the WebSocket round-trip can be slow.
+      // Wait for all e2e-test plugin tools to lose the [Disabled] prefix
       await expect
         .poll(
           async () => {
             const toolList = await mcpClient.listTools();
-            const toolNames = toolList.map((t) => t.name);
-            return prefixedToolNames.every((name) => toolNames.includes(name));
+            return prefixedToolNames.every(name => {
+              const tool = toolList.find(t => t.name === name);
+              return tool !== undefined && !tool.description.startsWith('[Disabled]');
+            });
           },
           {
             timeout: 30_000,
-            message: "All e2e-test plugin tools should reappear in tools/list",
+            message: 'All e2e-test plugin tools should not have [Disabled] prefix',
           },
         )
         .toBe(true);
 
       // Verify browser tools still present after re-enable
       const toolListAfterReenable = await mcpClient.listTools();
-      const toolNamesAfterReenable = toolListAfterReenable.map((t) => t.name);
       for (const bt of someBrowserTools) {
-        expect(toolNamesAfterReenable).toContain(bt);
+        expect(toolListAfterReenable.map(t => t.name)).toContain(bt);
       }
 
       await sidePanelPage.close();

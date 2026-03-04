@@ -744,7 +744,7 @@ describe('handleBgGetFullState', () => {
 
     const result = sendResponse.mock.calls.at(0)?.at(0) as FullStateResponse;
     expect(result.plugins).toHaveLength(1);
-    const outputPlugin = result.plugins[0]!;
+    const outputPlugin = result.plugins[0];
     expect(outputPlugin).toMatchObject({
       name: 'icon-plugin',
       iconSvg: '<svg>light</svg>',

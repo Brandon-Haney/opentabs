@@ -92,7 +92,17 @@ const handleStop = async (options: StopOptions): Promise<void> => {
       return;
     }
 
-    process.kill(pid, 'SIGTERM');
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch (err: unknown) {
+      if (err instanceof Error && 'code' in err && err.code === 'ESRCH') {
+        // Process already exited between the alive check and SIGTERM — desired outcome.
+        await unlink(pidPath).catch(() => {});
+        console.log('Server stopped.');
+        return;
+      }
+      throw err;
+    }
 
     const exited = await waitForExit(pid, 5_000);
     await unlink(pidPath).catch(() => {});

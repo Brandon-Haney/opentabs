@@ -128,6 +128,132 @@ const WithToolFilter: Story = {
   render: () => <WithToolFilterDemo />,
 };
 
+/** Tools with group assignments matching realistic browser tool groups. */
+const groupedBrowserTools: BrowserToolState[] = [
+  { name: 'browser_list_tabs', description: 'List all open browser tabs', permission: 'auto', group: 'Tabs' },
+  { name: 'browser_open_tab', description: 'Open a new browser tab with a URL', permission: 'auto', group: 'Tabs' },
+  { name: 'browser_close_tab', description: 'Close a browser tab', permission: 'auto', group: 'Tabs' },
+  {
+    name: 'browser_click_element',
+    description: 'Click an element matching a CSS selector',
+    permission: 'auto',
+    group: 'Page Interaction',
+  },
+  {
+    name: 'browser_type_text',
+    description: 'Type text into an input element',
+    permission: 'auto',
+    group: 'Page Interaction',
+  },
+  {
+    name: 'browser_scroll_page',
+    description: 'Scroll the page in a direction',
+    permission: 'auto',
+    group: 'Page Interaction',
+  },
+  {
+    name: 'browser_screenshot_tab',
+    description: 'Capture a screenshot of a tab',
+    permission: 'auto',
+    group: 'Page Inspection',
+  },
+  {
+    name: 'browser_read_page_content',
+    description: 'Read the text content of a page',
+    permission: 'auto',
+    group: 'Page Inspection',
+  },
+  {
+    name: 'browser_get_dom_structure',
+    description: 'Get the DOM tree structure',
+    permission: 'auto',
+    group: 'Page Inspection',
+  },
+  { name: 'browser_capture_network', description: 'Capture network requests', permission: 'auto', group: 'Network' },
+  {
+    name: 'browser_get_cookies',
+    description: 'Read cookies for a domain',
+    permission: 'auto',
+    group: 'Storage & Cookies',
+  },
+  {
+    name: 'browser_set_cookie',
+    description: 'Set a cookie for a domain',
+    permission: 'auto',
+    group: 'Storage & Cookies',
+  },
+];
+
+const WithGroupsDemo = () => {
+  const [tools, setTools] = useState(groupedBrowserTools);
+  const [perm, setPerm] = useState<ToolPermission>('auto');
+  return (
+    <BrowserToolsCard
+      tools={tools}
+      activeTools={new Set()}
+      onToolsChange={updater => setTools(updater)}
+      browserPermission={perm}
+      onBrowserPermissionChange={setPerm}
+    />
+  );
+};
+
+/** Tools with group assignments render group header dividers with uppercase text and bg-muted/20 styling. */
+const WithGroups: Story = {
+  render: () => <WithGroupsDemo />,
+};
+
+/** Tools without any group field render as a flat list with no group headers. */
+const UngroupedToolsDemo = () => {
+  const [tools, setTools] = useState(mockBrowserTools);
+  const [perm, setPerm] = useState<ToolPermission>('auto');
+  return (
+    <BrowserToolsCard
+      tools={tools}
+      activeTools={new Set()}
+      onToolsChange={updater => setTools(updater)}
+      browserPermission={perm}
+      onBrowserPermissionChange={setPerm}
+    />
+  );
+};
+
+const UngroupedTools: Story = {
+  render: () => <UngroupedToolsDemo />,
+};
+
+/** Mix of grouped and ungrouped tools — ungrouped tools appear under an 'Other' section at the bottom. */
+const mixedTools: BrowserToolState[] = [
+  { name: 'browser_list_tabs', description: 'List all open browser tabs', permission: 'auto', group: 'Tabs' },
+  { name: 'browser_open_tab', description: 'Open a new browser tab with a URL', permission: 'auto', group: 'Tabs' },
+  {
+    name: 'browser_click_element',
+    description: 'Click an element matching a CSS selector',
+    permission: 'auto',
+    group: 'Page Interaction',
+  },
+  { name: 'browser_screenshot_tab', description: 'Capture a screenshot of a tab', permission: 'auto' },
+  { name: 'browser_execute_script', description: 'Execute JavaScript in a tab', permission: 'off' },
+];
+
+const MixedGroupAndUngroupedDemo = () => {
+  const [tools, setTools] = useState(mixedTools);
+  const [perm, setPerm] = useState<ToolPermission>('auto');
+  return (
+    <BrowserToolsCard
+      tools={tools}
+      activeTools={new Set()}
+      onToolsChange={updater => setTools(updater)}
+      browserPermission={perm}
+      onBrowserPermissionChange={setPerm}
+    />
+  );
+};
+
+const MixedGroupAndUngrouped: Story = {
+  render: () => <MixedGroupAndUngroupedDemo />,
+};
+
 const interactiveTools: BrowserToolState[] = [
   ...mockBrowserTools,
   { name: 'extension_get_state', description: 'Get extension internal state', permission: 'auto' },
@@ -198,6 +324,9 @@ export {
   AllDisabled,
   WithActiveTool,
   WithToolFilter,
+  WithGroups,
+  UngroupedTools,
+  MixedGroupAndUngrouped,
   Interactive,
   WithServerVersion,
   SkipPermissions,

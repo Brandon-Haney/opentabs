@@ -43,6 +43,7 @@ const ToolRow = ({
   name,
   displayName,
   description,
+  summary,
   icon,
   permission,
   active,
@@ -52,6 +53,8 @@ const ToolRow = ({
   name: string;
   displayName: string;
   description: string;
+  /** Short human-readable summary for the UI. Falls back to description if omitted. */
+  summary?: string;
   icon: string;
   permission: ToolPermission;
   active: boolean;
@@ -59,6 +62,7 @@ const ToolRow = ({
   onPermissionChange: (tool: string, permission: ToolPermission) => void;
 }) => {
   const enabled = permission !== 'off';
+  const displayDescription = summary ?? description;
   return (
     <div
       className={cn(
@@ -71,10 +75,10 @@ const ToolRow = ({
         <Tooltip.Trigger asChild>
           <div className="min-w-0 flex-1">
             <div className="truncate text-foreground text-sm">{displayName}</div>
-            <div className="truncate text-muted-foreground text-xs">{description}</div>
+            <div className="truncate text-muted-foreground text-xs">{displayDescription}</div>
           </div>
         </Tooltip.Trigger>
-        <Tooltip.Content>{description}</Tooltip.Content>
+        <Tooltip.Content>{displayDescription}</Tooltip.Content>
       </Tooltip>
       <div className="flex shrink-0 items-center gap-2">
         <PermissionSelect

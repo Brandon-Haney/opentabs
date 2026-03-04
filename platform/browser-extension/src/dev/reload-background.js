@@ -29,7 +29,7 @@
       backoff = 500;
     });
 
-    ws.addEventListener('message', (event) => {
+    ws.addEventListener('message', event => {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === 'do_update' && msg.id === 'extension') {

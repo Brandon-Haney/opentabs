@@ -27,7 +27,7 @@
       backoff = 500;
     };
 
-    ws.onmessage = (event) => {
+    ws.onmessage = event => {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === 'do_update' && (msg.id === 'side-panel' || msg.id === 'extension')) {

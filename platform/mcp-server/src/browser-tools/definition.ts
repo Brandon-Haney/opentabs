@@ -20,6 +20,8 @@ interface BrowserToolDefinition<TInput extends z.ZodObject = z.ZodObject> {
   description: string;
   /** Lucide icon name (kebab-case) displayed in the side panel. Defaults to 'globe' if omitted. */
   icon?: string;
+  /** Logical group name for displaying this tool in the side panel (e.g. 'Tabs', 'Network'). */
+  group?: string;
   input: TInput;
   handler: (args: z.infer<TInput>, state: ServerState) => Promise<unknown>;
 }

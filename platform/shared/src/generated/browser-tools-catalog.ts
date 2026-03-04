@@ -9,6 +9,7 @@ export interface BrowserToolMeta {
   readonly name: string;
   readonly description: string;
   readonly icon: string;
+  readonly group?: string;
 }
 
 export const BROWSER_TOOLS_CATALOG: readonly BrowserToolMeta[] = [

@@ -307,6 +307,8 @@ export interface ConfigStateBrowserTool {
   enabled: boolean;
   /** Lucide icon name (kebab-case) for the side panel */
   icon?: string;
+  /** Logical group name for displaying this tool in the side panel (e.g. 'Tabs', 'Network'). */
+  group?: string;
 }
 
 /** config.getState result */

@@ -153,6 +153,7 @@ export interface CachedBrowserTool {
   name: string;
   description: string;
   icon?: string;
+  group?: string;
   inputSchema: Record<string, unknown>;
   tool: BrowserToolDefinition;
 }

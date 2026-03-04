@@ -88,9 +88,8 @@ const BrowserToolsCard = ({
     });
   };
 
-  const handleToggleTool = (toolName: string, currentlyOn: boolean) => {
+  const handleToolPermissionChange = (toolName: string, newPermission: ToolPermission) => {
     const myVersion = ++toggleCounter.current;
-    const newPermission: ToolPermission = currentlyOn ? 'off' : 'auto';
     onToolsChange(prev => {
       preToggleRef.current = prev;
       return prev.map(t => (t.name === toolName ? { ...t, permission: newPermission } : t));
@@ -99,7 +98,7 @@ const BrowserToolsCard = ({
       if (toggleCounter.current === myVersion) {
         onToolsChange(() => preToggleRef.current);
       }
-      showToggleError(`Failed to toggle ${toolName}`);
+      showToggleError(`Failed to update ${toolName}`);
     });
   };
 
@@ -166,9 +165,9 @@ const BrowserToolsCard = ({
             displayName={toDisplayName(tool.name)}
             description={tool.description}
             icon={tool.icon ?? 'globe'}
-            enabled={tool.permission !== 'off'}
+            permission={tool.permission}
             active={activeTools.has(`browser:${tool.name}`)}
-            onToggle={() => handleToggleTool(tool.name, tool.permission !== 'off')}
+            onPermissionChange={handleToolPermissionChange}
           />
         ))}
       </Accordion.Content>

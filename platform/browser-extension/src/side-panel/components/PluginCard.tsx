@@ -73,9 +73,8 @@ const PluginCard = ({
     });
   };
 
-  const handleToggleTool = (toolName: string, currentlyOn: boolean) => {
+  const handleToolPermissionChange = (toolName: string, newPermission: ToolPermission) => {
     const myVersion = ++toggleCounter.current;
-    const newPermission: ToolPermission = currentlyOn ? 'off' : 'auto';
     updatePluginTools(prev => {
       preToggleRef.current = prev;
       return prev.map(t => (t.name === toolName ? { ...t, permission: newPermission } : t));
@@ -84,7 +83,7 @@ const PluginCard = ({
       if (toggleCounter.current === myVersion) {
         updatePluginTools(() => preToggleRef.current);
       }
-      showToggleError(`Failed to toggle ${toolName}`);
+      showToggleError(`Failed to update ${toolName}`);
     });
   };
 
@@ -244,9 +243,9 @@ const PluginCard = ({
                     displayName={tool.displayName}
                     description={tool.description}
                     icon={tool.icon}
-                    enabled={tool.permission !== 'off'}
+                    permission={tool.permission}
                     active={activeTools.has(`${plugin.name}:${tool.name}`)}
-                    onToggle={() => handleToggleTool(tool.name, tool.permission !== 'off')}
+                    onPermissionChange={handleToolPermissionChange}
                   />
                 ))}
               </div>
@@ -258,9 +257,9 @@ const PluginCard = ({
                 displayName={tool.displayName}
                 description={tool.description}
                 icon={tool.icon}
-                enabled={tool.permission !== 'off'}
+                permission={tool.permission}
                 active={activeTools.has(`${plugin.name}:${tool.name}`)}
-                onToggle={() => handleToggleTool(tool.name, tool.permission !== 'off')}
+                onPermissionChange={handleToolPermissionChange}
               />
             ))}
       </Accordion.Content>

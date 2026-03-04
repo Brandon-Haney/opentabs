@@ -1,3 +1,4 @@
+import type { ToolPermission } from '@opentabs-dev/shared';
 import type { Meta, StoryObj } from '@storybook/react';
 import { useState } from 'react';
 import { ToolRow } from './ToolRow';
@@ -10,30 +11,44 @@ const meta: Meta<typeof ToolRow> = {
 
 type Story = StoryObj<typeof ToolRow>;
 
-const Enabled: Story = {
+const Off: Story = {
   args: {
     name: 'send_message',
     displayName: 'Send Message',
     description: 'Send a message to a channel or direct message conversation',
     icon: 'send',
-    enabled: true,
+    permission: 'off',
     active: false,
-    onToggle: () => {},
+    onPermissionChange: () => {},
   },
 };
+
+const Ask: Story = {
+  args: {
+    ...Off.args,
+    permission: 'ask',
+  },
+};
+
+const Auto: Story = {
+  args: {
+    ...Off.args,
+    permission: 'auto',
+  },
+};
+
+const Active: Story = { args: { ...Auto.args, active: true } };
 
 const Disabled: Story = {
   args: {
-    ...Enabled.args,
-    enabled: false,
+    ...Ask.args,
+    disabled: true,
   },
 };
 
-const Active: Story = { args: { ...Enabled.args, active: true } };
-
 const LongDescription: Story = {
   args: {
-    ...Enabled.args,
+    ...Auto.args,
     name: 'create_pull_request',
     displayName: 'Create Pull Request',
     description:
@@ -43,16 +58,16 @@ const LongDescription: Story = {
 };
 
 const InteractiveDemo = () => {
-  const [enabled, setEnabled] = useState(true);
+  const [permission, setPermission] = useState<ToolPermission>('auto');
   return (
     <ToolRow
       name="send_message"
       displayName="Send Message"
       description="Send a message to a channel or direct message conversation"
       icon="send"
-      enabled={enabled}
+      permission={permission}
       active={false}
-      onToggle={() => setEnabled(v => !v)}
+      onPermissionChange={(_tool, p) => setPermission(p)}
     />
   );
 };
@@ -69,18 +84,21 @@ const ToolList: Story = {
         displayName: 'Send Message',
         description: 'Send a message to a channel or direct message conversation',
         icon: 'send',
+        permission: 'auto' as ToolPermission,
       },
       {
         name: 'list_channels',
         displayName: 'List Channels',
         description: 'List all public and private channels in the workspace with membership info',
         icon: 'list',
+        permission: 'ask' as ToolPermission,
       },
       {
         name: 'search_messages',
         displayName: 'Search Messages',
         description: 'Search messages across channels using keywords, filters, and date ranges',
         icon: 'search',
+        permission: 'auto' as ToolPermission,
         active: true,
       },
       {
@@ -88,12 +106,14 @@ const ToolList: Story = {
         displayName: 'Get User Profile',
         description: 'Retrieve a user profile including display name, email, timezone, and status',
         icon: 'user',
+        permission: 'off' as ToolPermission,
       },
       {
         name: 'upload_file',
         displayName: 'Upload File',
         description: 'Upload a file to a channel or direct message with an optional comment',
         icon: 'upload',
+        permission: 'auto' as ToolPermission,
       },
     ];
     return (
@@ -105,9 +125,9 @@ const ToolList: Story = {
             displayName={t.displayName}
             description={t.description}
             icon={t.icon}
-            enabled={true}
-            active={'active' in t}
-            onToggle={() => {}}
+            permission={t.permission}
+            active={'active' in t && !!t.active}
+            onPermissionChange={() => {}}
           />
         ))}
       </div>
@@ -116,4 +136,4 @@ const ToolList: Story = {
 };
 
 export default meta;
-export { Enabled, Disabled, Active, LongDescription, Interactive, ToolList };
+export { Off, Ask, Auto, Active, Disabled, LongDescription, Interactive, ToolList };

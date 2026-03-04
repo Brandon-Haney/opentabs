@@ -45,7 +45,7 @@
         "npm run test passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "e2eCheckpoint": false,
       "model": "opus",
       "notes": "Three test files need updating:\n\n1. platform/mcp-server/src/mcp-tool-dispatch.test.ts lines 659-682:\n   - Current test name: 'skipPermissions=true overrides off to auto (tool executes)'\n   - Rename to something like: 'skipPermissions=true converts ask to auto (tool executes without prompt)'\n   - Change the mock: `vi.mocked(getToolPermission).mockReturnValue('auto')` stays (because ask→auto), but update the comment\n   - Add a NEW test: 'skipPermissions=true with tool permission off still returns disabled error' — mock getToolPermission to return 'off', verify the error response\n\n2. platform/mcp-server/src/mcp-setup.test.ts lines 413-428:\n   - Current test: 'skipPermissions=true makes all tools auto (no prefixes)' with permission='off'\n   - This test should now EXPECT [Disabled] prefix since 'off' is respected\n   - Rename test to reflect new behavior\n   - Add a NEW test: skipPermissions=true with permission='ask' → no prefix (auto)\n\n3. Also check platform/mcp-server/src/mcp-setup-dispatch.test.ts — some tests use `state.skipPermissions = true` as a convenience to make browser tools 'auto'. These need to instead set pluginPermissions to 'auto' directly since skipPermissions no longer overrides 'off'."

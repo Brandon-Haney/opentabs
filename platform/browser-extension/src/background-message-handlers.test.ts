@@ -9,7 +9,9 @@ interface FullStateResponse {
   plugins: ConfigStatePlugin[];
   failedPlugins: ConfigStateFailedPlugin[];
   browserTools: ConfigStateBrowserTool[];
+  browserPermission?: string;
   serverVersion?: string;
+  skipPermissions?: boolean;
   pendingConfirmations: unknown[];
 }
 
@@ -26,7 +28,6 @@ const {
   mockGetLastKnownStates,
   mockLoadLastKnownStateFromSession,
   mockClearAllConfirmationBadges,
-  mockClearConfirmationBackgroundTimeout,
   mockClearConfirmationBadge,
   mockHandleServerMessage,
   mockNotifyDispatchProgress,
@@ -42,10 +43,6 @@ const {
   mockRemovePendingPluginToolUpdate,
   mockAddPendingPluginAllToolsUpdate,
   mockRemovePendingPluginAllToolsUpdate,
-  mockAddPendingBrowserToolUpdate,
-  mockRemovePendingBrowserToolUpdate,
-  mockAddPendingAllBrowserToolsUpdate,
-  mockRemovePendingAllBrowserToolsUpdate,
   mockGetPendingConfirmations,
 } = vi.hoisted(() => ({
   mockSendToServer: vi.fn<(data: unknown) => void>(),
@@ -55,7 +52,6 @@ const {
   mockGetLastKnownStates: vi.fn(() => new Map<string, string>()),
   mockLoadLastKnownStateFromSession: vi.fn<() => Promise<void>>(() => Promise.resolve()),
   mockClearAllConfirmationBadges: vi.fn(),
-  mockClearConfirmationBackgroundTimeout: vi.fn(),
   mockClearConfirmationBadge: vi.fn(),
   mockHandleServerMessage: vi.fn(),
   mockNotifyDispatchProgress: vi.fn(),
@@ -85,10 +81,6 @@ const {
   mockRemovePendingPluginToolUpdate: vi.fn(),
   mockAddPendingPluginAllToolsUpdate: vi.fn(),
   mockRemovePendingPluginAllToolsUpdate: vi.fn(),
-  mockAddPendingBrowserToolUpdate: vi.fn(),
-  mockRemovePendingBrowserToolUpdate: vi.fn(),
-  mockAddPendingAllBrowserToolsUpdate: vi.fn(),
-  mockRemovePendingAllBrowserToolsUpdate: vi.fn(),
   mockGetPendingConfirmations: vi.fn<() => unknown[]>(() => []),
 }));
 
@@ -106,7 +98,6 @@ vi.mock('./tab-state.js', () => ({
 
 vi.mock('./confirmation-badge.js', () => ({
   clearAllConfirmationBadges: mockClearAllConfirmationBadges,
-  clearConfirmationBackgroundTimeout: mockClearConfirmationBackgroundTimeout,
   clearConfirmationBadge: mockClearConfirmationBadge,
   getPendingConfirmations: mockGetPendingConfirmations,
 }));
@@ -124,16 +115,12 @@ vi.mock('./plugin-storage.js', () => ({
 }));
 
 vi.mock('./server-state-cache.js', () => ({
-  addPendingAllBrowserToolsUpdate: mockAddPendingAllBrowserToolsUpdate,
-  addPendingBrowserToolUpdate: mockAddPendingBrowserToolUpdate,
   addPendingPluginAllToolsUpdate: mockAddPendingPluginAllToolsUpdate,
   addPendingPluginToolUpdate: mockAddPendingPluginToolUpdate,
   getCachesInitialized: mockGetCachesInitialized,
   getServerStateCache: mockGetServerStateCache,
   clearServerStateCache: mockClearServerStateCache,
   loadServerStateCacheFromSession: mockLoadServerStateCacheFromSession,
-  removePendingAllBrowserToolsUpdate: mockRemovePendingAllBrowserToolsUpdate,
-  removePendingBrowserToolUpdate: mockRemovePendingBrowserToolUpdate,
   removePendingPluginAllToolsUpdate: mockRemovePendingPluginAllToolsUpdate,
   removePendingPluginToolUpdate: mockRemovePendingPluginToolUpdate,
   updateServerStateCache: mockUpdateServerStateCache,
@@ -175,12 +162,9 @@ const {
   handlePluginLogs,
   handleToolProgress,
   handleSpConfirmationResponse,
-  handleSpConfirmationTimeout,
   handleBgGetFullState,
-  handleBgSetToolEnabled,
-  handleBgSetAllToolsEnabled,
-  handleBgSetBrowserToolEnabled,
-  handleBgSetAllBrowserToolsEnabled,
+  handleBgSetToolPermission,
+  handleBgSetAllToolsPermission,
   handleBgSearchPlugins,
   handleBgInstallPlugin,
   handleBgRemovePlugin,
@@ -508,21 +492,6 @@ describe('handleSpConfirmationResponse', () => {
     expect(mockSendToServer).not.toHaveBeenCalled();
   });
 
-  test('clears background timeout when data.id is a string', () => {
-    handleWsState({ connected: true }, () => {});
-    vi.clearAllMocks();
-
-    handleSpConfirmationResponse({ data: { id: 'conf-42' } }, () => {});
-
-    expect(mockClearConfirmationBackgroundTimeout).toHaveBeenCalledWith('conf-42');
-  });
-
-  test('does NOT call clearConfirmationBackgroundTimeout when data.id is not a string', () => {
-    handleSpConfirmationResponse({ data: { id: 99 } }, () => {});
-
-    expect(mockClearConfirmationBackgroundTimeout).not.toHaveBeenCalled();
-  });
-
   test('always calls clearConfirmationBadge', () => {
     handleSpConfirmationResponse({ data: {} }, () => {});
 
@@ -532,36 +501,6 @@ describe('handleSpConfirmationResponse', () => {
   test('sendResponse is always called with { ok: true }', () => {
     const sendResponse = vi.fn();
     handleSpConfirmationResponse({ data: {} }, sendResponse);
-    expect(sendResponse).toHaveBeenCalledWith({ ok: true });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// handleSpConfirmationTimeout
-// ---------------------------------------------------------------------------
-
-describe('handleSpConfirmationTimeout', () => {
-  test('clears background timeout when message.id is a string', () => {
-    handleSpConfirmationTimeout({ id: 'conf-1' }, () => {});
-
-    expect(mockClearConfirmationBackgroundTimeout).toHaveBeenCalledWith('conf-1');
-  });
-
-  test('does NOT call clearConfirmationBackgroundTimeout when id is not a string', () => {
-    handleSpConfirmationTimeout({ id: 123 }, () => {});
-
-    expect(mockClearConfirmationBackgroundTimeout).not.toHaveBeenCalled();
-  });
-
-  test('always calls clearConfirmationBadge', () => {
-    handleSpConfirmationTimeout({}, () => {});
-
-    expect(mockClearConfirmationBadge).toHaveBeenCalledOnce();
-  });
-
-  test('sendResponse is called with { ok: true }', () => {
-    const sendResponse = vi.fn();
-    handleSpConfirmationTimeout({}, sendResponse);
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
   });
 });
@@ -582,7 +521,9 @@ describe('handleBgGetFullState', () => {
       plugins: [],
       failedPlugins: [],
       browserTools: [],
+      browserPermission: undefined,
       serverVersion: undefined,
+      skipPermissions: undefined,
       pendingConfirmations: [],
     });
   });
@@ -596,7 +537,7 @@ describe('handleBgGetFullState', () => {
         name: 'test-plugin',
         displayName: 'Test Plugin',
         version: '1.0.0',
-        trustTier: 'community',
+        permission: 'off',
         urlPatterns: ['https://example.com/*'],
         tools: [
           {
@@ -615,7 +556,7 @@ describe('handleBgGetFullState', () => {
           name: 'test-plugin',
           displayName: 'Test Plugin',
           version: '1.0.0',
-          trustTier: 'community',
+          permission: 'off',
           source: 'npm',
           tabState: 'closed',
           urlPatterns: ['https://example.com/*'],
@@ -625,13 +566,13 @@ describe('handleBgGetFullState', () => {
               name: 'test_tool',
               displayName: 'Test Tool',
               description: 'A test tool',
-              enabled: false,
+              permission: 'off',
             },
           ],
         },
       ],
       failedPlugins: [{ specifier: 'bad-plugin', error: 'load failed' }],
-      browserTools: [{ name: 'screenshot', description: 'Take a screenshot', enabled: true }],
+      browserTools: [{ name: 'screenshot', description: 'Take a screenshot', permission: 'auto' }],
       serverVersion: '1.2.3',
     });
 
@@ -667,7 +608,7 @@ describe('handleBgGetFullState', () => {
           {
             name: 'screenshot',
             description: 'Take a screenshot',
-            enabled: true,
+            permission: 'auto',
           },
         ],
       }),
@@ -682,7 +623,7 @@ describe('handleBgGetFullState', () => {
       sdkVersion: '2.0.0',
     });
     expect(result.plugins[0]?.tools).toHaveLength(1);
-    expect(result.plugins[0]?.tools[0]).toMatchObject({ enabled: false });
+    expect(result.plugins[0]?.tools[0]).toMatchObject({ permission: 'off' });
   });
 
   test('includes dark icon fields from plugin metadata in merged output', async () => {
@@ -694,7 +635,7 @@ describe('handleBgGetFullState', () => {
         name: 'icon-plugin',
         displayName: 'Icon Plugin',
         version: '1.0.0',
-        trustTier: 'community',
+        permission: 'off',
         urlPatterns: ['https://example.com/*'],
         tools: [
           {
@@ -719,7 +660,7 @@ describe('handleBgGetFullState', () => {
           name: 'icon-plugin',
           displayName: 'Icon Plugin',
           version: '1.0.0',
-          trustTier: 'community',
+          permission: 'off',
           source: 'local',
           tabState: 'closed',
           urlPatterns: ['https://example.com/*'],
@@ -728,7 +669,7 @@ describe('handleBgGetFullState', () => {
               name: 'do_thing',
               displayName: 'Do Thing',
               description: 'Does a thing',
-              enabled: true,
+              permission: 'auto',
             },
           ],
         },
@@ -759,15 +700,15 @@ describe('handleBgGetFullState', () => {
     expect(outputPlugin).not.toHaveProperty('adapterFile');
   });
 
-  test('defaults tool enabled to true when server cache is empty', async () => {
+  test('defaults tool permission to auto when server cache is empty', async () => {
     mockGetAllPluginMeta.mockResolvedValueOnce({
       'test-plugin': {
         name: 'test-plugin',
         displayName: 'Test Plugin',
         version: '1.0.0',
-        trustTier: 'local',
+        permission: 'off',
         urlPatterns: [],
-        tools: [{ name: 'my_tool', displayName: 'My Tool', description: 'desc' }],
+        tools: [{ name: 'my_tool', displayName: 'My Tool', description: 'desc', permission: 'auto' }],
       },
     });
 
@@ -782,7 +723,7 @@ describe('handleBgGetFullState', () => {
       tabState: 'closed',
     });
     expect(result.plugins[0]?.tools).toHaveLength(1);
-    expect(result.plugins[0]?.tools[0]).toMatchObject({ enabled: true });
+    expect(result.plugins[0]?.tools[0]).toMatchObject({ permission: 'auto' });
   });
 
   test('loads from session storage on service worker wake (connected but empty caches)', async () => {
@@ -813,7 +754,7 @@ describe('handleBgGetFullState', () => {
             name: 'restored-plugin',
             displayName: 'Restored Plugin',
             version: '1.0.0',
-            trustTier: 'community',
+            permission: 'off',
             source: 'npm',
             tabState: 'closed',
             urlPatterns: [],
@@ -823,7 +764,7 @@ describe('handleBgGetFullState', () => {
                 name: 'tool_a',
                 displayName: 'Tool A',
                 description: 'desc',
-                enabled: false,
+                permission: 'off',
               },
             ],
           },
@@ -833,7 +774,7 @@ describe('handleBgGetFullState', () => {
           {
             name: 'screenshot',
             description: 'Take a screenshot',
-            enabled: true,
+            permission: 'auto',
           },
         ],
         serverVersion: '3.0.0',
@@ -869,7 +810,7 @@ describe('handleBgGetFullState', () => {
         name: 'restored-plugin',
         displayName: 'Restored Plugin',
         version: '1.0.0',
-        trustTier: 'community',
+        permission: 'off',
         urlPatterns: [],
         tools: [{ name: 'tool_a', displayName: 'Tool A', description: 'desc' }],
       },
@@ -894,7 +835,7 @@ describe('handleBgGetFullState', () => {
       sdkVersion: '2.0.0',
     });
     expect(result.plugins[0]?.tools).toHaveLength(1);
-    expect(result.plugins[0]?.tools[0]).toMatchObject({ enabled: false });
+    expect(result.plugins[0]?.tools[0]).toMatchObject({ permission: 'off' });
   });
 
   test('does NOT load from session storage when already connected with populated caches', async () => {
@@ -911,7 +852,7 @@ describe('handleBgGetFullState', () => {
           name: 'existing-plugin',
           displayName: 'Existing',
           version: '1.0.0',
-          trustTier: 'local',
+          permission: 'off',
           source: 'local',
           tabState: 'ready',
           urlPatterns: [],
@@ -928,7 +869,7 @@ describe('handleBgGetFullState', () => {
         name: 'existing-plugin',
         displayName: 'Existing',
         version: '1.0.0',
-        trustTier: 'local',
+        permission: 'off',
         urlPatterns: [],
         tools: [],
       },
@@ -1013,7 +954,7 @@ describe('handleBgGetFullState', () => {
             name: 'wake-plugin',
             displayName: 'Wake Plugin',
             version: '1.0.0',
-            trustTier: 'local',
+            permission: 'off',
             source: 'local',
             tabState: 'closed',
             urlPatterns: [],
@@ -1022,7 +963,7 @@ describe('handleBgGetFullState', () => {
                 name: 'tool_x',
                 displayName: 'Tool X',
                 description: 'desc',
-                enabled: true,
+                permission: 'auto',
               },
             ],
           },
@@ -1044,7 +985,7 @@ describe('handleBgGetFullState', () => {
         name: 'wake-plugin',
         displayName: 'Wake Plugin',
         version: '1.0.0',
-        trustTier: 'local',
+        permission: 'off',
         urlPatterns: [],
         tools: [{ name: 'tool_x', displayName: 'Tool X', description: 'desc' }],
       },
@@ -1116,7 +1057,7 @@ describe('handleWsState — rejectAllPendingServerRequests', () => {
 // bg:setToolEnabled
 // ---------------------------------------------------------------------------
 
-describe('handleBgSetToolEnabled', () => {
+describe('handleBgSetToolPermission', () => {
   test('optimistically updates server state cache and calls sendServerRequest', async () => {
     mockGetServerStateCache.mockReturnValue({
       plugins: [
@@ -1124,7 +1065,7 @@ describe('handleBgSetToolEnabled', () => {
           name: 'slack',
           displayName: 'Slack',
           version: '1.0.0',
-          trustTier: 'community',
+          permission: 'off',
           source: 'npm',
           tabState: 'closed',
           urlPatterns: [],
@@ -1133,7 +1074,7 @@ describe('handleBgSetToolEnabled', () => {
               name: 'send',
               displayName: 'Send',
               description: 'desc',
-              enabled: true,
+              permission: 'auto',
             },
           ],
         },
@@ -1146,20 +1087,20 @@ describe('handleBgSetToolEnabled', () => {
     mockSendServerRequest.mockResolvedValueOnce({ ok: true });
 
     const sendResponse = vi.fn();
-    handleBgSetToolEnabled({ plugin: 'slack', tool: 'send', enabled: false }, sendResponse);
+    handleBgSetToolPermission({ plugin: 'slack', tool: 'send', permission: 'off' }, sendResponse);
 
     // Optimistic update should have been called
     expect(mockUpdateServerStateCache).toHaveBeenCalledOnce();
     const updateCall = mockUpdateServerStateCache.mock.calls[0]?.[0] as {
-      plugins: Array<{ tools: Array<{ enabled: boolean }> }>;
+      plugins: Array<{ tools: Array<{ permission: string }> }>;
     };
-    expect(updateCall.plugins[0]?.tools[0]?.enabled).toBe(false);
+    expect(updateCall.plugins[0]?.tools[0]?.permission).toBe('off');
 
     // sendServerRequest should have been called
-    expect(mockSendServerRequest).toHaveBeenCalledWith('config.setToolEnabled', {
+    expect(mockSendServerRequest).toHaveBeenCalledWith('config.setToolPermission', {
       plugin: 'slack',
       tool: 'send',
-      enabled: false,
+      permission: 'off',
     });
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
@@ -1173,7 +1114,7 @@ describe('handleBgSetToolEnabled', () => {
           name: 'slack',
           displayName: 'Slack',
           version: '1.0.0',
-          trustTier: 'community',
+          permission: 'off',
           source: 'npm',
           tabState: 'closed',
           urlPatterns: [],
@@ -1182,7 +1123,7 @@ describe('handleBgSetToolEnabled', () => {
               name: 'send',
               displayName: 'Send',
               description: 'desc',
-              enabled: true,
+              permission: 'auto',
             },
           ],
         },
@@ -1195,30 +1136,30 @@ describe('handleBgSetToolEnabled', () => {
     mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
 
     const sendResponse = vi.fn();
-    handleBgSetToolEnabled({ plugin: 'slack', tool: 'send', enabled: false }, sendResponse);
+    handleBgSetToolPermission({ plugin: 'slack', tool: 'send', permission: 'off' }, sendResponse);
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
 
     // Should have been called twice: optimistic + revert
     expect(mockUpdateServerStateCache).toHaveBeenCalledTimes(2);
     const revertCall = mockUpdateServerStateCache.mock.calls[1]?.[0] as {
-      plugins: Array<{ tools: Array<{ enabled: boolean }> }>;
+      plugins: Array<{ tools: Array<{ permission: string }> }>;
     };
-    expect(revertCall.plugins[0]?.tools[0]?.enabled).toBe(true);
+    expect(revertCall.plugins[0]?.tools[0]?.permission).toBe('auto');
 
     expect(sendResponse).toHaveBeenCalledWith({ error: 'Server error' });
   });
 
-  test('revert restores exact pre-mutation state, not toggled !enabled', async () => {
-    // Tool starts disabled. Calling with enabled: false (same value) must revert to false,
-    // not flip to !false = true as a naive !enabled approach would do.
+  test('revert restores exact pre-mutation state, not toggled permission', async () => {
+    // Tool starts off. Calling with permission: 'off' (same value) must revert to off,
+    // not flip to auto as a naive toggle approach would do.
     mockGetServerStateCache.mockReturnValue({
       plugins: [
         {
           name: 'slack',
           displayName: 'Slack',
           version: '1.0.0',
-          trustTier: 'community',
+          permission: 'off',
           source: 'npm',
           tabState: 'closed',
           urlPatterns: [],
@@ -1227,7 +1168,7 @@ describe('handleBgSetToolEnabled', () => {
               name: 'send',
               displayName: 'Send',
               description: 'desc',
-              enabled: false,
+              permission: 'off',
             },
           ],
         },
@@ -1240,15 +1181,15 @@ describe('handleBgSetToolEnabled', () => {
     mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
 
     const sendResponse = vi.fn();
-    handleBgSetToolEnabled({ plugin: 'slack', tool: 'send', enabled: false }, sendResponse);
+    handleBgSetToolPermission({ plugin: 'slack', tool: 'send', permission: 'off' }, sendResponse);
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
 
     const revertCall = mockUpdateServerStateCache.mock.calls[1]?.[0] as {
-      plugins: Array<{ tools: Array<{ enabled: boolean }> }>;
+      plugins: Array<{ tools: Array<{ permission: string }> }>;
     };
-    // Must restore original enabled: false, not flip to true
-    expect(revertCall.plugins[0]?.tools[0]?.enabled).toBe(false);
+    // Must restore original permission: 'off', not flip to true
+    expect(revertCall.plugins[0]?.tools[0]?.permission).toBe('off');
   });
 
   test('registers pending optimistic update before cache update and clears on success', async () => {
@@ -1258,7 +1199,7 @@ describe('handleBgSetToolEnabled', () => {
           name: 'slack',
           displayName: 'Slack',
           version: '1.0.0',
-          trustTier: 'community',
+          permission: 'off',
           source: 'npm',
           tabState: 'closed',
           urlPatterns: [],
@@ -1267,7 +1208,7 @@ describe('handleBgSetToolEnabled', () => {
               name: 'send',
               displayName: 'Send',
               description: 'desc',
-              enabled: true,
+              permission: 'auto',
             },
           ],
         },
@@ -1280,10 +1221,10 @@ describe('handleBgSetToolEnabled', () => {
     mockSendServerRequest.mockResolvedValueOnce({ ok: true });
 
     const sendResponse = vi.fn();
-    handleBgSetToolEnabled({ plugin: 'slack', tool: 'send', enabled: false }, sendResponse);
+    handleBgSetToolPermission({ plugin: 'slack', tool: 'send', permission: 'off' }, sendResponse);
 
     // Pending update registered before the cache update
-    expect(mockAddPendingPluginToolUpdate).toHaveBeenCalledWith('slack', 'send', false);
+    expect(mockAddPendingPluginToolUpdate).toHaveBeenCalledWith('slack', 'send', 'off');
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
 
@@ -1298,7 +1239,7 @@ describe('handleBgSetToolEnabled', () => {
           name: 'slack',
           displayName: 'Slack',
           version: '1.0.0',
-          trustTier: 'community',
+          permission: 'off',
           source: 'npm',
           tabState: 'closed',
           urlPatterns: [],
@@ -1307,7 +1248,7 @@ describe('handleBgSetToolEnabled', () => {
               name: 'send',
               displayName: 'Send',
               description: 'desc',
-              enabled: true,
+              permission: 'auto',
             },
           ],
         },
@@ -1320,7 +1261,7 @@ describe('handleBgSetToolEnabled', () => {
     mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
 
     const sendResponse = vi.fn();
-    handleBgSetToolEnabled({ plugin: 'slack', tool: 'send', enabled: false }, sendResponse);
+    handleBgSetToolPermission({ plugin: 'slack', tool: 'send', permission: 'off' }, sendResponse);
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
 
@@ -1335,7 +1276,7 @@ describe('handleBgSetToolEnabled', () => {
           name: 'slack',
           displayName: 'Slack',
           version: '1.0.0',
-          trustTier: 'community' as const,
+          permission: 'off' as const,
           source: 'npm' as const,
           tabState: 'closed' as const,
           urlPatterns: [] as string[],
@@ -1344,13 +1285,13 @@ describe('handleBgSetToolEnabled', () => {
               name: 'send',
               displayName: 'Send',
               description: 'desc',
-              enabled: true,
+              permission: 'auto',
             },
             {
               name: 'read',
               displayName: 'Read',
               description: 'desc',
-              enabled: false,
+              permission: 'off',
             },
           ],
         },
@@ -1358,7 +1299,7 @@ describe('handleBgSetToolEnabled', () => {
           name: 'github',
           displayName: 'GitHub',
           version: '2.0.0',
-          trustTier: 'community' as const,
+          permission: 'off' as const,
           source: 'npm' as const,
           tabState: 'ready' as const,
           urlPatterns: [] as string[],
@@ -1367,7 +1308,7 @@ describe('handleBgSetToolEnabled', () => {
               name: 'create_issue',
               displayName: 'Create Issue',
               description: 'desc',
-              enabled: true,
+              permission: 'auto',
             },
           ],
         },
@@ -1381,35 +1322,35 @@ describe('handleBgSetToolEnabled', () => {
     mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
 
     const sendResponse = vi.fn();
-    handleBgSetToolEnabled({ plugin: 'slack', tool: 'send', enabled: false }, sendResponse);
+    handleBgSetToolPermission({ plugin: 'slack', tool: 'send', permission: 'off' }, sendResponse);
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
 
     const revertCall = mockUpdateServerStateCache.mock.calls[1]?.[0] as {
       plugins: Array<{
         name: string;
-        tools: Array<{ name: string; enabled: boolean }>;
+        tools: Array<{ name: string; permission: string }>;
       }>;
     };
     // Target tool reverted to original value
     const slackPlugin = revertCall.plugins.find(p => p.name === 'slack');
-    expect(slackPlugin?.tools.find(t => t.name === 'send')?.enabled).toBe(true);
+    expect(slackPlugin?.tools.find(t => t.name === 'send')?.permission).toBe('auto');
     // Other tool in same plugin untouched
-    expect(slackPlugin?.tools.find(t => t.name === 'read')?.enabled).toBe(false);
+    expect(slackPlugin?.tools.find(t => t.name === 'read')?.permission).toBe('off');
     // Other plugin untouched
     const githubPlugin = revertCall.plugins.find(p => p.name === 'github');
-    expect(githubPlugin?.tools.find(t => t.name === 'create_issue')?.enabled).toBe(true);
+    expect(githubPlugin?.tools.find(t => t.name === 'create_issue')?.permission).toBe('auto');
   });
 
   test('rollback preserves concurrent plugins.changed updates', async () => {
-    // Initial state: slack send is enabled
+    // Initial state: slack send has permission auto
     const initialCache = {
       plugins: [
         {
           name: 'slack',
           displayName: 'Slack',
           version: '1.0.0',
-          trustTier: 'community' as const,
+          permission: 'off' as const,
           source: 'npm' as const,
           tabState: 'closed' as const,
           urlPatterns: [] as string[],
@@ -1418,7 +1359,7 @@ describe('handleBgSetToolEnabled', () => {
               name: 'send',
               displayName: 'Send',
               description: 'desc',
-              enabled: true,
+              permission: 'auto',
             },
           ],
         },
@@ -1436,7 +1377,7 @@ describe('handleBgSetToolEnabled', () => {
           name: 'slack',
           displayName: 'Slack',
           version: '1.0.0',
-          trustTier: 'community' as const,
+          permission: 'off' as const,
           source: 'npm' as const,
           tabState: 'closed' as const,
           urlPatterns: [] as string[],
@@ -1445,7 +1386,7 @@ describe('handleBgSetToolEnabled', () => {
               name: 'send',
               displayName: 'Send',
               description: 'desc',
-              enabled: false,
+              permission: 'off',
             },
           ],
         },
@@ -1453,7 +1394,7 @@ describe('handleBgSetToolEnabled', () => {
           name: 'github',
           displayName: 'GitHub',
           version: '2.0.0',
-          trustTier: 'community' as const,
+          permission: 'off' as const,
           source: 'npm' as const,
           tabState: 'ready' as const,
           urlPatterns: [] as string[],
@@ -1462,7 +1403,7 @@ describe('handleBgSetToolEnabled', () => {
               name: 'create_issue',
               displayName: 'Create Issue',
               description: 'desc',
-              enabled: true,
+              permission: 'auto',
             },
           ],
         },
@@ -1479,18 +1420,18 @@ describe('handleBgSetToolEnabled', () => {
     mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
 
     const sendResponse = vi.fn();
-    handleBgSetToolEnabled({ plugin: 'slack', tool: 'send', enabled: false }, sendResponse);
+    handleBgSetToolPermission({ plugin: 'slack', tool: 'send', permission: 'off' }, sendResponse);
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
 
     const revertCall = mockUpdateServerStateCache.mock.calls[1]?.[0] as {
       plugins: Array<{
         name: string;
-        tools: Array<{ name: string; enabled: boolean }>;
+        tools: Array<{ name: string; permission: string }>;
       }>;
     };
     // Target tool reverted to original (true), not the concurrent value (false)
-    expect(revertCall.plugins.find(p => p.name === 'slack')?.tools[0]?.enabled).toBe(true);
+    expect(revertCall.plugins.find(p => p.name === 'slack')?.tools[0]?.permission).toBe('auto');
     // Concurrent new plugin (github) preserved in the rollback
     expect(revertCall.plugins.find(p => p.name === 'github')).toBeDefined();
     expect(revertCall.plugins).toHaveLength(2);
@@ -1501,7 +1442,7 @@ describe('handleBgSetToolEnabled', () => {
 // bg:setAllToolsEnabled
 // ---------------------------------------------------------------------------
 
-describe('handleBgSetAllToolsEnabled', () => {
+describe('handleBgSetAllToolsPermission', () => {
   test('optimistically updates all tools and calls sendServerRequest', async () => {
     mockGetServerStateCache.mockReturnValue({
       plugins: [
@@ -1509,7 +1450,7 @@ describe('handleBgSetAllToolsEnabled', () => {
           name: 'slack',
           displayName: 'Slack',
           version: '1.0.0',
-          trustTier: 'community',
+          permission: 'off',
           source: 'npm',
           tabState: 'closed',
           urlPatterns: [],
@@ -1518,13 +1459,13 @@ describe('handleBgSetAllToolsEnabled', () => {
               name: 'send',
               displayName: 'Send',
               description: 'desc',
-              enabled: true,
+              permission: 'auto',
             },
             {
               name: 'read',
               displayName: 'Read',
               description: 'desc',
-              enabled: true,
+              permission: 'auto',
             },
           ],
         },
@@ -1537,13 +1478,13 @@ describe('handleBgSetAllToolsEnabled', () => {
     mockSendServerRequest.mockResolvedValueOnce({ ok: true });
 
     const sendResponse = vi.fn();
-    handleBgSetAllToolsEnabled({ plugin: 'slack', enabled: false }, sendResponse);
+    handleBgSetAllToolsPermission({ plugin: 'slack', permission: 'off' }, sendResponse);
 
     expect(mockUpdateServerStateCache).toHaveBeenCalledOnce();
     const updateCall = mockUpdateServerStateCache.mock.calls[0]?.[0] as {
-      plugins: Array<{ tools: Array<{ enabled: boolean }> }>;
+      plugins: Array<{ tools: Array<{ permission: string }> }>;
     };
-    expect(updateCall.plugins[0]?.tools.every(t => !t.enabled)).toBe(true);
+    expect(updateCall.plugins[0]?.tools.every(t => t.permission === 'off')).toBe(true);
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
@@ -1556,7 +1497,7 @@ describe('handleBgSetAllToolsEnabled', () => {
           name: 'slack',
           displayName: 'Slack',
           version: '1.0.0',
-          trustTier: 'community',
+          permission: 'off',
           source: 'npm',
           tabState: 'closed',
           urlPatterns: [],
@@ -1565,13 +1506,13 @@ describe('handleBgSetAllToolsEnabled', () => {
               name: 'send',
               displayName: 'Send',
               description: 'desc',
-              enabled: true,
+              permission: 'auto',
             },
             {
               name: 'read',
               displayName: 'Read',
               description: 'desc',
-              enabled: true,
+              permission: 'auto',
             },
           ],
         },
@@ -1584,9 +1525,9 @@ describe('handleBgSetAllToolsEnabled', () => {
     mockSendServerRequest.mockResolvedValueOnce({ ok: true });
 
     const sendResponse = vi.fn();
-    handleBgSetAllToolsEnabled({ plugin: 'slack', enabled: false }, sendResponse);
+    handleBgSetAllToolsPermission({ plugin: 'slack', permission: 'off' }, sendResponse);
 
-    expect(mockAddPendingPluginAllToolsUpdate).toHaveBeenCalledWith('slack', ['send', 'read'], false);
+    expect(mockAddPendingPluginAllToolsUpdate).toHaveBeenCalledWith('slack', ['send', 'read'], 'off');
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
     expect(mockRemovePendingPluginAllToolsUpdate).toHaveBeenCalledWith('slack', ['send', 'read']);
@@ -1599,7 +1540,7 @@ describe('handleBgSetAllToolsEnabled', () => {
           name: 'slack',
           displayName: 'Slack',
           version: '1.0.0',
-          trustTier: 'community' as const,
+          permission: 'off' as const,
           source: 'npm' as const,
           tabState: 'closed' as const,
           urlPatterns: [] as string[],
@@ -1608,13 +1549,13 @@ describe('handleBgSetAllToolsEnabled', () => {
               name: 'send',
               displayName: 'Send',
               description: 'desc',
-              enabled: true,
+              permission: 'auto',
             },
             {
               name: 'read',
               displayName: 'Read',
               description: 'desc',
-              enabled: false,
+              permission: 'off',
             },
           ],
         },
@@ -1631,7 +1572,7 @@ describe('handleBgSetAllToolsEnabled', () => {
           name: 'slack',
           displayName: 'Slack',
           version: '1.0.0',
-          trustTier: 'community' as const,
+          permission: 'off' as const,
           source: 'npm' as const,
           tabState: 'closed' as const,
           urlPatterns: [] as string[],
@@ -1640,13 +1581,13 @@ describe('handleBgSetAllToolsEnabled', () => {
               name: 'send',
               displayName: 'Send',
               description: 'desc',
-              enabled: false,
+              permission: 'off',
             },
             {
               name: 'read',
               displayName: 'Read',
               description: 'desc',
-              enabled: false,
+              permission: 'off',
             },
           ],
         },
@@ -1654,7 +1595,7 @@ describe('handleBgSetAllToolsEnabled', () => {
           name: 'github',
           displayName: 'GitHub',
           version: '2.0.0',
-          trustTier: 'community' as const,
+          permission: 'off' as const,
           source: 'npm' as const,
           tabState: 'ready' as const,
           urlPatterns: [] as string[],
@@ -1663,7 +1604,7 @@ describe('handleBgSetAllToolsEnabled', () => {
               name: 'create_issue',
               displayName: 'Create Issue',
               description: 'desc',
-              enabled: true,
+              permission: 'auto',
             },
           ],
         },
@@ -1677,284 +1618,23 @@ describe('handleBgSetAllToolsEnabled', () => {
     mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
 
     const sendResponse = vi.fn();
-    handleBgSetAllToolsEnabled({ plugin: 'slack', enabled: false }, sendResponse);
+    handleBgSetAllToolsPermission({ plugin: 'slack', permission: 'off' }, sendResponse);
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
 
     const revertCall = mockUpdateServerStateCache.mock.calls[1]?.[0] as {
       plugins: Array<{
         name: string;
-        tools: Array<{ name: string; enabled: boolean }>;
+        tools: Array<{ name: string; permission: string }>;
       }>;
     };
     // Target plugin tools reverted to original values
     const slackPlugin = revertCall.plugins.find(p => p.name === 'slack');
-    expect(slackPlugin?.tools.find(t => t.name === 'send')?.enabled).toBe(true);
-    expect(slackPlugin?.tools.find(t => t.name === 'read')?.enabled).toBe(false);
+    expect(slackPlugin?.tools.find(t => t.name === 'send')?.permission).toBe('auto');
+    expect(slackPlugin?.tools.find(t => t.name === 'read')?.permission).toBe('off');
     // Concurrent new plugin preserved
     expect(revertCall.plugins.find(p => p.name === 'github')).toBeDefined();
     expect(revertCall.plugins).toHaveLength(2);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// bg:setBrowserToolEnabled
-// ---------------------------------------------------------------------------
-
-describe('handleBgSetBrowserToolEnabled', () => {
-  test('optimistically updates browser tool and calls sendServerRequest', async () => {
-    mockGetServerStateCache.mockReturnValue({
-      plugins: [],
-      failedPlugins: [],
-      browserTools: [
-        { name: 'screenshot', description: 'Take a screenshot', enabled: true },
-        { name: 'console', description: 'Get console logs', enabled: true },
-      ],
-      serverVersion: '1.0.0',
-    });
-
-    mockSendServerRequest.mockResolvedValueOnce({ ok: true });
-
-    const sendResponse = vi.fn();
-    handleBgSetBrowserToolEnabled({ tool: 'screenshot', enabled: false }, sendResponse);
-
-    expect(mockUpdateServerStateCache).toHaveBeenCalledOnce();
-    const updateCall = mockUpdateServerStateCache.mock.calls[0]?.[0] as {
-      browserTools: Array<{ name: string; enabled: boolean }>;
-    };
-    expect(updateCall.browserTools.find(bt => bt.name === 'screenshot')?.enabled).toBe(false);
-    expect(updateCall.browserTools.find(bt => bt.name === 'console')?.enabled).toBe(true);
-
-    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
-    expect(sendResponse).toHaveBeenCalledWith({ ok: true });
-  });
-
-  test('reverts to exact pre-mutation state on server error', async () => {
-    // Browser tool starts disabled. Calling with enabled: false (same value) must revert
-    // to false, not flip to !false = true as a naive !enabled approach would do.
-    mockGetServerStateCache.mockReturnValue({
-      plugins: [],
-      failedPlugins: [],
-      browserTools: [
-        {
-          name: 'screenshot',
-          description: 'Take a screenshot',
-          enabled: false,
-        },
-        { name: 'console', description: 'Get console logs', enabled: true },
-      ],
-      serverVersion: '1.0.0',
-    });
-
-    mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
-
-    const sendResponse = vi.fn();
-    handleBgSetBrowserToolEnabled({ tool: 'screenshot', enabled: false }, sendResponse);
-
-    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
-
-    // Should have been called twice: optimistic + revert
-    expect(mockUpdateServerStateCache).toHaveBeenCalledTimes(2);
-    const revertCall = mockUpdateServerStateCache.mock.calls[1]?.[0] as {
-      browserTools: Array<{ name: string; enabled: boolean }>;
-    };
-    // Must restore original enabled: false, not flip to true
-    expect(revertCall.browserTools.find(bt => bt.name === 'screenshot')?.enabled).toBe(false);
-    // Other tools are untouched in the captured original
-    expect(revertCall.browserTools.find(bt => bt.name === 'console')?.enabled).toBe(true);
-
-    expect(sendResponse).toHaveBeenCalledWith({ error: 'Server error' });
-  });
-
-  test('registers pending browser tool update and clears on success', async () => {
-    mockGetServerStateCache.mockReturnValue({
-      plugins: [],
-      failedPlugins: [],
-      browserTools: [{ name: 'screenshot', description: 'Take a screenshot', enabled: true }],
-      serverVersion: '1.0.0',
-    });
-
-    mockSendServerRequest.mockResolvedValueOnce({ ok: true });
-
-    const sendResponse = vi.fn();
-    handleBgSetBrowserToolEnabled({ tool: 'screenshot', enabled: false }, sendResponse);
-
-    expect(mockAddPendingBrowserToolUpdate).toHaveBeenCalledWith('screenshot', false);
-
-    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
-    expect(mockRemovePendingBrowserToolUpdate).toHaveBeenCalledWith('screenshot');
-  });
-
-  test('clears pending browser tool update on server error before reverting', async () => {
-    mockGetServerStateCache.mockReturnValue({
-      plugins: [],
-      failedPlugins: [],
-      browserTools: [{ name: 'screenshot', description: 'Take a screenshot', enabled: true }],
-      serverVersion: '1.0.0',
-    });
-
-    mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
-
-    const sendResponse = vi.fn();
-    handleBgSetBrowserToolEnabled({ tool: 'screenshot', enabled: false }, sendResponse);
-
-    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
-    expect(mockRemovePendingBrowserToolUpdate).toHaveBeenCalledWith('screenshot');
-  });
-
-  test('rollback preserves concurrent updates and only reverts the target browser tool', async () => {
-    const initialCache = {
-      plugins: [],
-      failedPlugins: [],
-      browserTools: [
-        { name: 'screenshot', description: 'Take a screenshot', enabled: true },
-        { name: 'console', description: 'Get console logs', enabled: true },
-      ],
-      serverVersion: '1.0.0',
-    };
-
-    // Concurrent update changes the 'console' tool's description and adds a new tool
-    const concurrentCache = {
-      plugins: [],
-      failedPlugins: [],
-      browserTools: [
-        {
-          name: 'screenshot',
-          description: 'Take a screenshot',
-          enabled: false,
-        },
-        {
-          name: 'console',
-          description: 'Get console logs (updated)',
-          enabled: false,
-        },
-        { name: 'network', description: 'Network monitor', enabled: true },
-      ],
-      serverVersion: '1.0.0',
-    };
-
-    mockGetServerStateCache.mockReturnValueOnce(initialCache).mockReturnValueOnce(concurrentCache);
-    mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
-
-    const sendResponse = vi.fn();
-    handleBgSetBrowserToolEnabled({ tool: 'screenshot', enabled: false }, sendResponse);
-
-    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
-
-    const revertCall = mockUpdateServerStateCache.mock.calls[1]?.[0] as {
-      browserTools: Array<{
-        name: string;
-        description: string;
-        enabled: boolean;
-      }>;
-    };
-    // Target browser tool reverted to original enabled value
-    expect(revertCall.browserTools.find(bt => bt.name === 'screenshot')?.enabled).toBe(true);
-    // Other browser tools untouched (from concurrent state)
-    expect(revertCall.browserTools.find(bt => bt.name === 'console')?.enabled).toBe(false);
-    // Concurrent new tool preserved
-    expect(revertCall.browserTools.find(bt => bt.name === 'network')).toBeDefined();
-    expect(revertCall.browserTools).toHaveLength(3);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// bg:setAllBrowserToolsEnabled
-// ---------------------------------------------------------------------------
-
-describe('handleBgSetAllBrowserToolsEnabled', () => {
-  test('optimistically updates all browser tools and calls sendServerRequest', async () => {
-    mockGetServerStateCache.mockReturnValue({
-      plugins: [],
-      failedPlugins: [],
-      browserTools: [
-        { name: 'screenshot', description: 'Take a screenshot', enabled: true },
-        { name: 'console', description: 'Get console logs', enabled: true },
-      ],
-      serverVersion: '1.0.0',
-    });
-
-    mockSendServerRequest.mockResolvedValueOnce({ ok: true });
-
-    const sendResponse = vi.fn();
-    handleBgSetAllBrowserToolsEnabled({ enabled: false }, sendResponse);
-
-    expect(mockUpdateServerStateCache).toHaveBeenCalledOnce();
-    const updateCall = mockUpdateServerStateCache.mock.calls[0]?.[0] as {
-      browserTools: Array<{ enabled: boolean }>;
-    };
-    expect(updateCall.browserTools.every(bt => !bt.enabled)).toBe(true);
-
-    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
-    expect(sendResponse).toHaveBeenCalledWith({ ok: true });
-  });
-
-  test('registers pending updates for all browser tools and clears on success', async () => {
-    mockGetServerStateCache.mockReturnValue({
-      plugins: [],
-      failedPlugins: [],
-      browserTools: [
-        { name: 'screenshot', description: 'Take a screenshot', enabled: true },
-        { name: 'console', description: 'Get console logs', enabled: true },
-      ],
-      serverVersion: '1.0.0',
-    });
-
-    mockSendServerRequest.mockResolvedValueOnce({ ok: true });
-
-    const sendResponse = vi.fn();
-    handleBgSetAllBrowserToolsEnabled({ enabled: false }, sendResponse);
-
-    expect(mockAddPendingAllBrowserToolsUpdate).toHaveBeenCalledWith(['screenshot', 'console'], false);
-
-    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
-    expect(mockRemovePendingAllBrowserToolsUpdate).toHaveBeenCalledWith(['screenshot', 'console']);
-  });
-
-  test('rollback preserves concurrent updates and only reverts browser tool enabled states', async () => {
-    const initialCache = {
-      plugins: [],
-      failedPlugins: [],
-      browserTools: [
-        { name: 'screenshot', description: 'Take a screenshot', enabled: true },
-        { name: 'console', description: 'Get console logs', enabled: false },
-      ],
-      serverVersion: '1.0.0',
-    };
-
-    // Concurrent update adds a new browser tool
-    const concurrentCache = {
-      plugins: [],
-      failedPlugins: [],
-      browserTools: [
-        {
-          name: 'screenshot',
-          description: 'Take a screenshot',
-          enabled: false,
-        },
-        { name: 'console', description: 'Get console logs', enabled: false },
-        { name: 'network', description: 'Network monitor', enabled: true },
-      ],
-      serverVersion: '1.0.0',
-    };
-
-    mockGetServerStateCache.mockReturnValueOnce(initialCache).mockReturnValueOnce(concurrentCache);
-    mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
-
-    const sendResponse = vi.fn();
-    handleBgSetAllBrowserToolsEnabled({ enabled: false }, sendResponse);
-
-    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
-
-    const revertCall = mockUpdateServerStateCache.mock.calls[1]?.[0] as {
-      browserTools: Array<{ name: string; enabled: boolean }>;
-    };
-    // Original tools reverted to their pre-toggle states
-    expect(revertCall.browserTools.find(bt => bt.name === 'screenshot')?.enabled).toBe(true);
-    expect(revertCall.browserTools.find(bt => bt.name === 'console')?.enabled).toBe(false);
-    // Concurrent new tool preserved (no original state, keeps current value)
-    expect(revertCall.browserTools.find(bt => bt.name === 'network')?.enabled).toBe(true);
-    expect(revertCall.browserTools).toHaveLength(3);
   });
 });
 

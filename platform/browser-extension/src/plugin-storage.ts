@@ -67,7 +67,7 @@ const removePluginsBatch = (pluginNames: string[]): Promise<void> =>
     metaCache = filtered;
   });
 
-const VALID_TRUST_TIERS = new Set<string>(['official', 'community', 'local']);
+const VALID_PERMISSIONS = new Set<string>(['off', 'ask', 'auto']);
 
 const isValidPluginMeta = (value: unknown): value is PluginMeta => {
   if (typeof value !== 'object' || value === null) return false;
@@ -76,8 +76,8 @@ const isValidPluginMeta = (value: unknown): value is PluginMeta => {
     typeof obj.name === 'string' &&
     typeof obj.version === 'string' &&
     Array.isArray(obj.urlPatterns) &&
-    typeof obj.trustTier === 'string' &&
-    VALID_TRUST_TIERS.has(obj.trustTier) &&
+    typeof obj.permission === 'string' &&
+    VALID_PERMISSIONS.has(obj.permission) &&
     Array.isArray(obj.tools)
   );
 };

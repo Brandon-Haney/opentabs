@@ -1,3 +1,4 @@
+import type { ToolPermission } from '@opentabs-dev/shared';
 import { BROWSER_TOOLS_CATALOG } from '@opentabs-dev/shared/browser-tools-catalog';
 import { Search, X } from 'lucide-react';
 import { OverlayScrollbarsComponent } from 'overlayscrollbars-react';
@@ -25,6 +26,7 @@ import { DisconnectedState, LoadingState } from './components/EmptyStates.js';
 import { Footer } from './components/Footer.js';
 import { PluginList } from './components/PluginList.js';
 import { Accordion } from './components/retro/Accordion.js';
+import { Alert } from './components/retro/Alert.js';
 import { Input } from './components/retro/Input.js';
 import { Tooltip } from './components/retro/Tooltip.js';
 import { SearchResults } from './components/SearchResults.js';
@@ -37,8 +39,10 @@ const App = () => {
   const [plugins, setPlugins] = useState<PluginState[]>([]);
   const [failedPlugins, setFailedPlugins] = useState<FailedPluginState[]>([]);
   const [browserTools, setBrowserTools] = useState<BrowserToolState[]>(() =>
-    BROWSER_TOOLS_CATALOG.map(t => ({ ...t, enabled: true })),
+    BROWSER_TOOLS_CATALOG.map(t => ({ ...t, permission: 'auto' as const })),
   );
+  const [browserPermission, setBrowserPermission] = useState<ToolPermission>('off');
+  const [skipPermissions, setSkipPermissions] = useState(false);
   const [serverVersion, setServerVersion] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [activeTools, setActiveTools] = useState<Set<string>>(new Set());
@@ -65,7 +69,7 @@ const App = () => {
     pluginsRef.current = plugins;
   }, [connected, loading, plugins]);
 
-  const { handleNotification, clearConfirmationTimeout } = useServerNotifications({
+  const { handleNotification } = useServerNotifications({
     setPlugins,
     setActiveTools,
     setPendingConfirmations,
@@ -201,15 +205,17 @@ const App = () => {
       setFailedPlugins(result.failedPlugins);
       setBrowserTools(() => {
         if (result.browserTools.length === 0) {
-          return BROWSER_TOOLS_CATALOG.map(t => ({ ...t, enabled: true }));
+          return BROWSER_TOOLS_CATALOG.map(t => ({ ...t, permission: 'auto' as const }));
         }
         const serverNames = new Set(result.browserTools.map(t => t.name));
         const merged = [...result.browserTools];
         for (const local of BROWSER_TOOLS_CATALOG) {
-          if (!serverNames.has(local.name)) merged.push({ ...local, enabled: true });
+          if (!serverNames.has(local.name)) merged.push({ ...local, permission: 'auto' as const });
         }
         return merged;
       });
+      setBrowserPermission(result.browserPermission ?? 'off');
+      setSkipPermissions(result.skipPermissions ?? false);
       setServerVersion(result.serverVersion);
       setActiveTools(prev => {
         const next = new Set<string>();
@@ -222,20 +228,15 @@ const App = () => {
       });
 
       // Hydrate pending confirmations from the background. Replay each one
-      // through handleNotification so auto-removal timeouts are registered.
-      // handleNotification adds each confirmation to React state and sets up
-      // the auto-removal timeout using the background's receivedAt timestamp.
+      // through handleNotification so deduplication tracking is registered.
       for (const c of result.pendingConfirmations ?? []) {
         handleNotification({
           method: 'confirmation.request',
           params: {
             id: c.id,
             tool: c.tool,
-            domain: c.domain,
-            tabId: c.tabId,
-            paramsPreview: c.paramsPreview,
-            timeoutMs: c.timeoutMs,
-            receivedAt: c.receivedAt,
+            plugin: c.plugin,
+            params: c.params,
           },
         });
       }
@@ -285,7 +286,9 @@ const App = () => {
         } else {
           setPlugins([]);
           setFailedPlugins([]);
-          setBrowserTools(BROWSER_TOOLS_CATALOG.map(t => ({ ...t, enabled: true })));
+          setBrowserTools(BROWSER_TOOLS_CATALOG.map(t => ({ ...t, permission: 'auto' as const })));
+          setBrowserPermission('off');
+          setSkipPermissions(false);
           setServerVersion(undefined);
           setActiveTools(new Set());
           setPendingConfirmations([]);
@@ -330,22 +333,9 @@ const App = () => {
     };
   }, [handleNotification]);
 
-  const handleConfirmationRespond = (
-    id: string,
-    decision: 'allow_once' | 'allow_always' | 'deny',
-    scope?: 'tool_domain' | 'tool_all' | 'domain_all',
-  ) => {
-    clearConfirmationTimeout(id);
-    sendConfirmationResponse(id, decision, scope);
+  const handleConfirmationRespond = (id: string, decision: 'allow' | 'deny', alwaysAllow?: boolean) => {
+    sendConfirmationResponse(id, decision, alwaysAllow);
     setPendingConfirmations(prev => prev.filter(c => c.id !== id));
-  };
-
-  const handleDenyAll = () => {
-    for (const c of pendingConfirmations) {
-      clearConfirmationTimeout(c.id);
-      sendConfirmationResponse(c.id, 'deny');
-    }
-    setPendingConfirmations([]);
   };
 
   const hasContent = plugins.length > 0 || failedPlugins.length > 0 || browserTools.length > 0;
@@ -355,12 +345,15 @@ const App = () => {
   return (
     <Tooltip.Provider>
       <div className="flex h-screen flex-col overflow-hidden text-foreground">
-        {connected && pendingConfirmations.length > 0 && (
-          <ConfirmationDialog
-            confirmations={pendingConfirmations}
-            onRespond={handleConfirmationRespond}
-            onDenyAll={handleDenyAll}
-          />
+        {connected && <ConfirmationDialog confirmations={pendingConfirmations} onRespond={handleConfirmationRespond} />}
+        {skipPermissions && (
+          <Alert variant="solid" status="warning" className="mx-4 mt-2">
+            <Alert.Title>PERMISSIONS BYPASSED</Alert.Title>
+            <Alert.Description>
+              All tools execute without approval.
+              <span className="mt-1 block font-mono text-xs">--dangerously-skip-permissions</span>
+            </Alert.Description>
+          </Alert>
         )}
         {showSearchBar && (
           <div className="shrink-0 px-4 pt-4 pb-2">
@@ -418,6 +411,7 @@ const App = () => {
                 removingPlugins={removingPlugins}
                 pluginErrors={pluginErrors}
                 serverVersion={serverVersion}
+                skipPermissions={skipPermissions}
               />
             ) : hasContent ? (
               <>
@@ -428,6 +422,9 @@ const App = () => {
                       activeTools={activeTools}
                       onToolsChange={setBrowserTools}
                       serverVersion={serverVersion}
+                      browserPermission={browserPermission}
+                      onBrowserPermissionChange={setBrowserPermission}
+                      skipPermissions={skipPermissions}
                     />
                   </Accordion>
                 )}
@@ -441,6 +438,7 @@ const App = () => {
                   onRemove={handleRemove}
                   removingPlugins={removingPlugins}
                   pluginErrors={pluginErrors}
+                  skipPermissions={skipPermissions}
                 />
               </>
             ) : null}

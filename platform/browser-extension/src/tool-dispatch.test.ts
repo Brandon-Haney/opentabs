@@ -56,11 +56,8 @@ vi.mock('./sanitize-error.js', () => ({
 
 /** Inline replica of tool-dispatch.ts getPluginLink for mock-immune testing */
 const getPluginLink = (plugin: PluginMeta): string => {
-  if (plugin.trustTier === 'local' && plugin.sourcePath) {
+  if (plugin.sourcePath) {
     return plugin.sourcePath;
-  }
-  if (plugin.trustTier === 'official') {
-    return `https://npmjs.com/package/@opentabs-dev/plugin-${plugin.name}`;
   }
   return `https://npmjs.com/package/opentabs-plugin-${plugin.name}`;
 };
@@ -81,7 +78,7 @@ const makePlugin = (overrides?: Partial<PluginMeta>): PluginMeta => ({
   version: '1.0.0',
   displayName: 'Test Plugin',
   urlPatterns: ['*://example.com/*'],
-  trustTier: 'local',
+  permission: 'off',
   tools: [],
   ...overrides,
 });
@@ -131,23 +128,18 @@ describe('notifyDispatchProgress', () => {
 // ---------------------------------------------------------------------------
 
 describe('getPluginLink', () => {
-  test('returns sourcePath for local plugin with sourcePath', () => {
-    const plugin = makePlugin({ trustTier: 'local', sourcePath: '/home/user/my-plugin' });
+  test('returns sourcePath for plugin with sourcePath', () => {
+    const plugin = makePlugin({ sourcePath: '/home/user/my-plugin' });
     expect(getPluginLink(plugin)).toBe('/home/user/my-plugin');
   });
 
-  test('returns npm URL with @opentabs-dev scope for official plugin', () => {
-    const plugin = makePlugin({ trustTier: 'official', name: 'slack' });
-    expect(getPluginLink(plugin)).toBe('https://npmjs.com/package/@opentabs-dev/plugin-slack');
-  });
-
-  test('returns npm URL with opentabs-plugin prefix for community plugin', () => {
-    const plugin = makePlugin({ trustTier: 'community', name: 'datadog' });
+  test('returns npm URL with opentabs-plugin prefix when no sourcePath', () => {
+    const plugin = makePlugin({ name: 'datadog', sourcePath: undefined });
     expect(getPluginLink(plugin)).toBe('https://npmjs.com/package/opentabs-plugin-datadog');
   });
 
-  test('returns npm URL for local plugin without sourcePath', () => {
-    const plugin = makePlugin({ trustTier: 'local', sourcePath: undefined });
+  test('returns npm URL for plugin without sourcePath', () => {
+    const plugin = makePlugin({ sourcePath: undefined });
     expect(getPluginLink(plugin)).toBe('https://npmjs.com/package/opentabs-plugin-test-plugin');
   });
 });

@@ -5,7 +5,6 @@ import { join, resolve } from 'node:path';
 import type { MockInstance } from 'vitest';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
-  applyPolicyEntry,
   handleSetLocalPluginsAdd,
   levenshtein,
   maskSecret,
@@ -83,14 +82,14 @@ describe('suggestKey', () => {
     expect(suggestKey('completely_unrelated_nonsense')).toBeNull();
   });
 
-  test('suggests prefix key and appends user suffix for typo in prefix', () => {
-    // 'tol.' vs 'tool.' = distance 1; suffix 'slack_send' is appended
-    expect(suggestKey('tol.slack_send')).toBe('tool.slack_send');
+  test('suggests tool-permission prefix and appends user suffix for typo', () => {
+    // 'tol-permission.' vs 'tool-permission.' = distance 1
+    expect(suggestKey('tol-permission.slack.send')).toBe('tool-permission.slack.send');
   });
 
-  test('suggests browser-tool prefix and appends user suffix', () => {
-    // 'broser-tool.' vs 'browser-tool.' = distance 1 (missing w)
-    expect(suggestKey('broser-tool.my_tool')).toBe('browser-tool.my_tool');
+  test('suggests plugin-permission prefix and appends user suffix', () => {
+    // 'plugn-permission.' vs 'plugin-permission.' = distance 1
+    expect(suggestKey('plugn-permission.slack')).toBe('plugin-permission.slack');
   });
 
   test('suggests localPlugins.add for near-match', () => {
@@ -104,8 +103,8 @@ describe('suggestKey', () => {
   });
 
   test('returns prefix key without suffix when input has no dot', () => {
-    // 'tool' vs 'tool.' = distance 1, no suffix to append
-    expect(suggestKey('tool')).toBe('tool.');
+    // 'port' matches 'port' exactly (distance 0)
+    expect(suggestKey('port')).toBe('port');
   });
 });
 
@@ -168,112 +167,68 @@ describe('resolveStoredPluginPath', () => {
 });
 
 // ---------------------------------------------------------------------------
-// applyPolicyEntry
-// ---------------------------------------------------------------------------
-
-describe('applyPolicyEntry', () => {
-  test('setting enabled removes the key from the map (default state not persisted)', () => {
-    const map: Record<string, boolean> = { browser_execute_script: false };
-    applyPolicyEntry(map, 'browser_execute_script', true);
-    expect(Object.hasOwn(map, 'browser_execute_script')).toBe(false);
-  });
-
-  test('setting disabled adds the key with value false', () => {
-    const map: Record<string, boolean> = {};
-    applyPolicyEntry(map, 'browser_execute_script', false);
-    expect(map.browser_execute_script).toBe(false);
-  });
-
-  test('setting enabled on a key that does not exist leaves the map unchanged', () => {
-    const map: Record<string, boolean> = {};
-    applyPolicyEntry(map, 'browser_screenshot', true);
-    expect(Object.hasOwn(map, 'browser_screenshot')).toBe(false);
-  });
-
-  test('setting disabled on a key already set to false keeps it false', () => {
-    const map: Record<string, boolean> = { browser_execute_script: false };
-    applyPolicyEntry(map, 'browser_execute_script', false);
-    expect(map.browser_execute_script).toBe(false);
-  });
-
-  test('does not affect other keys in the map', () => {
-    const map: Record<string, boolean> = { tool_a: false, tool_b: false };
-    applyPolicyEntry(map, 'tool_a', true);
-    expect(Object.hasOwn(map, 'tool_a')).toBe(false);
-    expect(map.tool_b).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // normalizeConfigForDisplay
 // ---------------------------------------------------------------------------
 
 describe('normalizeConfigForDisplay', () => {
-  test('adds browserToolPolicy: {} when key is absent from config', () => {
-    const result = normalizeConfigForDisplay({ permissions: {} });
-    expect(result.browserToolPolicy).toEqual({});
+  test('adds plugins: {} when key is absent from config', () => {
+    const result = normalizeConfigForDisplay({});
+    expect(result.plugins).toEqual({});
   });
 
-  test('preserves existing browserToolPolicy entries when present', () => {
-    const policy = { browser_execute_script: false };
-    const result = normalizeConfigForDisplay({ browserToolPolicy: policy });
-    expect(result.browserToolPolicy).toEqual(policy);
+  test('preserves existing plugins entries when present', () => {
+    const plugins = { slack: { permission: 'auto' } };
+    const result = normalizeConfigForDisplay({ plugins });
+    expect(result.plugins).toEqual(plugins);
   });
 
-  test('preserves empty object {} browserToolPolicy as-is (not replaced)', () => {
-    const result = normalizeConfigForDisplay({ browserToolPolicy: {} });
-    expect(result.browserToolPolicy).toEqual({});
+  test('preserves empty object {} plugins as-is', () => {
+    const result = normalizeConfigForDisplay({ plugins: {} });
+    expect(result.plugins).toEqual({});
   });
 
   test('preserves all other keys unchanged', () => {
     const config = {
       port: 9000,
-      permissions: { trustedDomains: ['example.com'] },
       localPlugins: ['/some/plugin'],
     };
     const result = normalizeConfigForDisplay(config);
     expect(result.port).toBe(9000);
-    expect(result.permissions).toEqual({ trustedDomains: ['example.com'] });
     expect(result.localPlugins).toEqual(['/some/plugin']);
   });
 
   test('does not modify the input config object', () => {
-    const config: Record<string, unknown> = { permissions: {} };
+    const config: Record<string, unknown> = {};
     normalizeConfigForDisplay(config);
-    expect(Object.hasOwn(config, 'browserToolPolicy')).toBe(false);
+    expect(Object.hasOwn(config, 'plugins')).toBe(false);
   });
 
-  test('browserToolPolicy appears in output even for empty config', () => {
+  test('plugins appears in output even for empty config', () => {
     const result = normalizeConfigForDisplay({});
-    expect(Object.hasOwn(result, 'browserToolPolicy')).toBe(true);
-    expect(result.browserToolPolicy).toEqual({});
+    expect(Object.hasOwn(result, 'plugins')).toBe(true);
+    expect(result.plugins).toEqual({});
   });
 
-  test('canonical sections always appear in order: localPlugins, tools, browserToolPolicy, permissions', () => {
-    // Offline case: browserToolPolicy absent — must still appear between tools and permissions
-    const result = normalizeConfigForDisplay({ localPlugins: [], tools: {}, permissions: {} });
+  test('canonical sections always appear in order: localPlugins, plugins', () => {
+    const result = normalizeConfigForDisplay({ localPlugins: [] });
     const keys = Object.keys(result);
-    expect(keys.indexOf('localPlugins')).toBeLessThan(keys.indexOf('tools'));
-    expect(keys.indexOf('tools')).toBeLessThan(keys.indexOf('browserToolPolicy'));
-    expect(keys.indexOf('browserToolPolicy')).toBeLessThan(keys.indexOf('permissions'));
+    expect(keys.indexOf('localPlugins')).toBeLessThan(keys.indexOf('plugins'));
   });
 
-  test('key ordering is identical whether browserToolPolicy is present or absent in input', () => {
-    const withoutPolicy = normalizeConfigForDisplay({ localPlugins: [], tools: {}, permissions: {} });
-    const withPolicy = normalizeConfigForDisplay({
+  test('key ordering is identical whether plugins is present or absent in input', () => {
+    const withoutPlugins = normalizeConfigForDisplay({ localPlugins: [] });
+    const withPlugins = normalizeConfigForDisplay({
       localPlugins: [],
-      tools: {},
-      browserToolPolicy: { browser_execute_script: false },
-      permissions: {},
+      plugins: { slack: { permission: 'auto' } },
     });
-    expect(Object.keys(withoutPolicy)).toEqual(Object.keys(withPolicy));
+    expect(Object.keys(withoutPlugins)).toEqual(Object.keys(withPlugins));
   });
 
   test('non-canonical keys (e.g., port) appear before canonical sections', () => {
-    const result = normalizeConfigForDisplay({ port: 9000, localPlugins: [], permissions: {} });
+    const result = normalizeConfigForDisplay({ port: 9000, localPlugins: [] });
     const keys = Object.keys(result);
     expect(keys.indexOf('port')).toBeLessThan(keys.indexOf('localPlugins'));
-    expect(keys.indexOf('port')).toBeLessThan(keys.indexOf('browserToolPolicy'));
+    expect(keys.indexOf('port')).toBeLessThan(keys.indexOf('plugins'));
   });
 });
 

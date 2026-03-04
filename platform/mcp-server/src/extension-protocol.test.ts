@@ -9,11 +9,13 @@ import {
   handleExtensionMessage,
   isDispatchError,
   queryExtension,
+  rejectAllPendingConfirmations,
+  sendConfirmationRequest,
   sendSyncFull,
   writeAdapterFile,
 } from './extension-protocol.js';
 import { buildRegistry } from './registry.js';
-import type { PendingDispatch, RegisteredPlugin } from './state.js';
+import type { ConfirmationDecision, PendingDispatch, RegisteredPlugin } from './state.js';
 import { createState, DISPATCH_TIMEOUT_MS, MAX_DISPATCH_TIMEOUT_MS } from './state.js';
 
 /** Create a mock WsHandle that records sent messages */
@@ -28,8 +30,7 @@ const createMockWs = (): WsHandle & { sent: string[] } => ({
 /** No-op MCP callbacks for tests that don't exercise config changes */
 const noopCallbacks = {
   onToolConfigChanged: () => {},
-  onToolConfigPersist: () => {},
-  onBrowserToolPolicyPersist: () => {},
+  onPluginPermissionsPersist: () => {},
   onPluginLog: () => {},
   onReload: () => Promise.resolve({ plugins: 0, durationMs: 0 }),
   queryExtension: () => Promise.resolve(undefined),
@@ -366,7 +367,6 @@ describe('handleExtensionMessage — tab.stateChanged', () => {
     version: '1.0.0',
     displayName: name,
     urlPatterns: [],
-    trustTier: 'community',
     source: 'local' as const,
     iife: '// noop',
     tools: [],
@@ -584,7 +584,6 @@ describe('sendSyncFull', () => {
     version: '1.0.0',
     displayName: overrides.name,
     urlPatterns: [],
-    trustTier: 'community',
     source: 'local' as const,
     iife: '// noop',
     tools: [],
@@ -603,7 +602,6 @@ describe('sendSyncFull', () => {
           name: 'alpha',
           version: '1.0.0',
           urlPatterns: ['http://alpha.com/*'],
-          trustTier: 'community',
           iife: '// alpha iife',
           tools: [
             {
@@ -620,7 +618,6 @@ describe('sendSyncFull', () => {
           name: 'beta',
           version: '2.0.0',
           urlPatterns: ['http://beta.com/*'],
-          trustTier: 'local',
           iife: '// beta iife',
           tools: [
             {
@@ -638,7 +635,7 @@ describe('sendSyncFull', () => {
     );
 
     // alpha_ping enabled (default), beta_pong explicitly disabled
-    state.toolConfig = { beta_pong: false };
+    state.pluginPermissions = { beta: { tools: { pong: 'off' } } };
 
     await sendSyncFull(state);
 
@@ -653,15 +650,14 @@ describe('sendSyncFull', () => {
           name: string;
           version: string;
           urlPatterns: string[];
-          trustTier: string;
           displayName: string;
           sourcePath: string | undefined;
           adapterHash: string | undefined;
           source: string;
-          tools: { name: string; displayName: string; description: string; icon: string; enabled: boolean }[];
+          tools: { name: string; displayName: string; description: string; icon: string; permission: string }[];
         }[];
         failedPlugins: { specifier: string; error: string }[];
-        browserTools: { name: string; description: string; enabled: boolean }[];
+        browserTools: { name: string; description: string; permission: string }[];
         serverVersion: string;
       };
     };
@@ -685,10 +681,9 @@ describe('sendSyncFull', () => {
       name: 'alpha',
       version: '1.0.0',
       urlPatterns: ['http://alpha.com/*'],
-      trustTier: 'community',
       displayName: 'alpha',
       source: 'local',
-      tools: [{ name: 'ping', displayName: 'Ping', description: 'Ping', icon: 'wrench', enabled: true }],
+      tools: [{ name: 'ping', displayName: 'Ping', description: 'Ping', icon: 'wrench', permission: 'off' }],
     });
     // adapterFile is now included with content-hashed path
     expect(typeof (firstPlugin as Record<string, unknown>).adapterFile).toBe('string');
@@ -699,10 +694,9 @@ describe('sendSyncFull', () => {
       name: 'beta',
       version: '2.0.0',
       urlPatterns: ['http://beta.com/*'],
-      trustTier: 'local',
       displayName: 'beta',
       source: 'local',
-      tools: [{ name: 'pong', displayName: 'Pong', description: 'Pong', icon: 'wrench', enabled: false }],
+      tools: [{ name: 'pong', displayName: 'Pong', description: 'Pong', icon: 'wrench', permission: 'off' }],
     });
     expect(typeof (secondPlugin as Record<string, unknown>).adapterFile).toBe('string');
   });
@@ -1028,14 +1022,13 @@ describe('handleExtensionMessage — config.getState', () => {
     version: '1.0.0',
     displayName: overrides.name,
     urlPatterns: [],
-    trustTier: 'community',
     source: 'local' as const,
     iife: '// noop',
     tools: [],
     ...overrides,
   });
 
-  test('returns plugins with displayName, version, trustTier, tabState, urlPatterns, and tools', () => {
+  test('returns plugins with displayName, version, tabState, urlPatterns, and tools', () => {
     const state = createState();
     const ws = createMockWs();
     state.extensionWs = ws;
@@ -1046,7 +1039,6 @@ describe('handleExtensionMessage — config.getState', () => {
           name: 'test-plugin',
           displayName: 'Test Plugin',
           version: '2.1.0',
-          trustTier: 'local',
           urlPatterns: ['http://test.com/*'],
           tools: [
             {
@@ -1088,11 +1080,10 @@ describe('handleExtensionMessage — config.getState', () => {
           name: string;
           displayName: string;
           version: string;
-          trustTier: string;
           source: string;
           tabState: string;
           urlPatterns: string[];
-          tools: { name: string; displayName: string; description: string; icon: string; enabled: boolean }[];
+          tools: { name: string; displayName: string; description: string; icon: string; permission: string }[];
         }[];
         failedPlugins: unknown[];
       };
@@ -1108,7 +1099,6 @@ describe('handleExtensionMessage — config.getState', () => {
     expect(plugin.name).toBe('test-plugin');
     expect(plugin.displayName).toBe('Test Plugin');
     expect(plugin.version).toBe('2.1.0');
-    expect(plugin.trustTier).toBe('local');
     expect(plugin.source).toBe('local');
     expect(plugin.tabState).toBe('ready');
     expect(plugin.urlPatterns).toEqual(['http://test.com/*']);
@@ -1120,7 +1110,7 @@ describe('handleExtensionMessage — config.getState', () => {
       displayName: 'Ping',
       description: 'Ping tool',
       icon: 'wrench',
-      enabled: true,
+      permission: 'off',
     });
     const pongTool = plugin.tools[1];
     expect(pongTool).toBeDefined();
@@ -1129,11 +1119,11 @@ describe('handleExtensionMessage — config.getState', () => {
       displayName: 'Pong',
       description: 'Pong tool',
       icon: 'wrench',
-      enabled: true,
+      permission: 'off',
     });
   });
 
-  test('tools respect enabled/disabled state from toolConfig', () => {
+  test('tools respect permission state from pluginPermissions', () => {
     const state = createState();
     const ws = createMockWs();
     state.extensionWs = ws;
@@ -1164,7 +1154,7 @@ describe('handleExtensionMessage — config.getState', () => {
       ],
       [],
     );
-    state.toolConfig = { 'my-plugin_disabled-tool': false };
+    state.pluginPermissions = { 'my-plugin': { tools: { 'disabled-tool': 'off' } } };
 
     handleExtensionMessage(state, JSON.stringify({ jsonrpc: '2.0', method: 'config.getState', id: 2 }), noopCallbacks);
 
@@ -1173,7 +1163,7 @@ describe('handleExtensionMessage — config.getState', () => {
     const response = JSON.parse(rawConfig as string) as {
       result: {
         plugins: {
-          tools: { name: string; displayName: string; description: string; icon: string; enabled: boolean }[];
+          tools: { name: string; displayName: string; description: string; icon: string; permission: string }[];
         }[];
       };
     };
@@ -1188,7 +1178,7 @@ describe('handleExtensionMessage — config.getState', () => {
       displayName: 'Enabled Tool',
       description: 'Enabled',
       icon: 'wrench',
-      enabled: true,
+      permission: 'off',
     });
     const disabledTool = tools[1];
     expect(disabledTool).toBeDefined();
@@ -1197,7 +1187,7 @@ describe('handleExtensionMessage — config.getState', () => {
       displayName: 'Disabled Tool',
       description: 'Disabled',
       icon: 'wrench',
-      enabled: false,
+      permission: 'off',
     });
   });
 
@@ -1412,19 +1402,18 @@ describe('handleExtensionMessage — config.getState', () => {
   });
 });
 
-describe('handleExtensionMessage — config.setToolEnabled', () => {
+describe('handleExtensionMessage — config.setToolPermission', () => {
   const makePlugin = (overrides: Partial<RegisteredPlugin> & Pick<RegisteredPlugin, 'name'>): RegisteredPlugin => ({
     version: '1.0.0',
     displayName: overrides.name,
     urlPatterns: [],
-    trustTier: 'community',
     source: 'local' as const,
     iife: '// noop',
     tools: [],
     ...overrides,
   });
 
-  test('valid params updates toolConfig with prefixed key and sends { ok: true }', () => {
+  test('valid params updates pluginPermissions and sends { ok: true }', () => {
     const state = createState();
     const ws = createMockWs();
     state.extensionWs = ws;
@@ -1454,10 +1443,9 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
       onToolConfigChanged: () => {
         configChangedCalled = true;
       },
-      onToolConfigPersist: () => {
+      onPluginPermissionsPersist: () => {
         configPersistCalled = true;
       },
-      onBrowserToolPolicyPersist: () => {},
       onPluginLog: () => {},
       onReload: () => Promise.resolve({ plugins: 0, durationMs: 0 }),
       queryExtension: () => Promise.resolve(undefined),
@@ -1467,14 +1455,14 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
       state,
       JSON.stringify({
         jsonrpc: '2.0',
-        method: 'config.setToolEnabled',
-        params: { plugin: 'my-plugin', tool: 'send', enabled: false },
+        method: 'config.setToolPermission',
+        params: { plugin: 'my-plugin', tool: 'send', permission: 'off' },
         id: 1,
       }),
       callbacks,
     );
 
-    expect(state.toolConfig['my-plugin_send']).toBe(false);
+    expect(state.pluginPermissions['my-plugin']?.tools?.send).toBe('off');
     expect(configChangedCalled).toBe(true);
     expect(configPersistCalled).toBe(true);
 
@@ -1488,11 +1476,11 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
     expect(response.result).toEqual({ ok: true });
   });
 
-  test('enabling a tool sets toolConfig to true', () => {
+  test('enabling a tool sets pluginPermissions to auto', () => {
     const state = createState();
     const ws = createMockWs();
     state.extensionWs = ws;
-    state.toolConfig = { 'my-plugin_send': false };
+    state.pluginPermissions = { 'my-plugin': { tools: { send: 'off' } } };
 
     state.registry = buildRegistry(
       [
@@ -1517,14 +1505,14 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
       state,
       JSON.stringify({
         jsonrpc: '2.0',
-        method: 'config.setToolEnabled',
-        params: { plugin: 'my-plugin', tool: 'send', enabled: true },
+        method: 'config.setToolPermission',
+        params: { plugin: 'my-plugin', tool: 'send', permission: 'auto' },
         id: 2,
       }),
       noopCallbacks,
     );
 
-    expect(state.toolConfig['my-plugin_send']).toBe(true);
+    expect(state.pluginPermissions['my-plugin']?.tools?.send).toBe('auto');
 
     // First message is plugins.changed notification, second is the result
     const rawEnable = ws.sent[1];
@@ -1540,7 +1528,7 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
 
     handleExtensionMessage(
       state,
-      JSON.stringify({ jsonrpc: '2.0', method: 'config.setToolEnabled', id: 3 }),
+      JSON.stringify({ jsonrpc: '2.0', method: 'config.setToolPermission', id: 3 }),
       noopCallbacks,
     );
 
@@ -1567,8 +1555,8 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
       state,
       JSON.stringify({
         jsonrpc: '2.0',
-        method: 'config.setToolEnabled',
-        params: { plugin: 'my-plugin', tool: 'send', enabled: 'yes' },
+        method: 'config.setToolPermission',
+        params: { plugin: 'my-plugin', tool: 'send', permission: 123 },
         id: 4,
       }),
       noopCallbacks,
@@ -1582,7 +1570,7 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
     expect(response.error.message).toContain('Invalid params');
   });
 
-  test('missing enabled field sends -32602 error', () => {
+  test('missing permission field sends -32602 error', () => {
     const state = createState();
     const ws = createMockWs();
     state.extensionWs = ws;
@@ -1591,7 +1579,7 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
       state,
       JSON.stringify({
         jsonrpc: '2.0',
-        method: 'config.setToolEnabled',
+        method: 'config.setToolPermission',
         params: { plugin: 'my-plugin', tool: 'send' },
         id: 5,
       }),
@@ -1599,9 +1587,9 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
     );
 
     expect(ws.sent).toHaveLength(1);
-    const rawEnabled = ws.sent[0];
-    expect(rawEnabled).toBeDefined();
-    const response = JSON.parse(rawEnabled as string) as { error: { code: number; message: string } };
+    const rawPermission = ws.sent[0];
+    expect(rawPermission).toBeDefined();
+    const response = JSON.parse(rawPermission as string) as { error: { code: number; message: string } };
     expect(response.error.code).toBe(-32602);
     expect(response.error.message).toContain('Invalid params');
   });
@@ -1617,10 +1605,9 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
       onToolConfigChanged: () => {
         configChangedCalled = true;
       },
-      onToolConfigPersist: () => {
+      onPluginPermissionsPersist: () => {
         configPersistCalled = true;
       },
-      onBrowserToolPolicyPersist: () => {},
       onPluginLog: () => {},
       onReload: () => Promise.resolve({ plugins: 0, durationMs: 0 }),
       queryExtension: () => Promise.resolve(undefined),
@@ -1630,8 +1617,8 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
       state,
       JSON.stringify({
         jsonrpc: '2.0',
-        method: 'config.setToolEnabled',
-        params: { plugin: 123, tool: 'send', enabled: true },
+        method: 'config.setToolPermission',
+        params: { plugin: 123, tool: 'send', permission: 'auto' },
         id: 6,
       }),
       callbacks,
@@ -1650,8 +1637,8 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
       state,
       JSON.stringify({
         jsonrpc: '2.0',
-        method: 'config.setToolEnabled',
-        params: { plugin: 'nonexistent', tool: 'send', enabled: true },
+        method: 'config.setToolPermission',
+        params: { plugin: 'nonexistent', tool: 'send', permission: 'auto' },
         id: 7,
       }),
       noopCallbacks,
@@ -1700,8 +1687,8 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
       state,
       JSON.stringify({
         jsonrpc: '2.0',
-        method: 'config.setToolEnabled',
-        params: { plugin: 'my-plugin', tool: 'nonexistent-tool', enabled: true },
+        method: 'config.setToolPermission',
+        params: { plugin: 'my-plugin', tool: 'nonexistent-tool', permission: 'auto' },
         id: 8,
       }),
       noopCallbacks,
@@ -1733,10 +1720,9 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
       onToolConfigChanged: () => {
         configChangedCalled = true;
       },
-      onToolConfigPersist: () => {
+      onPluginPermissionsPersist: () => {
         configPersistCalled = true;
       },
-      onBrowserToolPolicyPersist: () => {},
       onPluginLog: () => {},
       onReload: () => Promise.resolve({ plugins: 0, durationMs: 0 }),
       queryExtension: () => Promise.resolve(undefined),
@@ -1746,8 +1732,8 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
       state,
       JSON.stringify({
         jsonrpc: '2.0',
-        method: 'config.setToolEnabled',
-        params: { plugin: 'nonexistent', tool: 'send', enabled: true },
+        method: 'config.setToolPermission',
+        params: { plugin: 'nonexistent', tool: 'send', permission: 'auto' },
         id: 9,
       }),
       callbacks,
@@ -1757,7 +1743,7 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
     expect(configPersistCalled).toBe(false);
   });
 
-  test('nonexistent tool does not mutate toolConfig', () => {
+  test('nonexistent tool does not mutate pluginPermissions', () => {
     const state = createState();
     const ws = createMockWs();
     state.extensionWs = ws;
@@ -1785,30 +1771,29 @@ describe('handleExtensionMessage — config.setToolEnabled', () => {
       state,
       JSON.stringify({
         jsonrpc: '2.0',
-        method: 'config.setToolEnabled',
-        params: { plugin: 'my-plugin', tool: 'nonexistent-tool', enabled: true },
+        method: 'config.setToolPermission',
+        params: { plugin: 'my-plugin', tool: 'nonexistent-tool', permission: 'auto' },
         id: 10,
       }),
       noopCallbacks,
     );
 
-    expect(state.toolConfig).toEqual({});
+    expect(state.pluginPermissions).toEqual({});
   });
 });
 
-describe('handleExtensionMessage — config.setAllToolsEnabled', () => {
+describe('handleExtensionMessage — config.setPluginPermission', () => {
   const makePlugin = (overrides: Partial<RegisteredPlugin> & Pick<RegisteredPlugin, 'name'>): RegisteredPlugin => ({
     version: '1.0.0',
     displayName: overrides.name,
     urlPatterns: [],
-    trustTier: 'community',
     source: 'local' as const,
     iife: '// noop',
     tools: [],
     ...overrides,
   });
 
-  test('enabling all tools sets every tool in toolConfig to true', () => {
+  test('enabling all tools sets plugin-level permission to auto', () => {
     const state = createState();
     const ws = createMockWs();
     state.extensionWs = ws;
@@ -1847,22 +1832,20 @@ describe('handleExtensionMessage — config.setAllToolsEnabled', () => {
       ],
       [],
     );
-    state.toolConfig = { 'my-plugin_alpha': false, 'my-plugin_beta': false, 'my-plugin_gamma': false };
+    state.pluginPermissions = { 'my-plugin': { tools: { alpha: 'off', beta: 'off', gamma: 'off' } } };
 
     handleExtensionMessage(
       state,
       JSON.stringify({
         jsonrpc: '2.0',
-        method: 'config.setAllToolsEnabled',
-        params: { plugin: 'my-plugin', enabled: true },
+        method: 'config.setPluginPermission',
+        params: { plugin: 'my-plugin', permission: 'auto' },
         id: 1,
       }),
       noopCallbacks,
     );
 
-    expect(state.toolConfig['my-plugin_alpha']).toBe(true);
-    expect(state.toolConfig['my-plugin_beta']).toBe(true);
-    expect(state.toolConfig['my-plugin_gamma']).toBe(true);
+    expect(state.pluginPermissions['my-plugin']?.permission).toBe('auto');
 
     // First message is plugins.changed notification, second is the result
     const rawAllEnabled = ws.sent[1];
@@ -1873,7 +1856,7 @@ describe('handleExtensionMessage — config.setAllToolsEnabled', () => {
     expect(response.result).toEqual({ ok: true });
   });
 
-  test('disabling all tools sets every tool in toolConfig to false', () => {
+  test('disabling all tools sets plugin-level permission to off', () => {
     const state = createState();
     const ws = createMockWs();
     state.extensionWs = ws;
@@ -1904,21 +1887,20 @@ describe('handleExtensionMessage — config.setAllToolsEnabled', () => {
       ],
       [],
     );
-    state.toolConfig = { 'my-plugin_alpha': true, 'my-plugin_beta': true };
+    state.pluginPermissions = { 'my-plugin': { tools: { alpha: 'auto', beta: 'auto' } } };
 
     handleExtensionMessage(
       state,
       JSON.stringify({
         jsonrpc: '2.0',
-        method: 'config.setAllToolsEnabled',
-        params: { plugin: 'my-plugin', enabled: false },
+        method: 'config.setPluginPermission',
+        params: { plugin: 'my-plugin', permission: 'off' },
         id: 2,
       }),
       noopCallbacks,
     );
 
-    expect(state.toolConfig['my-plugin_alpha']).toBe(false);
-    expect(state.toolConfig['my-plugin_beta']).toBe(false);
+    expect(state.pluginPermissions['my-plugin']?.permission).toBe('off');
   });
 
   test('both callbacks are invoked on valid request with existing plugin', () => {
@@ -1951,10 +1933,9 @@ describe('handleExtensionMessage — config.setAllToolsEnabled', () => {
       onToolConfigChanged: () => {
         configChangedCalled = true;
       },
-      onToolConfigPersist: () => {
+      onPluginPermissionsPersist: () => {
         configPersistCalled = true;
       },
-      onBrowserToolPolicyPersist: () => {},
       onPluginLog: () => {},
       onReload: () => Promise.resolve({ plugins: 0, durationMs: 0 }),
       queryExtension: () => Promise.resolve(undefined),
@@ -1964,8 +1945,8 @@ describe('handleExtensionMessage — config.setAllToolsEnabled', () => {
       state,
       JSON.stringify({
         jsonrpc: '2.0',
-        method: 'config.setAllToolsEnabled',
-        params: { plugin: 'my-plugin', enabled: true },
+        method: 'config.setPluginPermission',
+        params: { plugin: 'my-plugin', permission: 'auto' },
         id: 3,
       }),
       callbacks,
@@ -1986,10 +1967,9 @@ describe('handleExtensionMessage — config.setAllToolsEnabled', () => {
       onToolConfigChanged: () => {
         configChangedCalled = true;
       },
-      onToolConfigPersist: () => {
+      onPluginPermissionsPersist: () => {
         configPersistCalled = true;
       },
-      onBrowserToolPolicyPersist: () => {},
       onPluginLog: () => {},
       onReload: () => Promise.resolve({ plugins: 0, durationMs: 0 }),
       queryExtension: () => Promise.resolve(undefined),
@@ -1999,8 +1979,8 @@ describe('handleExtensionMessage — config.setAllToolsEnabled', () => {
       state,
       JSON.stringify({
         jsonrpc: '2.0',
-        method: 'config.setAllToolsEnabled',
-        params: { plugin: 'nonexistent', enabled: true },
+        method: 'config.setPluginPermission',
+        params: { plugin: 'nonexistent', permission: 'auto' },
         id: 4,
       }),
       callbacks,
@@ -2031,7 +2011,7 @@ describe('handleExtensionMessage — config.setAllToolsEnabled', () => {
 
     handleExtensionMessage(
       state,
-      JSON.stringify({ jsonrpc: '2.0', method: 'config.setAllToolsEnabled', id: 5 }),
+      JSON.stringify({ jsonrpc: '2.0', method: 'config.setPluginPermission', id: 5 }),
       noopCallbacks,
     );
 
@@ -2058,8 +2038,8 @@ describe('handleExtensionMessage — config.setAllToolsEnabled', () => {
       state,
       JSON.stringify({
         jsonrpc: '2.0',
-        method: 'config.setAllToolsEnabled',
-        params: { plugin: 'my-plugin', enabled: 'yes' },
+        method: 'config.setPluginPermission',
+        params: { plugin: 'my-plugin', permission: 123 },
         id: 6,
       }),
       noopCallbacks,
@@ -2482,5 +2462,275 @@ describe('queryExtension', () => {
     state.extensionWs = null;
 
     await expect(queryExtension(state, 'extension.getTabState')).rejects.toThrow();
+  });
+});
+
+describe('sendConfirmationRequest', () => {
+  test('sends confirmation.request with new payload shape and stores pending confirmation', () => {
+    const state = createState();
+    const ws = createMockWs();
+    state.extensionWs = ws;
+
+    const promise = sendConfirmationRequest(state, 'send_message', 'slack', { channel: '#general', text: 'hi' });
+
+    expect(ws.sent).toHaveLength(1);
+    const msg = JSON.parse(ws.sent[0] as string) as {
+      jsonrpc: string;
+      method: string;
+      params: { id: string; tool: string; plugin: string; params: Record<string, unknown> };
+    };
+
+    expect(msg.jsonrpc).toBe('2.0');
+    expect(msg.method).toBe('confirmation.request');
+    expect(typeof msg.params.id).toBe('string');
+    expect(msg.params.tool).toBe('send_message');
+    expect(msg.params.plugin).toBe('slack');
+    expect(msg.params.params).toEqual({ channel: '#general', text: 'hi' });
+
+    // No domain, tabId, paramsPreview, or timeoutMs fields
+    const rawParams = msg.params as Record<string, unknown>;
+    expect('domain' in rawParams).toBe(false);
+    expect('tabId' in rawParams).toBe(false);
+    expect('paramsPreview' in rawParams).toBe(false);
+    expect('timeoutMs' in rawParams).toBe(false);
+
+    // Pending confirmation stored
+    expect(state.pendingConfirmations.size).toBe(1);
+    const pendingId = msg.params.id;
+    const pending = state.pendingConfirmations.get(pendingId);
+    expect(pending).toBeDefined();
+    expect(pending?.tool).toBe('send_message');
+    expect(pending?.plugin).toBe('slack');
+
+    // Clean up by resolving the promise
+    pending?.resolve({ action: 'allow', alwaysAllow: false });
+    return promise;
+  });
+
+  test('resolves with ConfirmationDecision when user responds via confirmation.response', async () => {
+    const state = createState();
+    const ws = createMockWs();
+    state.extensionWs = ws;
+
+    const promise = sendConfirmationRequest(state, 'browser_click', 'browser', { selector: '#btn' });
+
+    // Extract the confirmation id from the sent message
+    const msg = JSON.parse(ws.sent[0] as string) as { params: { id: string } };
+    const id = msg.params.id;
+
+    // Simulate the extension sending a confirmation response
+    handleExtensionMessage(
+      state,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'confirmation.response',
+        params: { id, decision: 'allow', alwaysAllow: true },
+      }),
+      noopCallbacks,
+    );
+
+    const decision: ConfirmationDecision = await promise;
+    expect(decision.action).toBe('allow');
+    expect(decision.alwaysAllow).toBe(true);
+    expect(state.pendingConfirmations.size).toBe(0);
+  });
+
+  test('resolves with deny when user denies', async () => {
+    const state = createState();
+    const ws = createMockWs();
+    state.extensionWs = ws;
+
+    const promise = sendConfirmationRequest(state, 'delete_message', 'slack', {});
+
+    const msg = JSON.parse(ws.sent[0] as string) as { params: { id: string } };
+    const id = msg.params.id;
+
+    handleExtensionMessage(
+      state,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'confirmation.response',
+        params: { id, decision: 'deny' },
+      }),
+      noopCallbacks,
+    );
+
+    const decision: ConfirmationDecision = await promise;
+    expect(decision.action).toBe('deny');
+    expect(decision.alwaysAllow).toBe(false);
+  });
+
+  test('rejects when extension is not connected', async () => {
+    const state = createState();
+    state.extensionWs = null;
+
+    await expect(sendConfirmationRequest(state, 'test_tool', 'test', {})).rejects.toThrow('Extension not connected');
+    expect(state.pendingConfirmations.size).toBe(0);
+  });
+
+  test('hangs indefinitely until resolved (no timeout)', async () => {
+    const state = createState();
+    const ws = createMockWs();
+    state.extensionWs = ws;
+
+    const promise = sendConfirmationRequest(state, 'slow_tool', 'plugin', {});
+
+    // The promise is pending with no timeout — the pending confirmation stays in the map
+    expect(state.pendingConfirmations.size).toBe(1);
+
+    // Verify no timerId on the pending confirmation (simplified PendingConfirmation has no timerId)
+    const pendingEntry = [...state.pendingConfirmations.values()][0];
+    expect(pendingEntry).toBeDefined();
+    expect('timerId' in (pendingEntry as unknown as Record<string, unknown>)).toBe(false);
+
+    // Clean up by resolving
+    pendingEntry?.resolve({ action: 'allow', alwaysAllow: false });
+    await promise;
+  });
+});
+
+describe('rejectAllPendingConfirmations', () => {
+  test('rejects all pending confirmations and clears the map', async () => {
+    const state = createState();
+    const ws = createMockWs();
+    state.extensionWs = ws;
+
+    const promise1 = sendConfirmationRequest(state, 'tool_a', 'plugin_a', {});
+    const promise2 = sendConfirmationRequest(state, 'tool_b', 'plugin_b', {});
+
+    expect(state.pendingConfirmations.size).toBe(2);
+
+    rejectAllPendingConfirmations(state);
+
+    expect(state.pendingConfirmations.size).toBe(0);
+
+    await expect(promise1).rejects.toThrow('Extension disconnected');
+    await expect(promise2).rejects.toThrow('Extension disconnected');
+  });
+
+  test('handles empty pendingConfirmations gracefully', () => {
+    const state = createState();
+
+    rejectAllPendingConfirmations(state);
+
+    expect(state.pendingConfirmations.size).toBe(0);
+  });
+});
+
+describe('handleExtensionMessage — confirmation.response routing', () => {
+  test('routes confirmation.response to handleConfirmationResponse', () => {
+    const state = createState();
+    const ws = createMockWs();
+    state.extensionWs = ws;
+
+    let resolved: ConfirmationDecision | undefined;
+    state.pendingConfirmations.set('test-id', {
+      resolve: (decision: ConfirmationDecision) => {
+        resolved = decision;
+      },
+      reject: () => {},
+      tool: 'test_tool',
+      plugin: 'test_plugin',
+      params: {},
+    });
+
+    handleExtensionMessage(
+      state,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'confirmation.response',
+        params: { id: 'test-id', decision: 'allow', alwaysAllow: true },
+      }),
+      noopCallbacks,
+    );
+
+    expect(resolved).toEqual({ action: 'allow', alwaysAllow: true });
+    expect(state.pendingConfirmations.size).toBe(0);
+  });
+
+  test('ignores confirmation.response with unknown id', () => {
+    const state = createState();
+    state.extensionWs = createMockWs();
+
+    let resolved = false;
+    state.pendingConfirmations.set('known-id', {
+      resolve: () => {
+        resolved = true;
+      },
+      reject: () => {},
+      tool: 'tool',
+      plugin: 'plugin',
+      params: {},
+    });
+
+    handleExtensionMessage(
+      state,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'confirmation.response',
+        params: { id: 'unknown-id', decision: 'allow' },
+      }),
+      noopCallbacks,
+    );
+
+    expect(resolved).toBe(false);
+    expect(state.pendingConfirmations.size).toBe(1);
+  });
+
+  test('ignores confirmation.response with invalid decision', () => {
+    const state = createState();
+    state.extensionWs = createMockWs();
+
+    let resolved = false;
+    state.pendingConfirmations.set('conf-id', {
+      resolve: () => {
+        resolved = true;
+      },
+      reject: () => {},
+      tool: 'tool',
+      plugin: 'plugin',
+      params: {},
+    });
+
+    handleExtensionMessage(
+      state,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'confirmation.response',
+        params: { id: 'conf-id', decision: 'invalid' },
+      }),
+      noopCallbacks,
+    );
+
+    expect(resolved).toBe(false);
+    expect(state.pendingConfirmations.size).toBe(1);
+  });
+
+  test('defaults alwaysAllow to false when not provided', () => {
+    const state = createState();
+    state.extensionWs = createMockWs();
+
+    let resolved: ConfirmationDecision | undefined;
+    state.pendingConfirmations.set('conf-no-always', {
+      resolve: (decision: ConfirmationDecision) => {
+        resolved = decision;
+      },
+      reject: () => {},
+      tool: 'tool',
+      plugin: 'plugin',
+      params: {},
+    });
+
+    handleExtensionMessage(
+      state,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'confirmation.response',
+        params: { id: 'conf-no-always', decision: 'allow' },
+      }),
+      noopCallbacks,
+    );
+
+    expect(resolved).toEqual({ action: 'allow', alwaysAllow: false });
   });
 });

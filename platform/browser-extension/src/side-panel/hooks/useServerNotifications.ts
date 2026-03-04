@@ -15,30 +15,23 @@ interface UseServerNotificationsParams {
 
 interface UseServerNotificationsResult {
   handleNotification: (data: Record<string, unknown>) => void;
-  clearConfirmationTimeout: (id: string) => void;
 }
 
 /**
  * Returns a stable callback that processes server notification messages
- * (confirmation.request, tab.stateChanged, tool.invocationStart, tool.invocationEnd)
- * and a function to clear a confirmation's auto-removal timeout.
+ * (confirmation.request, tab.stateChanged, tool.invocationStart, tool.invocationEnd).
  */
 const useServerNotifications = ({
   setPlugins,
   setActiveTools,
   setPendingConfirmations,
 }: UseServerNotificationsParams): UseServerNotificationsResult => {
-  const timeoutIds = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const seenConfirmationIds = useRef<Set<string>>(new Set());
   const invocationTimeoutIds = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
-    const confirmationMap = timeoutIds.current;
     const invocationMap = invocationTimeoutIds.current;
     return () => {
-      for (const id of confirmationMap.values()) {
-        clearTimeout(id);
-      }
-      confirmationMap.clear();
       for (const id of invocationMap.values()) {
         clearTimeout(id);
       }
@@ -46,49 +39,26 @@ const useServerNotifications = ({
     };
   }, []);
 
-  const clearConfirmationTimeout = (id: string) => {
-    const tid = timeoutIds.current.get(id);
-    if (tid !== undefined) {
-      clearTimeout(tid);
-      timeoutIds.current.delete(id);
-    }
-  };
-
   const handleNotification = (data: Record<string, unknown>): void => {
     if (data.method === 'confirmation.request' && data.params) {
       const params = data.params as Record<string, unknown>;
-      if (typeof params.id === 'string' && typeof params.tool === 'string' && typeof params.timeoutMs === 'number') {
-        // Use the background's receivedAt when hydrating from bg:getFullState so
-        // the countdown bar reflects true elapsed time since the request arrived.
-        const receivedAt =
-          typeof params.receivedAt === 'number' && params.receivedAt > 0 ? params.receivedAt : Date.now();
+      if (typeof params.id === 'string' && typeof params.tool === 'string') {
+        // Skip duplicate confirmations (e.g., real-time sp:serverMessage
+        // followed by bg:getFullState hydration for the same id).
+        if (seenConfirmationIds.current.has(params.id)) return;
+        seenConfirmationIds.current.add(params.id);
+
         const confirmation: ConfirmationData = {
           id: params.id,
           tool: params.tool,
-          domain: typeof params.domain === 'string' ? params.domain : null,
-          tabId:
-            typeof params.tabId === 'number' && Number.isInteger(params.tabId) && params.tabId > 0
-              ? params.tabId
-              : undefined,
-          paramsPreview: typeof params.paramsPreview === 'string' ? params.paramsPreview : '',
-          timeoutMs: params.timeoutMs,
-          receivedAt,
+          plugin: typeof params.plugin === 'string' ? params.plugin : 'unknown',
+          params:
+            typeof params.params === 'object' && params.params !== null
+              ? (params.params as Record<string, unknown>)
+              : {},
         };
-        // Skip duplicate confirmations (e.g., real-time sp:serverMessage
-        // followed by bg:getFullState hydration for the same id).
-        if (timeoutIds.current.has(confirmation.id)) return;
 
         setPendingConfirmations(prev => (prev.some(c => c.id === confirmation.id) ? prev : [...prev, confirmation]));
-        // Compute remaining time from the original receivedAt so hydrated
-        // confirmations expire at the correct wall-clock time.
-        const elapsed = Date.now() - receivedAt;
-        const removeDelay = Math.max(0, params.timeoutMs + 1000 - elapsed);
-        const tid = setTimeout(() => {
-          timeoutIds.current.delete(confirmation.id);
-          setPendingConfirmations(prev => prev.filter(c => c.id !== confirmation.id));
-          chrome.runtime.sendMessage({ type: 'sp:confirmationTimeout', id: confirmation.id }).catch(() => {});
-        }, removeDelay);
-        timeoutIds.current.set(confirmation.id, tid);
       }
     }
 
@@ -151,7 +121,7 @@ const useServerNotifications = ({
     }
   };
 
-  return { handleNotification, clearConfirmationTimeout };
+  return { handleNotification };
 };
 
 export { useServerNotifications };

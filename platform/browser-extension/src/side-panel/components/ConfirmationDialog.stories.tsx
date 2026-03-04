@@ -5,21 +5,17 @@ import { ConfirmationDialog } from './ConfirmationDialog';
 
 const mockConfirmation = (overrides?: Partial<ConfirmationData>): ConfirmationData => ({
   id: 'conf-1',
-  tool: 'slack_send_message',
-  domain: 'app.slack.com',
-  paramsPreview: '',
-  timeoutMs: 30_000,
-  receivedAt: Date.now(),
+  tool: 'send_message',
+  plugin: 'slack',
+  params: {},
   ...overrides,
 });
 
 const meta: Meta<typeof ConfirmationDialog> = {
   title: 'Components/ConfirmationDialog',
   component: ConfirmationDialog,
-  decorators: [Story => <div className="w-80">{Story()}</div>],
   args: {
     onRespond: fn(),
-    onDenyAll: fn(),
   },
 };
 
@@ -31,25 +27,27 @@ const SingleConfirmation: Story = {
   },
 };
 
-const WithParamsPreview: Story = {
+const WithParams: Story = {
   args: {
     confirmations: [
       mockConfirmation({
         id: 'conf-params',
-        tool: 'slack_send_message',
-        paramsPreview: JSON.stringify({ channel: '#general', message: 'Hello team!' }, null, 2),
+        tool: 'send_message',
+        plugin: 'slack',
+        params: { channel: '#general', message: 'Hello team!' },
       }),
     ],
   },
 };
 
-const NoDomain: Story = {
+const BrowserTool: Story = {
   args: {
     confirmations: [
       mockConfirmation({
-        id: 'conf-no-domain',
-        tool: 'browser_execute_script',
-        domain: null,
+        id: 'conf-browser',
+        tool: 'screenshot',
+        plugin: 'browser',
+        params: { tabId: 12345 },
       }),
     ],
   },
@@ -58,12 +56,12 @@ const NoDomain: Story = {
 const MultipleConfirmations: Story = {
   args: {
     confirmations: [
-      mockConfirmation({ id: 'conf-1', tool: 'slack_send_message', domain: 'app.slack.com' }),
-      mockConfirmation({ id: 'conf-2', tool: 'github_create_issue', domain: 'github.com' }),
-      mockConfirmation({ id: 'conf-3', tool: 'browser_open_tab', domain: null }),
+      mockConfirmation({ id: 'conf-1', tool: 'send_message', plugin: 'slack' }),
+      mockConfirmation({ id: 'conf-2', tool: 'create_issue', plugin: 'github', params: { title: 'Bug report' } }),
+      mockConfirmation({ id: 'conf-3', tool: 'screenshot', plugin: 'browser' }),
     ],
   },
 };
 
 export default meta;
-export { SingleConfirmation, WithParamsPreview, NoDomain, MultipleConfirmations };
+export { SingleConfirmation, WithParams, BrowserTool, MultipleConfirmations };

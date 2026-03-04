@@ -199,7 +199,7 @@ describe('loadPlugin', () => {
     const pluginDir = join(tmpDir, 'my-plugin');
     writePlugin(pluginDir, validPackageJson());
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -208,7 +208,6 @@ describe('loadPlugin', () => {
     expect(result.value.displayName).toBe('Test Plugin');
     expect(result.value.description).toBe('A test plugin');
     expect(result.value.urlPatterns).toEqual(['http://localhost/*']);
-    expect(result.value.trustTier).toBe('local');
     expect(result.value.source).toBe('local');
     expect(result.value.iife).toBe(TEST_IIFE);
     expect(result.value.tools).toHaveLength(1);
@@ -222,7 +221,7 @@ describe('loadPlugin', () => {
     const pluginDir = join(tmpDir, 'no-pkg');
     mkdirSync(pluginDir, { recursive: true });
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -236,7 +235,7 @@ describe('loadPlugin', () => {
     writeFileSync(join(pluginDir, 'package.json'), JSON.stringify(validPackageJson()));
     writeFileSync(join(pluginDir, 'dist', 'tools.json'), JSON.stringify(validTools()));
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -248,7 +247,7 @@ describe('loadPlugin', () => {
     const pluginDir = join(tmpDir, 'empty-iife');
     writePlugin(pluginDir, validPackageJson(), validTools(), '');
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -261,7 +260,7 @@ describe('loadPlugin', () => {
     const oversizedContent = 'x'.repeat(5 * 1024 * 1024 + 1);
     writePlugin(pluginDir, validPackageJson(), validTools(), oversizedContent);
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -275,7 +274,7 @@ describe('loadPlugin', () => {
     writeFileSync(join(pluginDir, 'package.json'), JSON.stringify(validPackageJson()));
     writeFileSync(join(pluginDir, 'dist', 'adapter.iife.js'), '(function(){})()');
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -287,7 +286,7 @@ describe('loadPlugin', () => {
     const pluginDir = join(tmpDir, 'bad-opentabs');
     writePlugin(pluginDir, { ...validPackageJson(), opentabs: 'invalid' });
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -299,7 +298,7 @@ describe('loadPlugin', () => {
     const pluginDir = join(tmpDir, 'scoped');
     writePlugin(pluginDir, validPackageJson({ name: '@myorg/opentabs-plugin-jira' }));
 
-    const result = await loadPlugin(pluginDir, 'community', 'npm');
+    const result = await loadPlugin(pluginDir, 'npm');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -317,8 +316,8 @@ describe('loadPlugin', () => {
     writePlugin(pluginDir1, validPackageJson(), validTools(), iifeA);
     writePlugin(pluginDir2, validPackageJson(), validTools(), iifeB);
 
-    const result1 = await loadPlugin(pluginDir1, 'local', 'local');
-    const result2 = await loadPlugin(pluginDir2, 'local', 'local');
+    const result1 = await loadPlugin(pluginDir1, 'local');
+    const result2 = await loadPlugin(pluginDir2, 'local');
 
     expect(result1.ok).toBe(true);
     expect(result2.ok).toBe(true);
@@ -341,7 +340,7 @@ describe('loadPlugin', () => {
       }),
     );
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -371,7 +370,7 @@ describe('loadPlugin', () => {
       },
     ]);
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -387,7 +386,7 @@ describe('loadPlugin', () => {
     writeFileSync(join(pluginDir, 'dist', 'tools.json'), JSON.stringify({ sdkVersion: '0.0.16', tools: validTools() }));
     writeFileSync(join(pluginDir, 'dist', 'adapter.iife.js'), '(function(){})()');
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -398,7 +397,7 @@ describe('loadPlugin', () => {
     const pluginDir = join(tmpDir, 'no-sdk');
     writePlugin(pluginDir, validPackageJson());
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -412,7 +411,7 @@ describe('loadPlugin', () => {
     writeFileSync(join(pluginDir, 'dist', 'tools.json'), JSON.stringify({ sdkVersion: '99.0.0', tools: validTools() }));
     writeFileSync(join(pluginDir, 'dist', 'adapter.iife.js'), '(function(){})()');
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -490,7 +489,7 @@ describe('loadPlugin — SVG icon extraction', () => {
       iconInactiveSvg: '<svg>inactive</svg>',
     });
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -514,7 +513,7 @@ describe('loadPlugin — SVG icon extraction', () => {
       ],
     });
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -540,7 +539,7 @@ describe('loadPlugin — SVG icon extraction', () => {
       iconInactiveSvg: true,
     });
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -579,7 +578,7 @@ describe('loadPlugin — SVG icon extraction', () => {
     );
     writeFileSync(join(pluginDir, 'dist', 'adapter.iife.js'), '(function(){})()');
 
-    const result = await loadPlugin(pluginDir, 'local', 'local');
+    const result = await loadPlugin(pluginDir, 'local');
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;

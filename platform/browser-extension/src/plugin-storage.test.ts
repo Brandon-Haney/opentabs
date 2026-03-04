@@ -51,8 +51,10 @@ const makeMeta = (name: string, overrides?: Partial<PluginMeta>): PluginMeta => 
   version: '1.0.0',
   displayName: name,
   urlPatterns: ['*://example.com/*'],
-  trustTier: 'local',
-  tools: [{ name: 'test-tool', displayName: 'Test Tool', description: 'A test tool', icon: 'wrench', enabled: true }],
+  permission: 'off',
+  tools: [
+    { name: 'test-tool', displayName: 'Test Tool', description: 'A test tool', icon: 'wrench', permission: 'auto' },
+  ],
   ...overrides,
 });
 

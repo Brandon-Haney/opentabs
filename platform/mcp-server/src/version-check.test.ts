@@ -71,7 +71,6 @@ const makePlugin = (name: string, overrides: Partial<RegisteredPlugin> = {}): Re
   version: '1.0.0',
   displayName: name,
   urlPatterns: [`https://${name}.example.com/*`],
-  trustTier: 'community',
   source: 'local' as const,
   iife: `(function(){})()`,
   tools: [],
@@ -231,7 +230,7 @@ describe('checkForUpdates', () => {
     mockSpawn.mockImplementation(() => createMockChild(0, '2.0.0\n', ''));
 
     const state = createState();
-    state.registry = buildRegistry([makePlugin('local-plugin', { trustTier: 'local', npmPackageName: undefined })], []);
+    state.registry = buildRegistry([makePlugin('local-plugin', { npmPackageName: undefined })], []);
 
     await checkForUpdates(state);
 
@@ -244,7 +243,7 @@ describe('checkForUpdates', () => {
 
     const state = createState();
     state.registry = buildRegistry(
-      [makePlugin('my-plugin', { version: '1.0.0', npmPackageName: 'opentabs-plugin-my' })],
+      [makePlugin('my-plugin', { version: '1.0.0', npmPackageName: 'opentabs-plugin-my', source: 'npm' })],
       [],
     );
 
@@ -261,7 +260,7 @@ describe('checkForUpdates', () => {
 
     const state = createState();
     state.registry = buildRegistry(
-      [makePlugin('my-plugin', { version: '1.0.0', npmPackageName: 'opentabs-plugin-my' })],
+      [makePlugin('my-plugin', { version: '1.0.0', npmPackageName: 'opentabs-plugin-my', source: 'npm' })],
       [],
     );
 
@@ -275,7 +274,7 @@ describe('checkForUpdates', () => {
 
     const state = createState();
     state.registry = buildRegistry(
-      [makePlugin('my-plugin', { version: '1.0.0', npmPackageName: 'opentabs-plugin-my' })],
+      [makePlugin('my-plugin', { version: '1.0.0', npmPackageName: 'opentabs-plugin-my', source: 'npm' })],
       [],
     );
 
@@ -303,8 +302,8 @@ describe('checkForUpdates', () => {
     const state = createState();
     state.registry = buildRegistry(
       [
-        makePlugin('plugin-a', { version: '1.0.0', npmPackageName: 'opentabs-plugin-a' }),
-        makePlugin('plugin-b', { version: '1.0.0', npmPackageName: 'opentabs-plugin-b' }),
+        makePlugin('plugin-a', { version: '1.0.0', npmPackageName: 'opentabs-plugin-a', source: 'npm' }),
+        makePlugin('plugin-b', { version: '1.0.0', npmPackageName: 'opentabs-plugin-b', source: 'npm' }),
       ],
       [],
     );

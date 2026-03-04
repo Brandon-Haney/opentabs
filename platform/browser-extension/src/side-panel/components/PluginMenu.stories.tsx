@@ -6,13 +6,19 @@ const mockNpmPlugin = (overrides?: Partial<PluginState>): PluginState => ({
   name: 'slack',
   displayName: 'Slack',
   version: '0.1.0',
-  trustTier: 'community',
+  permission: 'auto',
   source: 'npm',
   tabState: 'ready',
   urlPatterns: ['*://*.slack.com/*'],
   sdkVersion: '0.0.3',
   tools: [
-    { name: 'send_message', displayName: 'Send Message', description: 'Send a message', icon: 'send', enabled: true },
+    {
+      name: 'send_message',
+      displayName: 'Send Message',
+      description: 'Send a message',
+      icon: 'send',
+      permission: 'auto',
+    },
   ],
   ...overrides,
 });

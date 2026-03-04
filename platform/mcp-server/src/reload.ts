@@ -27,7 +27,6 @@ import { notifyToolListChanged, rebuildCachedBrowserTools, registerMcpHandlers }
 import { buildRegistry } from './registry.js';
 import { isCliSkipPermissions } from './skip-permissions.js';
 import type { CachedBrowserTool, ServerState } from './state.js';
-import { prefixedToolName } from './state.js';
 import { checkForUpdates } from './version-check.js';
 
 /** Metadata from a completed reload, stored on HotState for the /health endpoint */
@@ -57,8 +56,10 @@ const setReloadChain = (promise: Promise<void>): void => {
 
 /**
  * Remove stale entries from state maps after a registry swap.
- * Prunes tabMapping, activeDispatches, toolConfig, and outdatedPlugins
- * for plugins/tools that no longer exist in the current registry.
+ * Prunes tabMapping, activeDispatches, pluginPermissions (both
+ * plugin-level and per-tool entries), outdatedPlugins, log buffers,
+ * and activeNetworkCaptures for plugins/tools that no longer exist
+ * in the current registry.
  */
 const pruneStaleState = (state: ServerState): void => {
   for (const pluginName of state.tabMapping.keys()) {
@@ -73,22 +74,40 @@ const pruneStaleState = (state: ServerState): void => {
     }
   }
 
-  // Prune stale toolConfig entries for removed plugins/tools
-  const validToolNames = new Set<string>();
-  for (const plugin of state.registry.plugins.values()) {
-    for (const tool of plugin.tools) {
-      validToolNames.add(prefixedToolName(plugin.name, tool.name));
+  // Prune stale pluginPermissions entries for removed plugins,
+  // and prune stale per-tool overrides within surviving plugins.
+  const activePluginNames = new Set(state.registry.plugins.keys());
+  let prunedPluginPermissionsCount = 0;
+  for (const key of Object.keys(state.pluginPermissions)) {
+    if (key !== 'browser' && !activePluginNames.has(key)) {
+      Reflect.deleteProperty(state.pluginPermissions, key);
+      prunedPluginPermissionsCount++;
     }
   }
-  let prunedToolConfigCount = 0;
-  for (const key of Object.keys(state.toolConfig)) {
-    if (!validToolNames.has(key)) {
-      Reflect.deleteProperty(state.toolConfig, key);
-      prunedToolConfigCount++;
-    }
+  if (prunedPluginPermissionsCount > 0) {
+    log.info(`Pruned ${prunedPluginPermissionsCount} stale plugin permission entry/entries`);
   }
-  if (prunedToolConfigCount > 0) {
-    log.info(`Pruned ${prunedToolConfigCount} stale tool config entry/entries`);
+
+  // Prune per-tool overrides for tools that no longer exist in the plugin
+  for (const [pluginName, config] of Object.entries(state.pluginPermissions)) {
+    if (!config.tools) continue;
+    const plugin = pluginName === 'browser' ? null : state.registry.plugins.get(pluginName);
+    if (pluginName === 'browser') {
+      // Browser tool names are in cachedBrowserTools
+      const browserToolNames = new Set(state.cachedBrowserTools.map(bt => bt.name));
+      for (const toolName of Object.keys(config.tools)) {
+        if (!browserToolNames.has(toolName)) {
+          Reflect.deleteProperty(config.tools, toolName);
+        }
+      }
+    } else if (plugin) {
+      const pluginToolNames = new Set(plugin.tools.map(t => t.name));
+      for (const toolName of Object.keys(config.tools)) {
+        if (!pluginToolNames.has(toolName)) {
+          Reflect.deleteProperty(config.tools, toolName);
+        }
+      }
+    }
   }
 
   // Prune stale log buffers for removed plugins
@@ -113,20 +132,6 @@ const pruneStaleState = (state: ServerState): void => {
     if (!allTabIds.has(tabId)) {
       state.activeNetworkCaptures.delete(tabId);
     }
-  }
-
-  // Prune session permission rules for tools that no longer exist in the registry.
-  // Rules with tool=null (domain_all scope) are kept — they reference a domain, not a specific tool.
-  // Browser tool names (e.g., browser_execute_script) are never in registry.toolLookup (which only
-  // contains plugin tools), so they are checked separately against cachedBrowserTools.
-  const validBrowserToolNames = new Set(state.cachedBrowserTools.map(c => c.name));
-  const prevSessionPermissionsLength = state.sessionPermissions.length;
-  state.sessionPermissions = state.sessionPermissions.filter(
-    rule => rule.tool === null || state.registry.toolLookup.has(rule.tool) || validBrowserToolNames.has(rule.tool),
-  );
-  const prunedSessionPermissions = prevSessionPermissionsLength - state.sessionPermissions.length;
-  if (prunedSessionPermissions > 0) {
-    log.info(`Pruned ${prunedSessionPermissions} stale session permission rule(s)`);
   }
 };
 
@@ -213,11 +218,9 @@ const reloadCore = async ({ state, sessionServers, transports }: ReloadCoreArgs)
     // Compute all new state values locally before touching state.
     // This ensures an atomic swap: if any step throws, state retains its previous values.
     const newRegistry = registry;
-    const newToolConfig = { ...config.tools };
-    const newBrowserToolPolicy = { ...config.browserToolPolicy };
+    const newPluginPermissions = { ...config.plugins };
     const newPluginPaths = [...config.localPlugins];
     const newDiscoveryErrors = errors;
-    const newPermissions = config.permissions;
     const newSkipPermissions = isCliSkipPermissions() || config.skipPermissions === true;
 
     // Build the new cached browser tools on a staging object so a throw here
@@ -235,16 +238,14 @@ const reloadCore = async ({ state, sessionServers, transports }: ReloadCoreArgs)
     }
 
     log.info(
-      `Config loaded: ${config.localPlugins.length} local plugin path(s), ${Object.keys(config.tools).length} tool setting(s)`,
+      `Config loaded: ${config.localPlugins.length} local plugin path(s), ${Object.keys(config.plugins).length} plugin permission(s)`,
     );
 
     // All preparation succeeded — swap all state fields atomically.
     state.registry = newRegistry;
-    state.toolConfig = newToolConfig;
-    state.browserToolPolicy = newBrowserToolPolicy;
+    state.pluginPermissions = newPluginPermissions;
     state.pluginPaths = newPluginPaths;
     state.discoveryErrors = newDiscoveryErrors;
-    state.permissions = newPermissions;
     state.skipPermissions = newSkipPermissions;
     state.cachedBrowserTools = newCachedBrowserTools;
 
@@ -278,7 +279,7 @@ const reloadCore = async ({ state, sessionServers, transports }: ReloadCoreArgs)
     // never triggered a follow-up reload. startConfigWatching() records the current
     // file mtime, so the mtime poll also cannot detect them (it only sees future changes).
     // Compare the mtime startConfigWatching() just recorded with the pre-reload mtime:
-    // if it advanced, config.json was written during the reload and state.toolConfig
+    // if it advanced, config.json was written during the reload and state.pluginPermissions
     // reflects stale data — trigger a follow-up reload to apply the latest config.
     if (
       prevConfigMtime !== null &&

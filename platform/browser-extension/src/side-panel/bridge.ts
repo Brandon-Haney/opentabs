@@ -11,6 +11,7 @@ import type {
   ConfigStateBrowserTool,
   ConfigStateFailedPlugin,
   ConfigStatePlugin,
+  ToolPermission,
   WireToolDef,
 } from '@opentabs-dev/shared';
 import type { DisconnectReason } from '../extension-messages.js';
@@ -30,7 +31,6 @@ interface PluginSearchResult {
   description: string;
   version: string;
   author: string;
-  isOfficial: boolean;
 }
 
 /** Result returned after a successful plugin install or update */
@@ -48,10 +48,8 @@ interface PluginInstallResult {
 interface FullStateConfirmation {
   id: string;
   tool: string;
-  domain: string | null;
-  tabId?: number;
-  paramsPreview: string;
-  timeoutMs: number;
+  plugin: string;
+  params: Record<string, unknown>;
   receivedAt: number;
 }
 
@@ -62,7 +60,9 @@ interface FullStateResult {
   plugins: PluginState[];
   failedPlugins: FailedPluginState[];
   browserTools: BrowserToolState[];
+  browserPermission?: ToolPermission;
   serverVersion?: string;
+  skipPermissions?: boolean;
   pendingConfirmations?: FullStateConfirmation[];
 }
 
@@ -113,25 +113,17 @@ const sendBgMessage = <T>(message: Record<string, unknown>): Promise<T> =>
 /** Fetch full merged state from the background script's local caches */
 const getFullState = (): Promise<FullStateResult> => sendBgMessage<FullStateResult>({ type: 'bg:getFullState' });
 
-/** Toggle a single tool's enabled state */
-const setToolEnabled = (plugin: string, tool: string, enabled: boolean): Promise<unknown> =>
-  sendBgMessage({ type: 'bg:setToolEnabled', plugin, tool, enabled });
+/** Set a single tool's permission */
+const setToolPermission = (plugin: string, tool: string, permission: ToolPermission): Promise<unknown> =>
+  sendBgMessage({ type: 'bg:setToolPermission', plugin, tool, permission });
 
-/** Toggle all tools for a plugin */
-const setAllToolsEnabled = (plugin: string, enabled: boolean): Promise<unknown> =>
-  sendBgMessage({ type: 'bg:setAllToolsEnabled', plugin, enabled });
+/** Set all tools' permission for a plugin */
+const setAllToolsPermission = (plugin: string, permission: ToolPermission): Promise<unknown> =>
+  sendBgMessage({ type: 'bg:setAllToolsPermission', plugin, permission });
 
-/** Toggle a subset of tools for a plugin */
-const setToolsEnabled = (plugin: string, tools: string[], enabled: boolean): Promise<unknown> =>
-  sendBgMessage({ type: 'bg:setToolsEnabled', plugin, tools, enabled });
-
-/** Toggle a browser tool's enabled state */
-const setBrowserToolEnabled = (tool: string, enabled: boolean): Promise<unknown> =>
-  sendBgMessage({ type: 'bg:setBrowserToolEnabled', tool, enabled });
-
-/** Toggle all browser tools' enabled state in a single batch request */
-const setAllBrowserToolsEnabled = (enabled: boolean): Promise<unknown> =>
-  sendBgMessage({ type: 'bg:setAllBrowserToolsEnabled', enabled });
+/** Set a plugin's default permission */
+const setPluginPermission = (plugin: string, permission: ToolPermission): Promise<unknown> =>
+  sendBgMessage({ type: 'bg:setPluginPermission', plugin, permission });
 
 /** Search npm registry for plugins matching the given query */
 const searchPlugins = (query: string): Promise<{ results: PluginSearchResult[] }> =>
@@ -150,15 +142,11 @@ const updatePlugin = (name: string): Promise<PluginInstallResult> =>
   sendBgMessage<PluginInstallResult>({ type: 'bg:updatePlugin', name });
 
 /** Send a confirmation response to the MCP server via the background script (fire-and-forget) */
-const sendConfirmationResponse = (
-  id: string,
-  decision: 'allow_once' | 'allow_always' | 'deny',
-  scope?: 'tool_domain' | 'tool_all' | 'domain_all',
-): void => {
+const sendConfirmationResponse = (id: string, decision: 'allow' | 'deny', alwaysAllow?: boolean): void => {
   chrome.runtime
     .sendMessage({
       type: 'sp:confirmationResponse' as const,
-      data: { id, decision, ...(scope ? { scope } : {}) },
+      data: { id, decision, ...(alwaysAllow ? { alwaysAllow } : {}) },
     })
     .catch((err: unknown) => {
       console.warn('[opentabs:side-panel] Failed to send confirmation response:', err);
@@ -183,10 +171,8 @@ export {
   removePlugin,
   searchPlugins,
   sendConfirmationResponse,
-  setAllBrowserToolsEnabled,
-  setAllToolsEnabled,
-  setBrowserToolEnabled,
-  setToolEnabled,
-  setToolsEnabled,
+  setAllToolsPermission,
+  setPluginPermission,
+  setToolPermission,
   updatePlugin,
 };

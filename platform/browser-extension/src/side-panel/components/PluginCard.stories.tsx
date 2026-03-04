@@ -8,7 +8,7 @@ const mockPlugin = (overrides?: Partial<PluginState>): PluginState => ({
   name: 'slack',
   displayName: 'Slack',
   version: '0.1.0',
-  trustTier: 'local',
+  permission: 'auto',
   source: 'local',
   tabState: 'ready',
   urlPatterns: ['*://*.slack.com/*'],
@@ -19,21 +19,21 @@ const mockPlugin = (overrides?: Partial<PluginState>): PluginState => ({
       displayName: 'Send Message',
       description: 'Send a message',
       icon: 'send',
-      enabled: true,
+      permission: 'auto',
     },
     {
       name: 'list_channels',
       displayName: 'List Channels',
       description: 'List channels',
       icon: 'list',
-      enabled: true,
+      permission: 'auto',
     },
     {
       name: 'search',
       displayName: 'Search',
       description: 'Search messages',
       icon: 'search',
-      enabled: false,
+      permission: 'off',
     },
   ],
   ...overrides,
@@ -131,7 +131,7 @@ const MultiplePluginsDemo = () => {
           displayName: 'Create Issue',
           description: 'Create issue',
           icon: 'plus',
-          enabled: true,
+          permission: 'auto',
         },
       ],
     }),
@@ -147,7 +147,7 @@ const MultiplePluginsDemo = () => {
           displayName: 'Query Metrics',
           description: 'Query metrics',
           icon: 'bar-chart',
-          enabled: true,
+          permission: 'auto',
         },
       ],
     }),
@@ -166,7 +166,7 @@ const MultiplePlugins: Story = {
 };
 
 const WithMenuDemo = () => {
-  const [plugins, setPlugins] = useState([mockPlugin({ source: 'npm', trustTier: 'community', tabState: 'ready' })]);
+  const [plugins, setPlugins] = useState([mockPlugin({ source: 'npm', permission: 'auto', tabState: 'ready' })]);
   const plugin = plugins[0];
   if (!plugin) return null;
   return (
@@ -188,7 +188,7 @@ const WithMenuAndUpdateDemo = () => {
   const [plugins, setPlugins] = useState([
     mockPlugin({
       source: 'npm',
-      trustTier: 'community',
+      permission: 'auto',
       tabState: 'ready',
       update: {
         latestVersion: '0.2.0',
@@ -214,7 +214,7 @@ const WithMenuAndUpdate: Story = {
 };
 
 const RemovingStateDemo = () => {
-  const [plugins, setPlugins] = useState([mockPlugin({ source: 'npm', trustTier: 'community', tabState: 'ready' })]);
+  const [plugins, setPlugins] = useState([mockPlugin({ source: 'npm', permission: 'auto', tabState: 'ready' })]);
   const plugin = plugins[0];
   if (!plugin) return null;
   return (
@@ -242,7 +242,7 @@ const GroupedToolsDemo = () => {
           displayName: 'Send Message',
           description: 'Send a message to a channel or DM conversation',
           icon: 'send',
-          enabled: true,
+          permission: 'auto',
           group: 'Messages',
         },
         {
@@ -250,7 +250,7 @@ const GroupedToolsDemo = () => {
           displayName: 'Read Messages',
           description: 'Read recent messages from a channel',
           icon: 'message-square',
-          enabled: true,
+          permission: 'auto',
           group: 'Messages',
         },
         {
@@ -258,7 +258,7 @@ const GroupedToolsDemo = () => {
           displayName: 'Search Messages',
           description: 'Search messages across channels using keywords and filters',
           icon: 'search',
-          enabled: true,
+          permission: 'auto',
           group: 'Messages',
         },
         {
@@ -266,7 +266,7 @@ const GroupedToolsDemo = () => {
           displayName: 'Edit Message',
           description: 'Edit a previously sent message',
           icon: 'pencil',
-          enabled: false,
+          permission: 'off',
           group: 'Messages',
         },
         {
@@ -274,7 +274,7 @@ const GroupedToolsDemo = () => {
           displayName: 'List Channels',
           description: 'List all public and private channels in the workspace',
           icon: 'list',
-          enabled: true,
+          permission: 'auto',
           group: 'Channels',
         },
         {
@@ -282,7 +282,7 @@ const GroupedToolsDemo = () => {
           displayName: 'Create Channel',
           description: 'Create a new public or private channel',
           icon: 'plus',
-          enabled: true,
+          permission: 'auto',
           group: 'Channels',
         },
         {
@@ -290,7 +290,7 @@ const GroupedToolsDemo = () => {
           displayName: 'Get Channel Info',
           description: 'Get details about a channel including topic, purpose, and members',
           icon: 'info',
-          enabled: true,
+          permission: 'auto',
           group: 'Channels',
         },
         {
@@ -298,7 +298,7 @@ const GroupedToolsDemo = () => {
           displayName: 'List Users',
           description: 'List all users in the workspace',
           icon: 'users',
-          enabled: true,
+          permission: 'auto',
           group: 'Users',
         },
         {
@@ -306,7 +306,7 @@ const GroupedToolsDemo = () => {
           displayName: 'Get User Profile',
           description: 'Retrieve a user profile including display name, email, and timezone',
           icon: 'user',
-          enabled: true,
+          permission: 'auto',
           group: 'Users',
         },
         {
@@ -314,7 +314,7 @@ const GroupedToolsDemo = () => {
           displayName: 'Add Reaction',
           description: 'Add an emoji reaction to a message',
           icon: 'smile',
-          enabled: true,
+          permission: 'auto',
           group: 'Reactions',
         },
         {
@@ -322,7 +322,7 @@ const GroupedToolsDemo = () => {
           displayName: 'Pin Message',
           description: 'Pin a message to a channel',
           icon: 'pin',
-          enabled: false,
+          permission: 'off',
           group: 'Reactions',
         },
       ],
@@ -346,7 +346,7 @@ const MixedGroupedUngroupedDemo = () => {
           displayName: 'Send Message',
           description: 'Send a message to a channel',
           icon: 'send',
-          enabled: true,
+          permission: 'auto',
           group: 'Messages',
         },
         {
@@ -354,7 +354,7 @@ const MixedGroupedUngroupedDemo = () => {
           displayName: 'Read Messages',
           description: 'Read recent messages from a channel',
           icon: 'message-square',
-          enabled: true,
+          permission: 'auto',
           group: 'Messages',
         },
         {
@@ -362,7 +362,7 @@ const MixedGroupedUngroupedDemo = () => {
           displayName: 'List Channels',
           description: 'List all channels in the workspace',
           icon: 'list',
-          enabled: true,
+          permission: 'auto',
           group: 'Channels',
         },
         {
@@ -370,14 +370,14 @@ const MixedGroupedUngroupedDemo = () => {
           displayName: 'Upload File',
           description: 'Upload a file to a channel with an optional comment',
           icon: 'upload',
-          enabled: true,
+          permission: 'auto',
         },
         {
           name: 'open_dm',
           displayName: 'Open DM',
           description: 'Open a direct message conversation with a user',
           icon: 'message-circle',
-          enabled: true,
+          permission: 'auto',
         },
       ],
     }),
@@ -389,6 +389,17 @@ const MixedGroupedUngroupedDemo = () => {
 
 const MixedGroupedUngrouped: Story = {
   render: () => <MixedGroupedUngroupedDemo />,
+};
+
+const SkipPermissionsDemo = () => {
+  const [plugins, setPlugins] = useState([mockPlugin()]);
+  const plugin = plugins[0];
+  if (!plugin) return null;
+  return <PluginCard plugin={plugin} activeTools={new Set()} setPlugins={setPlugins} skipPermissions />;
+};
+
+const SkipPermissions: Story = {
+  render: () => <SkipPermissionsDemo />,
 };
 
 export default meta;
@@ -404,4 +415,5 @@ export {
   RemovingState,
   GroupedTools,
   MixedGroupedUngrouped,
+  SkipPermissions,
 };

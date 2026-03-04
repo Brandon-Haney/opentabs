@@ -110,9 +110,7 @@ export const isNewer = (current: string, latest: string): boolean => {
  * @param state - Server state containing the plugin registry and outdatedPlugins target
  */
 export const checkForUpdates = async (state: ServerState): Promise<void> => {
-  const npmPlugins = Array.from(state.registry.plugins.values()).filter(
-    p => p.trustTier !== 'local' && p.npmPackageName,
-  );
+  const npmPlugins = Array.from(state.registry.plugins.values()).filter(p => p.source !== 'local' && p.npmPackageName);
 
   if (npmPlugins.length === 0) return;
 

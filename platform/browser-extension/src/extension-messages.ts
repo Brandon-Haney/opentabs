@@ -1,4 +1,4 @@
-import type { PluginTabInfo, TabState, TrustTier, WireToolDef } from '@opentabs-dev/shared';
+import type { PluginTabInfo, TabState, ToolPermission, WireToolDef } from '@opentabs-dev/shared';
 
 // ---------------------------------------------------------------------------
 // Internal Chrome extension message types — discriminated union
@@ -111,51 +111,31 @@ export interface SpConfirmationResponseMessage {
   type: 'sp:confirmationResponse';
   data: {
     id: string;
-    decision: 'allow_once' | 'allow_always' | 'deny';
-    scope?: 'tool_domain' | 'tool_all' | 'domain_all';
+    decision: 'allow' | 'deny';
+    alwaysAllow?: boolean;
   };
 }
 
-/** Side panel → Background: confirmation timed out without user response */
-export interface SpConfirmationTimeoutMessage {
-  type: 'sp:confirmationTimeout';
-  id: string;
-}
-
-/** Side panel → Background: toggle a single tool's enabled state */
-export interface BgSetToolEnabledMessage {
-  type: 'bg:setToolEnabled';
+/** Side panel → Background: set a single tool's permission */
+export interface BgSetToolPermissionMessage {
+  type: 'bg:setToolPermission';
   plugin: string;
   tool: string;
-  enabled: boolean;
+  permission: ToolPermission;
 }
 
-/** Side panel → Background: toggle all tools for a plugin */
-export interface BgSetAllToolsEnabledMessage {
-  type: 'bg:setAllToolsEnabled';
+/** Side panel → Background: set all tools' permission for a plugin */
+export interface BgSetAllToolsPermissionMessage {
+  type: 'bg:setAllToolsPermission';
   plugin: string;
-  enabled: boolean;
+  permission: ToolPermission;
 }
 
-/** Side panel → Background: toggle a subset of tools for a plugin */
-export interface BgSetToolsEnabledMessage {
-  type: 'bg:setToolsEnabled';
+/** Side panel → Background: set a plugin's default permission */
+export interface BgSetPluginPermissionMessage {
+  type: 'bg:setPluginPermission';
   plugin: string;
-  tools: string[];
-  enabled: boolean;
-}
-
-/** Side panel → Background: toggle a browser tool's enabled state */
-export interface BgSetBrowserToolEnabledMessage {
-  type: 'bg:setBrowserToolEnabled';
-  tool: string;
-  enabled: boolean;
-}
-
-/** Side panel → Background: toggle all browser tools' enabled state */
-export interface BgSetAllBrowserToolsEnabledMessage {
-  type: 'bg:setAllBrowserToolsEnabled';
-  enabled: boolean;
+  permission: ToolPermission;
 }
 
 /** Side panel → Background: search npm registry for plugins */
@@ -197,11 +177,9 @@ export type InternalMessage =
   | WsGetStateMessage
   | WsSetUrlMessage
   | BgGetFullStateMessage
-  | BgSetToolEnabledMessage
-  | BgSetAllToolsEnabledMessage
-  | BgSetToolsEnabledMessage
-  | BgSetBrowserToolEnabledMessage
-  | BgSetAllBrowserToolsEnabledMessage
+  | BgSetToolPermissionMessage
+  | BgSetAllToolsPermissionMessage
+  | BgSetPluginPermissionMessage
   | BgSearchPluginsMessage
   | BgInstallPluginMessage
   | BgRemovePluginMessage
@@ -214,7 +192,6 @@ export type InternalMessage =
   | SpConnectionStateMessage
   | SpRelayMessage
   | SpConfirmationResponseMessage
-  | SpConfirmationTimeoutMessage
   | PortChangedMessage;
 
 /** Tab state info for a single plugin — shared shape used by tab.stateChanged payloads */
@@ -229,7 +206,7 @@ export interface PluginMeta {
   version: string;
   displayName: string;
   urlPatterns: string[];
-  trustTier: TrustTier;
+  permission: ToolPermission;
   sourcePath?: string;
   adapterHash?: string;
   adapterFile?: string;

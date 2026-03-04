@@ -4,12 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  normalizePluginName,
-  OFFICIAL_SCOPE,
-  PLUGIN_PREFIX,
-  resolvePluginPackageCandidates,
-} from '@opentabs-dev/shared';
+import { normalizePluginName, PLUGIN_PREFIX, resolvePluginPackageCandidates } from '@opentabs-dev/shared';
 import type { MockInstance } from 'vitest';
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
@@ -48,7 +43,7 @@ const createMockChild = (exitCode: number, stdoutData: string): EventEmitter => 
 
 describe('buildDirectLookupCandidates', () => {
   test('returns known official plugin packages when no query is provided', () => {
-    const expected = KNOWN_OFFICIAL_PLUGIN_SLUGS.map(slug => `${OFFICIAL_SCOPE}/${PLUGIN_PREFIX}${slug}`);
+    const expected = KNOWN_OFFICIAL_PLUGIN_SLUGS.map(slug => `@opentabs-dev/${PLUGIN_PREFIX}${slug}`);
     expect(buildDirectLookupCandidates()).toEqual(expected);
     expect(buildDirectLookupCandidates(undefined)).toEqual(expected);
   });

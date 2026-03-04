@@ -11,7 +11,7 @@ const mockPlugin = (overrides?: Partial<PluginState>): PluginState => ({
   name: 'slack',
   displayName: 'Slack',
   version: '0.1.0',
-  trustTier: 'local',
+  permission: 'auto',
   source: 'local',
   tabState: 'ready',
   urlPatterns: ['*://*.slack.com/*'],
@@ -22,14 +22,14 @@ const mockPlugin = (overrides?: Partial<PluginState>): PluginState => ({
       displayName: 'Send Message',
       description: 'Send a message to a channel',
       icon: 'send',
-      enabled: true,
+      permission: 'auto',
     },
     {
       name: 'list_channels',
       displayName: 'List Channels',
       description: 'List all channels in the workspace',
       icon: 'list',
-      enabled: true,
+      permission: 'auto',
     },
   ],
   ...overrides,
@@ -40,7 +40,6 @@ const mockNpmResult = (overrides?: Partial<PluginSearchResult>): PluginSearchRes
   description: 'OpenTabs plugin for Notion — read and write pages, databases, and blocks.',
   version: '1.0.0',
   author: 'opentabs-dev',
-  isOfficial: true,
   ...overrides,
 });
 
@@ -99,7 +98,6 @@ const NpmOnlyDemo = () => {
           name: '@opentabs-dev/opentabs-plugin-linear',
           description: 'OpenTabs plugin for Linear — manage issues, cycles, and projects.',
           version: '0.8.0',
-          isOfficial: false,
         }),
       ]}
       npmSearching={false}
@@ -129,7 +127,6 @@ const BothDemo = () => {
           description: 'Legacy Slack integration for OpenTabs.',
           version: '0.5.0',
           author: 'community',
-          isOfficial: false,
         }),
       ]}
       npmSearching={false}
@@ -203,7 +200,6 @@ const InstallingPluginDemo = () => {
           name: '@opentabs-dev/opentabs-plugin-github',
           description: 'OpenTabs plugin for GitHub — create issues, review PRs, and browse repos.',
           version: '1.1.0',
-          isOfficial: true,
         }),
       ]}
       npmSearching={false}
@@ -217,8 +213,8 @@ const InstallingPluginDemo = () => {
 const InstallingPlugin: Story = { render: () => <InstallingPluginDemo /> };
 
 const mockBrowserTools: BrowserToolState[] = [
-  { name: 'browser_list_tabs', description: 'List all open browser tabs', enabled: true },
-  { name: 'browser_screenshot_tab', description: 'Capture a screenshot of a tab', enabled: true },
+  { name: 'browser_list_tabs', description: 'List all open browser tabs', permission: 'auto' },
+  { name: 'browser_screenshot_tab', description: 'Capture a screenshot of a tab', permission: 'auto' },
 ];
 
 const WithBrowserToolsDemo = () => {
@@ -319,7 +315,6 @@ const AllStatesDemo = () => {
               description: 'Legacy Slack integration.',
               version: '0.5.0',
               author: 'community',
-              isOfficial: false,
             }),
           ]}
           npmSearching={false}

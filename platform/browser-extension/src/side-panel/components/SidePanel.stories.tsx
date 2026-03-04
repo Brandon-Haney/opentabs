@@ -8,6 +8,7 @@ import { Footer } from './Footer';
 import { PluginCard } from './PluginCard';
 import { PluginList } from './PluginList';
 import { Accordion } from './retro/Accordion';
+import { Alert } from './retro/Alert';
 import { Input } from './retro/Input';
 import { SearchResults } from './SearchResults';
 
@@ -19,7 +20,7 @@ const mockPlugin = (overrides?: Partial<PluginState>): PluginState => ({
   name: 'slack',
   displayName: 'Slack',
   version: '0.1.0',
-  trustTier: 'local',
+  permission: 'auto',
   source: 'local',
   tabState: 'ready',
   urlPatterns: ['*://*.slack.com/*'],
@@ -30,16 +31,22 @@ const mockPlugin = (overrides?: Partial<PluginState>): PluginState => ({
       displayName: 'Send Message',
       description: 'Send a message to a channel',
       icon: 'send',
-      enabled: true,
+      permission: 'auto',
     },
     {
       name: 'list_channels',
       displayName: 'List Channels',
       description: 'List all channels',
       icon: 'list',
-      enabled: true,
+      permission: 'auto',
     },
-    { name: 'search', displayName: 'Search', description: 'Search messages and files', icon: 'search', enabled: true },
+    {
+      name: 'search',
+      displayName: 'Search',
+      description: 'Search messages and files',
+      icon: 'search',
+      permission: 'auto',
+    },
   ],
   ...overrides,
 });
@@ -56,14 +63,14 @@ const githubPlugin = (): PluginState =>
         displayName: 'Create Issue',
         description: 'Create a new issue',
         icon: 'plus',
-        enabled: true,
+        permission: 'auto',
       },
       {
         name: 'list_prs',
         displayName: 'List PRs',
         description: 'List pull requests',
         icon: 'git-pull-request',
-        enabled: true,
+        permission: 'auto',
       },
     ],
   });
@@ -75,21 +82,21 @@ const datadogPlugin = (): PluginState =>
     urlPatterns: ['*://*.datadoghq.com/*'],
     tabState: 'unavailable',
     source: 'npm',
-    trustTier: 'community',
+    permission: 'auto',
     tools: [
       {
         name: 'query_metrics',
         displayName: 'Query Metrics',
         description: 'Query time-series metrics',
         icon: 'bar-chart',
-        enabled: true,
+        permission: 'auto',
       },
       {
         name: 'list_monitors',
         displayName: 'List Monitors',
         description: 'List active monitors',
         icon: 'activity',
-        enabled: true,
+        permission: 'auto',
       },
     ],
   });
@@ -106,28 +113,28 @@ const linearPlugin = (): PluginState =>
         displayName: 'Create Issue',
         description: 'Create a new issue',
         icon: 'plus',
-        enabled: true,
+        permission: 'auto',
       },
       {
         name: 'list_issues',
         displayName: 'List Issues',
         description: 'List issues in a project',
         icon: 'list',
-        enabled: true,
+        permission: 'auto',
       },
       {
         name: 'update_issue',
         displayName: 'Update Issue',
         description: 'Update an existing issue',
         icon: 'pencil',
-        enabled: true,
+        permission: 'auto',
       },
       {
         name: 'search_issues',
         displayName: 'Search Issues',
         description: 'Search across all issues',
         icon: 'search',
-        enabled: true,
+        permission: 'auto',
       },
     ],
   });
@@ -139,38 +146,50 @@ const jiraPlugin = (): PluginState =>
     urlPatterns: ['*://*.atlassian.net/*'],
     tabState: 'ready',
     source: 'npm',
-    trustTier: 'official',
+    permission: 'auto',
     tools: [
       {
         name: 'create_ticket',
         displayName: 'Create Ticket',
         description: 'Create a new Jira ticket',
         icon: 'plus',
-        enabled: true,
+        permission: 'auto',
       },
-      { name: 'search', displayName: 'Search', description: 'Search issues with JQL', icon: 'search', enabled: true },
+      {
+        name: 'search',
+        displayName: 'Search',
+        description: 'Search issues with JQL',
+        icon: 'search',
+        permission: 'auto',
+      },
       {
         name: 'get_sprint',
         displayName: 'Get Sprint',
         description: 'Get current sprint details',
         icon: 'zap',
-        enabled: true,
+        permission: 'auto',
       },
       {
         name: 'update_ticket',
         displayName: 'Update Ticket',
         description: 'Update a ticket',
         icon: 'pencil',
-        enabled: true,
+        permission: 'auto',
       },
       {
         name: 'list_boards',
         displayName: 'List Boards',
         description: 'List all boards',
         icon: 'layout-grid',
-        enabled: true,
+        permission: 'auto',
       },
-      { name: 'get_board', displayName: 'Get Board', description: 'Get board details', icon: 'trello', enabled: true },
+      {
+        name: 'get_board',
+        displayName: 'Get Board',
+        description: 'Get board details',
+        icon: 'trello',
+        permission: 'auto',
+      },
     ],
   });
 
@@ -180,12 +199,12 @@ const mockFailedPlugins: FailedPluginState[] = [
 ];
 
 const mockBrowserTools: BrowserToolState[] = [
-  { name: 'browser_list_tabs', description: 'List all open browser tabs', enabled: true },
-  { name: 'browser_open_tab', description: 'Open a new browser tab with a URL', enabled: true },
-  { name: 'browser_screenshot_tab', description: 'Capture a screenshot of a tab', enabled: true },
-  { name: 'browser_click_element', description: 'Click an element matching a CSS selector', enabled: true },
-  { name: 'browser_execute_script', description: 'Execute JavaScript in a tab', enabled: false },
-  { name: 'extension_get_state', description: 'Get extension internal state', enabled: true },
+  { name: 'browser_list_tabs', description: 'List all open browser tabs', permission: 'auto' },
+  { name: 'browser_open_tab', description: 'Open a new browser tab with a URL', permission: 'auto' },
+  { name: 'browser_screenshot_tab', description: 'Capture a screenshot of a tab', permission: 'auto' },
+  { name: 'browser_click_element', description: 'Click an element matching a CSS selector', permission: 'auto' },
+  { name: 'browser_execute_script', description: 'Execute JavaScript in a tab', permission: 'off' },
+  { name: 'extension_get_state', description: 'Get extension internal state', permission: 'auto' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -403,21 +422,21 @@ const AllToolsDisabledDemo = () => {
           displayName: 'Send Message',
           description: 'Send a message to a channel',
           icon: 'send',
-          enabled: false,
+          permission: 'off',
         },
         {
           name: 'list_channels',
           displayName: 'List Channels',
           description: 'List all channels',
           icon: 'list',
-          enabled: false,
+          permission: 'off',
         },
         {
           name: 'search',
           displayName: 'Search',
           description: 'Search messages and files',
           icon: 'search',
-          enabled: false,
+          permission: 'off',
         },
       ],
     }),
@@ -464,21 +483,18 @@ const mockNpmResults: PluginSearchResult[] = [
     description: 'OpenTabs plugin for Notion — manage pages, databases, and content blocks',
     version: '1.0.0',
     author: 'opentabs-dev',
-    isOfficial: true,
   },
   {
     name: '@opentabs-dev/opentabs-plugin-confluence',
     description: 'OpenTabs plugin for Confluence — search and edit wiki pages',
     version: '0.3.2',
     author: 'opentabs-dev',
-    isOfficial: true,
   },
   {
     name: 'opentabs-plugin-asana',
     description: 'Community plugin for Asana task management with full CRUD operations',
     version: '0.1.4',
     author: 'community-dev',
-    isOfficial: false,
   },
 ];
 
@@ -580,7 +596,7 @@ const pluginWithUpdate = (): PluginState =>
     name: 'datadog',
     displayName: 'Datadog',
     source: 'npm',
-    trustTier: 'community',
+    permission: 'auto',
     tabState: 'unavailable',
     urlPatterns: ['*://*.datadoghq.com/*'],
     update: { latestVersion: '0.2.0', updateCommand: 'npm install @opentabs-dev/opentabs-plugin-datadog@0.2.0' },
@@ -590,14 +606,14 @@ const pluginWithUpdate = (): PluginState =>
         displayName: 'Query Metrics',
         description: 'Query time-series metrics',
         icon: 'bar-chart',
-        enabled: true,
+        permission: 'auto',
       },
       {
         name: 'list_monitors',
         displayName: 'List Monitors',
         description: 'List active monitors',
         icon: 'activity',
-        enabled: true,
+        permission: 'auto',
       },
     ],
   });
@@ -833,6 +849,45 @@ const BrowserToolsOnlyDemo = () => {
 const BrowserToolsOnly: Story = { render: () => <BrowserToolsOnlyDemo /> };
 
 // ---------------------------------------------------------------------------
+// 28: Skip-permissions banner — warning shown when --dangerously-skip-permissions is active
+// ---------------------------------------------------------------------------
+
+const SkipPermissionsBannerDemo = () => {
+  const [plugins, setPlugins] = useState([mockPlugin(), githubPlugin()]);
+  const [browserTools, setBrowserTools] = useState(mockBrowserTools);
+  return (
+    <SidePanelShell>
+      <Alert variant="solid" status="warning" className="mx-4 mt-2">
+        <Alert.Title>PERMISSIONS BYPASSED</Alert.Title>
+        <Alert.Description>
+          All tools execute without approval.
+          <span className="mt-1 block font-mono text-xs">--dangerously-skip-permissions</span>
+        </Alert.Description>
+      </Alert>
+      <Accordion type="multiple" className="mt-2 mb-2 space-y-2">
+        <BrowserToolsCard
+          tools={browserTools}
+          activeTools={new Set()}
+          onToolsChange={updater => setBrowserTools(updater)}
+          serverVersion="0.0.42"
+          skipPermissions={true}
+        />
+      </Accordion>
+      <PluginList
+        plugins={plugins}
+        failedPlugins={[]}
+        activeTools={new Set()}
+        setPlugins={setPlugins}
+        toolFilter=""
+        skipPermissions={true}
+      />
+    </SidePanelShell>
+  );
+};
+
+const SkipPermissionsBanner: Story = { render: () => <SkipPermissionsBannerDemo /> };
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -862,4 +917,5 @@ export {
   PluginUpdating,
   WithBrowserTools,
   BrowserToolsOnly,
+  SkipPermissionsBanner,
 };

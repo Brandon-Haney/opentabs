@@ -380,7 +380,7 @@ const handlePendingPluginChange = async (
   pluginDir: string,
   callbacks: FileWatcherCallbacks,
 ): Promise<void> => {
-  const result = await loadPlugin(pluginDir, 'local', 'local');
+  const result = await loadPlugin(pluginDir, 'local');
   if (!isOk(result)) return; // Discovery still failing — keep watching silently
 
   const plugin = result.value;
@@ -713,7 +713,7 @@ const startFileWatching = (
   const loadedPaths = new Set<string>();
 
   // Watch successfully loaded local plugins
-  const localPlugins = Array.from(state.registry.plugins.values()).filter(p => p.trustTier === 'local' && p.sourcePath);
+  const localPlugins = Array.from(state.registry.plugins.values()).filter(p => p.source === 'local' && p.sourcePath);
   for (const plugin of localPlugins) {
     const srcPath = plugin.sourcePath;
     if (!srcPath) continue;

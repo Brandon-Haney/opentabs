@@ -4,9 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeEach, describe, expect, test } from 'vitest';
 import type { OpentabsConfig } from './config.js';
-import { loadConfig, saveConfig, saveToolConfig, writeAuthFile } from './config.js';
-import type { ServerState } from './state.js';
-import { isToolEnabled } from './state.js';
+import { loadConfig, saveConfig, savePluginPermissions, writeAuthFile } from './config.js';
 
 // Override OPENTABS_CONFIG_DIR for test isolation.
 // Config functions read this env var lazily on each call.
@@ -48,7 +46,7 @@ describe('loadConfig / saveConfig round-trip', () => {
     const config = await loadConfig();
 
     expect(config.localPlugins).toEqual([]);
-    expect(config.tools).toEqual({});
+    expect(config.plugins).toEqual({});
 
     // File was created on disk
     expect(existsSync(configPath)).toBe(true);
@@ -59,20 +57,16 @@ describe('loadConfig / saveConfig round-trip', () => {
 
     const custom: OpentabsConfig = {
       localPlugins: ['/path/to/plugin-a', '/path/to/plugin-b'],
-      tools: { slack_send_message: false, slack_read_messages: true },
-      browserToolPolicy: {},
-      permissions: {
-        trustedDomains: ['localhost', '127.0.0.1'],
-        sensitiveDomains: [],
-        toolPolicy: {},
-        domainToolPolicy: {},
+      plugins: {
+        slack: { permission: 'auto', tools: { send_message: 'ask' } },
+        discord: { permission: 'off' },
       },
     };
     await saveConfigWrapped(custom);
 
     const loaded = await loadConfig();
     expect(loaded.localPlugins).toEqual(custom.localPlugins);
-    expect(loaded.tools).toEqual(custom.tools);
+    expect(loaded.plugins).toEqual(custom.plugins);
   });
 
   test('filters non-string elements from localPlugins array', async () => {
@@ -80,7 +74,7 @@ describe('loadConfig / saveConfig round-trip', () => {
       configPath,
       JSON.stringify({
         localPlugins: ['/valid/path', 123, null, true, '/another/path'],
-        tools: {},
+        plugins: {},
       }),
     );
 
@@ -88,17 +82,53 @@ describe('loadConfig / saveConfig round-trip', () => {
     expect(config.localPlugins).toEqual(['/valid/path', '/another/path']);
   });
 
-  test('filters non-boolean values from tools object', async () => {
+  test('parses valid plugin permission entries and ignores invalid ones', async () => {
     await writeFile(
       configPath,
       JSON.stringify({
         localPlugins: [],
-        tools: { valid_tool: false, bad_tool: 'yes', another_valid: true, numeric: 1 },
+        plugins: {
+          slack: { permission: 'auto', tools: { send_message: 'ask' } },
+          invalid_perm: { permission: 'bogus' },
+          invalid_tool_perm: { tools: { foo: 'bogus' } },
+          valid_tools_only: { tools: { bar: 'off' } },
+          empty_obj: {},
+          not_an_object: 'string',
+        },
       }),
     );
 
     const config = await loadConfig();
-    expect(config.tools).toEqual({ valid_tool: false, another_valid: true });
+    expect(config.plugins).toEqual({
+      slack: { permission: 'auto', tools: { send_message: 'ask' } },
+      valid_tools_only: { tools: { bar: 'off' } },
+    });
+  });
+
+  test('migrates old-format config with tools/browserToolPolicy to empty plugins', async () => {
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        localPlugins: ['/some/plugin'],
+        tools: { slack_send_message: false, slack_read_messages: true },
+        browserToolPolicy: { browser_screenshot_tab: false },
+        permissions: {
+          trustedDomains: ['localhost'],
+          sensitiveDomains: [],
+          toolPolicy: {},
+          domainToolPolicy: {},
+        },
+      }),
+    );
+
+    const config = await loadConfig();
+    expect(config.localPlugins).toEqual(['/some/plugin']);
+    // Old tool/browserToolPolicy/permissions are discarded — plugins map is empty
+    expect(config.plugins).toEqual({});
+    // Old fields are not present on the new config shape
+    expect(config).not.toHaveProperty('tools');
+    expect(config).not.toHaveProperty('browserToolPolicy');
+    expect(config).not.toHaveProperty('permissions');
   });
 
   test('migrates local paths from legacy plugins array into localPlugins', async () => {
@@ -106,14 +136,12 @@ describe('loadConfig / saveConfig round-trip', () => {
       configPath,
       JSON.stringify({
         plugins: ['/local/plugin', './relative/plugin', 'opentabs-plugin-jira', '@myorg/opentabs-plugin-github'],
-        tools: {},
       }),
     );
 
     const config = await loadConfig();
     // Local paths are migrated, npm package names are dropped
     expect(config.localPlugins).toEqual(['/local/plugin', './relative/plugin']);
-    expect(config).not.toHaveProperty('plugins');
   });
 
   test('migrates Windows-style paths from legacy plugins array into localPlugins', async () => {
@@ -127,12 +155,10 @@ describe('loadConfig / saveConfig round-trip', () => {
           'D:/projects/plugin',
           'opentabs-plugin-npm',
         ],
-        tools: {},
       }),
     );
 
     const config = await loadConfig();
-    // Windows-style local paths are migrated, npm package names are dropped
     expect(config.localPlugins).toEqual([
       '.\\relative\\plugin',
       '..\\parent\\plugin',
@@ -146,7 +172,7 @@ describe('loadConfig / saveConfig round-trip', () => {
       configPath,
       JSON.stringify({
         localPlugins: ['/existing/plugin'],
-        tools: {},
+        plugins: {},
         npmPlugins: ['opentabs-plugin-jira', '@myorg/opentabs-plugin-github'],
       }),
     );
@@ -156,13 +182,12 @@ describe('loadConfig / saveConfig round-trip', () => {
     expect(config).not.toHaveProperty('npmPlugins');
   });
 
-  test('migration deduplicates local paths from plugins into localPlugins', async () => {
+  test('migration deduplicates local paths from plugins array into localPlugins', async () => {
     await writeFile(
       configPath,
       JSON.stringify({
         localPlugins: ['/already/here'],
         plugins: ['/already/here', '/new/plugin'],
-        tools: {},
       }),
     );
 
@@ -175,80 +200,94 @@ describe('loadConfig / saveConfig round-trip', () => {
       configPath,
       JSON.stringify({
         localPlugins: ['/some/plugin'],
-        tools: {},
       }),
     );
 
     const config = await loadConfig();
     expect(config.localPlugins).toEqual(['/some/plugin']);
-    expect(config).not.toHaveProperty('plugins');
+    expect(config.plugins).toEqual({});
+  });
+
+  test('default config has empty plugins map', async () => {
+    const config = await loadConfig();
+    expect(config.plugins).toEqual({});
     expect(config).not.toHaveProperty('npmPlugins');
   });
 
-  test('default config has no plugins or npmPlugins field', async () => {
+  test('preserves skipPermissions flag', async () => {
+    const custom: OpentabsConfig = {
+      localPlugins: [],
+      plugins: {},
+      skipPermissions: true,
+    };
+    await saveConfigWrapped(custom);
+
+    const loaded = await loadConfig();
+    expect(loaded.skipPermissions).toBe(true);
+  });
+
+  test('migrates skipConfirmation to skipPermissions', async () => {
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        localPlugins: [],
+        plugins: {},
+        skipConfirmation: true,
+      }),
+    );
+
     const config = await loadConfig();
-    expect(config).not.toHaveProperty('plugins');
-    expect(config).not.toHaveProperty('npmPlugins');
+    expect(config.skipPermissions).toBe(true);
   });
 });
 
-describe('tool config round-trip with isToolEnabled', () => {
+describe('savePluginPermissions round-trip', () => {
   beforeEach(async () => {
-    // Re-assert the env var before each test since the prior describe's
-    // afterAll restores it, and concurrent test files may also modify it.
     process.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
     await removeConfig();
   });
 
-  test('disabled tools survive save → load cycle and isToolEnabled returns false', async () => {
-    await loadConfig();
-
-    const config: OpentabsConfig = {
-      localPlugins: [],
-      tools: { slack_send: false, slack_read: true },
-      browserToolPolicy: {},
-      permissions: {
-        trustedDomains: ['localhost', '127.0.0.1'],
-        sensitiveDomains: [],
-        toolPolicy: {},
-        domainToolPolicy: {},
-      },
+  test('persists plugin permissions without overwriting localPlugins', async () => {
+    // Create initial config with localPlugins
+    const initial: OpentabsConfig = {
+      localPlugins: ['/my/plugin'],
+      plugins: {},
     };
-    await saveConfigWrapped(config);
+    await saveConfigWrapped(initial);
 
+    // Save new plugin permissions via the read-modify-write function
+    const state = { configWriteMutex: Promise.resolve() };
+    await savePluginPermissions(state, {
+      slack: { permission: 'auto' },
+      discord: { permission: 'ask', tools: { send_message: 'auto' } },
+    });
+
+    // Verify localPlugins are preserved and plugins are updated
     const loaded = await loadConfig();
-    expect(loaded.tools.slack_send).toBe(false);
-    expect(loaded.tools.slack_read).toBe(true);
-
-    // Verify isToolEnabled integration with loaded config
-    const stateWithConfig = { toolConfig: loaded.tools } as ServerState;
-    expect(isToolEnabled(stateWithConfig, 'slack_send')).toBe(false);
-    expect(isToolEnabled(stateWithConfig, 'slack_read')).toBe(true);
+    expect(loaded.localPlugins).toEqual(['/my/plugin']);
+    expect(loaded.plugins).toEqual({
+      slack: { permission: 'auto' },
+      discord: { permission: 'ask', tools: { send_message: 'auto' } },
+    });
   });
 
-  test('absent tools default to enabled via isToolEnabled', async () => {
-    await loadConfig();
-
-    const config: OpentabsConfig = {
+  test('overwrites previous plugin permissions completely', async () => {
+    const initial: OpentabsConfig = {
       localPlugins: [],
-      tools: { slack_send: false },
-      browserToolPolicy: {},
-      permissions: {
-        trustedDomains: ['localhost', '127.0.0.1'],
-        sensitiveDomains: [],
-        toolPolicy: {},
-        domainToolPolicy: {},
-      },
+      plugins: { slack: { permission: 'auto' } },
     };
-    await saveConfigWrapped(config);
+    await saveConfigWrapped(initial);
+
+    const state = { configWriteMutex: Promise.resolve() };
+    await savePluginPermissions(state, {
+      discord: { permission: 'off' },
+    });
 
     const loaded = await loadConfig();
-    const stateWithConfig = { toolConfig: loaded.tools } as ServerState;
-
-    // Tool not in config → isToolEnabled returns true (enabled by default)
-    expect(isToolEnabled(stateWithConfig, 'unknown_tool')).toBe(true);
-    // Disabled tool → isToolEnabled returns false
-    expect(isToolEnabled(stateWithConfig, 'slack_send')).toBe(false);
+    // Previous slack entry is gone — replaced by new plugins map
+    expect(loaded.plugins).toEqual({
+      discord: { permission: 'off' },
+    });
   });
 });
 
@@ -270,14 +309,7 @@ describe('saveConfig error propagation', () => {
     const state = { configWriteMutex: Promise.resolve() };
     const config: OpentabsConfig = {
       localPlugins: [],
-      tools: {},
-      browserToolPolicy: {},
-      permissions: {
-        trustedDomains: ['localhost', '127.0.0.1'],
-        sensitiveDomains: [],
-        toolPolicy: {},
-        domainToolPolicy: {},
-      },
+      plugins: {},
     };
 
     await expect(saveConfig(state, config)).rejects.toThrow();
@@ -293,14 +325,7 @@ describe('saveConfig error propagation', () => {
     const state = { configWriteMutex: Promise.resolve() };
     const config: OpentabsConfig = {
       localPlugins: ['/test/path'],
-      tools: {},
-      browserToolPolicy: {},
-      permissions: {
-        trustedDomains: ['localhost', '127.0.0.1'],
-        sensitiveDomains: [],
-        toolPolicy: {},
-        domainToolPolicy: {},
-      },
+      plugins: {},
     };
 
     // First write fails
@@ -316,35 +341,35 @@ describe('saveConfig error propagation', () => {
     expect(loaded.localPlugins).toEqual(['/test/path']);
   });
 
-  test.skipIf(isRoot)('saveToolConfig propagates write errors to the caller', async () => {
+  test.skipIf(isRoot)('savePluginPermissions propagates write errors to the caller', async () => {
     await loadConfig();
     await chmod(TEST_BASE_DIR, 0o555);
 
     const state = { configWriteMutex: Promise.resolve() };
 
-    await expect(saveToolConfig(state, { some_tool: false })).rejects.toThrow();
+    await expect(savePluginPermissions(state, { slack: { permission: 'off' } })).rejects.toThrow();
 
     // Restore permissions for cleanup
     await chmod(TEST_BASE_DIR, 0o700);
   });
 
-  test.skipIf(isRoot)('saveToolConfig mutex does not deadlock after a failed write', async () => {
+  test.skipIf(isRoot)('savePluginPermissions mutex does not deadlock after a failed write', async () => {
     await loadConfig();
     await chmod(TEST_BASE_DIR, 0o555);
 
     const state = { configWriteMutex: Promise.resolve() };
 
     // First write fails
-    await expect(saveToolConfig(state, { some_tool: false })).rejects.toThrow();
+    await expect(savePluginPermissions(state, { slack: { permission: 'off' } })).rejects.toThrow();
 
     // Restore permissions
     await chmod(TEST_BASE_DIR, 0o700);
 
     // Subsequent write succeeds — the mutex is not deadlocked
-    await saveToolConfig(state, { recovered_tool: true });
+    await savePluginPermissions(state, { discord: { permission: 'auto' } });
 
     const loaded = await loadConfig();
-    expect(loaded.tools).toEqual({ recovered_tool: true });
+    expect(loaded.plugins).toEqual({ discord: { permission: 'auto' } });
   });
 });
 

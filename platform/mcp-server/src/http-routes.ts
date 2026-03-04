@@ -17,7 +17,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { WsHandle } from '@opentabs-dev/shared';
 import { toErrorMessage } from '@opentabs-dev/shared';
-import { saveBrowserToolPolicy, saveToolConfig } from './config.js';
+import { savePluginPermissions } from './config.js';
 import { isDev } from './dev-mode.js';
 import type { McpCallbacks } from './extension-protocol.js';
 import {
@@ -60,13 +60,8 @@ const createMcpCallbacks = (
       notifyToolListChanged(srv);
     }
   },
-  onToolConfigPersist: () => {
-    saveToolConfig(state, { ...state.toolConfig }).catch(() => {
-      // Best-effort persistence — errors are non-fatal for in-memory state
-    });
-  },
-  onBrowserToolPolicyPersist: () => {
-    saveBrowserToolPolicy(state, { ...state.browserToolPolicy }).catch(() => {
+  onPluginPermissionsPersist: () => {
+    savePluginPermissions(state, { ...state.pluginPermissions }).catch(() => {
       // Best-effort persistence — errors are non-fatal for in-memory state
     });
   },
@@ -315,8 +310,9 @@ const handleHealth = async (
 
   const auditSummary = computeAuditSummary(state.auditLog);
 
+  const browserConfig = state.pluginPermissions.browser;
   const disabledBrowserTools = state.cachedBrowserTools
-    .filter(c => state.browserToolPolicy[c.name] === false)
+    .filter(c => (browserConfig?.tools?.[c.name] ?? browserConfig?.permission ?? 'off') === 'off')
     .map(c => c.name);
 
   const browserToolNames = state.cachedBrowserTools.map(c => c.name);

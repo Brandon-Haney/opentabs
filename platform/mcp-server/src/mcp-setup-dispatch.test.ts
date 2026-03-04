@@ -24,8 +24,7 @@ import { createState } from './state.js';
 /** No-op callbacks for handleExtensionMessage */
 const noopCallbacks = {
   onToolConfigChanged: () => {},
-  onToolConfigPersist: () => {},
-  onBrowserToolPolicyPersist: () => {},
+  onPluginPermissionsPersist: () => {},
   onPluginLog: () => {},
   onReload: () => Promise.resolve({ plugins: 0, durationMs: 0 }),
   queryExtension: () => Promise.resolve(undefined),
@@ -84,7 +83,6 @@ const createPlugin = (name: string, toolNames: string[]): RegisteredPlugin => ({
   version: '1.0.0',
   displayName: name,
   urlPatterns: [`https://${name}.example.com/*`],
-  trustTier: 'local',
   source: 'local' as const,
   iife: `(function(){/* ${name} */})()`,
   tools: toolNames.map(t => ({
@@ -143,6 +141,7 @@ describe('tools/call handler — browser tool path', () => {
       },
     ];
     rebuildCachedBrowserTools(state);
+    state.pluginPermissions = { browser: { tools: { browser_test: 'auto' } } };
 
     const { server, getCallHandler } = createMockServer();
     registerMcpHandlers(server, state);
@@ -211,7 +210,7 @@ describe('tools/call handler — browser tool path', () => {
   });
 });
 
-describe('tools/call handler — browser tool disabled via browserToolPolicy', () => {
+describe('tools/call handler — browser tool disabled via pluginPermissions', () => {
   test('disabled browser tool returns isError with "disabled via configuration" message', async () => {
     const state = createState();
     state.browserTools = [
@@ -223,7 +222,7 @@ describe('tools/call handler — browser tool disabled via browserToolPolicy', (
       },
     ];
     rebuildCachedBrowserTools(state);
-    state.browserToolPolicy = { browser_execute_script: false };
+    state.pluginPermissions = { browser: { tools: { browser_execute_script: 'off' } } };
 
     const { server, getCallHandler } = createMockServer();
     registerMcpHandlers(server, state);
@@ -235,7 +234,7 @@ describe('tools/call handler — browser tool disabled via browserToolPolicy', (
     };
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toBe('Tool browser_execute_script is disabled via configuration');
+    expect(result.content[0]?.text).toContain('currently disabled');
   });
 
   test('enabled browser tool dispatches normally', async () => {
@@ -249,7 +248,7 @@ describe('tools/call handler — browser tool disabled via browserToolPolicy', (
       },
     ];
     rebuildCachedBrowserTools(state);
-    state.browserToolPolicy = { browser_list_tabs: true };
+    state.pluginPermissions = { browser: { tools: { browser_list_tabs: 'auto' } } };
 
     const { server, getCallHandler } = createMockServer();
     registerMcpHandlers(server, state);
@@ -286,7 +285,7 @@ describe('tools/call handler — plugin tool not found / disabled', () => {
   test('plugin tool disabled returns isError', async () => {
     const state = createState();
     state.registry = buildRegistry([createPlugin('slack', ['send_message'])], []);
-    state.toolConfig = { slack_send_message: false };
+    state.pluginPermissions = { slack: { tools: { send_message: 'off' } } };
 
     const { server, getCallHandler } = createMockServer();
     registerMcpHandlers(server, state);
@@ -306,6 +305,7 @@ describe('tools/call handler — schema validation path', () => {
   test('schema compilation failure (validate is null) returns descriptive error', async () => {
     const state = createState();
     state.registry = buildRegistry([createPlugin('slack', ['send_message'])], []);
+    state.pluginPermissions = { slack: { tools: { send_message: 'auto' } } };
     const entry = state.registry.toolLookup.get('slack_send_message');
     if (!entry) throw new Error('Expected entry');
     entry.validate = null;
@@ -326,6 +326,7 @@ describe('tools/call handler — schema validation path', () => {
   test('validator throws returns "validation failed unexpectedly" message', async () => {
     const state = createState();
     state.registry = buildRegistry([createPlugin('slack', ['send_message'])], []);
+    state.pluginPermissions = { slack: { tools: { send_message: 'auto' } } };
     const entry = state.registry.toolLookup.get('slack_send_message');
     if (!entry) throw new Error('Expected entry');
     entry.validate = () => {
@@ -364,6 +365,7 @@ describe('tools/call handler — schema validation path', () => {
       },
     ];
     state.registry = buildRegistry([plugin], []);
+    state.pluginPermissions = { slack: { tools: { send_message: 'auto' } } };
 
     const { server, getCallHandler } = createMockServer();
     registerMcpHandlers(server, state);
@@ -383,6 +385,7 @@ describe('tools/call handler — concurrency and extension connection', () => {
   test('concurrency limit exceeded returns "Too many concurrent dispatches"', async () => {
     const state = createState();
     state.registry = buildRegistry([createPlugin('slack', ['send_message'])], []);
+    state.pluginPermissions = { slack: { tools: { send_message: 'auto' } } };
     state.activeDispatches.set('slack', 5);
 
     const { server, getCallHandler } = createMockServer();
@@ -401,6 +404,7 @@ describe('tools/call handler — concurrency and extension connection', () => {
   test('extension not connected returns "Extension not connected"', async () => {
     const state = createState();
     state.registry = buildRegistry([createPlugin('slack', ['send_message'])], []);
+    state.pluginPermissions = { slack: { tools: { send_message: 'auto' } } };
     // extensionWs is null by default in createState()
 
     const { server, getCallHandler } = createMockServer();
@@ -419,6 +423,7 @@ describe('tools/call handler — concurrency and extension connection', () => {
   test('activeDispatches counter decrements in finally block even on error', async () => {
     const state = createState();
     state.registry = buildRegistry([createPlugin('slack', ['send_message'])], []);
+    state.pluginPermissions = { slack: { tools: { send_message: 'auto' } } };
     state.extensionWs = createAutoRejectWs(state, {
       code: -32603,
       message: 'internal error',
@@ -436,6 +441,7 @@ describe('tools/call handler — concurrency and extension connection', () => {
   test('activeDispatches counter reaches 0 and entry is deleted from map', async () => {
     const state = createState();
     state.registry = buildRegistry([createPlugin('slack', ['send_message'])], []);
+    state.pluginPermissions = { slack: { tools: { send_message: 'auto' } } };
     state.extensionWs = createAutoResolveWs(state, {
       output: { ok: true },
     }) as unknown as typeof state.extensionWs;
@@ -455,6 +461,7 @@ describe('tools/call handler — dispatch success and error codes', () => {
   beforeEach(() => {
     state = createState();
     state.registry = buildRegistry([createPlugin('slack', ['send_message'])], []);
+    state.pluginPermissions = { slack: { tools: { send_message: 'auto' } } };
   });
 
   test('dispatch success returns sanitized output', async () => {

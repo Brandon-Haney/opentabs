@@ -1,15 +1,15 @@
+import type { ToolPermission } from '@opentabs-dev/shared';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import { ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { BrowserToolState } from '../bridge.js';
-import { setAllBrowserToolsEnabled, setBrowserToolEnabled } from '../bridge.js';
+import { setPluginPermission, setToolPermission } from '../bridge.js';
 import { ERROR_DISPLAY_DURATION_MS } from '../constants.js';
 import { BrowserToolsMenu } from './BrowserToolsMenu.js';
 import { PluginIcon } from './PluginIcon.js';
 import { Accordion } from './retro/Accordion.js';
 import { Alert } from './retro/Alert.js';
 import { Badge } from './retro/Badge.js';
-import { Switch } from './retro/Switch.js';
 import { ToolRow } from './ToolRow.js';
 
 /** Raw SVG string for the Chrome logo, rendered via PluginIcon's sanitized SVG path. */
@@ -50,12 +50,18 @@ const BrowserToolsCard = ({
   onToolsChange,
   toolFilter,
   serverVersion,
+  browserPermission = 'off',
+  onBrowserPermissionChange,
+  skipPermissions,
 }: {
   tools: BrowserToolState[];
   activeTools: Set<string>;
   onToolsChange: (updater: (tools: BrowserToolState[]) => BrowserToolState[]) => void;
   toolFilter?: string;
   serverVersion?: string;
+  browserPermission?: ToolPermission;
+  onBrowserPermissionChange?: (permission: ToolPermission) => void;
+  skipPermissions?: boolean;
 }) => {
   const [toggleError, setToggleError] = useState<string | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -70,49 +76,31 @@ const BrowserToolsCard = ({
     errorTimerRef.current = setTimeout(() => setToggleError(null), ERROR_DISPLAY_DURATION_MS);
   };
 
-  const allEnabled = tools.length > 0 && tools.every(t => t.enabled);
+  const preBrowserPermRef = useRef<ToolPermission>('off');
 
-  const handleToggleAll = (checked: boolean) => {
+  const handleBrowserPermissionChange = (newPermission: ToolPermission) => {
     const myVersion = ++toggleCounter.current;
-    onToolsChange(prev => {
-      preToggleRef.current = prev;
-      return prev.map(t => ({ ...t, enabled: checked }));
-    });
-    void setAllBrowserToolsEnabled(checked).catch(() => {
+    preBrowserPermRef.current = browserPermission;
+    onBrowserPermissionChange?.(newPermission);
+    void setPluginPermission('browser', newPermission).catch(() => {
       if (toggleCounter.current === myVersion) {
-        onToolsChange(() => preToggleRef.current);
+        onBrowserPermissionChange?.(preBrowserPermRef.current);
       }
-      showToggleError('Failed to toggle all browser tools');
+      showToggleError('Failed to update browser permission');
     });
   };
 
-  const handleToggleTool = (toolName: string, currentEnabled: boolean) => {
+  const handleToolPermissionChange = (toolName: string, newPermission: ToolPermission) => {
     const myVersion = ++toggleCounter.current;
-    const newEnabled = !currentEnabled;
     onToolsChange(prev => {
       preToggleRef.current = prev;
-      return prev.map(t => (t.name === toolName ? { ...t, enabled: newEnabled } : t));
+      return prev.map(t => (t.name === toolName ? { ...t, permission: newPermission } : t));
     });
-    void setBrowserToolEnabled(toolName, newEnabled).catch(() => {
+    void setToolPermission('browser', toolName, newPermission).catch(() => {
       if (toggleCounter.current === myVersion) {
         onToolsChange(() => preToggleRef.current);
       }
-      showToggleError(`Failed to toggle ${toolName}`);
-    });
-  };
-
-  const handleToggleGroup = (groupTools: BrowserToolState[], checked: boolean) => {
-    const myVersion = ++toggleCounter.current;
-    const groupToolNames = new Set(groupTools.map(t => t.name));
-    onToolsChange(prev => {
-      preToggleRef.current = prev;
-      return prev.map(t => (groupToolNames.has(t.name) ? { ...t, enabled: checked } : t));
-    });
-    void Promise.all(groupTools.map(t => setBrowserToolEnabled(t.name, checked))).catch(() => {
-      if (toggleCounter.current === myVersion) {
-        onToolsChange(() => preToggleRef.current);
-      }
-      showToggleError('Failed to toggle group');
+      showToggleError(`Failed to update ${toolName}`);
     });
   };
 
@@ -126,31 +114,6 @@ const BrowserToolsCard = ({
       )
     : tools;
   const hasActiveTool = tools.some(t => activeTools.has(`browser:${t.name}`));
-
-  // Group tools by their group field, preserving first-seen order
-  const hasAnyGroup = visibleTools.some(t => t.group);
-  const toolGroups: { name: string; tools: BrowserToolState[] }[] = [];
-  if (hasAnyGroup) {
-    const groupMap = new Map<string, BrowserToolState[]>();
-    for (const tool of visibleTools) {
-      const groupName = tool.group ?? 'Other';
-      let bucket = groupMap.get(groupName);
-      if (!bucket) {
-        bucket = [];
-        groupMap.set(groupName, bucket);
-      }
-      bucket.push(tool);
-    }
-    // Move 'Other' to the end if it exists
-    const otherBucket = groupMap.get('Other');
-    groupMap.delete('Other');
-    for (const [name, groupTools] of groupMap) {
-      toolGroups.push({ name, tools: groupTools });
-    }
-    if (otherBucket) {
-      toolGroups.push({ name: 'Other', tools: otherBucket });
-    }
-  }
 
   return (
     <Accordion.Item value="browser-tools">
@@ -181,7 +144,16 @@ const BrowserToolsCard = ({
             if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
           }}
           role="presentation">
-          <Switch checked={allEnabled} onCheckedChange={handleToggleAll} aria-label="Toggle all browser tools" />
+          <select
+            value={browserPermission}
+            onChange={e => handleBrowserPermissionChange(e.target.value as ToolPermission)}
+            disabled={skipPermissions}
+            aria-label="Permission for browser tools"
+            className="rounded border-2 border-border bg-card px-1 py-0.5 font-mono text-xs focus:shadow-[2px_2px_0_0_var(--color-border)] focus:outline-none">
+            <option value="off">Off</option>
+            <option value="ask">Ask</option>
+            <option value="auto">Auto</option>
+          </select>
         </div>
       </AccordionPrimitive.Header>
 
@@ -197,45 +169,19 @@ const BrowserToolsCard = ({
             {visibleTools.length} of {tools.length} tools
           </div>
         )}
-        {hasAnyGroup
-          ? toolGroups.map(group => (
-              <div key={group.name}>
-                <div className="flex items-center gap-2 border-border border-b bg-muted/20 px-3 py-1">
-                  <span className="flex-1 font-head text-muted-foreground text-xs uppercase tracking-wider">
-                    {group.name}
-                  </span>
-                  <Switch
-                    checked={group.tools.every(t => t.enabled)}
-                    onCheckedChange={checked => handleToggleGroup(group.tools, checked)}
-                    aria-label={`Toggle all ${group.name} tools`}
-                  />
-                </div>
-                {group.tools.map(tool => (
-                  <ToolRow
-                    key={tool.name}
-                    name={tool.name}
-                    displayName={toDisplayName(tool.name)}
-                    description={tool.description}
-                    icon={tool.icon ?? 'globe'}
-                    enabled={tool.enabled}
-                    active={activeTools.has(`browser:${tool.name}`)}
-                    onToggle={() => handleToggleTool(tool.name, tool.enabled)}
-                  />
-                ))}
-              </div>
-            ))
-          : visibleTools.map(tool => (
-              <ToolRow
-                key={tool.name}
-                name={tool.name}
-                displayName={toDisplayName(tool.name)}
-                description={tool.description}
-                icon={tool.icon ?? 'globe'}
-                enabled={tool.enabled}
-                active={activeTools.has(`browser:${tool.name}`)}
-                onToggle={() => handleToggleTool(tool.name, tool.enabled)}
-              />
-            ))}
+        {visibleTools.map(tool => (
+          <ToolRow
+            key={tool.name}
+            name={tool.name}
+            displayName={toDisplayName(tool.name)}
+            description={tool.description}
+            icon={tool.icon ?? 'globe'}
+            permission={tool.permission}
+            active={activeTools.has(`browser:${tool.name}`)}
+            disabled={skipPermissions}
+            onPermissionChange={handleToolPermissionChange}
+          />
+        ))}
       </Accordion.Content>
     </Accordion.Item>
   );

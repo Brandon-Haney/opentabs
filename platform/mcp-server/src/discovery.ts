@@ -1,8 +1,6 @@
 /** Plugin discovery orchestrator: resolve → load → register pipeline. */
 
-import path from 'node:path';
-import type { TrustTier } from '@opentabs-dev/shared';
-import { isErr, OFFICIAL_SCOPE, toErrorMessage } from '@opentabs-dev/shared';
+import { isErr, toErrorMessage } from '@opentabs-dev/shared';
 import type { LoadedPlugin } from './loader.js';
 import { loadPlugin } from './loader.js';
 import { log } from './logger.js';
@@ -22,16 +20,6 @@ interface DiscoveryError {
   readonly specifier: string;
   readonly error: string;
 }
-
-/** Determine trust tier for an npm plugin directory path based on its package name. */
-const npmTrustTier = (dir: string): TrustTier => {
-  // Extract the immediate parent directory name (e.g. "@opentabs-dev") from a path like
-  // "/usr/lib/node_modules/@opentabs-dev/opentabs-plugin-slack". Using basename(dirname(dir))
-  // avoids false-positives where /@opentabs-dev/ appears elsewhere in the path (e.g. a
-  // user's home directory) but is not the package scope.
-  if (path.basename(path.dirname(dir)) === OFFICIAL_SCOPE) return 'official';
-  return 'community';
-};
 
 /**
  * Discover plugins from auto-discovered npm globals and explicit local paths.
@@ -58,8 +46,7 @@ const discoverPlugins = async (localPlugins: string[], configDir: string): Promi
 
   // Phase 2 + 3: Resolve and load all plugins in parallel
   const loadNpm = npmDirs.map(async (dir): Promise<LoadedPlugin | null> => {
-    const trustTier = npmTrustTier(dir);
-    const loadResult = await loadPlugin(dir, trustTier, 'npm');
+    const loadResult = await loadPlugin(dir, 'npm');
     if (isErr(loadResult)) {
       errors.push({ specifier: dir, error: loadResult.error });
       failures.push({ path: dir, error: loadResult.error });
@@ -82,7 +69,7 @@ const discoverPlugins = async (localPlugins: string[], configDir: string): Promi
     }
 
     const dir = resolveResult.value;
-    const loadResult = await loadPlugin(dir, 'local', 'local');
+    const loadResult = await loadPlugin(dir, 'local');
     if (isErr(loadResult)) {
       errors.push({ specifier, error: loadResult.error });
       failures.push({ path: dir, error: loadResult.error });
@@ -129,7 +116,7 @@ const discoverPlugins = async (localPlugins: string[], configDir: string): Promi
   for (const plugin of registry.plugins.values()) {
     const toolNames = plugin.tools.map(t => t.name).join(', ');
     log.info(
-      `Discovered plugin: ${plugin.name} v${plugin.version} (${plugin.trustTier}, ${plugin.source}) from ${plugin.sourcePath ?? '(npm)'} — tools: [${toolNames}]`,
+      `Discovered plugin: ${plugin.name} v${plugin.version} (${plugin.source}) from ${plugin.sourcePath ?? '(npm)'} — tools: [${toolNames}]`,
     );
   }
 
@@ -138,5 +125,5 @@ const discoverPlugins = async (localPlugins: string[], configDir: string): Promi
   return { registry, errors };
 };
 
-export { discoverPlugins, npmTrustTier };
+export { discoverPlugins };
 export type { DiscoveryError, DiscoveryResult };

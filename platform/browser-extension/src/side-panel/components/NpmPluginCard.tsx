@@ -27,11 +27,6 @@ const NpmPluginCard = ({ plugin, installing, error, onInstall }: NpmPluginCardPr
             <Badge variant="default" size="sm">
               {plugin.version}
             </Badge>
-            {plugin.isOfficial && (
-              <Badge size="sm" className="bg-primary/20 text-primary-foreground">
-                OFFICIAL
-              </Badge>
-            )}
           </div>
           <span className="truncate font-sans text-muted-foreground text-xs">{plugin.author}</span>
         </div>

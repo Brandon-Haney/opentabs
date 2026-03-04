@@ -96,7 +96,7 @@ const makePlugin = (overrides?: Partial<PluginMeta>): PluginMeta => ({
   version: '1.0.0',
   displayName: 'Test Plugin',
   urlPatterns: ['*://example.com/*'],
-  trustTier: 'local',
+  permission: 'off',
   tools: [],
   ...overrides,
 });

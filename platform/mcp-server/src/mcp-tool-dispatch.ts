@@ -6,8 +6,10 @@
  * mcp-setup.ts delegates to these functions after resolving the tool name.
  */
 
+import type { PluginPermissionConfig } from '@opentabs-dev/shared';
 import { toErrorMessage } from '@opentabs-dev/shared';
 import type { ZodError } from 'zod';
+import { savePluginPermissions } from './config.js';
 import {
   dispatchToExtension,
   isDispatchError,
@@ -16,16 +18,12 @@ import {
   sendInvocationStart,
 } from './extension-protocol.js';
 import { log } from './logger.js';
-import { evaluatePermission } from './permissions.js';
 import { sanitizeErrorMessage } from './sanitize-error.js';
-import type { AuditEntry, CachedBrowserTool, ConfirmationDecision, ServerState, ToolLookupEntry } from './state.js';
-import { appendAuditEntry, isBrowserToolEnabled, isSessionAllowed } from './state.js';
+import type { AuditEntry, CachedBrowserTool, ServerState, ToolLookupEntry } from './state.js';
+import { appendAuditEntry, getToolPermission } from './state.js';
 
 /** Maximum concurrent tool dispatches per plugin to prevent tab performance degradation */
 const MAX_CONCURRENT_DISPATCHES_PER_PLUGIN = 5;
-
-/** Short timeout for domain resolution — fail fast if the tab is unresponsive */
-const DOMAIN_RESOLVE_TIMEOUT_MS = 5_000;
 
 /** Keys that could trigger prototype pollution in JSON deserialization */
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -43,64 +41,6 @@ const sanitizeOutput = (obj: unknown, depth = 0): unknown => {
     if (!DANGEROUS_KEYS.has(key)) result[key] = sanitizeOutput(value, depth + 1);
   }
   return result;
-};
-
-/**
- * Extract the target domain hostname for a browser tool call.
- *
- * - Tools with a `url` param (get_cookies, set_cookie, delete_cookies, open_tab):
- *   parse the hostname from the URL
- * - Tools with a `tabId` param: dispatch browser.getTabInfo to get the tab's URL,
- *   then parse the hostname
- * - Tools with neither: return null (observe-tier tools, extension diagnostics)
- */
-const resolveToolDomain = async (
-  _toolName: string,
-  args: Record<string, unknown>,
-  state: ServerState,
-): Promise<string | null> => {
-  // URL-based tools: parse domain from the url parameter
-  const urlArg = args.url;
-  if (typeof urlArg === 'string' && urlArg !== '') {
-    try {
-      return new URL(urlArg).hostname;
-    } catch {
-      return null;
-    }
-  }
-
-  // Tab-based tools: get the tab's URL via a lightweight dispatch
-  const tabIdArg = args.tabId;
-  if (typeof tabIdArg === 'number') {
-    try {
-      const tabInfo = (await dispatchToExtension(
-        state,
-        'browser.getTabInfo',
-        { tabId: tabIdArg },
-        { timeoutMs: DOMAIN_RESOLVE_TIMEOUT_MS },
-      )) as {
-        url?: string;
-      };
-      if (typeof tabInfo.url === 'string' && tabInfo.url !== '') {
-        return new URL(tabInfo.url).hostname;
-      }
-    } catch {
-      // Tab may be closed or unreachable — domain resolution is best-effort
-    }
-    return null;
-  }
-
-  return null;
-};
-
-/**
- * Truncate tool parameters into a short preview for the confirmation dialog.
- * Shows the first ~200 characters of the JSON-stringified args.
- */
-const truncateParamsPreview = (args: Record<string, unknown>): string => {
-  const json = JSON.stringify(args, null, 2);
-  if (json.length <= 200) return json;
-  return `${json.slice(0, 200)}…`;
 };
 
 /**
@@ -160,9 +100,79 @@ interface RequestHandlerExtra {
   sendNotification: (notification: { method: string; params?: Record<string, unknown> }) => Promise<void>;
 }
 
+/** Callbacks from the MCP setup layer for persisting config changes */
+interface DispatchCallbacks {
+  onToolConfigChanged: () => void;
+}
+
 /**
- * Handle a browser tool call: Zod validation, permission evaluation,
- * confirmation flow, execution, output sanitization, and audit logging.
+ * Run the 'ask' confirmation flow for a tool call.
+ * Sends a confirmation request to the extension, waits for the user's decision,
+ * and persists the permission change if alwaysAllow is selected.
+ *
+ * @returns 'allow' if the user approved, or a ToolCallResult error if denied/failed.
+ */
+const runAskFlow = async (
+  state: ServerState,
+  pluginName: string,
+  toolName: string,
+  params: Record<string, unknown>,
+  extra: RequestHandlerExtra,
+  callbacks: DispatchCallbacks,
+): Promise<'allow' | ToolCallResult> => {
+  // Send MCP progress notification to let the agent know we're waiting for approval
+  const progressToken = extra._meta?.progressToken;
+  if (progressToken !== undefined) {
+    extra
+      .sendNotification({
+        method: 'notifications/progress',
+        params: {
+          progressToken,
+          progress: 0,
+          total: 1,
+          message: 'Waiting for user approval in the OpenTabs side panel',
+        },
+      })
+      .catch(() => {
+        // Fire-and-forget
+      });
+  }
+
+  let decision: { action: 'allow' | 'deny'; alwaysAllow: boolean };
+  try {
+    decision = await sendConfirmationRequest(state, toolName, pluginName, params);
+  } catch {
+    return {
+      content: [
+        { type: 'text' as const, text: `Tool ${toolName} requires approval but the extension is not connected.` },
+      ],
+      isError: true,
+    };
+  }
+
+  if (decision.action === 'deny') {
+    return {
+      content: [{ type: 'text' as const, text: `Tool ${toolName} was denied by the user.` }],
+      isError: true,
+    };
+  }
+
+  // User approved — persist to 'auto' if alwaysAllow was selected
+  if (decision.alwaysAllow) {
+    const existing = state.pluginPermissions[pluginName];
+    const toolOverrides = { ...(existing?.tools ?? {}), [toolName]: 'auto' as const };
+    const updatedConfig: PluginPermissionConfig = { ...existing, tools: toolOverrides };
+    state.pluginPermissions[pluginName] = updatedConfig;
+    void savePluginPermissions(state, state.pluginPermissions);
+    callbacks.onToolConfigChanged();
+  }
+
+  return 'allow';
+};
+
+/**
+ * Handle a browser tool call: permission check, Zod validation,
+ * confirmation flow (for 'ask'), execution, output sanitization, and audit logging.
  */
 const handleBrowserToolCall = async (
   state: ServerState,
@@ -170,12 +180,25 @@ const handleBrowserToolCall = async (
   args: Record<string, unknown>,
   cachedBt: CachedBrowserTool,
   extra: RequestHandlerExtra,
+  callbacks: DispatchCallbacks,
 ): Promise<ToolCallResult> => {
-  if (!isBrowserToolEnabled(state, toolName)) {
+  const permission = getToolPermission(state, 'browser', toolName);
+
+  if (permission === 'off') {
     return {
-      content: [{ type: 'text' as const, text: `Tool ${toolName} is disabled via configuration` }],
+      content: [
+        {
+          type: 'text' as const,
+          text: `Tool ${toolName} is currently disabled. Ask the user to enable it in the OpenTabs side panel.`,
+        },
+      ],
       isError: true,
     };
+  }
+
+  if (permission === 'ask') {
+    const askResult = await runAskFlow(state, 'browser', toolName, args, extra, callbacks);
+    if (askResult !== 'allow') return askResult;
   }
 
   // Validate args through the tool's Zod input schema
@@ -185,91 +208,6 @@ const handleBrowserToolCall = async (
       content: [{ type: 'text' as const, text: formatZodError(parseResult.error) }],
       isError: true,
     };
-  }
-
-  // Permission evaluation: resolve domain, check session permissions,
-  // evaluate against policy, and hold for confirmation if needed.
-  const parsedArgs = parseResult.data;
-  const domain = await resolveToolDomain(toolName, parsedArgs, state);
-
-  // Check session permissions first (set by previous "Allow Always" actions)
-  const permission = isSessionAllowed(state.sessionPermissions, toolName, domain)
-    ? ('allow' as const)
-    : evaluatePermission(toolName, domain, state);
-
-  if (permission === 'deny') {
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `PERMISSION_DENIED: Tool "${toolName}" is denied${domain ? ` for domain "${domain}"` : ''} by permission policy. Ask the user to update their OpenTabs permission configuration if this tool is needed.`,
-        },
-      ],
-      isError: true,
-    };
-  }
-
-  if (permission === 'ask') {
-    // Send progress notification to MCP client (if progressToken is available)
-    const progressToken = extra._meta?.progressToken;
-    if (progressToken !== undefined) {
-      extra
-        .sendNotification({
-          method: 'notifications/progress',
-          params: {
-            progressToken,
-            progress: 0,
-            total: 1,
-            message: 'Waiting for human approval in the OpenTabs side panel...',
-          },
-        })
-        .catch(() => {
-          // Fire-and-forget
-        });
-    }
-
-    try {
-      const paramsPreview = truncateParamsPreview(parsedArgs);
-      const tabIdArg = parsedArgs.tabId;
-      const decision: ConfirmationDecision = await sendConfirmationRequest(
-        state,
-        toolName,
-        domain,
-        typeof tabIdArg === 'number' ? tabIdArg : undefined,
-        paramsPreview,
-      );
-
-      if (decision === 'deny') {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `PERMISSION_DENIED: The user denied "${toolName}"${domain ? ` on "${domain}"` : ''}. Inform the user that the operation was blocked by their decision.`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      // decision is 'allow_once' or 'allow_always' — proceed with dispatch
-      // (allow_always session rules are handled by handleConfirmationResponse in extension-protocol)
-    } catch (err) {
-      const msg = toErrorMessage(err);
-      if (msg === 'CONFIRMATION_TIMEOUT') {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `CONFIRMATION_TIMEOUT: Human approval for "${toolName}"${domain ? ` on "${domain}"` : ''} timed out after 30 seconds. The user did not respond in the OpenTabs side panel. Ask the user to try again.`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      return {
-        content: [{ type: 'text' as const, text: `Confirmation error: ${msg}` }],
-        isError: true,
-      };
-    }
   }
 
   // Send invocation start notification to extension (for side panel activity indicator)
@@ -306,7 +244,7 @@ const handleBrowserToolCall = async (
 };
 
 /**
- * Handle a plugin tool call: Ajv validation, concurrency limiting,
+ * Handle a plugin tool call: permission check, Ajv validation, concurrency limiting,
  * dispatch to extension, error formatting, and audit logging.
  *
  * The caller must have already verified the tool is callable via checkToolCallable.
@@ -319,7 +257,28 @@ const handlePluginToolCall = async (
   toolBaseName: string,
   lookup: ToolLookupEntry,
   extra: RequestHandlerExtra,
+  callbacks: DispatchCallbacks,
 ): Promise<ToolCallResult> => {
+  // Permission check — applies to all plugin tools
+  const permission = getToolPermission(state, pluginName, toolBaseName);
+
+  if (permission === 'off') {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `Tool ${toolName} is currently disabled. Ask the user to enable it in the OpenTabs side panel.`,
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  if (permission === 'ask') {
+    const askResult = await runAskFlow(state, pluginName, toolBaseName, args, extra, callbacks);
+    if (askResult !== 'allow') return askResult;
+  }
+
   // Extract platform-injected tabId before validation — the plugin's own
   // schema doesn't know about tabId, so it must be stripped before Ajv runs
   // (otherwise plugins with additionalProperties: false would reject it).
@@ -495,12 +454,5 @@ const handlePluginToolCall = async (
   }
 };
 
-export type { ToolCallResult, RequestHandlerExtra };
-export {
-  sanitizeOutput,
-  formatStructuredError,
-  formatZodError,
-  truncateParamsPreview,
-  handleBrowserToolCall,
-  handlePluginToolCall,
-};
+export type { ToolCallResult, RequestHandlerExtra, DispatchCallbacks };
+export { sanitizeOutput, formatStructuredError, formatZodError, handleBrowserToolCall, handlePluginToolCall };

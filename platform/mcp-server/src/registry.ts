@@ -7,7 +7,7 @@
  * is constructed and swapped atomically on ServerState.
  */
 
-import type { ManifestTool, TrustTier } from '@opentabs-dev/shared';
+import type { ManifestTool } from '@opentabs-dev/shared';
 import AjvValidator from 'ajv';
 import { log } from './logger.js';
 import type { FailedPlugin, PluginRegistry, RegisteredPlugin, ToolLookupEntry } from './state.js';
@@ -19,18 +19,6 @@ interface ToolLookupResult {
   readonly tool: ManifestTool;
   readonly lookup: ToolLookupEntry;
 }
-
-/** Map trust tier to a human-readable prefix for MCP tool descriptions */
-const trustTierPrefix = (tier: TrustTier): string => {
-  switch (tier) {
-    case 'official':
-      return '[Official] ';
-    case 'community':
-      return '[Community plugin — unverified] ';
-    case 'local':
-      return '[Local plugin] ';
-  }
-};
 
 /**
  * Compile a JSON Schema into an Ajv validate function.
@@ -120,5 +108,5 @@ const getTool = (registry: PluginRegistry, prefixedName: string): ToolLookupResu
   return { plugin, tool, lookup };
 };
 
-export { buildRegistry, emptyRegistry, getPlugin, getTool, trustTierPrefix };
+export { buildRegistry, emptyRegistry, getPlugin, getTool };
 export type { ToolLookupResult };

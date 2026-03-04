@@ -1,6 +1,6 @@
 /**
  * In-memory state for the MCP server.
- * Tracks plugins, tab-to-plugin mapping, tool config, and pending dispatches.
+ * Tracks plugins, tab-to-plugin mapping, plugin permissions, and pending dispatches.
  *
  * Fields that must survive hot reload (file watcher handles, timers) are stored
  * here rather than at module scope, because module-level variables reset to
@@ -8,10 +8,16 @@
  */
 
 import type { FSWatcher } from 'node:fs';
-import type { ManifestTool, PluginTabInfo, TabState, TrustTier, WsHandle } from '@opentabs-dev/shared';
+import type {
+  ManifestTool,
+  PluginPermissionConfig,
+  PluginTabInfo,
+  TabState,
+  ToolPermission,
+  WsHandle,
+} from '@opentabs-dev/shared';
 import { appendAuditEntryToDisk } from './audit-disk.js';
 import type { BrowserToolDefinition } from './browser-tools/definition.js';
-import type { PermissionsConfig } from './config.js';
 
 /**
  * Overrides the mutating methods of an existing Map to throw TypeError, preventing
@@ -89,7 +95,6 @@ export interface RegisteredPlugin {
   version: string;
   displayName: string;
   urlPatterns: string[];
-  trustTier: TrustTier;
   iife: string;
   tools: ManifestTool[];
   /** How this plugin was discovered: 'npm' (global auto-discovery) or 'local' (config localPlugins) */
@@ -158,9 +163,6 @@ export interface CachedBrowserTool {
   tool: BrowserToolDefinition;
 }
 
-/** Tool config: maps prefixed tool name → enabled boolean */
-export type ToolConfig = Record<string, boolean>;
-
 /** A plugin path that failed discovery, with a human-readable error */
 export interface FailedPlugin {
   path: string;
@@ -191,46 +193,20 @@ export interface PluginRegistry {
   readonly failures: readonly FailedPlugin[];
 }
 
-/** Confirmation timeout for human approval (30 seconds) */
-export const CONFIRMATION_TIMEOUT_MS = 30_000;
+/** Result of a user's confirmation decision */
+export interface ConfirmationDecision {
+  action: 'allow' | 'deny';
+  alwaysAllow: boolean;
+}
 
 /** Pending confirmation awaiting human approval */
 export interface PendingConfirmation {
   resolve: (decision: ConfirmationDecision) => void;
   reject: (error: Error) => void;
-  timerId: ReturnType<typeof setTimeout>;
   tool: string;
-  domain: string | null;
-  tabId?: number;
+  plugin: string;
+  params: Record<string, unknown>;
 }
-
-/** Decision from the side panel confirmation dialog */
-export type ConfirmationDecision = 'allow_once' | 'allow_always' | 'deny';
-
-/** Scope for "Allow Always" session permissions */
-export type ConfirmationScope = 'tool_domain' | 'tool_all' | 'domain_all';
-
-/** Session-scoped permission rule created by "Allow Always" */
-export interface SessionPermissionRule {
-  tool: string | null;
-  domain: string | null;
-  scope: ConfirmationScope;
-}
-
-/** Check if a tool+domain combination is allowed by session permissions */
-export const isSessionAllowed = (rules: SessionPermissionRule[], toolName: string, domain: string | null): boolean =>
-  rules.some(rule => {
-    switch (rule.scope) {
-      case 'tool_domain':
-        return rule.tool === toolName && rule.domain === domain;
-      case 'tool_all':
-        return rule.tool === toolName;
-      case 'domain_all':
-        return rule.domain === domain;
-      default:
-        return false;
-    }
-  });
 
 /** Record of a single tool invocation for audit logging */
 export interface AuditEntry {
@@ -262,17 +238,6 @@ export const appendAuditEntry = (state: ServerState, entry: AuditEntry): void =>
   void appendAuditEntryToDisk(entry);
 };
 
-/** Maximum entries retained in the session permissions array */
-export const MAX_SESSION_PERMISSIONS = 500;
-
-/** Push a session permission rule, trimming oldest entries beyond MAX_SESSION_PERMISSIONS. */
-export const pushSessionPermission = (state: ServerState, rule: SessionPermissionRule): void => {
-  state.sessionPermissions.push(rule);
-  if (state.sessionPermissions.length > MAX_SESSION_PERMISSIONS) {
-    state.sessionPermissions.splice(0, state.sessionPermissions.length - MAX_SESSION_PERMISSIONS);
-  }
-};
-
 /** Server state singleton — shared across hot reloads via globalThis */
 export interface ServerState {
   /**
@@ -286,10 +251,6 @@ export interface ServerState {
   registry: PluginRegistry;
   /** Tab-to-plugin mapping from extension */
   tabMapping: Map<string, TabMapping>;
-  /** Tool enabled/disabled config (in-memory, synced from ~/.opentabs/config.json) */
-  toolConfig: ToolConfig;
-  /** Browser tool enabled/disabled policy (in-memory, synced from ~/.opentabs/config.json) */
-  browserToolPolicy: Record<string, boolean>;
   /** Local plugin paths from config */
   pluginPaths: string[];
   /** Pending tool dispatches keyed by JSON-RPC id */
@@ -323,12 +284,10 @@ export interface ServerState {
   /** Whether permission prompts are bypassed (from CLI flag, env var, or config) */
   skipPermissions: boolean;
 
-  /** Permission rules for browser tool confirmation */
-  permissions: PermissionsConfig;
+  /** Per-plugin permission configuration from config.json */
+  pluginPermissions: Record<string, PluginPermissionConfig>;
   /** Pending confirmation requests awaiting human approval in the side panel */
   pendingConfirmations: Map<string, PendingConfirmation>;
-  /** Session-scoped permission rules set by "Allow Always" actions during this server lifetime */
-  sessionPermissions: SessionPermissionRule[];
   /** Whether an extension reload is pending (set when extension files are updated but extension is not connected) */
   pendingExtensionReload: boolean;
   /** Rate-limit timestamps for administrative endpoints — keyed by endpoint path, values are call timestamps (ms) */
@@ -340,7 +299,7 @@ export interface ServerState {
 }
 
 /** Increment when changing the type of an existing ServerState field */
-export const STATE_SCHEMA_VERSION = 4;
+export const STATE_SCHEMA_VERSION = 5;
 
 /** Frozen empty registry for initializing ServerState */
 export const EMPTY_REGISTRY: PluginRegistry = Object.freeze({
@@ -352,15 +311,12 @@ export const EMPTY_REGISTRY: PluginRegistry = Object.freeze({
 /**
  * Creates a fresh ServerState with all fields initialized to their defaults.
  *
- * @returns A new ServerState instance with empty collections, no WebSocket connection,
- *          and default permission rules (localhost/127.0.0.1 trusted).
+ * @returns A new ServerState instance with empty collections and no WebSocket connection.
  */
 export const createState = (): ServerState => ({
   _schemaVersion: STATE_SCHEMA_VERSION,
   registry: EMPTY_REGISTRY,
   tabMapping: new Map(),
-  toolConfig: {},
-  browserToolPolicy: {},
   pluginPaths: [],
   pendingDispatches: new Map(),
   extensionWs: null,
@@ -388,14 +344,8 @@ export const createState = (): ServerState => ({
   auditLog: [],
   skipPermissions: false,
 
-  permissions: {
-    trustedDomains: ['localhost', '127.0.0.1'],
-    sensitiveDomains: [],
-    toolPolicy: {},
-    domainToolPolicy: {},
-  },
+  pluginPermissions: {},
   pendingConfirmations: new Map(),
-  sessionPermissions: [],
   pendingExtensionReload: false,
   endpointCallTimestamps: new Map(),
   adaptersDirReady: false,
@@ -408,12 +358,11 @@ export const getNextRequestId = (): string => crypto.randomUUID();
 /** Get the prefixed tool name: plugin_tool */
 export const prefixedToolName = (plugin: string, tool: string): string => `${plugin}_${tool}`;
 
-/** Check if a tool is enabled in config. Tools are enabled by default — only
- *  explicitly disabled tools (set to false) are hidden from MCP clients. */
-export const isToolEnabled = (state: ServerState, prefixedName: string): boolean =>
-  state.toolConfig[prefixedName] !== false;
-
-/** Check if a browser tool is enabled via browserToolPolicy. Browser tools are
- *  enabled by default — only explicitly disabled tools (set to false) are hidden. */
-export const isBrowserToolEnabled = (state: ServerState, toolName: string): boolean =>
-  state.browserToolPolicy[toolName] !== false;
+/** Resolve the effective permission for a tool.
+ *  Resolution order: skipPermissions → per-tool override → plugin default → 'off'. */
+export const getToolPermission = (state: ServerState, pluginName: string, toolName: string): ToolPermission => {
+  if (state.skipPermissions) return 'auto';
+  const pluginConfig = state.pluginPermissions[pluginName];
+  if (!pluginConfig) return 'off';
+  return pluginConfig.tools?.[toolName] ?? pluginConfig.permission ?? 'off';
+};

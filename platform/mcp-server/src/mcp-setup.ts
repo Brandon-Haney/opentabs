@@ -24,11 +24,10 @@
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { log } from './logger.js';
-import type { RequestHandlerExtra } from './mcp-tool-dispatch.js';
+import type { DispatchCallbacks, RequestHandlerExtra } from './mcp-tool-dispatch.js';
 import { handleBrowserToolCall, handlePluginToolCall } from './mcp-tool-dispatch.js';
-import { trustTierPrefix } from './registry.js';
 import type { CachedBrowserTool, ServerState, ToolLookupEntry } from './state.js';
-import { isBrowserToolEnabled, isToolEnabled, prefixedToolName } from './state.js';
+import { getToolPermission, prefixedToolName } from './state.js';
 import { version } from './version.js';
 
 /**
@@ -110,11 +109,14 @@ const rebuildCachedBrowserTools = (state: ServerState): void => {
  *   2. Hot reload sequence in reload.ts — for existing sessions
  */
 const registerMcpHandlers = (server: McpServerInstance, state: ServerState): void => {
-  // Handler: tools/list — return enabled plugin tools + browser tools.
-  // Delegates to getEnabledToolsList() which filters disabled plugin tools
-  // and always includes browser tools.
+  const dispatchCallbacks: DispatchCallbacks = {
+    onToolConfigChanged: () => notifyToolListChanged(server),
+  };
+
+  // Handler: tools/list — return all plugin tools + browser tools with
+  // description prefixes indicating their permission state.
   server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: getEnabledToolsList(state),
+    tools: getAllToolsList(state),
   }));
 
   // Handler: tools/call — dispatch to extension or handle browser tool locally.
@@ -127,10 +129,10 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
     // Browser tools are few and fixed.
     const cachedBt = state.cachedBrowserTools.find(c => c.name === toolName);
     if (cachedBt) {
-      return handleBrowserToolCall(state, toolName, args, cachedBt, extra);
+      return handleBrowserToolCall(state, toolName, args, cachedBt, extra, dispatchCallbacks);
     }
 
-    // O(1) plugin tool lookup + enabled check via pre-built map
+    // O(1) plugin tool lookup via pre-built map
     const callableCheck = checkToolCallable(state, toolName);
     if (!callableCheck.ok) {
       return {
@@ -144,7 +146,7 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
     // Safe to assert: checkToolCallable verified the tool exists in registry.toolLookup
     const lookup = state.registry.toolLookup.get(toolName) as ToolLookupEntry;
 
-    return handlePluginToolCall(state, toolName, args, foundPlugin, foundTool, lookup, extra);
+    return handlePluginToolCall(state, toolName, args, foundPlugin, foundTool, lookup, extra, dispatchCallbacks);
   });
 };
 
@@ -181,11 +183,24 @@ const notifyToolListChanged = (server: McpServerInstance): void => {
 };
 
 /**
- * Returns the list of enabled tools for MCP tools/list responses.
- * Plugin tools are filtered by the toolConfig (disabled tools are excluded).
- * Browser tools are filtered by the browserToolPolicy (disabled tools are excluded).
+ * Returns the prefix to prepend to a tool's description based on its permission state.
+ * - 'off'  → '[Disabled] '
+ * - 'ask'  → '[Requires approval] '
+ * - 'auto' → '' (no prefix)
  */
-export const getEnabledToolsList = (
+const descriptionPrefix = (state: ServerState, pluginName: string, toolName: string): string => {
+  const permission = getToolPermission(state, pluginName, toolName);
+  if (permission === 'off') return '[Disabled] ';
+  if (permission === 'ask') return '[Requires approval] ';
+  return '';
+};
+
+/**
+ * Returns all tools for MCP tools/list responses regardless of permission state.
+ * Each tool's description is prefixed with its permission state indicator so that
+ * agents can see disabled tools and tell the user to enable them.
+ */
+export const getAllToolsList = (
   state: ServerState,
 ): Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> => {
   const tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> = [];
@@ -193,7 +208,7 @@ export const getEnabledToolsList = (
   for (const plugin of state.registry.plugins.values()) {
     for (const toolDef of plugin.tools) {
       const prefixed = prefixedToolName(plugin.name, toolDef.name);
-      if (!isToolEnabled(state, prefixed)) continue;
+      const prefix = descriptionPrefix(state, plugin.name, toolDef.name);
       const clonedSchema = structuredClone(toolDef.input_schema);
       const properties = (clonedSchema.properties ?? {}) as Record<string, unknown>;
       properties.tabId = {
@@ -205,17 +220,17 @@ export const getEnabledToolsList = (
       clonedSchema.properties = properties;
       tools.push({
         name: prefixed,
-        description: trustTierPrefix(plugin.trustTier) + toolDef.description,
+        description: `${prefix}${toolDef.description}`,
         inputSchema: clonedSchema,
       });
     }
   }
 
   for (const cached of state.cachedBrowserTools) {
-    if (!isBrowserToolEnabled(state, cached.name)) continue;
+    const prefix = descriptionPrefix(state, 'browser', cached.name);
     tools.push({
       name: cached.name,
-      description: cached.description,
+      description: `${prefix}${cached.description}`,
       inputSchema: cached.inputSchema,
     });
   }
@@ -240,18 +255,17 @@ export interface ToolCallableError {
 export type ToolCallableResult = ToolCallableOk | ToolCallableError;
 
 /**
- * Check if a prefixed plugin tool name is callable: exists in the tool lookup
- * and is enabled in the tool config. Browser tools are handled separately
- * (before this check) in the tools/call handler.
+ * Check if a prefixed plugin tool name is callable: verifies it exists in the
+ * tool lookup. Permission checks happen at dispatch time, not here. Browser
+ * tools are handled separately (before this check) in the tools/call handler.
  *
- * @param state - Server state containing the plugin registry and tool config
+ * @param state - Server state containing the plugin registry
  * @param prefixedToolName - Fully prefixed tool name (e.g., 'slack_send_message')
- * @returns An ok result with pluginName/toolName if callable, or an error result with a message
+ * @returns An ok result with pluginName/toolName if found, or an error result with a message
  */
 export const checkToolCallable = (state: ServerState, prefixedToolName: string): ToolCallableResult => {
   const lookup = state.registry.toolLookup.get(prefixedToolName);
   if (!lookup) return { ok: false, error: `Tool ${prefixedToolName} not found` };
-  if (!isToolEnabled(state, prefixedToolName)) return { ok: false, error: `Tool ${prefixedToolName} is disabled` };
   return { ok: true, pluginName: lookup.pluginName, toolName: lookup.toolName };
 };
 

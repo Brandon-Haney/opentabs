@@ -1,12 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import type { SessionPermissionRule } from './state.js';
 import {
   createState,
   EMPTY_REGISTRY,
   getNextRequestId,
-  isBrowserToolEnabled,
-  isSessionAllowed,
-  isToolEnabled,
+  getToolPermission,
   prefixedToolName,
   STATE_SCHEMA_VERSION,
 } from './state.js';
@@ -20,8 +17,6 @@ describe('createState', () => {
     expect(state.registry.plugins.size).toBe(0);
     expect(state.tabMapping).toBeInstanceOf(Map);
     expect(state.tabMapping.size).toBe(0);
-    expect(state.toolConfig).toEqual({});
-    expect(state.browserToolPolicy).toEqual({});
     expect(state.pluginPaths).toEqual([]);
     expect(state.pendingDispatches).toBeInstanceOf(Map);
     expect(state.pendingDispatches.size).toBe(0);
@@ -38,10 +33,9 @@ describe('createState', () => {
     expect(state.activeDispatches).toBeInstanceOf(Map);
     expect(state.activeDispatches.size).toBe(0);
     expect(state.skipPermissions).toBe(false);
-    expect(state.permissions.trustedDomains).toEqual(['localhost', '127.0.0.1']);
-    expect(state.permissions.sensitiveDomains).toEqual([]);
-    expect(state.permissions.toolPolicy).toEqual({});
-    expect(state.permissions.domainToolPolicy).toEqual({});
+    expect(state.pluginPermissions).toEqual({});
+    expect(state.pendingConfirmations).toBeInstanceOf(Map);
+    expect(state.pendingConfirmations.size).toBe(0);
   });
 
   test('returns a fresh state on each call (no shared references)', () => {
@@ -83,93 +77,57 @@ describe('prefixedToolName', () => {
   });
 });
 
-describe('isToolEnabled', () => {
-  test('returns true by default when tool is not in config', () => {
+describe('getToolPermission', () => {
+  test('returns "auto" when skipPermissions is true', () => {
     const state = createState();
-    expect(isToolEnabled(state, 'slack_send_message')).toBe(true);
+    state.skipPermissions = true;
+    expect(getToolPermission(state, 'slack', 'send_message')).toBe('auto');
   });
 
-  test('returns false when tool is explicitly disabled', () => {
+  test('returns "auto" when skipPermissions is true even with plugin config', () => {
     const state = createState();
-    state.toolConfig = { slack_send_message: false };
-    expect(isToolEnabled(state, 'slack_send_message')).toBe(false);
+    state.skipPermissions = true;
+    state.pluginPermissions = { slack: { permission: 'off' } };
+    expect(getToolPermission(state, 'slack', 'send_message')).toBe('auto');
   });
 
-  test('returns true when tool is explicitly enabled', () => {
+  test('returns "off" for unconfigured plugin', () => {
     const state = createState();
-    state.toolConfig = { slack_send_message: true };
-    expect(isToolEnabled(state, 'slack_send_message')).toBe(true);
+    expect(getToolPermission(state, 'slack', 'send_message')).toBe('off');
   });
 
-  test('only checks the specific tool name', () => {
+  test('returns plugin-level permission when tool is not overridden', () => {
     const state = createState();
-    state.toolConfig = { slack_send_message: false };
-    expect(isToolEnabled(state, 'slack_read_messages')).toBe(true);
+    state.pluginPermissions = { slack: { permission: 'ask' } };
+    expect(getToolPermission(state, 'slack', 'send_message')).toBe('ask');
   });
-});
 
-describe('isBrowserToolEnabled', () => {
-  test('returns true by default when tool is not in policy', () => {
+  test('returns per-tool override over plugin default', () => {
     const state = createState();
-    expect(isBrowserToolEnabled(state, 'browser_execute_script')).toBe(true);
+    state.pluginPermissions = {
+      slack: { permission: 'ask', tools: { send_message: 'auto' } },
+    };
+    expect(getToolPermission(state, 'slack', 'send_message')).toBe('auto');
   });
 
-  test('returns false when tool is explicitly disabled', () => {
+  test('returns plugin default for tool not in overrides', () => {
     const state = createState();
-    state.browserToolPolicy = { browser_execute_script: false };
-    expect(isBrowserToolEnabled(state, 'browser_execute_script')).toBe(false);
+    state.pluginPermissions = {
+      slack: { permission: 'auto', tools: { send_message: 'ask' } },
+    };
+    expect(getToolPermission(state, 'slack', 'read_messages')).toBe('auto');
   });
 
-  test('returns true when tool is explicitly enabled', () => {
+  test('returns "off" when plugin config has no permission and no tool override', () => {
     const state = createState();
-    state.browserToolPolicy = { browser_execute_script: true };
-    expect(isBrowserToolEnabled(state, 'browser_execute_script')).toBe(true);
+    state.pluginPermissions = { slack: {} };
+    expect(getToolPermission(state, 'slack', 'send_message')).toBe('off');
   });
 
-  test('only checks the specific tool name', () => {
+  test('returns "off" when plugin config has tools but not the requested one, and no plugin permission', () => {
     const state = createState();
-    state.browserToolPolicy = { browser_execute_script: false };
-    expect(isBrowserToolEnabled(state, 'browser_list_tabs')).toBe(true);
-  });
-});
-
-describe('isSessionAllowed', () => {
-  test('domain_all with null domain matches calls with null domain', () => {
-    const rules: SessionPermissionRule[] = [{ tool: null, domain: null, scope: 'domain_all' }];
-    expect(isSessionAllowed(rules, 'slack_send_message', null)).toBe(true);
-  });
-
-  test('domain_all with null domain does not match calls with a specific domain', () => {
-    const rules: SessionPermissionRule[] = [{ tool: null, domain: null, scope: 'domain_all' }];
-    expect(isSessionAllowed(rules, 'slack_send_message', 'example.com')).toBe(false);
-  });
-
-  test('domain_all with a non-null domain only matches calls with that same domain', () => {
-    const rules: SessionPermissionRule[] = [{ tool: null, domain: 'example.com', scope: 'domain_all' }];
-    expect(isSessionAllowed(rules, 'slack_send_message', 'example.com')).toBe(true);
-    expect(isSessionAllowed(rules, 'slack_send_message', 'other.com')).toBe(false);
-    expect(isSessionAllowed(rules, 'slack_send_message', null)).toBe(false);
-  });
-
-  test('tool_domain matches only when both tool and domain match', () => {
-    const rules: SessionPermissionRule[] = [
-      { tool: 'slack_send_message', domain: 'example.com', scope: 'tool_domain' },
-    ];
-    expect(isSessionAllowed(rules, 'slack_send_message', 'example.com')).toBe(true);
-    expect(isSessionAllowed(rules, 'slack_send_message', 'other.com')).toBe(false);
-    expect(isSessionAllowed(rules, 'slack_read_messages', 'example.com')).toBe(false);
-  });
-
-  test('tool_all matches any domain for the specific tool', () => {
-    const rules: SessionPermissionRule[] = [{ tool: 'slack_send_message', domain: null, scope: 'tool_all' }];
-    expect(isSessionAllowed(rules, 'slack_send_message', null)).toBe(true);
-    expect(isSessionAllowed(rules, 'slack_send_message', 'example.com')).toBe(true);
-    expect(isSessionAllowed(rules, 'slack_read_messages', null)).toBe(false);
-  });
-
-  test('returns false when no rules match', () => {
-    const rules: SessionPermissionRule[] = [];
-    expect(isSessionAllowed(rules, 'slack_send_message', 'example.com')).toBe(false);
+    state.pluginPermissions = { slack: { tools: { read_messages: 'auto' } } };
+    expect(getToolPermission(state, 'slack', 'send_message')).toBe('off');
   });
 });
 

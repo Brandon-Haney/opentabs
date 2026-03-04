@@ -12,9 +12,9 @@ Build a production-ready OpenTabs plugin for any web application. This skill gui
 
 ### Browser Tool Permissions
 
-Plugin development requires heavy use of browser tools (`browser_execute_script`, `browser_navigate_tab`, `browser_get_tab_content`, etc.) for exploring the target web app. By default, many of these tools require human approval in the Chrome extension side panel, with a 30-second timeout that blocks the AI agent.
+Plugin development requires heavy use of browser tools (`browser_execute_script`, `browser_navigate_tab`, `browser_get_tab_content`, etc.) for exploring the target web app. By default, all tools have permission `'off'` (disabled). Tools set to `'ask'` require human approval in the Chrome extension side panel before executing.
 
-**Before starting, ask the user if they want to enable `--dangerously-skip-permissions`** to bypass all confirmation dialogs during the development session. This dramatically speeds up the exploration and testing phases.
+**Before starting, ask the user if they want to enable `skipPermissions`** to bypass all permission checks during the development session. This sets all tools to `'auto'` (execute immediately), dramatically speeding up exploration and testing.
 
 Three ways to enable it:
 
@@ -22,9 +22,14 @@ Three ways to enable it:
 2. Set the env var: `OPENTABS_SKIP_PERMISSIONS=1`
 3. Add to `~/.opentabs/config.json`: `{ "skipPermissions": true }`
 
-**Warn the user**: this disables all human-in-the-loop safety for browser tool operations. It should only be used during active plugin development sessions and disabled afterward.
+Alternatively, set specific plugins or tools to `'auto'` in `~/.opentabs/config.json`:
+```json
+{ "plugins": { "browser": { "permission": "auto" } } }
+```
 
-If the user declines, plan for confirmation timeouts when using browser tools — use read-only tools like `opentabs_plugin_list_tabs` (no confirmation needed) where possible, and batch browser tool calls to minimize the number of approvals needed.
+**Warn the user**: `skipPermissions` disables all human-in-the-loop safety for tool operations. It should only be used during active plugin development sessions and disabled afterward.
+
+If the user declines, set browser tools to `'ask'` permission and plan for manual approvals — use read-only tools like `opentabs_plugin_list_tabs` (no approval needed when set to `'auto'`) where possible, and batch browser tool calls to minimize the number of approvals needed.
 
 ---
 
@@ -36,7 +41,7 @@ Before writing any code, study the existing plugin infrastructure. Use the Task 
    - `OpenTabsPlugin` abstract base class (name, displayName, description, urlPatterns, tools, isReady)
    - `defineTool({ name, displayName, description, icon, input, output, handle })` factory
    - `ToolError` static factories: `.auth()`, `.notFound()`, `.rateLimited()`, `.timeout()`, `.validation()`, `.internal()`
-   - SDK utilities: `fetchJSON`, `postJSON`, `getLocalStorage`, `waitForSelector`, `retry`, `sleep`, `log`, `parseRetryAfterMs`, `getCookie`
+   - SDK utilities: `fetchJSON`, `postJSON`, `getLocalStorage`, `waitForSelector`, `retry`, `sleep`, `log`
    - All plugin code runs in the **browser page context** (not server-side)
 
 2. **Study the Slack plugin** (`plugins/slack/`) — this is the canonical reference:
@@ -277,7 +282,7 @@ src/
 This is the most critical file. Follow this pattern:
 
 ```typescript
-import { ToolError, parseRetryAfterMs } from "@opentabs-dev/plugin-sdk";
+import { ToolError } from "@opentabs-dev/plugin-sdk";
 
 interface AppAuth {
   token: string;
@@ -377,8 +382,7 @@ export const api = async <T extends Record<string, unknown>>(
     const errorBody = (await response.text().catch(() => "")).substring(0, 512);
     if (response.status === 429) {
       const retryAfter = response.headers.get("Retry-After");
-      const retryMs =
-        retryAfter !== null ? parseRetryAfterMs(retryAfter) : undefined;
+      const retryMs = retryAfter ? Number(retryAfter) * 1000 : undefined;
       throw ToolError.rateLimited(
         `Rate limited: ${endpoint} — ${errorBody}`,
         retryMs,
@@ -527,64 +531,67 @@ npm run check        # build + type-check + lint + format:check
 
 ---
 
-## Phase 7: Fix Platform Friction and Update Skill
+## Phase 7: Document Friction and Feed Back
 
-This phase is **mandatory**. Every plugin build surfaces friction in the platform, SDK, and tooling. The goal is to **fix every issue at the source** — not document workarounds.
+This phase is **mandatory**. Every plugin build surfaces friction in the platform and new learnings about how to develop plugins well. Capturing them closes the loop.
 
-### 1. Identify Friction
+### 1. Document Friction Encountered
 
-While building and testing, track anything that slowed you down or required a workaround. After the plugin is working, classify each friction point:
+While building and testing, keep a running mental note of anything that slowed you down, required workarounds, or was confusing. After the plugin is working, think across **three dimensions of friction**:
 
-**Platform bugs** — things that were broken:
-
+**Platform bugs and rough edges** — things that were broken or wrong:
 - Scaffolder generated wrong versions, missing fields, or unhelpful defaults
-- A browser tool returned wrong results or failed silently
+- A platform API returned an unexpected shape or error
 - A build/lint/type-check failure caused by a platform issue (not a plugin bug)
+- A browser tool limitation that required a workaround
 
-**Missing SDK capabilities** — things you had to hand-roll that every plugin needs:
+**Missing SDK capabilities** — things you had to hand-roll that the SDK should provide:
+- Ask: *"If the SDK had a helper for X, would virtually every plugin developer hit this same need?"*
+- Examples of things that clear the bar: retry logic, cookie parsing, request timeout wiring, token persistence boilerplate — these are universal to all plugins regardless of what app they target
+- Examples of things that do NOT clear the bar: resolving a Notion workspace ID, normalizing a Discord message shape, handling Slack's rate limit headers — these are app-specific, not platform-level concerns
+- **The test is universality, not frequency.** Something that every plugin needs once beats something a few plugins need repeatedly. If the need is tied to a specific app's quirks, it belongs in that plugin — not in the SDK.
 
-- The test is **universality**: would virtually every plugin developer hit this same need?
-- Things that clear the bar: retry logic, cookie parsing, request timeout wiring, token persistence boilerplate
-- Things that do NOT: app-specific API normalization, app-specific auth extraction
+**Missing documentation or guidance** — things that required trial and error to discover:
+- Auth patterns not covered in the scaffold comments or skill
+- API behaviors that weren't obvious and required `browser_execute_script` experimentation
+- Conventions that exist in the codebase but aren't written down anywhere
 
-**Tooling gaps** — things the scaffolder, build tool, or CLI should handle but don't
+For each friction point, ask: **is this something the platform team can fix or add?** If yes, it belongs in a PRD.
 
-### 2. File PRDs to Fix Every Issue
+### 2. Create PRDs for Friction Fixes
 
-**Every friction point gets a PRD.** No workarounds, no "document it and move on." Use the `ralph` skill to create PRDs:
+Use the `ralph` skill to create a PRD for any actionable friction. Run it at the end once all friction is identified — batch related fixes into one PRD where they touch the same files:
 
 ```
-/ralph  fix <brief description of friction>
+/ralph  create PRD for <brief description of friction>
 ```
 
-Group related fixes into one PRD when they touch the same files. Each story must:
-
+Each PRD story must:
 - Target exactly one file or closely related set of files
-- Have a concrete acceptance criterion
+- Have a concrete acceptance criterion (not "works better")
 - Be completable by a fresh AI agent in one iteration
-- Include E2E tests where the fix affects runtime behavior
 
-The codebase and tooling should be perfect before the next plugin is built. If something slowed you down, it will slow down every future plugin build until it's fixed.
+### 3. Write Learnings Back to This Skill
 
-### 3. Update This Skill (Generic Knowledge Only)
+After building the plugin, update this file (`__SKILL__.md`) with any new patterns or gotchas discovered. Follow these rules:
 
-After filing PRDs, update this file (`__SKILL__.md`) with **universal knowledge about building plugins for diverse web services**. This skill teaches how to efficiently tackle different auth layers, API patterns, and browser environments.
+**Before adding anything:**
+- Read the existing Common Gotchas list and all named sections
+- Check whether the insight is already covered — if it is, skip or merge rather than add
+- Ask: *does this save meaningful time for the next agent, or is it obvious from context?*
 
 **What belongs here:**
-
-- Auth patterns for new classes of web apps (cookie-based, token-based, OAuth, CORS, etc.)
-- Browser environment constraints that apply to all plugins (SPA hydration, HttpOnly cookies, CSP, globalThis lifecycle)
-- API exploration patterns that work across different web services
-- Defensive coding patterns for untrusted API responses
+- Auth patterns specific to a new class of web app (not already covered)
+- API quirks that are non-obvious and will recur (e.g., response shape varies by endpoint)
+- Platform constraints that bite developers repeatedly
+- Concrete workarounds for known gotchas
 
 **What does NOT belong here:**
+- App-specific details that won't recur (e.g., "Notion uses space IDs")
+- Learnings already captured in an existing gotcha
+- Notes that belong in the plugin's own README
 
-- Platform bugs or tooling limitations — these get PRDs, not gotchas
-- App-specific details (e.g., "Jira uses ADF format for descriptions")
-- Things the scaffolder/SDK/CLI should handle — fix the tool instead
-- Workarounds for known issues — fix the issue instead
-
-**The litmus test:** If an issue can be fixed in the platform code, it does not belong in this skill. This skill contains only knowledge that is inherent to the problem domain (browsers, web APIs, auth patterns) — not knowledge about platform shortcomings.
+**Deduplication is required:** After adding anything, scan the full gotcha list for overlap with existing items. Merge if two gotchas teach the same lesson. The list should always be the shortest version that conveys maximum value.
 
 ---
 
@@ -719,39 +726,36 @@ After implementing all tools, test these scenarios:
 
 ### Browser Tool Confirmations
 
-When using browser tools during testing (like `browser_navigate_tab`, `browser_execute_script`), these require **human approval** in the Chrome extension side panel. The confirmation dialog times out after 30 seconds. Plan for this:
+When using browser tools during testing (like `browser_navigate_tab`, `browser_execute_script`), tools with `'ask'` permission require **human approval** in the Chrome extension side panel before executing.
 
-- Use `opentabs_plugin_list_tabs` (no confirmation needed) to check plugin state
-- Ask the user to watch the side panel when you need to call browser tools
-- If a tool times out with `CONFIRMATION_TIMEOUT`, ask the user to approve and retry
+- Use `opentabs_plugin_list_tabs` (set to `'auto'` by default with `skipPermissions`) to check plugin state
+- Ask the user to watch the side panel when you need to call tools set to `'ask'`
+- If a tool returns a "denied by the user" error, ask the user to approve and retry
 
 ---
 
-## Web Development Gotchas
+## Common Gotchas
 
-These are inherent constraints of the browser environment and web APIs — not platform issues. They apply to all plugins regardless of the target web app.
-
-### Browser Environment
-
-1. **All plugin code runs in the browser** — no Node.js APIs, no filesystem, no server-side logic.
-2. **SPAs hydrate asynchronously** — `isReady()` must poll, not just check once (500ms interval, 3-5s max wait).
-3. **Some apps delete browser APIs** — Discord deletes `window.localStorage`; use iframe fallback when `typeof window.localStorage === 'undefined'`.
+1. **All plugin code runs in the browser** — no Node.js APIs, no filesystem, no server-side logic
+2. **SPAs hydrate asynchronously** — `isReady()` must poll, not just check once (500ms interval, 3-5s max wait)
+3. **Some apps delete browser APIs** — Discord deletes `window.localStorage`; use iframe fallback when `typeof window.localStorage === 'undefined'`
 4. **Tokens must persist on globalThis** — module-level variables are reset when the extension reloads and re-injects the adapter. Use `globalThis.__openTabs.tokenCache.<pluginName>` instead.
-5. **`browser_execute_script` bypasses page CSP** — code is injected via extension-origin files, not subject to the page's Content Security Policy. Both `browser_execute_script` and the adapter IIFE work on strict-CSP pages like GitHub.
-
-### Auth and Cookies
-
-6. **HttpOnly cookies are invisible to plugin code** — `document.cookie` cannot read HttpOnly cookies (most session cookies). Detect auth indirectly: `<meta>` tags (e.g., `<meta name="user-login">`), non-HttpOnly indicator cookies, page globals (`window.__APP_STATE__`), or localStorage. API calls still work with `credentials: 'include'` — the browser sends HttpOnly cookies automatically. Persist the _user context_ (user ID, workspace ID) on globalThis even when the token itself is HttpOnly. See the "Cookie-Based Auth Pattern" section below.
-7. **Cross-origin API + cookies: check CORS first** — When the API is on a different subdomain, verify CORS. Three outcomes: (a) `allow-origin` + `allow-credentials: true` — direct `fetch()` with `credentials: 'include'` works; (b) `allow-origin: *` — credentials rejected, use token-based auth; (c) no CORS headers — blocked, find same-origin endpoints. The adapter runs in the page's MAIN world, so `credentials: 'include'` sends cookies like the app's own code.
-
-### API Patterns
-
-8. **Parse error response bodies before HTTP status** — web apps reuse 403 for both auth and permission errors. The error code in the body distinguishes them.
-9. **API responses may return arrays** — when the generic type expects `Record<string, unknown>` but the endpoint returns an array, use `Array.isArray(data) ? (data as T[]).map(...) : []`.
-10. **Internal API format may differ between endpoints** — The same app may wrap responses differently. Always verify each endpoint's response shape individually rather than assuming consistency. Build defensive accessor functions.
-11. **GraphQL APIs may differ between query types** — The same logical field may not exist on all connection types. Always verify each query independently against the live API.
-12. **CRDT-enabled workspaces may reject write operations** — Modern web apps are migrating to CRDTs. The older REST/transaction API may fail even on pages the user owns. Check for CRDT migration flags or alternative write endpoints.
-13. **Test every tool against the live browser** — Verify `plugin_list_tabs` first, then test read-only tools (search, list, get) before write tools (create, update, delete). This catches auth issues, API format mismatches, and schema mapping errors early.
+5. **API responses may return arrays** — when the generic type expects `Record<string, unknown>` but the endpoint returns an array, use `Array.isArray(data) ? (data as T[]).map(...) : []`
+6. **Parse error response bodies before HTTP status** — web apps reuse 403 for both auth and permission errors. The error code in the body distinguishes them.
+7. **Icons must be valid Lucide names** — TypeScript catches invalid ones at build time
+8. **Biome formatting** — always run `npm run format` after writing code; the project's config may differ from your defaults
+9. **The `opentabs` field in `package.json`** is how the platform discovers plugin metadata — `displayName`, `description`, and `urlPatterns` must be there
+10. **Browser tools require approval when set to 'ask'** — `browser_navigate_tab`, `browser_execute_script`, etc. show a confirmation dialog when their permission is `'ask'`. Use `skipPermissions` or set tools to `'auto'` during development.
+11. **`browser_execute_script` bypasses page CSP** — The tool injects code via a file URL (`chrome.scripting.executeScript({ files: [...] })`), which runs as extension-origin code and is not subject to the page's Content Security Policy. This means `browser_execute_script` works on all pages, including strict-CSP sites like GitHub. The adapter IIFE uses the same file-based injection mechanism — plugin code also bypasses CSP on strict pages.
+12. **HttpOnly cookies are invisible to plugin code** — `getCookie()` uses `document.cookie`, which cannot read HttpOnly cookies. Most session cookies are HttpOnly. Always check the cookie `httpOnly` property when exploring auth (use `browser_get_cookies`). For HttpOnly cookie auth, detect auth indirectly: from `<meta>` tags the server embeds in HTML (e.g., `<meta name="user-login">`), from non-HttpOnly indicator cookies (e.g., Notion's `notion_user_id`), from page globals (`window.__APP_STATE__`), or from localStorage. The API calls still work with `credentials: 'include'` because the browser sends HttpOnly cookies automatically — you just can't read them in JS. Auth persistence still matters — persist the *user context* (user ID, workspace ID) on globalThis even when the auth token itself is in HttpOnly cookies. See the "Cookie-Based Auth Pattern" section below.
+13. **Cross-origin API + cookies: check CORS before choosing fetch strategy** — When the API is on a different subdomain (e.g., `client-api.example.com` for an `example.com` plugin), verify CORS with `curl -sI -X OPTIONS <api-url> -H "Origin: https://example.com" -H "Access-Control-Request-Method: POST"`. Three outcomes: (a) `allow-origin: https://example.com` + `allow-credentials: true` — direct `fetch()` with `credentials: 'include'` works perfectly; the browser sends HttpOnly cookies and sets correct Origin/Referer headers; this is the ideal path and works for cross-subdomain APIs (same registrable domain); (b) `allow-origin: *` — `credentials: 'include'` is rejected by the browser; use token-based auth extracted from the page instead; (c) no CORS headers — cross-origin requests are blocked; find same-origin internal endpoints. **Always use direct in-page `fetch()` for cookie-based auth** — the adapter runs in the page's MAIN world, so from the browser's perspective it is page JavaScript; `credentials: 'include'` sends cookies just like the web app's own code does.
+14. **Scaffolder uses double quotes; Biome wants single quotes** — The `opentabs plugin create` scaffold generates TypeScript with double quotes, but the Biome config uses `quoteStyle: 'single'`. Always run `npm run format` immediately after scaffolding.
+15. **Internal API format may differ between endpoints** — The same app may wrap API responses differently across endpoints. Example: Notion's `getRecordValues` returns `block[id].value` (direct), while `queryCollection` returns `block[id].value.value` (extra wrapper with `role` field). Always verify the response shape of each endpoint individually by inspecting the actual response in `browser_execute_script` rather than assuming consistency. Build defensive accessor functions or check both nesting levels.
+16. **CRDT-enabled workspaces may reject write operations** — Modern web apps are migrating to CRDTs for real-time collaboration. The older `submitTransaction` API may fail with "User does not have edit access" even on pages the user owns. This is because the CRDT system requires operations in a different format. When write operations fail unexpectedly, check if the app has a CRDT migration flag or a different write endpoint.
+17. **`setPersistedToken` must avoid `??=` assignment-in-expression** — The Biome lint rule `noAssignInExpressions` forbids `(obj.prop ??= value)`. Use explicit if-checks instead: `if (!obj.prop) obj.prop = value`.
+18. **Scaffolder `package.json` needs manual adjustments** — The scaffold creates a minimal `package.json` that is missing fields that official plugins need: scoped `@opentabs-dev/` package name, matching version with platform, `publishConfig`, `jiti` dev dependency, correct `zod` version matching other plugins. Always compare with an existing plugin's `package.json` and align.
+19. **GraphQL APIs may differ between query types** — The same logical field may not exist on all connection types. Example: Linear's `searchIssues` supports `totalCount` but `issues` (the filter-based query) does not. Similarly, `orderBy` enum values vary between connections. Always verify each GraphQL query independently against the live API rather than assuming consistency across query types.
+20. **Test every tool against the live browser** — The `opentabs_plugin_list_tabs` tool is the first thing to verify (no confirmation needed). Then systematically test read-only tools (search, list, get) before write tools (create, update, delete). This catches auth issues, API format mismatches, and schema mapping errors early.
 
 ---
 
@@ -768,32 +772,29 @@ const getAuth = (): Auth | null => {
   if (persisted) return persisted;
 
   // Check non-HttpOnly cookies for user context
-  const userId = getCookie("user_id");
+  const userId = getCookie('user_id');
   if (!userId) return null;
 
   // Resolve workspace/space/org context from localStorage or API
   const contextId = getContextFromLocalStorage();
-  const auth: Auth = { userId, contextId: contextId ?? "" };
+  const auth: Auth = { userId, contextId: contextId ?? '' };
   setPersistedAuth(auth);
   return auth;
 };
 
 // API calls use credentials: 'include' — the browser sends HttpOnly cookies automatically
-const api = async <T>(
-  endpoint: string,
-  body: Record<string, unknown>,
-): Promise<T> => {
+const api = async <T>(endpoint: string, body: Record<string, unknown>): Promise<T> => {
   const auth = getAuth();
-  if (!auth) throw ToolError.auth("Not authenticated");
+  if (!auth) throw ToolError.auth('Not authenticated');
 
   const response = await fetch(`https://app.example.com/api/${endpoint}`, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      "Content-Type": "application/json",
-      "x-active-user": auth.userId, // Some apps need explicit user headers
+      'Content-Type': 'application/json',
+      'x-active-user': auth.userId,  // Some apps need explicit user headers
     },
     body: JSON.stringify(body),
-    credentials: "include", // HttpOnly cookies sent automatically
+    credentials: 'include',  // HttpOnly cookies sent automatically
     signal: AbortSignal.timeout(30_000),
   });
   // ... error handling ...

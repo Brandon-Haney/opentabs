@@ -296,7 +296,7 @@ describe('handleExtensionCheckAdapter', () => {
       version: '1.0.0',
       displayName: 'Test Plugin',
       urlPatterns: ['https://example.com/*'],
-      trustTier: 'local',
+      permission: 'off',
       tools: [],
     } as Awaited<ReturnType<typeof getPluginMeta>>);
     vi.mocked(findAllMatchingTabs).mockResolvedValueOnce([{ id: 200, url: 'https://example.com' } as chrome.tabs.Tab]);
@@ -327,7 +327,7 @@ describe('handleExtensionCheckAdapter', () => {
       version: '1.0.0',
       displayName: 'Test Plugin',
       urlPatterns: ['https://example.com/*'],
-      trustTier: 'local',
+      permission: 'off',
       tools: [],
     } as Awaited<ReturnType<typeof getPluginMeta>>);
     vi.mocked(findAllMatchingTabs).mockResolvedValueOnce([{ id: 100, url: 'https://example.com' } as chrome.tabs.Tab]);

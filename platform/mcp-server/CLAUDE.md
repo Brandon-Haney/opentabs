@@ -26,13 +26,13 @@ platform/mcp-server/src/
 
 ## Plugin Discovery
 
-The MCP server discovers plugins from two sources: (1) **npm auto-discovery** scans global `node_modules` for packages matching `opentabs-plugin-*` and `@*/opentabs-plugin-*` patterns, and (2) **local plugins** listed in the `localPlugins` array in `~/.opentabs/config.json` (filesystem paths to plugins under active development). Each discovered plugin is loaded by reading `package.json` (with an `opentabs` field for metadata), `dist/adapter.iife.js` (the adapter bundle), and `dist/tools.json` (tool schemas). Local plugins override npm plugins of the same name. Discovery is a four-phase pipeline: resolve → load → determine trust tier → build an immutable registry.
+The MCP server discovers plugins from two sources: (1) **npm auto-discovery** scans global `node_modules` for packages matching `opentabs-plugin-*` and `@*/opentabs-plugin-*` patterns, and (2) **local plugins** listed in the `localPlugins` array in `~/.opentabs/config.json` (filesystem paths to plugins under active development). Each discovered plugin is loaded by reading `package.json` (with an `opentabs` field for metadata), `dist/adapter.iife.js` (the adapter bundle), and `dist/tools.json` (tool schemas). Local plugins override npm plugins of the same name. Discovery is a four-phase pipeline: resolve → load → merge → build an immutable registry.
 
 ## Dispatch Pipeline
 
 ### Tool Dispatch
 
-**Tab targeting**: `getEnabledToolsList` (in `mcp-setup.ts`) injects an optional `tabId` integer property into every plugin tool's input schema via `structuredClone` — the original `ManifestTool.input_schema` is never mutated. `handlePluginToolCall` (in `mcp-tool-dispatch.ts`) extracts `tabId` from args before Ajv validation and threads it as a top-level field in `ToolDispatchParams` sent to the extension. Plugin tool handlers never see `tabId` in their input — it is a platform concern. Use `plugin_list_tabs` to discover valid tab IDs.
+**Tab targeting**: `getAllToolsList` (in `mcp-setup.ts`) injects an optional `tabId` integer property into every plugin tool's input schema via `structuredClone` — the original `ManifestTool.input_schema` is never mutated. `handlePluginToolCall` (in `mcp-tool-dispatch.ts`) extracts `tabId` from args before Ajv validation and threads it as a top-level field in `ToolDispatchParams` sent to the extension. Plugin tool handlers never see `tabId` in their input — it is a platform concern. Use `plugin_list_tabs` to discover valid tab IDs.
 
 Tool dispatch uses a 30s timeout (`DISPATCH_TIMEOUT_MS`) by default. When a tool reports progress, the timeout resets to 30s from the last progress notification — so a tool that reports progress at least once every 30s will never time out. An absolute ceiling of 5 minutes (`MAX_DISPATCH_TIMEOUT_MS = 300_000`) applies regardless of progress, preventing indefinitely running tools. The extension has a matching `MAX_SCRIPT_TIMEOUT_MS` (295s, 5s less than the server max) to ensure the extension always responds before the server times out.
 
@@ -62,7 +62,7 @@ The WebSocket secret is stored exclusively in `~/.opentabs/extension/auth.json` 
 
 The MCP server registers built-in browser tools (`platform/mcp-server/src/browser-tools/`) that operate on Chrome tabs via the extension's WebSocket connection. These tools are always available regardless of installed plugins. They cover tab management (`browser_open_tab`, `browser_list_tabs`, `browser_close_tab`), page interaction (`browser_click_element`, `browser_type_text`, `browser_execute_script`), inspection (`browser_get_tab_content`, `browser_get_page_html`, `browser_screenshot_tab`, `browser_query_elements`), storage and cookies (`browser_get_storage`, `browser_get_cookies`), network capture (`browser_enable_network_capture`, `browser_get_network_requests`), extension diagnostics (`extension_get_state`, `extension_get_logs`), and plugin tab discovery (`plugin_list_tabs`). Each browser tool is defined using `defineBrowserTool()` with a Zod schema and handler function.
 
-`plugin_list_tabs` lists all open tabs matching a plugin's URL patterns, with per-tab readiness. It reads directly from `state.tabMapping` (server-side, no extension round-trip) and accepts an optional `plugin` parameter to filter by plugin name. Use it to discover tab IDs before using the `tabId` parameter on plugin tools. It is classified as `observe` tier (auto-allowed).
+`plugin_list_tabs` lists all open tabs matching a plugin's URL patterns, with per-tab readiness. It reads directly from `state.tabMapping` (server-side, no extension round-trip) and accepts an optional `plugin` parameter to filter by plugin name. Use it to discover tab IDs before using the `tabId` parameter on plugin tools.
 
 ## Site Analysis Tool
 

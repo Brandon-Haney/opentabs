@@ -56,9 +56,6 @@ export const getPidFilePath = (): string => join(getConfigDir(), 'server.pid');
 // Plugin naming conventions
 // ---------------------------------------------------------------------------
 
-/** npm scope for official first-party OpenTabs plugins */
-export const OFFICIAL_SCOPE = '@opentabs-dev';
-
 /** Prefix for opentabs plugin npm package names */
 export const PLUGIN_PREFIX = 'opentabs-plugin-';
 
@@ -77,7 +74,7 @@ export const PLUGIN_PREFIX = 'opentabs-plugin-';
 export const resolvePluginPackageCandidates = (name: string): string[] => {
   if (name.startsWith('@')) return [name];
   if (name.startsWith(PLUGIN_PREFIX)) return [name];
-  return [`${OFFICIAL_SCOPE}/${PLUGIN_PREFIX}${name}`, `${PLUGIN_PREFIX}${name}`];
+  return [`@opentabs-dev/${PLUGIN_PREFIX}${name}`, `${PLUGIN_PREFIX}${name}`];
 };
 
 /**
@@ -94,7 +91,7 @@ export const resolvePluginPackageCandidates = (name: string): string[] => {
  */
 export const normalizePluginName = (name: string): string => {
   const candidates = resolvePluginPackageCandidates(name);
-  return candidates[0] ?? `${OFFICIAL_SCOPE}/${PLUGIN_PREFIX}${name}`;
+  return candidates[0] ?? `@opentabs-dev/${PLUGIN_PREFIX}${name}`;
 };
 
 // ---------------------------------------------------------------------------

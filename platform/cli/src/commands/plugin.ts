@@ -8,7 +8,6 @@ import { join } from 'node:path';
 import {
   DEFAULT_HOST,
   normalizePluginName,
-  OFFICIAL_SCOPE,
   PLUGIN_PREFIX,
   platformExec,
   resolvePluginPackageCandidates,
@@ -331,11 +330,11 @@ const KNOWN_OFFICIAL_PLUGIN_SLUGS = ['slack'] as const;
  */
 const buildDirectLookupCandidates = (query?: string): string[] => {
   if (!query) {
-    return KNOWN_OFFICIAL_PLUGIN_SLUGS.map(slug => `${OFFICIAL_SCOPE}/${PLUGIN_PREFIX}${slug}`);
+    return KNOWN_OFFICIAL_PLUGIN_SLUGS.map(slug => `@opentabs-dev/${PLUGIN_PREFIX}${slug}`);
   }
   // If the query is already a fully qualified name, probe it directly
   if (query.startsWith('@') || query.startsWith(PLUGIN_PREFIX)) return [query];
-  return [`${OFFICIAL_SCOPE}/${PLUGIN_PREFIX}${query}`, `${PLUGIN_PREFIX}${query}`];
+  return [`@opentabs-dev/${PLUGIN_PREFIX}${query}`, `${PLUGIN_PREFIX}${query}`];
 };
 
 /** npm search --json result shape */
@@ -410,19 +409,17 @@ const handlePluginSearch = (query?: string): void => {
   const termWidth = process.stdout.columns || 80;
 
   // Compute the max visible width used by non-description parts across all results.
-  // Line format: "  [label] name vVersion — desc by author"
-  const maxLabelLen = 11; // "[community]" is the longest label
+  // Line format: "  name vVersion — desc by author"
   const overheadPerPkg = results.map(pkg => {
     const author = pkg.publisher?.username ?? 'unknown';
-    // 2 indent + label + 1 space + name + 1 space + "v" + version + " — " + " by " + author
-    return 2 + maxLabelLen + 1 + pkg.name.length + 1 + 1 + pkg.version.length + 3 + 4 + author.length;
+    // 2 indent + name + 1 space + "v" + version + " — " + " by " + author
+    return 2 + pkg.name.length + 1 + 1 + pkg.version.length + 3 + 4 + author.length;
   });
   const maxOverhead = Math.max(...overheadPerPkg);
   const descWidth = Math.max(30, termWidth - maxOverhead);
 
   console.log();
   for (const pkg of results) {
-    const label = pkg.name.startsWith(`${OFFICIAL_SCOPE}/`) ? pc.blue('[official]') : pc.dim('[community]');
     const desc = pkg.description
       ? pkg.description.length > descWidth
         ? `${pkg.description.slice(0, descWidth - 3)}...`
@@ -431,7 +428,7 @@ const handlePluginSearch = (query?: string): void => {
     const author = pkg.publisher?.username ?? 'unknown';
 
     console.log(
-      `  ${label} ${pc.bold(pkg.name)} ${pc.dim(`v${pkg.version}`)}${desc ? ` — ${desc}` : ''} ${pc.dim(`by ${author}`)}`,
+      `  ${pc.bold(pkg.name)} ${pc.dim(`v${pkg.version}`)}${desc ? ` — ${desc}` : ''} ${pc.dim(`by ${author}`)}`,
     );
   }
   console.log();

@@ -1,7 +1,7 @@
 /**
  * Config system — ~/.opentabs/config.json
  *
- * Single source of truth for local plugin paths and tool enabled/disabled state.
+ * Single source of truth for local plugin paths and per-plugin permission state.
  * Created automatically on first MCP server run with sensible defaults.
  *
  * The config directory defaults to ~/.opentabs but can be overridden via the
@@ -12,8 +12,20 @@
 
 import { access, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { atomicWrite, generateSecret, getConfigDir, getConfigPath, getExtensionDir } from '@opentabs-dev/shared';
+import {
+  atomicWrite,
+  generateSecret,
+  getConfigDir,
+  getConfigPath,
+  getExtensionDir,
+  type PluginPermissionConfig,
+  type ToolPermission,
+} from '@opentabs-dev/shared';
 import { log } from './logger.js';
+
+const VALID_TOOL_PERMISSIONS = new Set<string>(['off', 'ask', 'auto']);
+
+const isToolPermission = (v: unknown): v is ToolPermission => typeof v === 'string' && VALID_TOOL_PERMISSIONS.has(v);
 
 /**
  * Shape of ~/.opentabs/config.json
@@ -21,31 +33,17 @@ import { log } from './logger.js';
  * `localPlugins` holds local filesystem paths to plugin directories. These paths
  * start with `./`, `../`, `/`, or `~/` and are resolved relative to the config
  * directory. npm plugins are auto-discovered from global node_modules.
+ *
+ * `plugins` is a map of plugin name → permission config. Each entry may have
+ * a top-level `permission` (default for all tools in that plugin) and a `tools`
+ * map of tool base name → per-tool override. Browser tools use the special key
+ * `__browser__`.
  */
-/** Permission policy for a tool: allow (no confirmation), ask (require confirmation), deny (block) */
-type ToolPermission = 'allow' | 'ask' | 'deny';
-
-/** Permission configuration for browser tool confirmation */
-interface PermissionsConfig {
-  /** Domains where all tools are auto-allowed (supports glob patterns, e.g., '*.example.com') */
-  trustedDomains: string[];
-  /** Domains where all tools require confirmation regardless of tier (supports glob patterns) */
-  sensitiveDomains: string[];
-  /** Per-tool policy overrides: browser tool name → permission */
-  toolPolicy: Record<string, ToolPermission>;
-  /** Per-domain per-tool policy overrides: domain → { tool name → permission } */
-  domainToolPolicy: Record<string, Record<string, ToolPermission>>;
-}
-
 interface OpentabsConfig {
   /** Local plugin directory paths (resolved relative to the config directory) */
   localPlugins: string[];
-  /** Tool enabled/disabled state: prefixed tool name → boolean. Absent = enabled (default). */
-  tools: Record<string, boolean>;
-  /** Browser tool enabled/disabled state: browser tool name → boolean. Absent = enabled (default). */
-  browserToolPolicy: Record<string, boolean>;
-  /** Permission configuration for browser tool confirmation */
-  permissions: PermissionsConfig;
+  /** Per-plugin permission configuration: plugin name → { permission?, tools? } */
+  plugins: Record<string, PluginPermissionConfig>;
   /** Whether to skip all permission prompts (dangerous — disables human-in-the-loop) */
   skipPermissions?: boolean;
 }
@@ -116,60 +114,47 @@ const isLocalPathEntry = (s: string): boolean =>
   s.startsWith('~/') ||
   /^[A-Za-z]:[/\\]/.test(s);
 
-const VALID_TOOL_PERMISSIONS = new Set<string>(['allow', 'ask', 'deny']);
-
-const isToolPermission = (v: unknown): v is ToolPermission => typeof v === 'string' && VALID_TOOL_PERMISSIONS.has(v);
-
-/** Default permissions config: trust localhost, everything else uses tier defaults */
-const defaultPermissions = (): PermissionsConfig => ({
-  trustedDomains: ['localhost', '127.0.0.1'],
-  sensitiveDomains: [],
-  toolPolicy: {},
-  domainToolPolicy: {},
-});
-
-/** Parse a raw permissions value from config.json into a validated PermissionsConfig */
-const parsePermissionsConfig = (raw: unknown): PermissionsConfig => {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return defaultPermissions();
-  }
+/** Parse and validate a single PluginPermissionConfig entry from raw JSON */
+const parsePluginPermissionEntry = (raw: unknown): PluginPermissionConfig | null => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const obj = raw as Record<string, unknown>;
+  const result: PluginPermissionConfig = {};
 
-  const trustedDomains = Array.isArray(obj.trustedDomains)
-    ? (obj.trustedDomains as unknown[]).filter((d): d is string => typeof d === 'string')
-    : ['localhost', '127.0.0.1'];
+  if (isToolPermission(obj.permission)) {
+    result.permission = obj.permission;
+  }
 
-  const sensitiveDomains = Array.isArray(obj.sensitiveDomains)
-    ? (obj.sensitiveDomains as unknown[]).filter((d): d is string => typeof d === 'string')
-    : [];
-
-  const toolPolicy: Record<string, ToolPermission> = {};
-  if (obj.toolPolicy && typeof obj.toolPolicy === 'object' && !Array.isArray(obj.toolPolicy)) {
-    for (const [key, value] of Object.entries(obj.toolPolicy as Record<string, unknown>)) {
+  if (obj.tools && typeof obj.tools === 'object' && !Array.isArray(obj.tools)) {
+    const tools: Record<string, ToolPermission> = {};
+    for (const [key, value] of Object.entries(obj.tools as Record<string, unknown>)) {
       if (isToolPermission(value)) {
-        toolPolicy[key] = value;
+        tools[key] = value;
       }
+    }
+    if (Object.keys(tools).length > 0) {
+      result.tools = tools;
     }
   }
 
-  const domainToolPolicy: Record<string, Record<string, ToolPermission>> = {};
-  if (obj.domainToolPolicy && typeof obj.domainToolPolicy === 'object' && !Array.isArray(obj.domainToolPolicy)) {
-    for (const [domain, tools] of Object.entries(obj.domainToolPolicy as Record<string, unknown>)) {
-      if (tools && typeof tools === 'object' && !Array.isArray(tools)) {
-        const domainEntry: Record<string, ToolPermission> = {};
-        for (const [toolName, perm] of Object.entries(tools as Record<string, unknown>)) {
-          if (isToolPermission(perm)) {
-            domainEntry[toolName] = perm;
-          }
-        }
-        if (Object.keys(domainEntry).length > 0) {
-          domainToolPolicy[domain] = domainEntry;
-        }
-      }
+  // Only return if at least one field was set
+  if (result.permission !== undefined || result.tools !== undefined) {
+    return result;
+  }
+  return null;
+};
+
+/** Parse the plugins map from a raw config record */
+const parsePluginsConfig = (raw: unknown): Record<string, PluginPermissionConfig> => {
+  const result: Record<string, PluginPermissionConfig> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return result;
+
+  for (const [pluginName, entry] of Object.entries(raw as Record<string, unknown>)) {
+    const parsed = parsePluginPermissionEntry(entry);
+    if (parsed) {
+      result[pluginName] = parsed;
     }
   }
-
-  return { trustedDomains, sensitiveDomains, toolPolicy, domainToolPolicy };
+  return result;
 };
 
 /**
@@ -180,37 +165,34 @@ const parseConfigRecord = (record: Record<string, unknown>): OpentabsConfig => {
   const localPlugins = Array.isArray(record.localPlugins)
     ? (record.localPlugins as unknown[]).filter((p): p is string => typeof p === 'string')
     : [];
-  const tools: Record<string, boolean> = {};
-  if (record.tools && typeof record.tools === 'object' && !Array.isArray(record.tools)) {
-    for (const [key, value] of Object.entries(record.tools as Record<string, unknown>)) {
-      if (typeof value === 'boolean') {
-        tools[key] = value;
-      }
-    }
-  }
 
-  const browserToolPolicy: Record<string, boolean> = {};
-  if (
+  // Migration: detect old-format config with `tools: Record<string, boolean>` or `browserToolPolicy`
+  const hasOldToolsFormat = record.tools && typeof record.tools === 'object' && !Array.isArray(record.tools);
+  const hasOldBrowserToolPolicy =
     record.browserToolPolicy &&
     typeof record.browserToolPolicy === 'object' &&
-    !Array.isArray(record.browserToolPolicy)
-  ) {
-    for (const [key, value] of Object.entries(record.browserToolPolicy as Record<string, unknown>)) {
-      if (typeof value === 'boolean') {
-        browserToolPolicy[key] = value;
-      }
-    }
+    !Array.isArray(record.browserToolPolicy);
+  const hasOldPermissions =
+    record.permissions && typeof record.permissions === 'object' && !Array.isArray(record.permissions);
+
+  if (hasOldToolsFormat || hasOldBrowserToolPolicy || hasOldPermissions) {
+    log.info(
+      'Migrating config from old format (tools/browserToolPolicy/permissions) to new plugin-centric model. ' +
+        'Old permission settings have been discarded — please re-configure permissions in the side panel.',
+    );
   }
 
-  // Migration: if the old `plugins` array exists, extract local paths into localPlugins
-  // and drop npm package names (they will be auto-discovered from global node_modules).
+  // Parse the new-format plugins map (returns empty if old format or absent)
+  const plugins = parsePluginsConfig(record.plugins);
+
+  // Migration: if the old `plugins` array exists (legacy plugin list, not the new map),
+  // extract local paths into localPlugins and drop npm package names.
   if (Array.isArray(record.plugins)) {
     const legacyPlugins = (record.plugins as unknown[]).filter((p): p is string => typeof p === 'string');
     const localPaths = legacyPlugins.filter(isLocalPathEntry);
     const npmPackages = legacyPlugins.filter(p => !isLocalPathEntry(p));
 
     if (localPaths.length > 0) {
-      // Merge into localPlugins, deduplicating
       const existing = new Set(localPlugins);
       for (const p of localPaths) {
         if (!existing.has(p)) {
@@ -243,9 +225,6 @@ const parseConfigRecord = (record: Record<string, unknown>): OpentabsConfig => {
     }
   }
 
-  // Parse permissions config with defensive validation
-  const permissions = parsePermissionsConfig(record.permissions);
-
   // Read skipPermissions (new name); fall back to skipConfirmation (old name) for backward compatibility.
   const skipPermissions =
     typeof record.skipPermissions === 'boolean'
@@ -254,7 +233,7 @@ const parseConfigRecord = (record: Record<string, unknown>): OpentabsConfig => {
         ? record.skipConfirmation
         : undefined;
 
-  return { localPlugins, tools, browserToolPolicy, permissions, skipPermissions };
+  return { localPlugins, plugins, skipPermissions };
 };
 
 /**
@@ -280,9 +259,7 @@ const loadConfig = async (): Promise<OpentabsConfig> => {
   ) {
     const config: OpentabsConfig = {
       localPlugins: [],
-      tools: {},
-      browserToolPolicy: {},
-      permissions: defaultPermissions(),
+      plugins: {},
     };
     await atomicWriteConfig(configPath, `${JSON.stringify(config, null, 2)}\n`);
     log.info(`Created default config at ${configPath}`);
@@ -321,18 +298,17 @@ const saveConfig = async (state: { configWriteMutex: Promise<void> }, config: Op
 };
 
 /**
- * Persist only the tool enabled/disabled state to config.json.
+ * Persist plugin permissions to config.json.
  *
- * Reads the current config from disk, updates only the `tools` field,
+ * Reads the current config from disk, updates only the `plugins` field,
  * and writes it back atomically. This prevents stale in-memory plugin
- * paths from overwriting externally-added plugins — the root cause of
- * the "plugin disappears during development" bug.
+ * paths from overwriting externally-added plugins.
  *
  * The read-modify-write is serialized via state.configWriteMutex.
  */
-const saveToolConfig = async (
+const savePluginPermissions = async (
   state: { configWriteMutex: Promise<void> },
-  tools: Record<string, boolean>,
+  plugins: Record<string, PluginPermissionConfig>,
 ): Promise<void> => {
   const configDir = getConfigDir();
   const configPath = getConfigPath();
@@ -341,64 +317,21 @@ const saveToolConfig = async (
     await prev;
     await mkdir(configDir, { recursive: true, mode: 0o700 });
 
-    // Read current config from disk to preserve localPlugins
     const record = await readConfigWithRetry(configPath, 2, 50);
     if (!record) {
-      log.warn('Cannot persist tool config — config file unreadable');
+      log.warn('Cannot persist plugin permissions — config file unreadable');
       return;
     }
 
     const current = parseConfigRecord(record);
     const updated: OpentabsConfig = {
       localPlugins: current.localPlugins,
-      tools,
-      browserToolPolicy: current.browserToolPolicy,
-      permissions: current.permissions,
+      plugins,
       skipPermissions: current.skipPermissions,
     };
     await atomicWriteConfig(configPath, `${JSON.stringify(updated, null, 2)}\n`);
   })();
   // The mutex chain always fulfills so subsequent writes proceed even after a failure.
-  state.configWriteMutex = writePromise.catch(() => {});
-  await writePromise;
-};
-
-/**
- * Persist only the browser tool enabled/disabled policy to config.json.
- *
- * Reads the current config from disk, updates only the `browserToolPolicy`
- * field, and writes it back atomically. Follows the same read-modify-write
- * pattern as saveToolConfig to prevent overwriting externally-added data.
- *
- * The read-modify-write is serialized via state.configWriteMutex.
- */
-const saveBrowserToolPolicy = async (
-  state: { configWriteMutex: Promise<void> },
-  browserToolPolicy: Record<string, boolean>,
-): Promise<void> => {
-  const configDir = getConfigDir();
-  const configPath = getConfigPath();
-  const prev = state.configWriteMutex;
-  const writePromise = (async () => {
-    await prev;
-    await mkdir(configDir, { recursive: true, mode: 0o700 });
-
-    const record = await readConfigWithRetry(configPath, 2, 50);
-    if (!record) {
-      log.warn('Cannot persist browser tool policy — config file unreadable');
-      return;
-    }
-
-    const current = parseConfigRecord(record);
-    const updated: OpentabsConfig = {
-      localPlugins: current.localPlugins,
-      tools: current.tools,
-      browserToolPolicy,
-      permissions: current.permissions,
-      skipPermissions: current.skipPermissions,
-    };
-    await atomicWriteConfig(configPath, `${JSON.stringify(updated, null, 2)}\n`);
-  })();
   state.configWriteMutex = writePromise.catch(() => {});
   await writePromise;
 };
@@ -451,13 +384,12 @@ const loadSecret = async (): Promise<string> => {
   return secret;
 };
 
-export type { OpentabsConfig, PermissionsConfig, ToolPermission };
+export type { OpentabsConfig };
 export {
   loadConfig,
   loadSecret,
   saveConfig,
-  saveBrowserToolPolicy,
-  saveToolConfig,
+  savePluginPermissions,
   writeAuthFile,
   generateSecret,
   getConfigDir,

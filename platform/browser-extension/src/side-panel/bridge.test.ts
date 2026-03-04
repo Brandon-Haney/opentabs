@@ -9,10 +9,9 @@ import {
   removePlugin,
   searchPlugins,
   sendConfirmationResponse,
-  setAllBrowserToolsEnabled,
-  setAllToolsEnabled,
-  setBrowserToolEnabled,
-  setToolEnabled,
+  setAllToolsPermission,
+  setPluginPermission,
+  setToolPermission,
   updatePlugin,
 } from './bridge.js';
 
@@ -87,88 +86,84 @@ describe('getFullState', () => {
   });
 });
 
-// --- setToolEnabled ---
+// --- setToolPermission ---
 
-describe('setToolEnabled', () => {
-  test('sends bg:setToolEnabled with correct params', async () => {
+describe('setToolPermission', () => {
+  test('sends bg:setToolPermission with correct params', async () => {
     mockResponse = { ok: true };
 
-    await setToolEnabled('slack', 'send-message', true);
+    await setToolPermission('slack', 'send-message', 'auto');
 
     expect(sendMessageCalls).toHaveLength(1);
     expect(sendMessageCalls[0]?.message).toEqual({
-      type: 'bg:setToolEnabled',
+      type: 'bg:setToolPermission',
       plugin: 'slack',
       tool: 'send-message',
-      enabled: true,
+      permission: 'auto',
     });
   });
 
   test('rejects when response contains error field', async () => {
     mockResponse = { error: 'Tool not found' };
 
-    await expect(setToolEnabled('slack', 'unknown', true)).rejects.toThrow('Tool not found');
+    await expect(setToolPermission('slack', 'unknown', 'auto')).rejects.toThrow('Tool not found');
   });
 });
 
-// --- setAllToolsEnabled ---
+// --- setAllToolsPermission ---
 
-describe('setAllToolsEnabled', () => {
-  test('sends bg:setAllToolsEnabled with correct params', async () => {
+describe('setAllToolsPermission', () => {
+  test('sends bg:setAllToolsPermission with correct params', async () => {
     mockResponse = { ok: true };
 
-    await setAllToolsEnabled('slack', true);
+    await setAllToolsPermission('slack', 'auto');
 
     expect(sendMessageCalls).toHaveLength(1);
     expect(sendMessageCalls[0]?.message).toEqual({
-      type: 'bg:setAllToolsEnabled',
+      type: 'bg:setAllToolsPermission',
       plugin: 'slack',
-      enabled: true,
+      permission: 'auto',
     });
   });
 
-  test('sends enabled=false when disabling all tools', async () => {
+  test('sends permission=off when disabling all tools', async () => {
     mockResponse = { ok: true };
 
-    await setAllToolsEnabled('datadog', false);
+    await setAllToolsPermission('datadog', 'off');
 
     expect(sendMessageCalls[0]?.message).toMatchObject({
-      type: 'bg:setAllToolsEnabled',
+      type: 'bg:setAllToolsPermission',
       plugin: 'datadog',
-      enabled: false,
+      permission: 'off',
     });
   });
 });
 
-// --- setBrowserToolEnabled ---
+// --- setPluginPermission ---
 
-describe('setBrowserToolEnabled', () => {
-  test('sends bg:setBrowserToolEnabled with correct params', async () => {
+describe('setPluginPermission', () => {
+  test('sends bg:setPluginPermission with correct params', async () => {
     mockResponse = { ok: true };
 
-    await setBrowserToolEnabled('screenshot', true);
+    await setPluginPermission('slack', 'auto');
 
     expect(sendMessageCalls).toHaveLength(1);
     expect(sendMessageCalls[0]?.message).toEqual({
-      type: 'bg:setBrowserToolEnabled',
-      tool: 'screenshot',
-      enabled: true,
+      type: 'bg:setPluginPermission',
+      plugin: 'slack',
+      permission: 'auto',
     });
   });
-});
 
-// --- setAllBrowserToolsEnabled ---
-
-describe('setAllBrowserToolsEnabled', () => {
-  test('sends bg:setAllBrowserToolsEnabled with correct params', async () => {
+  test('sends permission for browser pseudo-plugin', async () => {
     mockResponse = { ok: true };
 
-    await setAllBrowserToolsEnabled(false);
+    await setPluginPermission('browser', 'ask');
 
-    expect(sendMessageCalls).toHaveLength(1);
-    expect(sendMessageCalls[0]?.message).toEqual({
-      type: 'bg:setAllBrowserToolsEnabled',
-      enabled: false,
+    expect(sendMessageCalls[0]?.message).toMatchObject({
+      type: 'bg:setPluginPermission',
+      plugin: 'browser',
+      permission: 'ask',
     });
   });
 });
@@ -178,7 +173,7 @@ describe('setAllBrowserToolsEnabled', () => {
 describe('searchPlugins', () => {
   test('sends bg:searchPlugins with correct params', async () => {
     mockResponse = {
-      results: [{ name: 'slack', description: 'Slack', version: '1.0', author: 'x', isOfficial: true }],
+      results: [{ name: 'slack', description: 'Slack', version: '1.0', author: 'x' }],
     };
 
     const result = await searchPlugins('slack');
@@ -259,19 +254,19 @@ describe('sendBgMessage error handling', () => {
   test('rejects when chrome.runtime.lastError is set', async () => {
     mockLastError = { message: 'Extension context invalidated.' };
 
-    await expect(setToolEnabled('slack', 'send', true)).rejects.toThrow('Extension context invalidated.');
+    await expect(setToolPermission('slack', 'send', 'auto')).rejects.toThrow('Extension context invalidated.');
   });
 
   test('rejects when response contains error field', async () => {
     mockResponse = { error: 'Server disconnected' };
 
-    await expect(setToolEnabled('slack', 'send', true)).rejects.toThrow('Server disconnected');
+    await expect(setToolPermission('slack', 'send', 'auto')).rejects.toThrow('Server disconnected');
   });
 
   test('resolves normally when response has no error field', async () => {
     mockResponse = { ok: true, extra: 'data' };
 
-    const result = await setToolEnabled('slack', 'send', true);
+    const result = await setToolPermission('slack', 'send', 'auto');
     expect(result).toEqual({ ok: true, extra: 'data' });
   });
 });
@@ -283,7 +278,7 @@ const tool = (overrides?: Partial<WireToolDef>): WireToolDef => ({
   displayName: 'Send Message',
   description: 'Send a message to a Slack channel',
   icon: 'send',
-  enabled: true,
+  permission: 'auto',
   ...overrides,
 });
 
@@ -291,7 +286,7 @@ const plugin = (overrides?: Partial<PluginState>): PluginState => ({
   name: 'slack',
   displayName: 'Slack',
   version: '0.1.0',
-  trustTier: 'community',
+  permission: 'off',
   source: 'npm',
   tabState: 'ready',
   urlPatterns: ['*://*.slack.com/*'],
@@ -433,32 +428,32 @@ describe('extractShortName', () => {
 // --- sendConfirmationResponse ---
 
 describe('sendConfirmationResponse', () => {
-  test('sends sp:confirmationResponse with correct type and data', () => {
-    sendConfirmationResponse('conf-123', 'allow_once');
+  test('sends sp:confirmationResponse with allow decision', () => {
+    sendConfirmationResponse('conf-123', 'allow');
 
     expect(sendMessageCalls).toHaveLength(1);
     expect(sendMessageCalls[0]?.message).toEqual({
       type: 'sp:confirmationResponse',
-      data: { id: 'conf-123', decision: 'allow_once' },
+      data: { id: 'conf-123', decision: 'allow' },
     });
   });
 
-  test('includes scope in data when provided', () => {
-    sendConfirmationResponse('conf-456', 'allow_always', 'tool_domain');
+  test('includes alwaysAllow in data when true', () => {
+    sendConfirmationResponse('conf-456', 'allow', true);
 
     expect(sendMessageCalls).toHaveLength(1);
     expect(sendMessageCalls[0]?.message).toEqual({
       type: 'sp:confirmationResponse',
-      data: { id: 'conf-456', decision: 'allow_always', scope: 'tool_domain' },
+      data: { id: 'conf-456', decision: 'allow', alwaysAllow: true },
     });
   });
 
-  test('omits scope from data when not provided', () => {
+  test('omits alwaysAllow from data when not provided', () => {
     sendConfirmationResponse('conf-789', 'deny');
 
     const message = sendMessageCalls[0]?.message as Record<string, unknown>;
     const data = message.data as Record<string, unknown>;
-    expect(Object.hasOwn(data, 'scope')).toBe(false);
+    expect(Object.hasOwn(data, 'alwaysAllow')).toBe(false);
   });
 
   test('handles chrome.runtime.sendMessage rejection gracefully', () => {

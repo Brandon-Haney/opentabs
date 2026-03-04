@@ -309,7 +309,6 @@ describe('/health endpoint', () => {
           version: '1.0.0',
           displayName: 'Test Plugin',
           urlPatterns: ['*://example.com/*'],
-          trustTier: 'local',
           source: 'local' as const,
           iife: '(function(){})()',
           tools: [
@@ -394,13 +393,16 @@ describe('/health endpoint', () => {
     state.cachedBrowserTools = [
       { name: 'browser_list_tabs', description: 'List tabs', inputSchema: {}, tool: {} as never },
     ];
+    // Browser tools default to 'off' when no permission config exists, so
+    // explicitly enable the browser plugin to test the "no tools disabled" case.
+    state.pluginPermissions = { browser: { permission: 'auto' } };
 
     const body = await fetchJson<HealthResponse>(handlers, 'http://localhost:9876/health');
 
     expect(body.disabledBrowserTools).toEqual([]);
   });
 
-  test('disabledBrowserTools lists tools disabled via browserToolPolicy', async () => {
+  test('disabledBrowserTools lists tools disabled via pluginPermissions', async () => {
     const { handlers, state } = createTestHandlers();
 
     state.cachedBrowserTools = [
@@ -408,7 +410,9 @@ describe('/health endpoint', () => {
       { name: 'browser_execute_script', description: 'Execute script', inputSchema: {}, tool: {} as never },
       { name: 'browser_get_cookies', description: 'Get cookies', inputSchema: {}, tool: {} as never },
     ];
-    state.browserToolPolicy = { browser_execute_script: false, browser_get_cookies: false };
+    state.pluginPermissions = {
+      browser: { permission: 'auto', tools: { browser_execute_script: 'off', browser_get_cookies: 'off' } },
+    };
 
     const body = await fetchJson<HealthResponse>(handlers, 'http://localhost:9876/health');
 
@@ -423,7 +427,7 @@ describe('/health endpoint', () => {
       { name: 'browser_execute_script', description: 'Execute script', inputSchema: {}, tool: {} as never },
       { name: 'browser_get_cookies', description: 'Get cookies', inputSchema: {}, tool: {} as never },
     ];
-    state.browserToolPolicy = { browser_execute_script: false };
+    state.pluginPermissions = { browser: { tools: { browser_execute_script: 'off' } } };
 
     const body = await fetchJson<HealthResponse>(handlers, 'http://localhost:9876/health');
 

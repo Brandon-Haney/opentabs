@@ -11,13 +11,12 @@
 
 import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ManifestTool, Result, TrustTier } from '@opentabs-dev/shared';
+import type { ManifestTool, Result } from '@opentabs-dev/shared';
 import {
   ADAPTER_FILENAME,
   ADAPTER_SOURCE_MAP_FILENAME,
   BROWSER_TOOLS_CATALOG,
   err,
-  OFFICIAL_SCOPE,
   ok,
   PLUGIN_PREFIX,
   parsePluginPackageJson,
@@ -42,7 +41,6 @@ interface LoadedPlugin {
   readonly displayName: string;
   readonly description: string;
   readonly urlPatterns: string[];
-  readonly trustTier: TrustTier;
   readonly iife: string;
   readonly tools: ManifestTool[];
   readonly source: PluginSource;
@@ -79,7 +77,7 @@ const pluginNameFromPackage = (pkgName: string): string => {
     const pluginSuffix = namePart.replace(prefixPattern, '');
 
     // Official scope is invisible — treat like an unscoped package
-    if (scopePart === OFFICIAL_SCOPE) {
+    if (scopePart === '@opentabs-dev') {
       return pluginSuffix;
     }
 
@@ -270,14 +268,9 @@ const checkSdkCompatibility = (
  * and dist/tools.json. Derives the internal plugin name from the npm package name.
  *
  * @param dir - Absolute path to the plugin directory containing package.json
- * @param trustTier - Trust classification for this plugin
  * @param source - How the plugin was discovered: 'npm' or 'local'
  */
-const loadPlugin = async (
-  dir: string,
-  trustTier: TrustTier,
-  source: PluginSource,
-): Promise<Result<LoadedPlugin, string>> => {
+const loadPlugin = async (dir: string, source: PluginSource): Promise<Result<LoadedPlugin, string>> => {
   // Read and validate package.json
   const pkgJsonPath = join(dir, 'package.json');
   let pkgJsonRaw: unknown;
@@ -415,7 +408,6 @@ const loadPlugin = async (
     displayName: pkg.opentabs.displayName,
     description: pkg.opentabs.description,
     urlPatterns: pkg.opentabs.urlPatterns,
-    trustTier,
     iife,
     tools,
     source,

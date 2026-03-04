@@ -6,8 +6,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { stopFileWatching } from './file-watcher.js';
 import { performConfigReload, performReload } from './reload.js';
 import { resetGlobalPathsCache } from './resolver.js';
-import type { ServerState, SessionPermissionRule } from './state.js';
-import { createState, prefixedToolName } from './state.js';
+import type { ServerState } from './state.js';
+import { createState } from './state.js';
 
 /**
  * Integration tests for the reload module.
@@ -35,8 +35,8 @@ const createMockServer = () => ({
 const emptyTransports = (): Map<string, WebStandardStreamableHTTPServerTransport> => new Map();
 
 /** Write a config.json to the given directory */
-const writeConfig = (configDir: string, localPlugins: string[] = [], tools: Record<string, boolean> = {}): void => {
-  writeFileSync(join(configDir, 'config.json'), JSON.stringify({ localPlugins, tools }));
+const writeConfig = (configDir: string, localPlugins: string[] = []): void => {
+  writeFileSync(join(configDir, 'config.json'), JSON.stringify({ localPlugins, plugins: {} }));
 };
 
 /** Create a minimal valid plugin directory with package.json, tools.json, and adapter */
@@ -163,17 +163,92 @@ describe('performReload', () => {
     expect(state.activeDispatches.has('my-plugin')).toBe(true);
   });
 
-  test('prunes stale toolConfig entries for removed plugins/tools', async () => {
+  test('prunes stale pluginPermissions entries for removed plugins', async () => {
     const pluginDir = createPluginDir(configDir, 'my-plugin');
-    writeConfig(configDir, [pluginDir], {
-      'my-plugin_test_tool': true,
-      'old-plugin_stale_tool': false,
-    });
+
+    // Write config with 'browser' in the plugins map so it survives the config swap.
+    // reloadCore replaces state.pluginPermissions with { ...config.plugins } before
+    // pruning, so only keys present in config.plugins can be tested for pruning behavior.
+    writeFileSync(
+      join(configDir, 'config.json'),
+      JSON.stringify({
+        localPlugins: [pluginDir],
+        plugins: {
+          'my-plugin': { permission: 'auto' },
+          'old-plugin': { permission: 'ask' },
+          browser: { permission: 'auto' },
+        },
+      }),
+    );
 
     await performReload(state, [], emptyTransports(), false);
 
-    expect(state.toolConfig[prefixedToolName('my-plugin', 'test_tool')]).toBe(true);
-    expect('old-plugin_stale_tool' in state.toolConfig).toBe(false);
+    // 'old-plugin' is not in the registry — pruned by pruneStaleState
+    expect('old-plugin' in state.pluginPermissions).toBe(false);
+    // 'browser' is preserved by pruneStaleState even though it's not a plugin in the registry
+    expect('browser' in state.pluginPermissions).toBe(true);
+    // 'my-plugin' is in the registry — preserved
+    expect('my-plugin' in state.pluginPermissions).toBe(true);
+  });
+
+  test('prunes stale per-tool overrides within surviving plugin permissions', async () => {
+    const pluginDir = createPluginDir(configDir, 'my-plugin');
+
+    // Write config with per-tool overrides including a stale tool name
+    writeFileSync(
+      join(configDir, 'config.json'),
+      JSON.stringify({
+        localPlugins: [pluginDir],
+        plugins: {
+          'my-plugin': {
+            permission: 'ask',
+            tools: {
+              test_tool: 'auto', // matches the tool in createPluginDir
+              removed_tool: 'off', // stale — no such tool in registry
+            },
+          },
+        },
+      }),
+    );
+
+    await performReload(state, [], emptyTransports(), false);
+
+    const pluginPerms = state.pluginPermissions['my-plugin'];
+    expect(pluginPerms?.tools?.test_tool).toBe('auto');
+    expect(pluginPerms?.tools?.removed_tool).toBeUndefined();
+  });
+
+  test('prunes stale per-tool overrides for browser pseudo-plugin', async () => {
+    writeConfig(configDir);
+
+    // Pre-populate pluginPermissions with browser tool overrides
+    // (config.plugins is empty, so browser entry won't survive config swap)
+    // Instead, write it into the config
+    writeFileSync(
+      join(configDir, 'config.json'),
+      JSON.stringify({
+        localPlugins: [],
+        plugins: {
+          browser: {
+            permission: 'auto',
+            tools: {
+              existing_tool: 'ask',
+              removed_tool: 'off',
+            },
+          },
+        },
+      }),
+    );
+
+    await performReload(state, [], emptyTransports(), false);
+
+    // After reload, cachedBrowserTools has the actual browser tools.
+    // The pruning should remove 'removed_tool' and 'existing_tool' since
+    // neither matches any actual browser tool names in cachedBrowserTools.
+    const browserPerms = state.pluginPermissions.browser;
+    // Both tool names are stale (not real browser tool names)
+    expect(browserPerms?.tools?.removed_tool).toBeUndefined();
+    expect(browserPerms?.tools?.existing_tool).toBeUndefined();
   });
 
   test('rebuilds toolLookup after reload', async () => {
@@ -258,48 +333,6 @@ describe('performReload', () => {
     await performReload(state, [], emptyTransports(), false);
 
     expect(state.outdatedPlugins).toHaveLength(0);
-  });
-
-  test('prunes stale session permission rules for tools no longer in the registry', async () => {
-    const pluginDir = createPluginDir(configDir, 'my-plugin');
-    writeConfig(configDir, [pluginDir]);
-
-    state.sessionPermissions = [
-      // Rule for a tool that will still exist after reload — should be kept
-      { tool: 'my-plugin_test_tool', domain: 'example.com', scope: 'tool_domain' } as SessionPermissionRule,
-      // Rule for a tool that no longer exists — should be pruned
-      { tool: 'old-plugin_removed_tool', domain: 'example.com', scope: 'tool_domain' } as SessionPermissionRule,
-      // Rule with tool=null (domain_all scope) — should always be kept
-      { tool: null, domain: 'example.com', scope: 'domain_all' } as SessionPermissionRule,
-    ];
-
-    await performReload(state, [], emptyTransports(), false);
-
-    expect(state.sessionPermissions).toHaveLength(2);
-    expect(state.sessionPermissions.some(r => r.tool === 'my-plugin_test_tool')).toBe(true);
-    expect(state.sessionPermissions.some(r => r.tool === null)).toBe(true);
-    expect(state.sessionPermissions.some(r => r.tool === 'old-plugin_removed_tool')).toBe(false);
-  });
-
-  test('preserves session permission rules for browser tools across reloads', async () => {
-    const pluginDir = createPluginDir(configDir, 'my-plugin');
-    writeConfig(configDir, [pluginDir]);
-
-    state.sessionPermissions = [
-      // Rule for a browser tool — should be preserved (browser tools are not in registry.toolLookup)
-      { tool: 'browser_execute_script', domain: 'example.com', scope: 'tool_domain' } as SessionPermissionRule,
-      // Rule for a plugin tool that still exists — should be kept
-      { tool: 'my-plugin_test_tool', domain: 'example.com', scope: 'tool_domain' } as SessionPermissionRule,
-      // Rule for a plugin tool that no longer exists — should be pruned
-      { tool: 'old-plugin_removed_tool', domain: 'example.com', scope: 'tool_domain' } as SessionPermissionRule,
-    ];
-
-    await performReload(state, [], emptyTransports(), false);
-
-    expect(state.sessionPermissions).toHaveLength(2);
-    expect(state.sessionPermissions.some(r => r.tool === 'browser_execute_script')).toBe(true);
-    expect(state.sessionPermissions.some(r => r.tool === 'my-plugin_test_tool')).toBe(true);
-    expect(state.sessionPermissions.some(r => r.tool === 'old-plugin_removed_tool')).toBe(false);
   });
 
   test('notifies MCP sessions of tool list changes on hot reload', async () => {
@@ -499,7 +532,7 @@ describe('performConfigReload', () => {
     state.browserTools = [badBrowserTool as unknown as (typeof state.browserTools)[0]];
 
     const initialRegistry = state.registry;
-    const initialToolConfig = state.toolConfig;
+    const initialPluginPermissions = state.pluginPermissions;
 
     // performConfigReload catches the error from rebuildCachedBrowserTools and logs it.
     // State must retain all previous values — no partial mutation should have occurred.
@@ -507,7 +540,7 @@ describe('performConfigReload', () => {
 
     expect(state.registry).toBe(initialRegistry);
     expect(state.registry.plugins.has('my-plugin')).toBe(false);
-    expect(state.toolConfig).toBe(initialToolConfig);
+    expect(state.pluginPermissions).toBe(initialPluginPermissions);
   });
 
   test('concurrent config reloads both complete successfully', async () => {

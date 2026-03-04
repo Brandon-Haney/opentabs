@@ -417,11 +417,9 @@ test.describe('POST /reload in non-hot (production) mode', () => {
       const pluginName = 'reload-test';
       const pluginDir = createMinimalPlugin(configDir, pluginName, [{ name: 'ping', description: 'Returns pong' }]);
 
-      // Update config.json to include the new plugin in localPlugins and
-      // enable its tool in the tools map.
+      // Update config.json to include the new plugin in localPlugins.
       const config = readTestConfig(configDir);
       config.localPlugins.push(pluginDir);
-      config.tools[`${pluginName}_ping`] = true;
       writeTestConfig(configDir, config);
 
       // Read the auth secret for the Bearer token

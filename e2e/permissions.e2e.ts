@@ -1,17 +1,17 @@
 /**
- * Permission system E2E tests — verifies that the browser tool permission
- * tier system evaluates correctly:
+ * Permission system E2E tests — verifies the 3-state (off/ask/auto) permission
+ * model end-to-end:
  *
- *   - Observe-tier tools (e.g. browser_list_tabs) auto-allow without confirmation
- *   - Interact/sensitive-tier tools on non-trusted domains trigger confirmation
- *     and block until a human responds in the side panel
+ *   - Tool with permission 'off': returns "currently disabled" error
+ *   - Tool with permission 'ask': confirmation dialog appears, allow/deny flows
+ *   - Tool with permission 'ask' + Always Allow: permission persists to 'auto'
+ *   - Tool with permission 'auto': executes immediately without dialog
+ *   - skipPermissions=true: all tools execute immediately
+ *   - Plugin-level permission: setting plugin to 'auto' makes all tools auto
+ *   - Per-tool override: tool-level permission overrides plugin default
  *
- * These tests start the MCP server WITHOUT skipPermissions (overriding the
- * default E2E fixture that sets OPENTABS_SKIP_PERMISSIONS=1) and use
- * 127.0.0.2 as a non-trusted domain to exercise the confirmation flow.
- *
- * The default trustedDomains are ['localhost', '127.0.0.1'], so 127.0.0.2
- * is not trusted and interact/sensitive tools will require confirmation.
+ * These tests start the MCP server WITHOUT OPENTABS_SKIP_PERMISSIONS and use
+ * explicit plugin permission configs to exercise each permission state.
  */
 
 import fs from 'node:fs';
@@ -32,11 +32,11 @@ import {
 } from './fixtures.js';
 import {
   openSidePanel,
-  parseToolResult,
   setupAdapterSymlink,
   waitFor,
   waitForExtensionConnected,
   waitForLog,
+  waitForToolList,
 } from './helpers.js';
 
 // ---------------------------------------------------------------------------
@@ -107,322 +107,41 @@ const test = base.extend<PermissionFixtures>({
 });
 
 // ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-test.describe('Permission evaluation', () => {
-  test('observe-tier tool (browser_list_tabs) succeeds without confirmation', async ({
-    mcpServer,
-    extensionContext: _ctx,
-    mcpClient,
-  }) => {
-    await waitForExtensionConnected(mcpServer);
-    await waitForLog(mcpServer, 'tab.syncAll received');
-
-    // browser_list_tabs is observe tier — should auto-allow even without
-    // skipConfirmation, regardless of the domain.
-    const result = await mcpClient.callTool('browser_list_tabs', {});
-    expect(result.isError).toBe(false);
-    // The result should contain a list of tabs (at least the blank tab)
-    const parsed = JSON.parse(result.content) as unknown[];
-    expect(Array.isArray(parsed)).toBe(true);
-  });
-
-  test('interact-tier tool on non-trusted domain triggers confirmation progress notification', async ({
-    mcpServer,
-    testServer,
-    extensionContext: _ctx,
-    mcpClient,
-  }) => {
-    await waitForExtensionConnected(mcpServer);
-    await waitForLog(mcpServer, 'tab.syncAll received');
-
-    // Open a tab on localhost (trusted domain) so browser_open_tab itself
-    // auto-allows. We then navigate to 127.0.0.2 (non-trusted) to test the
-    // confirmation flow on browser_navigate_tab specifically.
-    const openResult = await mcpClient.callTool('browser_open_tab', { url: testServer.url });
-    expect(openResult.isError).toBe(false);
-    const tabInfo = JSON.parse(openResult.content) as { id: number };
-    const tabId = tabInfo.id;
-
-    // Poll until the tab's page has finished loading (localhost is trusted so
-    // browser_execute_script auto-allows even without skipConfirmation).
-    await waitFor(
-      async () => {
-        try {
-          const scriptResult = await mcpClient.callTool('browser_execute_script', {
-            tabId,
-            code: 'return document.readyState',
-          });
-          if (scriptResult.isError) return false;
-          const data = parseToolResult(scriptResult.content);
-          const value = data.value as Record<string, unknown> | undefined;
-          return value?.value === 'complete';
-        } catch {
-          return false;
-        }
-      },
-      10_000,
-      300,
-      `tab ${tabId} readyState === complete`,
-    );
-
-    // Call an interact-tier tool (browser_navigate_tab) to a non-trusted
-    // domain (127.0.0.2). This should trigger the confirmation flow and
-    // send a progress notification with 'approval' while waiting for
-    // human response. The confirmation will time out after 30s, but we
-    // use callToolWithProgress to capture the progress notification.
-    const nonTrustedUrl = testServer.url.replace('localhost', '127.0.0.2');
-    const result = await mcpClient.callToolWithProgress(
-      'browser_navigate_tab',
-      { tabId, url: `${nonTrustedUrl}/interactive` },
-      { timeout: 35_000 },
-    );
-
-    // The tool should have either timed out (CONFIRMATION_TIMEOUT) or
-    // returned an error since no one responded to the confirmation dialog.
-    expect(result.isError).toBe(true);
-    expect(result.content).toContain('CONFIRMATION_TIMEOUT');
-
-    // The MCP client should have received a progress notification
-    // mentioning "approval" while the tool was pending confirmation.
-    expect(result.progressNotifications.length).toBeGreaterThanOrEqual(1);
-    const approvalNotif = result.progressNotifications.find(n => n.message?.toLowerCase().includes('approval'));
-    expect(approvalNotif).toBeDefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Helpers for confirmation dialog interaction
 // ---------------------------------------------------------------------------
 
 /**
- * Wait for the confirmation dialog to appear in the side panel, then return
- * the locator for the dialog container (the element with role="alert").
+ * Wait for the confirmation dialog to appear in the side panel.
+ * The dialog uses role="dialog" (Radix Dialog).
  */
 const waitForConfirmationDialog = async (sidePanel: Page, timeoutMs = 15_000): Promise<void> => {
-  await sidePanel.locator('[role="alert"]').waitFor({ state: 'visible', timeout: timeoutMs });
+  await sidePanel.locator('[role="dialog"]').waitFor({ state: 'visible', timeout: timeoutMs });
 };
 
-/**
- * Click the "Allow Once" button in the confirmation dialog.
- */
-const clickAllowOnce = async (sidePanel: Page): Promise<void> => {
+/** Click the "Allow" button in the confirmation dialog. */
+const clickAllow = async (sidePanel: Page): Promise<void> => {
   await waitForConfirmationDialog(sidePanel);
-  await sidePanel.getByRole('button', { name: 'Allow Once' }).click();
+  await sidePanel.getByRole('button', { name: 'Allow' }).click();
 };
 
-/**
- * Click the "Deny" button in the confirmation dialog.
- */
+/** Click the "Deny" button in the confirmation dialog. */
 const clickDeny = async (sidePanel: Page): Promise<void> => {
   await waitForConfirmationDialog(sidePanel);
   await sidePanel.getByRole('button', { name: 'Deny' }).click();
 };
 
-/**
- * Click the "Allow Always" dropdown and select "For this tool on this domain".
- */
-const clickAllowAlwaysToolDomain = async (sidePanel: Page): Promise<void> => {
+/** Check the "Always allow this tool" checkbox and then click Allow. */
+const clickAllowAlways = async (sidePanel: Page): Promise<void> => {
   await waitForConfirmationDialog(sidePanel);
-  // Click the "Allow Always" dropdown trigger button
-  await sidePanel.getByRole('button', { name: 'Allow Always' }).click();
-  // Select the "For this tool on this domain" menu item
-  await sidePanel.getByRole('menuitem', { name: 'For this tool on this domain' }).click();
+  const checkbox = sidePanel.locator('input[type="checkbox"]');
+  await checkbox.check();
+  await sidePanel.getByRole('button', { name: 'Allow' }).click();
 };
 
 // ---------------------------------------------------------------------------
-// Confirmation dialog — Allow Once flow
+// Helper: get the background service worker
 // ---------------------------------------------------------------------------
 
-test.describe('Confirmation dialog — Allow Once', () => {
-  test('Allow Once grants permission and tool completes successfully', async ({
-    mcpServer,
-    testServer,
-    extensionContext,
-    mcpClient,
-  }) => {
-    await waitForExtensionConnected(mcpServer);
-    await waitForLog(mcpServer, 'tab.syncAll received');
-
-    // Open the side panel so we can interact with the confirmation dialog.
-    const sidePanel = await openSidePanel(extensionContext);
-
-    // Build a non-trusted URL (127.0.0.2 is not in default trustedDomains).
-    const nonTrustedUrl = testServer.url.replace('localhost', '127.0.0.2');
-
-    // Call a sensitive-tier tool (browser_get_cookies) on a non-trusted domain.
-    // This blocks waiting for confirmation. Concurrently, verify the dialog
-    // shows the correct tool name and domain, then click "Allow Once".
-    const [result] = await Promise.all([
-      mcpClient.callTool('browser_get_cookies', { url: nonTrustedUrl }, { timeout: 35_000 }),
-      (async () => {
-        await waitForConfirmationDialog(sidePanel);
-        // Verify the dialog displays the correct tool name and domain.
-        const dialogEl = sidePanel.locator('[role="alert"]');
-        await expect(dialogEl.getByText('browser_get_cookies')).toBeVisible();
-        await expect(dialogEl.getByText('127.0.0.2', { exact: true })).toBeVisible();
-        await expect(dialogEl.getByText('Approval Required')).toBeVisible();
-        // Grant "Allow Once" to unblock the tool call.
-        await sidePanel.getByRole('button', { name: 'Allow Once' }).click();
-      })(),
-    ]);
-
-    // The tool should have completed successfully after the confirmation.
-    expect(result.isError).toBe(false);
-  });
-
-  test('Allow Once does not persist — subsequent call triggers new confirmation dialog', async ({
-    mcpServer,
-    testServer,
-    extensionContext,
-    mcpClient,
-  }) => {
-    await waitForExtensionConnected(mcpServer);
-    await waitForLog(mcpServer, 'tab.syncAll received');
-
-    const sidePanel = await openSidePanel(extensionContext);
-    const nonTrustedUrl = testServer.url.replace('localhost', '127.0.0.2');
-
-    // First call: grant "Allow Once" to complete the tool.
-    const [firstResult] = await Promise.all([
-      mcpClient.callTool('browser_get_cookies', { url: nonTrustedUrl }, { timeout: 35_000 }),
-      clickAllowOnce(sidePanel),
-    ]);
-    expect(firstResult.isError).toBe(false);
-
-    // Second call: "Allow Once" should NOT persist, so a new confirmation
-    // dialog should appear. Grant it again to verify the full round-trip.
-    const [secondResult] = await Promise.all([
-      mcpClient.callTool('browser_get_cookies', { url: nonTrustedUrl }, { timeout: 35_000 }),
-      clickAllowOnce(sidePanel),
-    ]);
-    expect(secondResult.isError).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Confirmation dialog — Deny flow
-// ---------------------------------------------------------------------------
-
-test.describe('Confirmation dialog — Deny', () => {
-  test('Deny returns PERMISSION_DENIED error', async ({ mcpServer, testServer, extensionContext, mcpClient }) => {
-    await waitForExtensionConnected(mcpServer);
-    await waitForLog(mcpServer, 'tab.syncAll received');
-
-    const sidePanel = await openSidePanel(extensionContext);
-    const nonTrustedUrl = testServer.url.replace('localhost', '127.0.0.2');
-
-    // Call a sensitive-tier tool on a non-trusted domain. Concurrently,
-    // click "Deny" in the confirmation dialog.
-    const [result] = await Promise.all([
-      mcpClient.callTool('browser_get_cookies', { url: nonTrustedUrl }, { timeout: 35_000 }),
-      clickDeny(sidePanel),
-    ]);
-
-    // The tool should return an error with PERMISSION_DENIED.
-    expect(result.isError).toBe(true);
-    expect(result.content).toContain('PERMISSION_DENIED');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Confirmation dialog — Allow Always (tool_domain scope) session persistence
-// ---------------------------------------------------------------------------
-
-test.describe('Confirmation dialog — Allow Always', () => {
-  test('Allow Always (tool_domain) grants permission and persists for session', async ({
-    mcpServer,
-    testServer,
-    extensionContext,
-    mcpClient,
-  }) => {
-    await waitForExtensionConnected(mcpServer);
-    await waitForLog(mcpServer, 'tab.syncAll received');
-
-    const sidePanel = await openSidePanel(extensionContext);
-    const nonTrustedUrl = testServer.url.replace('localhost', '127.0.0.2');
-
-    // First call: click "Allow Always" → "For this tool on this domain"
-    const [firstResult] = await Promise.all([
-      mcpClient.callTool('browser_get_cookies', { url: nonTrustedUrl }, { timeout: 35_000 }),
-      clickAllowAlwaysToolDomain(sidePanel),
-    ]);
-
-    // The tool should complete successfully.
-    expect(firstResult.isError).toBe(false);
-
-    // Second call: same tool, same domain — should succeed immediately
-    // without triggering a new confirmation dialog because "Allow Always"
-    // persists the permission for the session.
-    const secondResult = await mcpClient.callTool('browser_get_cookies', { url: nonTrustedUrl }, { timeout: 10_000 });
-    expect(secondResult.isError).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Trusted domain auto-allow — interact-tier tool on localhost
-// ---------------------------------------------------------------------------
-
-test.describe('Trusted domain auto-allow', () => {
-  test('interact-tier tool on trusted domain (localhost) succeeds without confirmation', async ({
-    mcpServer,
-    testServer,
-    extensionContext: _ctx,
-    mcpClient,
-  }) => {
-    await waitForExtensionConnected(mcpServer);
-    await waitForLog(mcpServer, 'tab.syncAll received');
-
-    // Open a tab on the test server via localhost (a default trusted domain).
-    const openResult = await mcpClient.callTool('browser_open_tab', { url: testServer.url });
-    expect(openResult.isError).toBe(false);
-    const tabInfo = JSON.parse(openResult.content) as { id: number };
-    const tabId = tabInfo.id;
-
-    // Poll until the tab's page has finished loading (localhost is trusted so
-    // browser_execute_script auto-allows even without skipConfirmation).
-    await waitFor(
-      async () => {
-        try {
-          const scriptResult = await mcpClient.callTool('browser_execute_script', {
-            tabId,
-            code: 'return document.readyState',
-          });
-          if (scriptResult.isError) return false;
-          const data = parseToolResult(scriptResult.content);
-          const value = data.value as Record<string, unknown> | undefined;
-          return value?.value === 'complete';
-        } catch {
-          return false;
-        }
-      },
-      10_000,
-      300,
-      `tab ${tabId} readyState === complete`,
-    );
-
-    // Call an interact-tier tool (browser_navigate_tab) on the trusted
-    // domain. Even without skipConfirmation, trusted domains upgrade
-    // 'ask' → 'allow', so this should succeed immediately.
-    const result = await mcpClient.callTool(
-      'browser_navigate_tab',
-      { tabId, url: `${testServer.url}/interactive` },
-      { timeout: 10_000 },
-    );
-
-    expect(result.isError).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Confirmation notification — badge lifecycle
-// ---------------------------------------------------------------------------
-
-/**
- * Get the extension's background service worker from the browser context.
- * Polls until it appears (MV3 service workers may not be ready immediately).
- */
 const getBackgroundWorker = async (context: BrowserContext, timeoutMs = 10_000): Promise<Worker> => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -434,174 +153,236 @@ const getBackgroundWorker = async (context: BrowserContext, timeoutMs = 10_000):
   throw new Error(`Could not find background service worker within ${timeoutMs}ms`);
 };
 
-/**
- * Read the extension badge text from the service worker context.
- * Returns the current badge text (e.g. "1", "2", or "" when cleared).
- */
 const getBadgeText = (sw: Worker): Promise<string> => sw.evaluate(() => chrome.action.getBadgeText({}));
 
-test.describe('Confirmation notification — badge lifecycle', () => {
-  test('badge is set when confirmation is pending and clears after approval', async ({
-    mcpServer,
-    testServer,
-    extensionContext,
-    mcpClient,
-  }) => {
-    await waitForExtensionConnected(mcpServer);
-    await waitForLog(mcpServer, 'tab.syncAll received');
+// ---------------------------------------------------------------------------
+// Tests — Tool with permission 'off'
+// ---------------------------------------------------------------------------
 
-    const sw = await getBackgroundWorker(extensionContext);
-    const nonTrustedUrl = testServer.url.replace('localhost', '127.0.0.2');
-
-    // Open the side panel so it can receive the confirmation request.
-    const sidePanel = await openSidePanel(extensionContext);
-
-    // Badge should start empty.
-    const initialBadge = await getBadgeText(sw);
-    expect(initialBadge).toBe('');
-
-    // Trigger a sensitive-tier tool on a non-trusted domain. The
-    // confirmation request sets the badge to "1". Concurrently, wait for
-    // the badge to appear, approve the dialog, then verify the badge clears.
-    const [result] = await Promise.all([
-      mcpClient.callTool('browser_get_cookies', { url: nonTrustedUrl }, { timeout: 35_000 }),
-      (async () => {
-        // Poll until badge text becomes "1" (confirmation is pending).
-        await waitFor(async () => (await getBadgeText(sw)) === '1', 15_000, 200, 'badge text === "1"');
-
-        // Approve the confirmation dialog.
-        await clickAllowOnce(sidePanel);
-
-        // Poll until badge text clears back to "" (confirmation resolved).
-        await waitFor(async () => (await getBadgeText(sw)) === '', 10_000, 200, 'badge text === ""');
-      })(),
-    ]);
-
-    // The tool should have completed successfully after approval.
-    expect(result.isError).toBe(false);
-  });
-
-  test('no notification when side panel is already open before tool call', async ({
-    mcpServer,
-    testServer,
-    extensionContext,
-    mcpClient,
-  }) => {
-    await waitForExtensionConnected(mcpServer);
-    await waitForLog(mcpServer, 'tab.syncAll received');
-
-    const sw = await getBackgroundWorker(extensionContext);
-    const nonTrustedUrl = testServer.url.replace('localhost', '127.0.0.2');
-
-    // Open the side panel BEFORE triggering the confirmation. When the
-    // panel is open, syncConfirmationNotification() suppresses the Chrome
-    // desktop notification (chrome.notifications.create is not called).
-    // The badge still increments, but the user sees the dialog directly.
-    const sidePanel = await openSidePanel(extensionContext);
-
-    // Trigger a sensitive-tier tool on a non-trusted domain and approve
-    // the confirmation concurrently. Verify the badge lifecycle works
-    // correctly even when the desktop notification is suppressed.
-    const [result] = await Promise.all([
-      mcpClient.callTool('browser_get_cookies', { url: nonTrustedUrl }, { timeout: 35_000 }),
-      clickAllowOnce(sidePanel),
-    ]);
-
-    // The tool should complete successfully.
-    expect(result.isError).toBe(false);
-
-    // Badge should be cleared after the confirmation is resolved.
-    await waitFor(async () => (await getBadgeText(sw)) === '', 10_000, 200, 'badge text === ""');
+test.describe('Permission: off', () => {
+  test('tool with permission off returns disabled error', async ({ mcpClient }) => {
+    // All tools default to 'off' (no plugins config). Calling any browser tool
+    // should return a "currently disabled" error without needing the extension.
+    const result = await mcpClient.callTool('browser_list_tabs', {});
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('currently disabled');
   });
 });
 
 // ---------------------------------------------------------------------------
-// Confirmation dialog — late side panel open (panel closed when request arrives)
+// Tests — Tool with permission 'auto'
 // ---------------------------------------------------------------------------
 
-test.describe('Confirmation dialog — late side panel open', () => {
-  test('confirmation dialog appears when side panel opens after request arrived while closed', async ({
+test.describe('Permission: auto', () => {
+  test('tool with permission auto executes immediately without dialog', async ({
     mcpServer,
-    testServer,
-    extensionContext,
+    extensionContext: _ctx,
     mcpClient,
   }) => {
+    // Set browser tools to 'auto' permission
+    const config = readTestConfig(mcpServer.configDir);
+    config.plugins = { browser: { permission: 'auto' } };
+    writeTestConfig(mcpServer.configDir, config);
+
+    // Trigger config reload
+    mcpServer.logs.length = 0;
+    mcpServer.triggerHotReload();
+    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
     await waitForExtensionConnected(mcpServer);
     await waitForLog(mcpServer, 'tab.syncAll received');
 
-    const sw = await getBackgroundWorker(extensionContext);
-    const nonTrustedUrl = testServer.url.replace('localhost', '127.0.0.2');
+    // browser_list_tabs with 'auto' permission should execute without any dialog
+    const result = await mcpClient.callTool('browser_list_tabs', {});
+    expect(result.isError).toBe(false);
+    const parsed = JSON.parse(result.content) as unknown[];
+    expect(Array.isArray(parsed)).toBe(true);
+  });
+});
 
-    // Do NOT open the side panel yet — the confirmation request should arrive
-    // while the panel is closed, and be hydrated when the panel opens later.
+// ---------------------------------------------------------------------------
+// Tests — Confirmation dialog — Allow flow
+// ---------------------------------------------------------------------------
 
-    // Call a sensitive-tier tool on a non-trusted domain. This blocks waiting
-    // for confirmation. Concurrently, poll for the badge, open the panel,
-    // verify the dialog, and approve it.
+test.describe('Confirmation dialog — Allow', () => {
+  test('ask permission triggers dialog, Allow grants permission and tool completes', async ({
+    mcpServer,
+    extensionContext,
+    mcpClient,
+  }) => {
+    // Set browser tools to 'ask' permission
+    const config = readTestConfig(mcpServer.configDir);
+    config.plugins = { browser: { permission: 'ask' } };
+    writeTestConfig(mcpServer.configDir, config);
+
+    mcpServer.logs.length = 0;
+    mcpServer.triggerHotReload();
+    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+    await waitForExtensionConnected(mcpServer);
+    await waitForLog(mcpServer, 'tab.syncAll received');
+
+    const sidePanel = await openSidePanel(extensionContext);
+
+    // Call a browser tool with 'ask' permission. Concurrently, verify the
+    // dialog appears with the correct tool and plugin info, then click Allow.
     const [result] = await Promise.all([
-      mcpClient.callTool('browser_get_cookies', { url: nonTrustedUrl }, { timeout: 35_000 }),
+      mcpClient.callTool('browser_list_tabs', {}, { timeout: 35_000 }),
       (async () => {
-        // Poll until badge text becomes "1" (confirmation arrived at background).
-        await waitFor(async () => (await getBadgeText(sw)) === '1', 15_000, 200, 'badge text === "1"');
-
-        // Now open the side panel — it should hydrate the pending confirmation
-        // from bg:getFullState and show the dialog.
-        const sidePanel = await openSidePanel(extensionContext);
-
-        // Wait for the confirmation dialog to appear.
         await waitForConfirmationDialog(sidePanel);
-
-        // Verify the dialog shows the correct tool name and domain.
-        const dialogEl = sidePanel.locator('[role="alert"]');
-        await expect(dialogEl.getByText('browser_get_cookies')).toBeVisible();
-        await expect(dialogEl.getByText('127.0.0.2', { exact: true })).toBeVisible();
-
-        // Approve the confirmation to unblock the tool call.
-        await sidePanel.getByRole('button', { name: 'Allow Once' }).click();
+        const dialog = sidePanel.locator('[role="dialog"]');
+        // Verify dialog shows tool name and "Approve Tool" header
+        await expect(dialog.getByText('browser_list_tabs')).toBeVisible();
+        await expect(dialog.getByText('Approve Tool')).toBeVisible();
+        // Click Allow
+        await sidePanel.getByRole('button', { name: 'Allow' }).click();
       })(),
     ]);
 
-    // The tool should have completed successfully after approval.
     expect(result.isError).toBe(false);
+  });
 
-    // Badge should clear back to empty after confirmation is resolved.
-    await waitFor(async () => (await getBadgeText(sw)) === '', 10_000, 200, 'badge text === ""');
+  test('Allow does not persist — subsequent call triggers new dialog', async ({
+    mcpServer,
+    extensionContext,
+    mcpClient,
+  }) => {
+    const config = readTestConfig(mcpServer.configDir);
+    config.plugins = { browser: { permission: 'ask' } };
+    writeTestConfig(mcpServer.configDir, config);
+
+    mcpServer.logs.length = 0;
+    mcpServer.triggerHotReload();
+    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+    await waitForExtensionConnected(mcpServer);
+    await waitForLog(mcpServer, 'tab.syncAll received');
+
+    const sidePanel = await openSidePanel(extensionContext);
+
+    // First call: Allow
+    const [firstResult] = await Promise.all([
+      mcpClient.callTool('browser_list_tabs', {}, { timeout: 35_000 }),
+      clickAllow(sidePanel),
+    ]);
+    expect(firstResult.isError).toBe(false);
+
+    // Second call: Allow should NOT persist, new dialog should appear
+    const [secondResult] = await Promise.all([
+      mcpClient.callTool('browser_list_tabs', {}, { timeout: 35_000 }),
+      clickAllow(sidePanel),
+    ]);
+    expect(secondResult.isError).toBe(false);
   });
 });
 
 // ---------------------------------------------------------------------------
-// browserToolPolicy — disabling a browser tool via configuration
+// Tests — Confirmation dialog — Deny flow
 // ---------------------------------------------------------------------------
 
-test.describe('browserToolPolicy', () => {
-  test('disabled tool is hidden from tools/list and returns error on call', async () => {
+test.describe('Confirmation dialog — Deny', () => {
+  test('Deny returns PERMISSION_DENIED error', async ({ mcpServer, extensionContext, mcpClient }) => {
+    const config = readTestConfig(mcpServer.configDir);
+    config.plugins = { browser: { permission: 'ask' } };
+    writeTestConfig(mcpServer.configDir, config);
+
+    mcpServer.logs.length = 0;
+    mcpServer.triggerHotReload();
+    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+    await waitForExtensionConnected(mcpServer);
+    await waitForLog(mcpServer, 'tab.syncAll received');
+
+    const sidePanel = await openSidePanel(extensionContext);
+
+    const [result] = await Promise.all([
+      mcpClient.callTool('browser_list_tabs', {}, { timeout: 35_000 }),
+      clickDeny(sidePanel),
+    ]);
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('denied by the user');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Confirmation dialog — Always Allow
+// ---------------------------------------------------------------------------
+
+test.describe('Confirmation dialog — Always Allow', () => {
+  test('Always Allow persists permission to auto — subsequent call executes without dialog', async ({
+    mcpServer,
+    extensionContext,
+    mcpClient,
+  }) => {
+    const config = readTestConfig(mcpServer.configDir);
+    config.plugins = { browser: { permission: 'ask' } };
+    writeTestConfig(mcpServer.configDir, config);
+
+    mcpServer.logs.length = 0;
+    mcpServer.triggerHotReload();
+    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+    await waitForExtensionConnected(mcpServer);
+    await waitForLog(mcpServer, 'tab.syncAll received');
+
+    const sidePanel = await openSidePanel(extensionContext);
+
+    // First call: check Always Allow checkbox and click Allow
+    const [firstResult] = await Promise.all([
+      mcpClient.callTool('browser_list_tabs', {}, { timeout: 35_000 }),
+      clickAllowAlways(sidePanel),
+    ]);
+    expect(firstResult.isError).toBe(false);
+
+    // Second call: should execute immediately without any dialog because
+    // Always Allow persisted the per-tool permission to 'auto'
+    const secondResult = await mcpClient.callTool('browser_list_tabs', {}, { timeout: 10_000 });
+    expect(secondResult.isError).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — skipPermissions bypasses all
+// ---------------------------------------------------------------------------
+
+test.describe('skipPermissions bypass', () => {
+  test('skipPermissions=true makes all tools execute immediately regardless of config', async () => {
     const configDir = createTestConfigDir();
     try {
-      // Write a config with browser_screenshot_tab explicitly disabled.
-      const config = readTestConfig(configDir);
-      const configWithPolicy = {
-        ...config,
-        browserToolPolicy: { browser_screenshot_tab: false },
-      };
-      writeTestConfig(configDir, configWithPolicy as typeof config);
-
-      // Start the server (no extension needed — purely server-side test).
-      const server = await startMcpServer(configDir, true);
+      // All tools default to 'off' (empty plugins config)
+      const server = await startMcpServer(configDir, true, undefined, {
+        OPENTABS_SKIP_PERMISSIONS: '1',
+      });
       try {
-        const client = createMcpClient(server.port, server.secret);
-        await client.initialize();
-        try {
-          // Verify browser_screenshot_tab is absent from tools/list.
-          const tools = await client.listTools();
-          const screenshotTool = tools.find(t => t.name === 'browser_screenshot_tab');
-          expect(screenshotTool).toBeUndefined();
+        const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port, server.secret);
+        setupAdapterSymlink(configDir, extensionDir);
+        const serverAuthJson = path.join(configDir, 'extension', 'auth.json');
+        const extensionAuthJson = path.join(extensionDir, 'auth.json');
+        fs.rmSync(extensionAuthJson, { force: true });
+        symlinkCrossPlatform(serverAuthJson, extensionAuthJson, 'file');
 
-          // Verify calling it directly returns an error.
-          const result = await client.callTool('browser_screenshot_tab', { tabId: 1 });
-          expect(result.isError).toBe(true);
-          expect(result.content).toContain('disabled');
+        try {
+          await waitForExtensionConnected(server);
+          await waitForLog(server, 'tab.syncAll received');
+
+          const client = createMcpClient(server.port, server.secret);
+          await client.initialize();
+          try {
+            // With skipPermissions, even tools with no config (default 'off')
+            // should execute immediately
+            const result = await client.callTool('browser_list_tabs', {});
+            expect(result.isError).toBe(false);
+          } finally {
+            await client.close();
+          }
         } finally {
-          await client.close();
+          await context.close();
+          try {
+            fs.rmSync(cleanupDir, { recursive: true, force: true });
+          } catch {
+            // best-effort
+          }
         }
       } finally {
         await server.kill();
@@ -609,5 +390,197 @@ test.describe('browserToolPolicy', () => {
     } finally {
       cleanupTestConfigDir(configDir);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Plugin-level permission
+// ---------------------------------------------------------------------------
+
+test.describe('Plugin-level permission', () => {
+  test('setting plugin to auto makes all its tools auto', async ({ mcpServer, extensionContext: _ctx, mcpClient }) => {
+    // Set browser plugin to 'auto' — all browser tools should inherit 'auto'
+    const config = readTestConfig(mcpServer.configDir);
+    config.plugins = { browser: { permission: 'auto' } };
+    writeTestConfig(mcpServer.configDir, config);
+
+    mcpServer.logs.length = 0;
+    mcpServer.triggerHotReload();
+    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+    await waitForExtensionConnected(mcpServer);
+    await waitForLog(mcpServer, 'tab.syncAll received');
+
+    // Multiple browser tools should all work without confirmation
+    const listResult = await mcpClient.callTool('browser_list_tabs', {});
+    expect(listResult.isError).toBe(false);
+  });
+
+  test('per-tool override overrides plugin default', async ({ mcpServer, mcpClient }) => {
+    // Set browser plugin to 'auto' but override browser_list_tabs to 'off'
+    // Browser tool permission keys use the full prefixed name
+    const config = readTestConfig(mcpServer.configDir);
+    config.plugins = {
+      browser: {
+        permission: 'auto',
+        tools: { browser_list_tabs: 'off' },
+      },
+    };
+    writeTestConfig(mcpServer.configDir, config);
+
+    mcpServer.logs.length = 0;
+    mcpServer.triggerHotReload();
+    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+    // Wait for tools/list to reflect the [Disabled] prefix
+    await waitForToolList(
+      mcpClient,
+      tools => {
+        const lt = tools.find(t => t.name === 'browser_list_tabs');
+        return lt?.description?.startsWith('[Disabled]') ?? false;
+      },
+      10_000,
+      300,
+      'browser_list_tabs [Disabled] prefix after per-tool off',
+    );
+
+    // browser_list_tabs is overridden to 'off' — should return disabled error
+    const listResult = await mcpClient.callTool('browser_list_tabs', {});
+    expect(listResult.isError).toBe(true);
+    expect(listResult.content).toContain('currently disabled');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Confirmation notification badge lifecycle
+// ---------------------------------------------------------------------------
+
+test.describe('Confirmation notification — badge lifecycle', () => {
+  test('badge is set when confirmation is pending and clears after approval', async ({
+    mcpServer,
+    extensionContext,
+    mcpClient,
+  }) => {
+    const config = readTestConfig(mcpServer.configDir);
+    config.plugins = { browser: { permission: 'ask' } };
+    writeTestConfig(mcpServer.configDir, config);
+
+    mcpServer.logs.length = 0;
+    mcpServer.triggerHotReload();
+    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+    await waitForExtensionConnected(mcpServer);
+    await waitForLog(mcpServer, 'tab.syncAll received');
+
+    const sw = await getBackgroundWorker(extensionContext);
+    const sidePanel = await openSidePanel(extensionContext);
+
+    // Badge should start empty
+    const initialBadge = await getBadgeText(sw);
+    expect(initialBadge).toBe('');
+
+    // Trigger an 'ask' tool. The badge increments to "1" while pending.
+    const [result] = await Promise.all([
+      mcpClient.callTool('browser_list_tabs', {}, { timeout: 35_000 }),
+      (async () => {
+        await waitFor(async () => (await getBadgeText(sw)) === '1', 15_000, 200, 'badge text === "1"');
+        await clickAllow(sidePanel);
+        await waitFor(async () => (await getBadgeText(sw)) === '', 10_000, 200, 'badge text === ""');
+      })(),
+    ]);
+
+    expect(result.isError).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Late side panel open (confirmation request before panel open)
+// ---------------------------------------------------------------------------
+
+test.describe('Confirmation dialog — late side panel open', () => {
+  test('confirmation dialog appears when side panel opens after request arrived', async ({
+    mcpServer,
+    extensionContext,
+    mcpClient,
+  }) => {
+    const config = readTestConfig(mcpServer.configDir);
+    config.plugins = { browser: { permission: 'ask' } };
+    writeTestConfig(mcpServer.configDir, config);
+
+    mcpServer.logs.length = 0;
+    mcpServer.triggerHotReload();
+    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+    await waitForExtensionConnected(mcpServer);
+    await waitForLog(mcpServer, 'tab.syncAll received');
+
+    const sw = await getBackgroundWorker(extensionContext);
+
+    // Do NOT open the side panel yet — the request arrives while panel is closed.
+    const [result] = await Promise.all([
+      mcpClient.callTool('browser_list_tabs', {}, { timeout: 35_000 }),
+      (async () => {
+        // Wait for badge to show the pending confirmation
+        await waitFor(async () => (await getBadgeText(sw)) === '1', 15_000, 200, 'badge text === "1"');
+
+        // Now open the side panel — it should hydrate the pending confirmation
+        const sidePanel = await openSidePanel(extensionContext);
+        await waitForConfirmationDialog(sidePanel);
+
+        const dialog = sidePanel.locator('[role="dialog"]');
+        await expect(dialog.getByText('browser_list_tabs')).toBeVisible();
+        await expect(dialog.getByText('Approve Tool')).toBeVisible();
+
+        await sidePanel.getByRole('button', { name: 'Allow' }).click();
+      })(),
+    ]);
+
+    expect(result.isError).toBe(false);
+    await waitFor(async () => (await getBadgeText(sw)) === '', 10_000, 200, 'badge text === ""');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Tool description prefixes in tools/list
+// ---------------------------------------------------------------------------
+
+test.describe('Tool description prefixes', () => {
+  test('tools/list shows [Disabled] prefix for off tools and [Requires approval] for ask tools', async ({
+    mcpServer,
+    mcpClient,
+  }) => {
+    // Configure: browser_list_tabs=off, browser_screenshot_tab=ask, browser_open_tab=auto
+    // Browser tool permission keys use the full prefixed name
+    const config = readTestConfig(mcpServer.configDir);
+    config.plugins = {
+      browser: {
+        tools: {
+          browser_list_tabs: 'off',
+          browser_screenshot_tab: 'ask',
+          browser_open_tab: 'auto',
+        },
+      },
+    };
+    writeTestConfig(mcpServer.configDir, config);
+
+    mcpServer.logs.length = 0;
+    mcpServer.triggerHotReload();
+    await waitForLog(mcpServer, 'Hot reload complete', 20_000);
+
+    const tools = await mcpClient.listTools();
+
+    // All tools should always appear in the list (no filtering)
+    const listTabs = tools.find(t => t.name === 'browser_list_tabs');
+    const screenshot = tools.find(t => t.name === 'browser_screenshot_tab');
+    const openTab = tools.find(t => t.name === 'browser_open_tab');
+
+    if (!listTabs || !screenshot || !openTab) {
+      throw new Error('Expected all tools to be present in tools/list');
+    }
+
+    // Verify description prefixes
+    expect(listTabs.description).toMatch(/^\[Disabled\]/);
+    expect(screenshot.description).toMatch(/^\[Requires approval\]/);
+    expect(openTab.description).not.toMatch(/^\[/);
   });
 });

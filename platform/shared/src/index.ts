@@ -48,7 +48,6 @@ export {
   getLogFilePath,
   getPidFilePath,
   normalizePluginName,
-  OFFICIAL_SCOPE,
   PLUGIN_PREFIX,
   resolvePluginPackageCandidates,
   TOOLS_FILENAME,
@@ -88,8 +87,32 @@ export {
 /** Tab state for a plugin */
 export type TabState = 'closed' | 'unavailable' | 'ready';
 
-/** Trust tier for a plugin */
-export type TrustTier = 'official' | 'community' | 'local';
+/** Permission state for a tool or plugin: off (disabled), ask (prompt before each use), auto (always allow) */
+export type ToolPermission = 'off' | 'ask' | 'auto';
+
+/** Per-plugin permission configuration */
+export interface PluginPermissionConfig {
+  /** Default permission for all tools in this plugin */
+  permission?: ToolPermission;
+  /** Per-tool permission overrides (tool base name → permission) */
+  tools?: Record<string, ToolPermission>;
+}
+
+/** Confirmation request sent to the extension when a tool requires user approval */
+export interface ConfirmationRequest {
+  id: string;
+  tool: string;
+  plugin: string;
+  params: Record<string, unknown>;
+}
+
+/** Confirmation response from the extension */
+export interface ConfirmationResponse {
+  id: string;
+  decision: 'allow' | 'deny';
+  /** When true, the user wants to auto-allow this tool in the future */
+  alwaysAllow?: boolean;
+}
 
 /** Manifest shape as written by `opentabs-plugin build` */
 export interface PluginManifest {
@@ -184,7 +207,7 @@ export interface WireToolDef {
   icon: string;
   /** Tool group for visual grouping in the side panel */
   group?: string;
-  enabled: boolean;
+  permission: ToolPermission;
   /** Optional SVG icon for the tool */
   iconSvg?: string;
   /** Optional SVG icon for the inactive state */
@@ -197,7 +220,7 @@ export interface WirePluginPayload {
   version: string;
   displayName: string;
   urlPatterns: string[];
-  trustTier: TrustTier;
+  permission: ToolPermission;
   sourcePath?: string;
   adapterHash?: string;
   tools: WireToolDef[];
@@ -275,7 +298,7 @@ export interface ConfigStatePlugin {
   name: string;
   displayName: string;
   version: string;
-  trustTier: TrustTier;
+  permission: ToolPermission;
   source: 'npm' | 'local';
   tabState: TabState;
   urlPatterns: string[];
@@ -304,7 +327,7 @@ export interface ConfigStateFailedPlugin {
 export interface ConfigStateBrowserTool {
   name: string;
   description: string;
-  enabled: boolean;
+  permission: ToolPermission;
   /** Lucide icon name (kebab-case) for the side panel */
   icon?: string;
   /** Logical group name for displaying this tool in the side panel (e.g. 'Tabs', 'Network'). */
@@ -316,38 +339,24 @@ export interface ConfigStateResult {
   plugins: ConfigStatePlugin[];
   failedPlugins: ConfigStateFailedPlugin[];
   browserTools: ConfigStateBrowserTool[];
+  /** Plugin-level default permission for the browser pseudo-plugin */
+  browserPermission?: ToolPermission;
   serverVersion?: string;
+  /** When true, all permission checks are bypassed (all tools run as auto) */
+  skipPermissions?: boolean;
 }
 
-/** config.setToolEnabled request params */
-export interface ConfigSetToolEnabledParams {
+/** config.setToolPermission request params */
+export interface ConfigSetToolPermissionParams {
   plugin: string;
   tool: string;
-  enabled: boolean;
+  permission: ToolPermission;
 }
 
-/** config.setToolsEnabled request params */
-export interface ConfigSetToolsEnabledParams {
+/** config.setPluginPermission request params (sets plugin-level default) */
+export interface ConfigSetPluginPermissionParams {
   plugin: string;
-  tools: string[];
-  enabled: boolean;
-}
-
-/** config.setAllToolsEnabled request params */
-export interface ConfigSetAllToolsEnabledParams {
-  plugin: string;
-  enabled: boolean;
-}
-
-/** config.setBrowserToolEnabled request params */
-export interface ConfigSetBrowserToolEnabledParams {
-  tool: string;
-  enabled: boolean;
-}
-
-/** config.setAllBrowserToolsEnabled request params */
-export interface ConfigSetAllBrowserToolsEnabledParams {
-  enabled: boolean;
+  permission: ToolPermission;
 }
 
 /** extension.reload request: server → extension (no params needed) */

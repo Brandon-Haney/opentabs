@@ -21,11 +21,8 @@ import type { McpCallbacks } from './extension-handlers.js';
 import {
   buildConfigStatePayload,
   handleConfigGetState,
-  handleConfigSetAllBrowserToolsEnabled,
-  handleConfigSetAllToolsEnabled,
-  handleConfigSetBrowserToolEnabled,
-  handleConfigSetToolEnabled,
-  handleConfigSetToolsEnabled,
+  handleConfigSetPluginPermission,
+  handleConfigSetToolPermission,
   handleConfirmationResponse,
   handlePluginCheckUpdates,
   handlePluginInstall,
@@ -43,7 +40,7 @@ import {
 } from './extension-handlers.js';
 import { log } from './logger.js';
 import type { ConfirmationDecision, PendingDispatch, ServerState } from './state.js';
-import { CONFIRMATION_TIMEOUT_MS, DISPATCH_TIMEOUT_MS, getNextRequestId } from './state.js';
+import { DISPATCH_TIMEOUT_MS, getNextRequestId } from './state.js';
 
 /** Maximum incoming WebSocket message size (10MB) */
 const MAX_MESSAGE_SIZE = 10 * 1024 * 1024;
@@ -95,7 +92,7 @@ const sendSyncFull = async (state: ServerState): Promise<void> => {
   const plugins = pluginList.map(p => {
     const configPlugin = configPluginMap.get(p.name);
     return {
-      ...serializePluginForExtension(p, state),
+      ...serializePluginForExtension(state, p),
       sourcePath: p.sourcePath,
       adapterHash: p.adapterHash,
       adapterFile: adapterFileMap.get(p.name),
@@ -226,54 +223,34 @@ const sendInvocationEnd = (
 
 /**
  * Send a confirmation request to the extension and return a promise that resolves
- * with the user's decision. The promise rejects on timeout (30s) or extension disconnect.
- *
- * @param state - Server state
- * @param tool - Browser tool name (e.g., 'browser_execute_script')
- * @param domain - Target domain (e.g., 'mail.google.com'), or null
- * @param tabId - Target tab ID, if applicable
- * @param paramsPreview - Truncated preview of tool parameters
- * @returns The user's decision: 'allow_once', 'allow_always', or 'deny'
+ * with the user's decision. The promise rejects on extension disconnect.
+ * There is no timeout — the request hangs until the user responds or the
+ * WebSocket disconnects (at which point rejectAllPendingConfirmations fires).
  */
 const sendConfirmationRequest = (
   state: ServerState,
   tool: string,
-  domain: string | null,
-  tabId: number | undefined,
-  paramsPreview: string,
+  plugin: string,
+  params: Record<string, unknown>,
 ): Promise<ConfirmationDecision> => {
   const id = crypto.randomUUID();
 
   return new Promise<ConfirmationDecision>((resolve, reject) => {
-    const timerId = setTimeout(() => {
-      state.pendingConfirmations.delete(id);
-      reject(new Error('CONFIRMATION_TIMEOUT'));
-    }, CONFIRMATION_TIMEOUT_MS);
-
     state.pendingConfirmations.set(id, {
       resolve,
       reject,
-      timerId,
       tool,
-      domain,
-      tabId,
+      plugin,
+      params,
     });
 
     const sent = sendToExtension(state, {
       jsonrpc: '2.0',
       method: 'confirmation.request',
-      params: {
-        id,
-        tool,
-        domain,
-        tabId,
-        paramsPreview,
-        timeoutMs: CONFIRMATION_TIMEOUT_MS,
-      },
+      params: { id, tool, plugin, params },
     });
 
     if (!sent) {
-      clearTimeout(timerId);
       state.pendingConfirmations.delete(id);
       reject(new Error('Extension not connected — cannot request confirmation'));
     }
@@ -307,7 +284,7 @@ const sendPluginUpdate = async (
     jsonrpc: '2.0',
     method: 'plugin.update',
     params: {
-      ...serializePluginForExtension(plugin, state),
+      ...serializePluginForExtension(state, plugin),
       sourcePath: plugin.sourcePath,
       adapterHash: plugin.adapterHash,
       adapterFile,
@@ -415,28 +392,13 @@ const handleExtensionMessage = (
     return;
   }
 
-  if (method === 'config.setToolEnabled' && id !== undefined) {
-    handleConfigSetToolEnabled(state, params, id, callbacks);
+  if (method === 'config.setToolPermission' && id !== undefined) {
+    handleConfigSetToolPermission(state, params, id, callbacks);
     return;
   }
 
-  if (method === 'config.setAllToolsEnabled' && id !== undefined) {
-    handleConfigSetAllToolsEnabled(state, params, id, callbacks);
-    return;
-  }
-
-  if (method === 'config.setToolsEnabled' && id !== undefined) {
-    handleConfigSetToolsEnabled(state, params, id, callbacks);
-    return;
-  }
-
-  if (method === 'config.setBrowserToolEnabled' && id !== undefined) {
-    handleConfigSetBrowserToolEnabled(state, params, id, callbacks);
-    return;
-  }
-
-  if (method === 'config.setAllBrowserToolsEnabled' && id !== undefined) {
-    handleConfigSetAllBrowserToolsEnabled(state, params, id, callbacks);
+  if (method === 'config.setPluginPermission' && id !== undefined) {
+    handleConfigSetPluginPermission(state, params, id, callbacks);
     return;
   }
 

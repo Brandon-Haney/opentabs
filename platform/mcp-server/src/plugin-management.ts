@@ -16,7 +16,6 @@ import {
   getConfigPath,
   isValidPluginPackageName,
   normalizePluginName,
-  OFFICIAL_SCOPE,
   platformExec,
   resolvePluginPackageCandidates,
 } from '@opentabs-dev/shared';
@@ -33,7 +32,6 @@ interface PluginSearchResult {
   description: string;
   version: string;
   author: string;
-  isOfficial: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,7 +201,6 @@ const searchNpmPlugins = async (query?: string): Promise<PluginSearchResult[]> =
       description: entry.description ?? '',
       version: entry.version,
       author: entry.publisher?.username ?? entry.author?.name ?? 'unknown',
-      isOfficial: entry.name.startsWith(`${OFFICIAL_SCOPE}/`),
     }));
   } catch {
     const error = new Error('Failed to parse npm search output') as Error & { code: number };

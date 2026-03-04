@@ -7,7 +7,6 @@ const mockNpmPlugin = (overrides?: Partial<PluginSearchResult>): PluginSearchRes
   description: 'OpenTabs plugin for Slack — send messages, list channels, and search conversations.',
   version: '1.2.0',
   author: 'opentabs-dev',
-  isOfficial: false,
   ...overrides,
 });
 
@@ -26,7 +25,7 @@ const Default: Story = {
 const Official: Story = {
   render: () => (
     <NpmPluginCard
-      plugin={mockNpmPlugin({ isOfficial: true })}
+      plugin={mockNpmPlugin({ name: '@opentabs-dev/opentabs-plugin-slack' })}
       installing={false}
       error={null}
       onInstall={() => undefined}
@@ -69,7 +68,6 @@ const AllStates: Story = {
       <NpmPluginCard plugin={mockNpmPlugin()} installing={false} error={null} onInstall={() => undefined} />
       <NpmPluginCard
         plugin={mockNpmPlugin({
-          isOfficial: true,
           name: '@opentabs-dev/opentabs-plugin-github',
           author: 'opentabs-dev',
         })}

@@ -318,7 +318,9 @@ const validPayload = (): Record<string, unknown> => ({
   name: 'test-plugin',
   version: '1.0.0',
   urlPatterns: ['*://example.com/*'],
-  tools: [{ name: 'do-thing', displayName: 'Do Thing', description: 'Does a thing', icon: 'wrench', enabled: true }],
+  tools: [
+    { name: 'do-thing', displayName: 'Do Thing', description: 'Does a thing', icon: 'wrench', permission: 'auto' },
+  ],
 });
 
 /** Assert the result is non-null and return the narrowed type */
@@ -344,12 +346,12 @@ describe('validatePluginPayload', () => {
         displayName: 'Test Plugin',
         sourcePath: '/some/path',
         adapterHash: 'abc123',
-        trustTier: 'official',
+        permission: 'auto',
       });
       expect(result.displayName).toBe('Test Plugin');
       expect(result.sourcePath).toBe('/some/path');
       expect(result.adapterHash).toBe('abc123');
-      expect(result.trustTier).toBe('official');
+      expect(result.permission).toBe('auto');
     });
 
     test('accepts single-word plugin name', () => {
@@ -482,8 +484,8 @@ describe('validatePluginPayload', () => {
   describe('tools handling', () => {
     test('passes through valid tool definitions', () => {
       const tools = [
-        { name: 'tool-a', displayName: 'Tool A', description: 'Tool A', icon: 'wrench', enabled: true },
-        { name: 'tool-b', displayName: 'Tool B', description: 'Tool B', icon: 'wrench', enabled: false },
+        { name: 'tool-a', displayName: 'Tool A', description: 'Tool A', icon: 'wrench', permission: 'auto' },
+        { name: 'tool-b', displayName: 'Tool B', description: 'Tool B', icon: 'wrench', permission: 'off' },
       ];
       const result = expectValid({ ...validPayload(), tools });
       expect(result.tools).toHaveLength(2);
@@ -492,7 +494,7 @@ describe('validatePluginPayload', () => {
       expect((firstTool as NonNullable<typeof firstTool>).name).toBe('tool-a');
       const secondTool = result.tools[1];
       expect(secondTool).toBeDefined();
-      expect((secondTool as NonNullable<typeof secondTool>).enabled).toBe(false);
+      expect((secondTool as NonNullable<typeof secondTool>).permission).toBe('off');
     });
 
     test('returns empty array when tools is missing', () => {
@@ -510,8 +512,8 @@ describe('validatePluginPayload', () => {
       const result = expectValid({
         ...validPayload(),
         tools: [
-          { description: 'No name', icon: 'wrench', enabled: true },
-          { name: 'valid', displayName: 'Valid', description: 'Has name', icon: 'wrench', enabled: true },
+          { description: 'No name', icon: 'wrench', permission: 'auto' },
+          { name: 'valid', displayName: 'Valid', description: 'Has name', icon: 'wrench', permission: 'auto' },
         ],
       });
       expect(result.tools).toHaveLength(1);
@@ -524,29 +526,29 @@ describe('validatePluginPayload', () => {
       const result = expectValid({
         ...validPayload(),
         tools: [
-          { name: 'no-desc', displayName: 'No Desc', icon: 'wrench', enabled: true },
-          { name: 'valid', displayName: 'Valid', description: 'Has desc', icon: 'wrench', enabled: true },
+          { name: 'no-desc', displayName: 'No Desc', icon: 'wrench', permission: 'auto' },
+          { name: 'valid', displayName: 'Valid', description: 'Has desc', icon: 'wrench', permission: 'auto' },
         ],
       });
       expect(result.tools).toHaveLength(1);
     });
 
-    test('defaults enabled=true for tools missing the enabled field and logs a warning', () => {
+    test('defaults permission to off for tools missing the permission field and logs a warning', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       const result = expectValid({
         ...validPayload(),
         tools: [
-          { name: 'no-enabled', displayName: 'No Enabled', description: 'Missing enabled', icon: 'wrench' },
-          { name: 'valid', displayName: 'Valid', description: 'Has enabled', icon: 'wrench', enabled: false },
+          { name: 'no-permission', displayName: 'No Permission', description: 'Missing permission', icon: 'wrench' },
+          { name: 'valid', displayName: 'Valid', description: 'Has permission', icon: 'wrench', permission: 'off' },
         ],
       });
       expect(result.tools).toHaveLength(2);
-      const noEnabledTool = result.tools[0];
-      expect(noEnabledTool).toBeDefined();
-      expect((noEnabledTool as NonNullable<typeof noEnabledTool>).name).toBe('no-enabled');
-      expect((noEnabledTool as NonNullable<typeof noEnabledTool>).enabled).toBe(true);
+      const noPermissionTool = result.tools[0];
+      expect(noPermissionTool).toBeDefined();
+      expect((noPermissionTool as NonNullable<typeof noPermissionTool>).name).toBe('no-permission');
+      expect((noPermissionTool as NonNullable<typeof noPermissionTool>).permission).toBe('off');
       expect(warnSpy).toHaveBeenCalledOnce();
-      expect(warnSpy.mock.calls[0]?.[0]).toContain('no-enabled');
+      expect(warnSpy.mock.calls[0]?.[0]).toContain('no-permission');
       warnSpy.mockRestore();
     });
 
@@ -557,7 +559,7 @@ describe('validatePluginPayload', () => {
           'not-an-object',
           null,
           42,
-          { name: 'valid', displayName: 'Valid', description: 'OK', icon: 'wrench', enabled: true },
+          { name: 'valid', displayName: 'Valid', description: 'OK', icon: 'wrench', permission: 'auto' },
         ],
       });
       expect(result.tools).toHaveLength(1);
@@ -576,26 +578,27 @@ describe('validatePluginPayload', () => {
       expect(result.version).toBe('0.0.0');
     });
 
-    test('defaults trustTier to local when missing', () => {
-      const result = expectValid(validPayload());
-      expect(result.trustTier).toBe('local');
+    test('defaults permission to off when missing', () => {
+      const { permission: _, ...payload } = validPayload();
+      const result = expectValid(payload);
+      expect(result.permission).toBe('off');
     });
 
-    test('defaults trustTier to local for invalid value', () => {
-      const result = expectValid({ ...validPayload(), trustTier: 'invalid' });
-      expect(result.trustTier).toBe('local');
+    test('defaults permission to off for invalid value', () => {
+      const result = expectValid({ ...validPayload(), permission: 'invalid' });
+      expect(result.permission).toBe('off');
     });
 
-    test('accepts official trustTier', () => {
-      expect(expectValid({ ...validPayload(), trustTier: 'official' }).trustTier).toBe('official');
+    test('accepts auto permission', () => {
+      expect(expectValid({ ...validPayload(), permission: 'auto' }).permission).toBe('auto');
     });
 
-    test('accepts community trustTier', () => {
-      expect(expectValid({ ...validPayload(), trustTier: 'community' }).trustTier).toBe('community');
+    test('accepts ask permission', () => {
+      expect(expectValid({ ...validPayload(), permission: 'ask' }).permission).toBe('ask');
     });
 
-    test('accepts local trustTier', () => {
-      expect(expectValid({ ...validPayload(), trustTier: 'local' }).trustTier).toBe('local');
+    test('accepts off permission', () => {
+      expect(expectValid({ ...validPayload(), permission: 'off' }).permission).toBe('off');
     });
 
     test('displayName falls back to name when missing', () => {
@@ -754,7 +757,7 @@ describe('handleServerMessage', () => {
                   displayName: 'Do Thing',
                   description: 'Does a thing',
                   icon: 'wrench',
-                  enabled: true,
+                  permission: 'auto',
                 },
               ],
             },
@@ -794,13 +797,13 @@ describe('handleServerMessage', () => {
                   displayName: 'Do Thing',
                   description: 'Does a thing',
                   icon: 'wrench',
-                  enabled: true,
+                  permission: 'auto',
                 },
               ],
             },
           ],
           failedPlugins: [{ specifier: 'bad-plugin', error: 'failed' }],
-          browserTools: [{ name: 'browser_list_tabs', description: 'List tabs', enabled: true }],
+          browserTools: [{ name: 'browser_list_tabs', description: 'List tabs', permission: 'auto' }],
           serverVersion: '3.0.0',
         },
       });
@@ -821,7 +824,9 @@ describe('handleServerMessage', () => {
 
       // Verify server-owned top-level fields
       expect(cacheArg.failedPlugins).toEqual([{ specifier: 'bad-plugin', error: 'failed' }]);
-      expect(cacheArg.browserTools).toEqual([{ name: 'browser_list_tabs', description: 'List tabs', enabled: true }]);
+      expect(cacheArg.browserTools).toEqual([
+        { name: 'browser_list_tabs', description: 'List tabs', permission: 'auto' },
+      ]);
       expect(cacheArg.serverVersion).toBe('3.0.0');
     });
 
@@ -853,7 +858,7 @@ describe('handleServerMessage', () => {
                   displayName: 'Do Thing',
                   description: 'Does a thing',
                   icon: 'wrench',
-                  enabled: true,
+                  permission: 'auto',
                 },
               ],
             },
@@ -882,7 +887,13 @@ describe('handleServerMessage', () => {
           version: '2.0.0',
           urlPatterns: ['*://example.com/*'],
           tools: [
-            { name: 'do-thing', displayName: 'Do Thing', description: 'Does a thing', icon: 'wrench', enabled: true },
+            {
+              name: 'do-thing',
+              displayName: 'Do Thing',
+              description: 'Does a thing',
+              icon: 'wrench',
+              permission: 'auto',
+            },
           ],
         },
       });
@@ -911,7 +922,7 @@ describe('handleServerMessage', () => {
             name: 'existing-plugin',
             displayName: 'Existing',
             version: '1.0.0',
-            trustTier: 'local',
+            permission: 'off',
             source: 'local',
             tabState: 'closed',
             urlPatterns: [],
@@ -932,7 +943,13 @@ describe('handleServerMessage', () => {
           source: 'npm',
           sdkVersion: '0.5.0',
           tools: [
-            { name: 'do-thing', displayName: 'Do Thing', description: 'Does a thing', icon: 'wrench', enabled: true },
+            {
+              name: 'do-thing',
+              displayName: 'Do Thing',
+              description: 'Does a thing',
+              icon: 'wrench',
+              permission: 'auto',
+            },
           ],
         },
       });
@@ -1639,7 +1656,7 @@ describe('handleServerMessage', () => {
               name: 'test-plugin',
               displayName: 'Test Plugin',
               version: '1.0.0',
-              trustTier: 'local',
+              permission: 'off',
               source: 'local',
               tabState: 'closed',
               urlPatterns: [],
@@ -1649,13 +1666,13 @@ describe('handleServerMessage', () => {
                   displayName: 'Do Thing',
                   description: 'Does a thing',
                   icon: 'wrench',
-                  enabled: true,
+                  permission: 'auto',
                 },
               ],
             },
           ],
           failedPlugins: [{ specifier: 'bad-plugin', error: 'load failed' }],
-          browserTools: [{ name: 'browser_list_tabs', description: 'List tabs', enabled: true }],
+          browserTools: [{ name: 'browser_list_tabs', description: 'List tabs', permission: 'auto' }],
           serverVersion: '1.2.3',
         },
       };
@@ -1667,7 +1684,9 @@ describe('handleServerMessage', () => {
       expect(cacheArg).toBeDefined();
       expect(cacheArg.plugins).toHaveLength(1);
       expect(cacheArg.failedPlugins).toEqual([{ specifier: 'bad-plugin', error: 'load failed' }]);
-      expect(cacheArg.browserTools).toEqual([{ name: 'browser_list_tabs', description: 'List tabs', enabled: true }]);
+      expect(cacheArg.browserTools).toEqual([
+        { name: 'browser_list_tabs', description: 'List tabs', permission: 'auto' },
+      ]);
       expect(cacheArg.serverVersion).toBe('1.2.3');
 
       // Verify cache update happens BEFORE side panel forwarding

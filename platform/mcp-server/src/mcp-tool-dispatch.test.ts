@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { z } from 'zod';
+import { savePluginPermissions } from './config.js';
 import {
   dispatchToExtension,
   isDispatchError,
@@ -7,18 +8,16 @@ import {
   sendInvocationEnd,
   sendInvocationStart,
 } from './extension-protocol.js';
-import type { RequestHandlerExtra } from './mcp-tool-dispatch.js';
+import type { DispatchCallbacks, RequestHandlerExtra } from './mcp-tool-dispatch.js';
 import {
   formatStructuredError,
   formatZodError,
   handleBrowserToolCall,
   handlePluginToolCall,
   sanitizeOutput,
-  truncateParamsPreview,
 } from './mcp-tool-dispatch.js';
-import { evaluatePermission } from './permissions.js';
 import type { CachedBrowserTool, ServerState, ToolLookupEntry } from './state.js';
-import { appendAuditEntry, isBrowserToolEnabled, isSessionAllowed } from './state.js';
+import { appendAuditEntry, getToolPermission } from './state.js';
 
 describe('sanitizeOutput', () => {
   describe('primitives passthrough', () => {
@@ -194,32 +193,6 @@ describe('formatZodError', () => {
   });
 });
 
-describe('truncateParamsPreview', () => {
-  test('short args passthrough without truncation', () => {
-    const args = { key: 'value' };
-    const json = JSON.stringify(args, null, 2);
-    expect(json.length).toBeLessThanOrEqual(200);
-    expect(truncateParamsPreview(args)).toBe(json);
-  });
-
-  test('truncates at 200 characters and appends ellipsis', () => {
-    const args = { data: 'x'.repeat(300) };
-    const result = truncateParamsPreview(args);
-    const json = JSON.stringify(args, null, 2);
-    expect(result).toBe(`${json.slice(0, 200)}…`);
-  });
-
-  test('does not truncate when json is exactly 200 chars', () => {
-    const prefix = '{\n  "data": "';
-    const suffix = '"\n}';
-    const valueLen = 200 - prefix.length - suffix.length;
-    const args = { data: 'x'.repeat(valueLen) };
-    const json = JSON.stringify(args, null, 2);
-    expect(json).toHaveLength(200);
-    expect(truncateParamsPreview(args)).toBe(json);
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Mocks for handler tests (handleBrowserToolCall, handlePluginToolCall)
 // ---------------------------------------------------------------------------
@@ -232,14 +205,13 @@ vi.mock('./extension-protocol.js', () => ({
   sendConfirmationRequest: vi.fn(),
 }));
 
-vi.mock('./permissions.js', () => ({
-  evaluatePermission: vi.fn(),
+vi.mock('./state.js', () => ({
+  getToolPermission: vi.fn(),
+  appendAuditEntry: vi.fn(),
 }));
 
-vi.mock('./state.js', () => ({
-  isBrowserToolEnabled: vi.fn(),
-  appendAuditEntry: vi.fn(),
-  isSessionAllowed: vi.fn(),
+vi.mock('./config.js', () => ({
+  savePluginPermissions: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('./sanitize-error.js', () => ({
@@ -256,14 +228,8 @@ const createMockState = (overrides: Partial<ServerState> = {}): ServerState =>
     extensionWs: { send: vi.fn(), close: vi.fn() },
     activeDispatches: new Map<string, number>(),
     auditLog: [],
-    sessionPermissions: [],
     skipPermissions: false,
-    permissions: {
-      trustedDomains: ['localhost'],
-      sensitiveDomains: [],
-      toolPolicy: {},
-      domainToolPolicy: {},
-    },
+    pluginPermissions: {},
     pendingConfirmations: new Map(),
     ...overrides,
   }) as unknown as ServerState;
@@ -293,6 +259,11 @@ const createMockExtra = (overrides: Partial<RequestHandlerExtra> = {}): RequestH
   ...overrides,
 });
 
+/** Create mock DispatchCallbacks */
+const createMockCallbacks = (): DispatchCallbacks => ({
+  onToolConfigChanged: vi.fn(),
+});
+
 /** Create a mock ToolLookupEntry */
 const createMockLookup = (overrides: Partial<ToolLookupEntry> = {}): ToolLookupEntry => ({
   pluginName: 'testplugin',
@@ -311,184 +282,144 @@ describe('handleBrowserToolCall', () => {
     vi.clearAllMocks();
   });
 
-  test('disabled tool returns isError', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(false);
+  test('permission off returns disabled error', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('off');
     const state = createMockState();
     const bt = createMockBrowserTool();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
-    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
+    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra, callbacks);
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain('disabled via configuration');
+    expect(result.content[0]?.text).toContain('currently disabled');
+    expect(result.content[0]?.text).toContain('enable it in the OpenTabs side panel');
+  });
+
+  test('permission auto executes immediately', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    const handler = vi.fn().mockResolvedValue({ ok: true });
+    const state = createMockState();
+    const bt = createMockBrowserTool({ schema: z.object({}), handler });
+    const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
+
+    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra, callbacks);
+
+    expect(result.isError).toBeUndefined();
+    expect(handler).toHaveBeenCalled();
+    expect(sendConfirmationRequest).not.toHaveBeenCalled();
+  });
+
+  test('permission ask with deny returns error', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('ask');
+    vi.mocked(sendConfirmationRequest).mockResolvedValue({ action: 'deny', alwaysAllow: false });
+    const state = createMockState();
+    const bt = createMockBrowserTool();
+    const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
+
+    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra, callbacks);
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('denied by the user');
+    expect(sendConfirmationRequest).toHaveBeenCalledWith(state, 'browser_test_tool', 'browser', {});
+  });
+
+  test('permission ask with allow executes tool', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('ask');
+    vi.mocked(sendConfirmationRequest).mockResolvedValue({ action: 'allow', alwaysAllow: false });
+    const handler = vi.fn().mockResolvedValue({ ok: true });
+    const state = createMockState();
+    const bt = createMockBrowserTool({ schema: z.object({}), handler });
+    const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
+
+    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra, callbacks);
+
+    expect(result.isError).toBeUndefined();
+    expect(handler).toHaveBeenCalled();
+    expect(savePluginPermissions).not.toHaveBeenCalled();
+    expect(callbacks.onToolConfigChanged).not.toHaveBeenCalled();
+  });
+
+  test('permission ask with alwaysAllow persists to auto', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('ask');
+    vi.mocked(sendConfirmationRequest).mockResolvedValue({ action: 'allow', alwaysAllow: true });
+    const handler = vi.fn().mockResolvedValue({ ok: true });
+    const state = createMockState();
+    const bt = createMockBrowserTool({ schema: z.object({}), handler });
+    const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
+
+    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra, callbacks);
+
+    expect(result.isError).toBeUndefined();
+    expect(handler).toHaveBeenCalled();
+    expect(state.pluginPermissions.browser?.tools?.browser_test_tool).toBe('auto');
+    expect(savePluginPermissions).toHaveBeenCalledWith(state, state.pluginPermissions);
+    expect(callbacks.onToolConfigChanged).toHaveBeenCalled();
+  });
+
+  test('permission ask sends progress notification when progressToken available', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('ask');
+    vi.mocked(sendConfirmationRequest).mockResolvedValue({ action: 'allow', alwaysAllow: false });
+    const handler = vi.fn().mockResolvedValue({ ok: true });
+    const state = createMockState();
+    const bt = createMockBrowserTool({ schema: z.object({}), handler });
+    const sendNotification = vi.fn().mockResolvedValue(undefined);
+    const extra = createMockExtra({ _meta: { progressToken: 'tok-1' }, sendNotification });
+    const callbacks = createMockCallbacks();
+
+    await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra, callbacks);
+
+    expect(sendNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'notifications/progress',
+        params: expect.objectContaining({
+          progressToken: 'tok-1',
+          message: expect.stringContaining('approval') as string,
+        }) as Record<string, unknown>,
+      }) as Record<string, unknown>,
+    );
+  });
+
+  test('permission ask with extension disconnect returns error', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('ask');
+    vi.mocked(sendConfirmationRequest).mockRejectedValue(new Error('disconnected'));
+    const state = createMockState();
+    const bt = createMockBrowserTool();
+    const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
+
+    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra, callbacks);
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('extension is not connected');
   });
 
   test('Zod validation failure returns isError with formatted message', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     const state = createMockState();
     const bt = createMockBrowserTool({ schema: z.object({ url: z.string() }) });
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
-    const result = await handleBrowserToolCall(state, 'browser_test_tool', { url: 123 }, bt, extra);
+    const result = await handleBrowserToolCall(state, 'browser_test_tool', { url: 123 }, bt, extra, callbacks);
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain('Invalid arguments');
   });
 
-  test('permission denied returns isError with PERMISSION_DENIED', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(false);
-    vi.mocked(evaluatePermission).mockReturnValue('deny');
-    const state = createMockState();
-    const bt = createMockBrowserTool({ schema: z.object({}) });
-    const extra = createMockExtra();
-
-    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain('PERMISSION_DENIED');
-  });
-
-  test('permission denied includes domain in message when domain is present', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(false);
-    vi.mocked(evaluatePermission).mockReturnValue('deny');
-    const state = createMockState();
-    const bt = createMockBrowserTool({ schema: z.object({ url: z.string().optional() }) });
-    const extra = createMockExtra();
-
-    const result = await handleBrowserToolCall(
-      state,
-      'browser_test_tool',
-      { url: 'https://example.com/page' },
-      bt,
-      extra,
-    );
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain('example.com');
-  });
-
-  test('permission allow skips confirmation and executes handler', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(false);
-    vi.mocked(evaluatePermission).mockReturnValue('allow');
-    const handler = vi.fn().mockResolvedValue({ data: 'hello' });
-    const state = createMockState();
-    const bt = createMockBrowserTool({ schema: z.object({}), handler });
-    const extra = createMockExtra();
-
-    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
-
-    expect(result.isError).toBeUndefined();
-    expect(result.content[0]?.text).toContain('"data"');
-    expect(result.content[0]?.text).toContain('"hello"');
-    expect(sendConfirmationRequest).not.toHaveBeenCalled();
-  });
-
-  test('session allowed skips permission evaluation and confirmation', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(true);
-    const handler = vi.fn().mockResolvedValue({ ok: true });
-    const state = createMockState();
-    const bt = createMockBrowserTool({ schema: z.object({}), handler });
-    const extra = createMockExtra();
-
-    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
-
-    expect(result.isError).toBeUndefined();
-    expect(evaluatePermission).not.toHaveBeenCalled();
-    expect(sendConfirmationRequest).not.toHaveBeenCalled();
-  });
-
-  test('permission ask with deny decision returns PERMISSION_DENIED', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(false);
-    vi.mocked(evaluatePermission).mockReturnValue('ask');
-    vi.mocked(sendConfirmationRequest).mockResolvedValue('deny');
-    const state = createMockState();
-    const bt = createMockBrowserTool({ schema: z.object({}) });
-    const extra = createMockExtra();
-
-    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain('PERMISSION_DENIED');
-    expect(result.content[0]?.text).toContain('user denied');
-  });
-
-  test('permission ask with allow_once decision executes handler', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(false);
-    vi.mocked(evaluatePermission).mockReturnValue('ask');
-    vi.mocked(sendConfirmationRequest).mockResolvedValue('allow_once');
-    const handler = vi.fn().mockResolvedValue({ dispatched: true });
-    const state = createMockState();
-    const bt = createMockBrowserTool({ schema: z.object({}), handler });
-    const extra = createMockExtra();
-
-    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
-
-    expect(result.isError).toBeUndefined();
-    expect(handler).toHaveBeenCalled();
-  });
-
-  test('permission ask with allow_always decision executes handler', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(false);
-    vi.mocked(evaluatePermission).mockReturnValue('ask');
-    vi.mocked(sendConfirmationRequest).mockResolvedValue('allow_always');
-    const handler = vi.fn().mockResolvedValue({ dispatched: true });
-    const state = createMockState();
-    const bt = createMockBrowserTool({ schema: z.object({}), handler });
-    const extra = createMockExtra();
-
-    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
-
-    expect(result.isError).toBeUndefined();
-    expect(handler).toHaveBeenCalled();
-  });
-
-  test('confirmation timeout returns CONFIRMATION_TIMEOUT', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(false);
-    vi.mocked(evaluatePermission).mockReturnValue('ask');
-    vi.mocked(sendConfirmationRequest).mockRejectedValue(new Error('CONFIRMATION_TIMEOUT'));
-    const state = createMockState();
-    const bt = createMockBrowserTool({ schema: z.object({}) });
-    const extra = createMockExtra();
-
-    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain('CONFIRMATION_TIMEOUT');
-  });
-
-  test('confirmation error returns confirmation error message', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(false);
-    vi.mocked(evaluatePermission).mockReturnValue('ask');
-    vi.mocked(sendConfirmationRequest).mockRejectedValue(new Error('Extension not connected'));
-    const state = createMockState();
-    const bt = createMockBrowserTool({ schema: z.object({}) });
-    const extra = createMockExtra();
-
-    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain('Confirmation error');
-    expect(result.content[0]?.text).toContain('Extension not connected');
-  });
-
   test('successful execution returns sanitized output (dangerous keys stripped)', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(true);
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     const handler = vi.fn().mockResolvedValue({ safe: 'value', __proto__: 'bad' });
     const state = createMockState();
     const bt = createMockBrowserTool({ schema: z.object({}), handler });
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
-    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
+    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra, callbacks);
 
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>;
@@ -497,28 +428,30 @@ describe('handleBrowserToolCall', () => {
   });
 
   test('handler error returns "Browser tool error:" message', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(true);
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+
     const handler = vi.fn().mockRejectedValue(new Error('tab crashed'));
     const state = createMockState();
     const bt = createMockBrowserTool({ schema: z.object({}), handler });
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
-    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
+    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra, callbacks);
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toBe('Browser tool error: tab crashed');
   });
 
   test('audit entry recorded on success', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(true);
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+
     const handler = vi.fn().mockResolvedValue({ ok: true });
     const state = createMockState();
     const bt = createMockBrowserTool({ schema: z.object({}), handler });
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
-    await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
+    await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra, callbacks);
 
     expect(appendAuditEntry).toHaveBeenCalledTimes(1);
     const entry = (vi.mocked(appendAuditEntry).mock.calls[0] as unknown[])[1] as Record<string, unknown>;
@@ -531,14 +464,15 @@ describe('handleBrowserToolCall', () => {
   });
 
   test('audit entry recorded on failure with error info', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(true);
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+
     const handler = vi.fn().mockRejectedValue(new Error('boom'));
     const state = createMockState();
     const bt = createMockBrowserTool({ schema: z.object({}), handler });
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
-    await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
+    await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra, callbacks);
 
     expect(appendAuditEntry).toHaveBeenCalledTimes(1);
     const entry = (vi.mocked(appendAuditEntry).mock.calls[0] as unknown[])[1] as Record<string, unknown>;
@@ -550,42 +484,16 @@ describe('handleBrowserToolCall', () => {
     });
   });
 
-  test('ask permission with progressToken sends progress notification', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(false);
-    vi.mocked(evaluatePermission).mockReturnValue('ask');
-    vi.mocked(sendConfirmationRequest).mockResolvedValue('allow_once');
-    const handler = vi.fn().mockResolvedValue({});
-    const state = createMockState();
-    const bt = createMockBrowserTool({ schema: z.object({}), handler });
-    const sendNotification = vi.fn().mockResolvedValue(undefined);
-    const extra = createMockExtra({
-      _meta: { progressToken: 'tok-1' },
-      sendNotification,
-    });
-
-    await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
-
-    expect(sendNotification).toHaveBeenCalledWith(
-      expect.objectContaining({
-        method: 'notifications/progress',
-        params: expect.objectContaining({
-          progressToken: 'tok-1',
-          message: expect.stringContaining('approval') as string,
-        }) as Record<string, unknown>,
-      }),
-    );
-  });
-
   test('sendInvocationStart and sendInvocationEnd are called', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(true);
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+
     const handler = vi.fn().mockResolvedValue({ ok: true });
     const state = createMockState();
     const bt = createMockBrowserTool({ schema: z.object({}), handler });
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
-    await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
+    await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra, callbacks);
 
     expect(sendInvocationStart).toHaveBeenCalledWith(state, 'browser', 'browser_test_tool');
     expect(sendInvocationEnd).toHaveBeenCalledWith(
@@ -598,14 +506,15 @@ describe('handleBrowserToolCall', () => {
   });
 
   test('sendInvocationEnd reports success=false on error', async () => {
-    vi.mocked(isBrowserToolEnabled).mockReturnValue(true);
-    vi.mocked(isSessionAllowed).mockReturnValue(true);
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+
     const handler = vi.fn().mockRejectedValue(new Error('tool failed'));
     const state = createMockState();
     const bt = createMockBrowserTool({ schema: z.object({}), handler });
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
-    await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra);
+    await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra, callbacks);
 
     expect(sendInvocationEnd).toHaveBeenCalledWith(
       state,
@@ -626,13 +535,12 @@ describe('handlePluginToolCall', () => {
     vi.clearAllMocks();
   });
 
-  test('schema compilation failure (validate is null) returns error', async () => {
+  test('permission off returns disabled error', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('off');
     const state = createMockState();
-    const lookup = createMockLookup({
-      validate: null,
-      validationErrors: vi.fn().mockReturnValue('Schema compilation error'),
-    });
+    const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     const result = await handlePluginToolCall(
       state,
@@ -642,6 +550,156 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('currently disabled');
+    expect(result.content[0]?.text).toContain('enable it in the OpenTabs side panel');
+  });
+
+  test('permission ask with deny returns error', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('ask');
+    vi.mocked(sendConfirmationRequest).mockResolvedValue({ action: 'deny', alwaysAllow: false });
+    const state = createMockState();
+    const lookup = createMockLookup();
+    const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
+
+    const result = await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('denied by the user');
+    expect(sendConfirmationRequest).toHaveBeenCalledWith(state, 'test_action', 'testplugin', {});
+  });
+
+  test('permission ask with allow executes tool', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('ask');
+    vi.mocked(sendConfirmationRequest).mockResolvedValue({ action: 'allow', alwaysAllow: false });
+    vi.mocked(dispatchToExtension).mockResolvedValue({ output: { ok: true } });
+    const state = createMockState();
+    const lookup = createMockLookup();
+    const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
+
+    const result = await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(dispatchToExtension).toHaveBeenCalled();
+    expect(savePluginPermissions).not.toHaveBeenCalled();
+  });
+
+  test('permission ask with alwaysAllow persists to auto', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('ask');
+    vi.mocked(sendConfirmationRequest).mockResolvedValue({ action: 'allow', alwaysAllow: true });
+    vi.mocked(dispatchToExtension).mockResolvedValue({ output: { ok: true } });
+    const state = createMockState();
+    const lookup = createMockLookup();
+    const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
+
+    const result = await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(state.pluginPermissions.testplugin?.tools?.test_action).toBe('auto');
+    expect(savePluginPermissions).toHaveBeenCalledWith(state, state.pluginPermissions);
+    expect(callbacks.onToolConfigChanged).toHaveBeenCalled();
+  });
+
+  test('permission auto proceeds to dispatch without confirmation', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    vi.mocked(dispatchToExtension).mockResolvedValue({ output: { id: '123' } });
+    const state = createMockState();
+    const lookup = createMockLookup();
+    const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
+
+    const result = await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(sendConfirmationRequest).not.toHaveBeenCalled();
+  });
+
+  test('skipPermissions=true overrides off to auto (tool executes)', async () => {
+    // getToolPermission already returns 'auto' when skipPermissions is true,
+    // so we mock it accordingly
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
+    const state = createMockState({ skipPermissions: true });
+    const lookup = createMockLookup();
+    const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
+
+    const result = await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(sendConfirmationRequest).not.toHaveBeenCalled();
+  });
+
+  test('schema compilation failure (validate is null) returns error', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    const state = createMockState();
+    const lookup = createMockLookup({
+      validate: null,
+      validationErrors: vi.fn().mockReturnValue('Schema compilation error'),
+    });
+    const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
+
+    const result = await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
     );
 
     expect(result.isError).toBe(true);
@@ -649,6 +707,7 @@ describe('handlePluginToolCall', () => {
   });
 
   test('validator throws returns "validation failed unexpectedly"', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     const state = createMockState();
     const lookup = createMockLookup({
       validate: vi.fn().mockImplementation(() => {
@@ -656,6 +715,7 @@ describe('handlePluginToolCall', () => {
       }),
     });
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     const result = await handlePluginToolCall(
       state,
@@ -665,6 +725,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     expect(result.isError).toBe(true);
@@ -672,12 +733,14 @@ describe('handlePluginToolCall', () => {
   });
 
   test('validation failure returns "Invalid arguments" with errors', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     const state = createMockState();
     const lookup = createMockLookup({
       validate: vi.fn().mockReturnValue(false),
       validationErrors: vi.fn().mockReturnValue('missing required field "channel"'),
     });
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     const result = await handlePluginToolCall(
       state,
@@ -687,6 +750,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     expect(result.isError).toBe(true);
@@ -695,10 +759,12 @@ describe('handlePluginToolCall', () => {
   });
 
   test('concurrency limit exceeded returns error', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     const state = createMockState();
     state.activeDispatches.set('testplugin', 5);
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     const result = await handlePluginToolCall(
       state,
@@ -708,6 +774,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     expect(result.isError).toBe(true);
@@ -716,9 +783,11 @@ describe('handlePluginToolCall', () => {
   });
 
   test('extension not connected returns error', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     const state = createMockState({ extensionWs: null });
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     const result = await handlePluginToolCall(
       state,
@@ -728,6 +797,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     expect(result.isError).toBe(true);
@@ -735,10 +805,12 @@ describe('handlePluginToolCall', () => {
   });
 
   test('successful dispatch returns sanitized output', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockResolvedValue({ output: { id: '123', name: 'test' } });
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     const result = await handlePluginToolCall(
       state,
@@ -748,6 +820,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     expect(result.isError).toBeUndefined();
@@ -756,10 +829,12 @@ describe('handlePluginToolCall', () => {
   });
 
   test('successful dispatch sanitizes dangerous keys from output', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockResolvedValue({ output: { safe: 1, __proto__: 'bad', constructor: 'bad' } });
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     const result = await handlePluginToolCall(
       state,
@@ -769,6 +844,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     expect(result.isError).toBeUndefined();
@@ -779,10 +855,12 @@ describe('handlePluginToolCall', () => {
   });
 
   test('dispatch result without output field uses raw result', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockResolvedValue({ directResult: true });
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     const result = await handlePluginToolCall(
       state,
@@ -792,6 +870,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     expect(result.isError).toBeUndefined();
@@ -800,12 +879,14 @@ describe('handlePluginToolCall', () => {
   });
 
   test('DispatchError with code -32001 prefixes "Tab closed:"', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     const err = Object.assign(new Error('tab was closed'), { name: 'DispatchError', code: -32001, data: undefined });
     vi.mocked(dispatchToExtension).mockRejectedValue(err);
     vi.mocked(isDispatchError).mockReturnValue(true);
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     const result = await handlePluginToolCall(
       state,
@@ -815,6 +896,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     expect(result.isError).toBe(true);
@@ -822,12 +904,14 @@ describe('handlePluginToolCall', () => {
   });
 
   test('DispatchError with code -32002 prefixes "Tab unavailable:"', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     const err = Object.assign(new Error('plugin not loaded'), { name: 'DispatchError', code: -32002, data: undefined });
     vi.mocked(dispatchToExtension).mockRejectedValue(err);
     vi.mocked(isDispatchError).mockReturnValue(true);
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     const result = await handlePluginToolCall(
       state,
@@ -837,6 +921,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     expect(result.isError).toBe(true);
@@ -844,6 +929,7 @@ describe('handlePluginToolCall', () => {
   });
 
   test('DispatchError with data.code (ToolError) formats structured error', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     const err = Object.assign(new Error('rate limited'), {
       name: 'DispatchError',
       code: -32000,
@@ -854,6 +940,7 @@ describe('handlePluginToolCall', () => {
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     const result = await handlePluginToolCall(
       state,
@@ -863,6 +950,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     expect(result.isError).toBe(true);
@@ -874,6 +962,7 @@ describe('handlePluginToolCall', () => {
   });
 
   test('DispatchError with data.code only (no structured fields) uses legacy format', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     const err = Object.assign(new Error('something wrong'), {
       name: 'DispatchError',
       code: -32000,
@@ -884,6 +973,7 @@ describe('handlePluginToolCall', () => {
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     const result = await handlePluginToolCall(
       state,
@@ -893,6 +983,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     expect(result.isError).toBe(true);
@@ -900,11 +991,13 @@ describe('handlePluginToolCall', () => {
   });
 
   test('generic non-dispatch error returns "Tool dispatch error:" message', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockRejectedValue(new Error('network failure'));
     vi.mocked(isDispatchError).mockReturnValue(false);
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     const result = await handlePluginToolCall(
       state,
@@ -914,6 +1007,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     expect(result.isError).toBe(true);
@@ -922,35 +1016,68 @@ describe('handlePluginToolCall', () => {
   });
 
   test('activeDispatches counter increments and decrements correctly', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     expect(state.activeDispatches.get('testplugin')).toBeUndefined();
-    await handlePluginToolCall(state, 'testplugin_test_action', {}, 'testplugin', 'test_action', lookup, extra);
+    await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
+    );
     // After completion, counter should be cleaned up (deleted when reaches 0)
     expect(state.activeDispatches.has('testplugin')).toBe(false);
   });
 
   test('activeDispatches counter decrements on error', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockRejectedValue(new Error('fail'));
     vi.mocked(isDispatchError).mockReturnValue(false);
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
-    await handlePluginToolCall(state, 'testplugin_test_action', {}, 'testplugin', 'test_action', lookup, extra);
+    await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
+    );
     expect(state.activeDispatches.has('testplugin')).toBe(false);
   });
 
   test('sendInvocationStart and sendInvocationEnd are called', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
-    await handlePluginToolCall(state, 'testplugin_test_action', {}, 'testplugin', 'test_action', lookup, extra);
+    await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
+    );
 
     expect(sendInvocationStart).toHaveBeenCalledWith(state, 'testplugin', 'test_action');
     expect(sendInvocationEnd).toHaveBeenCalledWith(
@@ -963,13 +1090,24 @@ describe('handlePluginToolCall', () => {
   });
 
   test('sendInvocationEnd reports success=false on error', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockRejectedValue(new Error('fail'));
     vi.mocked(isDispatchError).mockReturnValue(false);
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
-    await handlePluginToolCall(state, 'testplugin_test_action', {}, 'testplugin', 'test_action', lookup, extra);
+    await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
+    );
 
     expect(sendInvocationEnd).toHaveBeenCalledWith(
       state,
@@ -981,12 +1119,23 @@ describe('handlePluginToolCall', () => {
   });
 
   test('audit entry recorded on success', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
-    await handlePluginToolCall(state, 'testplugin_test_action', {}, 'testplugin', 'test_action', lookup, extra);
+    await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
+    );
 
     expect(appendAuditEntry).toHaveBeenCalledTimes(1);
     const entry = (vi.mocked(appendAuditEntry).mock.calls[0] as unknown[])[1] as Record<string, unknown>;
@@ -998,6 +1147,7 @@ describe('handlePluginToolCall', () => {
   });
 
   test('audit entry recorded on failure with error info', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     const err = Object.assign(new Error('not found'), {
       name: 'DispatchError',
       code: -32000,
@@ -1008,8 +1158,18 @@ describe('handlePluginToolCall', () => {
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
-    await handlePluginToolCall(state, 'testplugin_test_action', {}, 'testplugin', 'test_action', lookup, extra);
+    await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
+    );
 
     expect(appendAuditEntry).toHaveBeenCalledTimes(1);
     const entry = (vi.mocked(appendAuditEntry).mock.calls[0] as unknown[])[1] as Record<string, unknown>;
@@ -1022,12 +1182,23 @@ describe('handlePluginToolCall', () => {
   });
 
   test('progress reporting with progressToken passes onProgress to dispatch', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra({ _meta: { progressToken: 'prog-1' } });
+    const callbacks = createMockCallbacks();
 
-    await handlePluginToolCall(state, 'testplugin_test_action', {}, 'testplugin', 'test_action', lookup, extra);
+    await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
+    );
 
     expect(dispatchToExtension).toHaveBeenCalledWith(
       state,
@@ -1041,12 +1212,23 @@ describe('handlePluginToolCall', () => {
   });
 
   test('dispatch without progressToken does not include onProgress', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra(); // no _meta
+    const callbacks = createMockCallbacks();
 
-    await handlePluginToolCall(state, 'testplugin_test_action', {}, 'testplugin', 'test_action', lookup, extra);
+    await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
+    );
 
     expect(dispatchToExtension).toHaveBeenCalledWith(
       state,
@@ -1059,11 +1241,22 @@ describe('handlePluginToolCall', () => {
   });
 
   test('extension not connected sets success=false in audit and invocationEnd', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     const state = createMockState({ extensionWs: null });
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
-    await handlePluginToolCall(state, 'testplugin_test_action', {}, 'testplugin', 'test_action', lookup, extra);
+    await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      {},
+      'testplugin',
+      'test_action',
+      lookup,
+      extra,
+      callbacks,
+    );
 
     expect(sendInvocationEnd).toHaveBeenCalledWith(
       state,
@@ -1077,11 +1270,13 @@ describe('handlePluginToolCall', () => {
   });
 
   test('tabId is stripped from args before Ajv validation', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
     const state = createMockState();
     const validate = vi.fn().mockReturnValue(true);
     const lookup = createMockLookup({ validate });
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     await handlePluginToolCall(
       state,
@@ -1091,6 +1286,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     // Ajv validate should have been called with args that do NOT contain tabId
@@ -1101,10 +1297,12 @@ describe('handlePluginToolCall', () => {
   });
 
   test('tabId is threaded as top-level param to dispatchToExtension', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     await handlePluginToolCall(
       state,
@@ -1114,6 +1312,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     expect(dispatchToExtension).toHaveBeenCalledWith(
@@ -1130,10 +1329,12 @@ describe('handlePluginToolCall', () => {
   });
 
   test('tabId is omitted from dispatch params when not present in args', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     await handlePluginToolCall(
       state,
@@ -1143,6 +1344,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     const dispatchCall = vi.mocked(dispatchToExtension).mock.calls[0];
@@ -1156,11 +1358,13 @@ describe('handlePluginToolCall', () => {
   });
 
   test('non-numeric tabId is ignored (not extracted, not stripped)', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
     const state = createMockState();
     const validate = vi.fn().mockReturnValue(true);
     const lookup = createMockLookup({ validate });
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     await handlePluginToolCall(
       state,
@@ -1170,6 +1374,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     // Non-numeric tabId is excluded from pluginArgs via destructuring, so tabId is not sent to extension
@@ -1185,11 +1390,13 @@ describe('handlePluginToolCall', () => {
     ['-1', -1],
     ['1.5', 1.5],
   ])('invalid tabId %s is treated as absent (no tab targeting)', async (_label, invalidTabId) => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
     const state = createMockState();
     const validate = vi.fn().mockReturnValue(true);
     const lookup = createMockLookup({ validate });
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     await handlePluginToolCall(
       state,
@@ -1199,6 +1406,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     // Invalid tabId is excluded from pluginArgs via destructuring and treated as absent
@@ -1208,10 +1416,12 @@ describe('handlePluginToolCall', () => {
   });
 
   test('original args object is not mutated', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
     vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
     const state = createMockState();
     const lookup = createMockLookup();
     const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
 
     const originalArgs: Record<string, unknown> = { channel: '#general', tabId: 42 };
 
@@ -1223,6 +1433,7 @@ describe('handlePluginToolCall', () => {
       'test_action',
       lookup,
       extra,
+      callbacks,
     );
 
     // The caller's args object must not be modified — tabId should still be present

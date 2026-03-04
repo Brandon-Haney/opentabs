@@ -500,10 +500,9 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, sender, sendResp
     case 'ws:state':
     case 'ws:message':
     case 'bg:getFullState':
-    case 'bg:setToolEnabled':
-    case 'bg:setAllToolsEnabled':
-    case 'bg:setBrowserToolEnabled':
-    case 'bg:setAllBrowserToolsEnabled':
+    case 'bg:setToolPermission':
+    case 'bg:setAllToolsPermission':
+    case 'bg:setPluginPermission':
     case 'bg:searchPlugins':
     case 'bg:installPlugin':
     case 'bg:removePlugin':
@@ -514,7 +513,6 @@ chrome.runtime.onMessage.addListener((message: InternalMessage, sender, sendResp
     case 'sp:connectionState':
     case 'sp:serverMessage':
     case 'sp:confirmationResponse':
-    case 'sp:confirmationTimeout':
       break;
   }
 

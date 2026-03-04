@@ -3,7 +3,7 @@ import type {
   ConfigStateFailedPlugin,
   ConfigStatePlugin,
   ConfigStateResult,
-  TrustTier,
+  ToolPermission,
   WireToolDef,
 } from '@opentabs-dev/shared';
 import {
@@ -126,7 +126,7 @@ interface ValidatedPluginPayload {
   version: string;
   displayName: string;
   urlPatterns: string[];
-  trustTier: TrustTier;
+  permission: ToolPermission;
   sourcePath?: string;
   adapterHash?: string;
   adapterFile?: string;
@@ -143,7 +143,7 @@ const toPluginMeta = (p: ValidatedPluginPayload): PluginMeta => ({
   version: p.version,
   displayName: p.displayName,
   urlPatterns: p.urlPatterns,
-  trustTier: p.trustTier,
+  permission: p.permission,
   sourcePath: p.sourcePath,
   adapterHash: p.adapterHash,
   adapterFile: p.adapterFile,
@@ -195,9 +195,9 @@ const validatePluginPayload = (raw: unknown): ValidatedPluginPayload | null => {
             typeof (t as Record<string, unknown>).description === 'string',
         )
         .map((t): WireToolDef => {
-          if (typeof t.enabled !== 'boolean') {
+          if (t.permission !== 'off' && t.permission !== 'ask' && t.permission !== 'auto') {
             console.warn(
-              `[opentabs] Tool "${t.name as string}" in plugin "${obj.name as string}" is missing the "enabled" field — defaulting to enabled=true. This is a server-side bug.`,
+              `[opentabs] Tool "${t.name as string}" in plugin "${obj.name as string}" has invalid "permission" field — defaulting to permission='off'. This is a server-side bug.`,
             );
           }
           return {
@@ -206,7 +206,10 @@ const validatePluginPayload = (raw: unknown): ValidatedPluginPayload | null => {
             description: t.description as string,
             icon: typeof t.icon === 'string' ? t.icon : 'wrench',
             ...(typeof t.group === 'string' ? { group: t.group } : {}),
-            enabled: typeof t.enabled === 'boolean' ? t.enabled : true,
+            permission:
+              t.permission === 'off' || t.permission === 'ask' || t.permission === 'auto'
+                ? (t.permission as ToolPermission)
+                : 'off',
           };
         })
     : [];
@@ -216,10 +219,10 @@ const validatePluginPayload = (raw: unknown): ValidatedPluginPayload | null => {
     version: typeof obj.version === 'string' ? obj.version : '0.0.0',
     displayName: typeof obj.displayName === 'string' ? obj.displayName : obj.name,
     urlPatterns,
-    trustTier:
-      obj.trustTier === 'official' || obj.trustTier === 'community' || obj.trustTier === 'local'
-        ? obj.trustTier
-        : 'local',
+    permission:
+      obj.permission === 'off' || obj.permission === 'ask' || obj.permission === 'auto'
+        ? (obj.permission as ToolPermission)
+        : 'off',
     sourcePath: typeof obj.sourcePath === 'string' ? obj.sourcePath : undefined,
     adapterHash: typeof obj.adapterHash === 'string' ? obj.adapterHash : undefined,
     adapterFile: typeof obj.adapterFile === 'string' ? obj.adapterFile : undefined,
@@ -351,7 +354,7 @@ const handleSyncFull = async (params: Record<string, unknown>): Promise<void> =>
       name: p.name,
       displayName: p.displayName,
       version: p.version,
-      trustTier: p.trustTier,
+      permission: p.permission,
       source: raw?.source === 'npm' || raw?.source === 'local' ? raw.source : 'local',
       tabState: 'closed' as const,
       urlPatterns: p.urlPatterns,
@@ -380,12 +383,20 @@ const handleSyncFull = async (params: Record<string, unknown>): Promise<void> =>
     ? (params.browserTools as ConfigStateBrowserTool[])
     : undefined;
   const rawServerVersion = typeof params.serverVersion === 'string' ? params.serverVersion : undefined;
+  const rawBrowserPermission = params.browserPermission;
+  const browserPermission =
+    rawBrowserPermission === 'off' || rawBrowserPermission === 'ask' || rawBrowserPermission === 'auto'
+      ? rawBrowserPermission
+      : undefined;
+  const rawSkipPermissions = typeof params.skipPermissions === 'boolean' ? params.skipPermissions : undefined;
 
   updateServerStateCache({
     plugins: cachePlugins,
     ...(rawFailedPlugins ? { failedPlugins: rawFailedPlugins } : {}),
     ...(rawBrowserTools ? { browserTools: rawBrowserTools } : {}),
+    ...(browserPermission !== undefined ? { browserPermission } : {}),
     ...(rawServerVersion !== undefined ? { serverVersion: rawServerVersion } : {}),
+    ...(rawSkipPermissions !== undefined ? { skipPermissions: rawSkipPermissions } : {}),
   });
 
   // Mark caches as initialized so the bg:getFullState wake detection
@@ -439,14 +450,14 @@ const handlePluginUpdate = async (params: Record<string, unknown>): Promise<void
   sendTabStateNotification(meta.name, newState);
 
   // Update the server state cache with the updated plugin's data so the
-  // side panel reads fresh tool enabled states and metadata from bg:getFullState.
+  // side panel reads fresh tool permission states and metadata from bg:getFullState.
   // Merge the updated plugin into the existing cache's plugin list.
   const existingCache = getServerStateCache();
   const updatedPlugin: ConfigStatePlugin = {
     name: validated.name,
     displayName: validated.displayName,
     version: validated.version,
-    trustTier: validated.trustTier,
+    permission: validated.permission,
     source: params.source === 'npm' || params.source === 'local' ? params.source : 'local',
     tabState: newState.state,
     urlPatterns: validated.urlPatterns,
@@ -635,7 +646,9 @@ const handleServerMessage = (message: Record<string, unknown>): void => {
       ...(payload.plugins ? { plugins: payload.plugins } : {}),
       ...(payload.failedPlugins ? { failedPlugins: payload.failedPlugins } : {}),
       ...(payload.browserTools ? { browserTools: payload.browserTools } : {}),
+      ...(payload.browserPermission !== undefined ? { browserPermission: payload.browserPermission } : {}),
       ...(payload.serverVersion !== undefined ? { serverVersion: payload.serverVersion } : {}),
+      ...(payload.skipPermissions !== undefined ? { skipPermissions: payload.skipPermissions } : {}),
     });
   }
 

@@ -6,11 +6,8 @@
  */
 
 import type {
-  ConfigSetAllBrowserToolsEnabledParams,
-  ConfigSetAllToolsEnabledParams,
-  ConfigSetBrowserToolEnabledParams,
-  ConfigSetToolEnabledParams,
-  ConfigSetToolsEnabledParams,
+  ConfigSetPluginPermissionParams,
+  ConfigSetToolPermissionParams,
   ConfigStateResult,
   JsonRpcError,
   JsonRpcNotification,
@@ -18,7 +15,7 @@ import type {
   JsonRpcResult,
   PluginTabInfo,
   TabSyncAllParams,
-  TrustTier,
+  ToolPermission,
 } from '@opentabs-dev/shared';
 import type { PluginLogEntry } from './log-buffer.js';
 import { appendLog } from './log-buffer.js';
@@ -30,22 +27,17 @@ import {
   searchNpmPlugins,
   updatePlugin,
 } from './plugin-management.js';
-import type { ConfirmationScope, RegisteredPlugin, ServerState, SessionPermissionRule, TabMapping } from './state.js';
-import {
-  DISPATCH_TIMEOUT_MS,
-  isBrowserToolEnabled,
-  isToolEnabled,
-  MAX_DISPATCH_TIMEOUT_MS,
-  prefixedToolName,
-  pushSessionPermission,
-} from './state.js';
+import type { RegisteredPlugin, ServerState, TabMapping } from './state.js';
+import { DISPATCH_TIMEOUT_MS, getToolPermission, MAX_DISPATCH_TIMEOUT_MS } from './state.js';
 import { version } from './version.js';
+
+/** Valid ToolPermission values for parameter validation */
+const VALID_PERMISSIONS = new Set<string>(['off', 'ask', 'auto']);
 
 /** Callbacks the extension protocol can invoke on the MCP side */
 interface McpCallbacks {
   onToolConfigChanged: () => void;
-  onToolConfigPersist: () => void;
-  onBrowserToolPolicyPersist: () => void;
+  onPluginPermissionsPersist: () => void;
   onPluginLog: (entry: PluginLogEntry) => void;
   onReload: () => Promise<{ plugins: number; durationMs: number }>;
   /** Send a JSON-RPC request to the extension and return the response (with timeout). */
@@ -109,16 +101,19 @@ const sendPluginManagementError = (state: ServerState, id: string | number, err:
  * Returns the common core shape shared by sync.full, plugin.update, and config.getState.
  * Callers can spread additional fields on top (e.g., sourcePath, adapterHash for sync messages,
  * or tabState, source, sdkVersion for config.getState).
+ *
+ * The plugin-level permission comes from pluginPermissions[plugin.name]?.permission ?? 'off'.
+ * Each tool's permission is resolved via getToolPermission() (per-tool override → plugin default → 'off').
  */
 const serializePluginForExtension = (
-  plugin: RegisteredPlugin,
   state: ServerState,
+  plugin: RegisteredPlugin,
 ): {
   name: string;
   version: string;
   displayName: string;
   urlPatterns: string[];
-  trustTier: TrustTier;
+  permission: ToolPermission;
   iconSvg?: string;
   iconInactiveSvg?: string;
   iconDarkSvg?: string;
@@ -131,29 +126,34 @@ const serializePluginForExtension = (
     iconSvg?: string;
     iconInactiveSvg?: string;
     group?: string;
-    enabled: boolean;
+    permission: ToolPermission;
   }[];
-} => ({
-  name: plugin.name,
-  version: plugin.version,
-  displayName: plugin.displayName,
-  urlPatterns: plugin.urlPatterns,
-  trustTier: plugin.trustTier,
-  ...(plugin.iconSvg ? { iconSvg: plugin.iconSvg } : {}),
-  ...(plugin.iconInactiveSvg ? { iconInactiveSvg: plugin.iconInactiveSvg } : {}),
-  ...(plugin.iconDarkSvg ? { iconDarkSvg: plugin.iconDarkSvg } : {}),
-  ...(plugin.iconDarkInactiveSvg ? { iconDarkInactiveSvg: plugin.iconDarkInactiveSvg } : {}),
-  tools: plugin.tools.map(t => ({
-    name: t.name,
-    displayName: t.displayName,
-    description: t.description,
-    icon: t.icon,
-    ...(t.iconSvg ? { iconSvg: t.iconSvg } : {}),
-    ...(t.iconInactiveSvg ? { iconInactiveSvg: t.iconInactiveSvg } : {}),
-    ...(t.group ? { group: t.group } : {}),
-    enabled: isToolEnabled(state, prefixedToolName(plugin.name, t.name)),
-  })),
-});
+} => {
+  const pluginConfig = state.pluginPermissions[plugin.name];
+  const pluginPermission: ToolPermission = pluginConfig?.permission ?? 'off';
+
+  return {
+    name: plugin.name,
+    version: plugin.version,
+    displayName: plugin.displayName,
+    urlPatterns: plugin.urlPatterns,
+    permission: pluginPermission,
+    ...(plugin.iconSvg ? { iconSvg: plugin.iconSvg } : {}),
+    ...(plugin.iconInactiveSvg ? { iconInactiveSvg: plugin.iconInactiveSvg } : {}),
+    ...(plugin.iconDarkSvg ? { iconDarkSvg: plugin.iconDarkSvg } : {}),
+    ...(plugin.iconDarkInactiveSvg ? { iconDarkInactiveSvg: plugin.iconDarkInactiveSvg } : {}),
+    tools: plugin.tools.map(t => ({
+      name: t.name,
+      displayName: t.displayName,
+      description: t.description,
+      icon: t.icon,
+      ...(t.iconSvg ? { iconSvg: t.iconSvg } : {}),
+      ...(t.iconInactiveSvg ? { iconInactiveSvg: t.iconInactiveSvg } : {}),
+      ...(t.group ? { group: t.group } : {}),
+      permission: getToolPermission(state, plugin.name, t.name),
+    })),
+  };
+};
 
 // --- Tab handlers ---
 
@@ -299,7 +299,7 @@ const buildConfigStatePayload = (state: ServerState): ConfigStateResult => {
       const tabInfo = state.tabMapping.get(p.name);
       const update = p.npmPackageName ? outdatedByPkg.get(p.npmPackageName) : undefined;
       return {
-        ...serializePluginForExtension(p, state),
+        ...serializePluginForExtension(state, p),
         source: p.source,
         tabState: tabInfo?.state ?? 'closed',
         ...(p.sdkVersion ? { sdkVersion: p.sdkVersion } : {}),
@@ -313,10 +313,12 @@ const buildConfigStatePayload = (state: ServerState): ConfigStateResult => {
     .map(ct => ({
       name: ct.name,
       description: ct.description,
-      enabled: isBrowserToolEnabled(state, ct.name),
+      permission: getToolPermission(state, 'browser', ct.name),
       ...(ct.icon ? { icon: ct.icon } : {}),
       ...(ct.group ? { group: ct.group } : {}),
     }));
+
+  const browserPermission = state.pluginPermissions.browser?.permission ?? 'off';
 
   return {
     plugins,
@@ -325,7 +327,9 @@ const buildConfigStatePayload = (state: ServerState): ConfigStateResult => {
       error: e.error,
     })),
     browserTools,
+    browserPermission,
     serverVersion: version,
+    skipPermissions: state.skipPermissions,
   };
 };
 
@@ -337,7 +341,11 @@ const handleConfigGetState = (state: ServerState, id: string | number): void => 
   });
 };
 
-const handleConfigSetToolEnabled = (
+/**
+ * Handle config.setToolPermission: set a per-tool permission override.
+ * Works for both plugin tools (plugin=pluginName) and browser tools (plugin='browser').
+ */
+const handleConfigSetToolPermission = (
   state: ServerState,
   params: Record<string, unknown> | undefined,
   id: string | number,
@@ -348,137 +356,45 @@ const handleConfigSetToolEnabled = (
     return;
   }
 
-  const toolEnabledParams = params as Partial<ConfigSetToolEnabledParams>;
-  const pluginName = toolEnabledParams.plugin;
-  const tool = toolEnabledParams.tool;
-  const enabled = toolEnabledParams.enabled;
+  const toolPermissionParams = params as Partial<ConfigSetToolPermissionParams>;
+  const pluginName = toolPermissionParams.plugin;
+  const tool = toolPermissionParams.tool;
+  const permission = toolPermissionParams.permission;
 
-  if (typeof pluginName !== 'string' || typeof tool !== 'string' || typeof enabled !== 'boolean') {
-    sendJsonRpcError(state, id, -32602, 'Invalid params: expected plugin (string), tool (string), enabled (boolean)');
+  if (typeof pluginName !== 'string' || typeof tool !== 'string' || typeof permission !== 'string') {
+    sendJsonRpcError(state, id, -32602, 'Invalid params: expected plugin (string), tool (string), permission (string)');
     return;
   }
 
-  const plugin = state.registry.plugins.get(pluginName);
-  if (!plugin) {
-    sendJsonRpcError(state, id, -32602, `Plugin not found: ${pluginName}`);
+  if (!VALID_PERMISSIONS.has(permission)) {
+    sendJsonRpcError(state, id, -32602, `Invalid permission: ${permission} (expected off, ask, or auto)`);
     return;
   }
 
-  if (!plugin.tools.some(t => t.name === tool)) {
-    sendJsonRpcError(state, id, -32602, `Tool not found: ${tool} in plugin ${pluginName}`);
-    return;
-  }
-
-  const prefixed = prefixedToolName(pluginName, tool);
-  state.toolConfig[prefixed] = enabled;
-  callbacks.onToolConfigChanged();
-  callbacks.onToolConfigPersist();
-
-  sendToExtension(state, {
-    jsonrpc: '2.0',
-    method: 'plugins.changed',
-    params: { ...buildConfigStatePayload(state) },
-  });
-
-  sendToExtension(state, {
-    jsonrpc: '2.0',
-    result: { ok: true },
-    id,
-  });
-};
-
-const handleConfigSetAllToolsEnabled = (
-  state: ServerState,
-  params: Record<string, unknown> | undefined,
-  id: string | number,
-  callbacks: McpCallbacks,
-): void => {
-  if (!params) {
-    sendJsonRpcError(state, id, -32602, 'Missing params');
-    return;
-  }
-
-  const allToolsEnabledParams = params as Partial<ConfigSetAllToolsEnabledParams>;
-  const pluginName = allToolsEnabledParams.plugin;
-  const enabled = allToolsEnabledParams.enabled;
-
-  if (typeof pluginName !== 'string' || typeof enabled !== 'boolean') {
-    sendJsonRpcError(state, id, -32602, 'Invalid params: expected plugin (string), enabled (boolean)');
-    return;
-  }
-
-  const plugin = state.registry.plugins.get(pluginName);
-  if (!plugin) {
-    sendJsonRpcError(state, id, -32602, `Plugin not found: ${pluginName}`);
-    return;
-  }
-
-  for (const tool of plugin.tools) {
-    const prefixed = prefixedToolName(pluginName, tool.name);
-    state.toolConfig[prefixed] = enabled;
-  }
-  callbacks.onToolConfigChanged();
-  callbacks.onToolConfigPersist();
-
-  sendToExtension(state, {
-    jsonrpc: '2.0',
-    method: 'plugins.changed',
-    params: { ...buildConfigStatePayload(state) },
-  });
-
-  sendToExtension(state, {
-    jsonrpc: '2.0',
-    result: { ok: true },
-    id,
-  });
-};
-
-const handleConfigSetToolsEnabled = (
-  state: ServerState,
-  params: Record<string, unknown> | undefined,
-  id: string | number,
-  callbacks: McpCallbacks,
-): void => {
-  if (!params) {
-    sendJsonRpcError(state, id, -32602, 'Missing params');
-    return;
-  }
-
-  const toolsEnabledParams = params as Partial<ConfigSetToolsEnabledParams>;
-  const pluginName = toolsEnabledParams.plugin;
-  const tools = toolsEnabledParams.tools;
-  const enabled = toolsEnabledParams.enabled;
-
-  if (typeof pluginName !== 'string' || !Array.isArray(tools) || typeof enabled !== 'boolean') {
-    sendJsonRpcError(
-      state,
-      id,
-      -32602,
-      'Invalid params: expected plugin (string), tools (string[]), enabled (boolean)',
-    );
-    return;
-  }
-
-  const plugin = state.registry.plugins.get(pluginName);
-  if (!plugin) {
-    sendJsonRpcError(state, id, -32602, `Plugin not found: ${pluginName}`);
-    return;
-  }
-
-  const pluginToolNames = new Set(plugin.tools.map(t => t.name));
-  for (const tool of tools) {
-    if (typeof tool !== 'string' || !pluginToolNames.has(tool)) {
+  // Validate tool exists in the appropriate context
+  if (pluginName === 'browser') {
+    if (!state.cachedBrowserTools.some(c => c.name === tool)) {
+      sendJsonRpcError(state, id, -32602, `Browser tool not found: ${tool}`);
+      return;
+    }
+  } else {
+    const plugin = state.registry.plugins.get(pluginName);
+    if (!plugin) {
+      sendJsonRpcError(state, id, -32602, `Plugin not found: ${pluginName}`);
+      return;
+    }
+    if (!plugin.tools.some(t => t.name === tool)) {
       sendJsonRpcError(state, id, -32602, `Tool not found: ${tool} in plugin ${pluginName}`);
       return;
     }
   }
 
-  for (const tool of tools) {
-    const prefixed = prefixedToolName(pluginName, tool);
-    state.toolConfig[prefixed] = enabled;
-  }
+  const pConfig = state.pluginPermissions[pluginName] ?? {};
+  const tools = { ...(pConfig.tools ?? {}) };
+  tools[tool] = permission as ToolPermission;
+  state.pluginPermissions[pluginName] = { ...pConfig, tools };
   callbacks.onToolConfigChanged();
-  callbacks.onToolConfigPersist();
+  callbacks.onPluginPermissionsPersist();
 
   sendToExtension(state, {
     jsonrpc: '2.0',
@@ -493,7 +409,11 @@ const handleConfigSetToolsEnabled = (
   });
 };
 
-const handleConfigSetBrowserToolEnabled = (
+/**
+ * Handle config.setPluginPermission: set the plugin-level default permission.
+ * Works for both plugins (plugin=pluginName) and browser tools (plugin='browser').
+ */
+const handleConfigSetPluginPermission = (
   state: ServerState,
   params: Record<string, unknown> | undefined,
   id: string | number,
@@ -504,61 +424,33 @@ const handleConfigSetBrowserToolEnabled = (
     return;
   }
 
-  const browserToolParams = params as Partial<ConfigSetBrowserToolEnabledParams>;
-  const tool = browserToolParams.tool;
-  const enabled = browserToolParams.enabled;
+  const allToolsPermissionParams = params as Partial<ConfigSetPluginPermissionParams>;
+  const pluginName = allToolsPermissionParams.plugin;
+  const permission = allToolsPermissionParams.permission;
 
-  if (typeof tool !== 'string' || typeof enabled !== 'boolean') {
-    sendJsonRpcError(state, id, -32602, 'Invalid params: expected tool (string), enabled (boolean)');
+  if (typeof pluginName !== 'string' || typeof permission !== 'string') {
+    sendJsonRpcError(state, id, -32602, 'Invalid params: expected plugin (string), permission (string)');
     return;
   }
 
-  if (!state.cachedBrowserTools.some(c => c.name === tool)) {
-    sendJsonRpcError(state, id, -32602, `Browser tool not found: ${tool}`);
+  if (!VALID_PERMISSIONS.has(permission)) {
+    sendJsonRpcError(state, id, -32602, `Invalid permission: ${permission} (expected off, ask, or auto)`);
     return;
   }
 
-  state.browserToolPolicy[tool] = enabled;
+  // Validate plugin exists (browser is always valid)
+  if (pluginName !== 'browser') {
+    const plugin = state.registry.plugins.get(pluginName);
+    if (!plugin) {
+      sendJsonRpcError(state, id, -32602, `Plugin not found: ${pluginName}`);
+      return;
+    }
+  }
+
+  const pConfig = state.pluginPermissions[pluginName] ?? {};
+  state.pluginPermissions[pluginName] = { ...pConfig, permission: permission as ToolPermission };
   callbacks.onToolConfigChanged();
-  callbacks.onBrowserToolPolicyPersist();
-
-  sendToExtension(state, {
-    jsonrpc: '2.0',
-    method: 'plugins.changed',
-    params: { ...buildConfigStatePayload(state) },
-  });
-
-  sendToExtension(state, {
-    jsonrpc: '2.0',
-    result: { ok: true },
-    id,
-  });
-};
-
-const handleConfigSetAllBrowserToolsEnabled = (
-  state: ServerState,
-  params: Record<string, unknown> | undefined,
-  id: string | number,
-  callbacks: McpCallbacks,
-): void => {
-  if (!params) {
-    sendJsonRpcError(state, id, -32602, 'Missing params');
-    return;
-  }
-
-  const allBrowserToolsParams = params as Partial<ConfigSetAllBrowserToolsEnabledParams>;
-  const enabled = allBrowserToolsParams.enabled;
-
-  if (typeof enabled !== 'boolean') {
-    sendJsonRpcError(state, id, -32602, 'Invalid params: expected enabled (boolean)');
-    return;
-  }
-
-  for (const tool of state.cachedBrowserTools) {
-    state.browserToolPolicy[tool.name] = enabled;
-  }
-  callbacks.onToolConfigChanged();
-  callbacks.onBrowserToolPolicyPersist();
+  callbacks.onPluginPermissionsPersist();
 
   sendToExtension(state, {
     jsonrpc: '2.0',
@@ -665,13 +557,9 @@ const handlePluginLog = (params: Record<string, unknown> | undefined, callbacks:
 
 // --- Confirmation handler ---
 
-/** Valid values for ConfirmationScope — used to validate extension input */
-const VALID_CONFIRMATION_SCOPES = new Set<ConfirmationScope>(['tool_domain', 'tool_all', 'domain_all']);
-
 /**
  * Handle a confirmation.response from the extension.
- * Resolves the pending confirmation promise with the user's decision.
- * For 'allow_always', also adds a session permission rule.
+ * Resolves the pending confirmation promise with the user's decision ('allow' or 'deny').
  */
 const handleConfirmationResponse = (state: ServerState, params: Record<string, unknown> | undefined): void => {
   if (!params) return;
@@ -680,53 +568,15 @@ const handleConfirmationResponse = (state: ServerState, params: Record<string, u
   if (typeof id !== 'string') return;
 
   const decision = params.decision;
-  if (decision !== 'allow_once' && decision !== 'allow_always' && decision !== 'deny') return;
+  if (decision !== 'allow' && decision !== 'deny') return;
 
   const pending = state.pendingConfirmations.get(id);
   if (!pending) return;
 
-  clearTimeout(pending.timerId);
+  const alwaysAllow = params.alwaysAllow === true;
+
   state.pendingConfirmations.delete(id);
-
-  // For allow_always, add a session permission rule based on the scope
-  if (decision === 'allow_always') {
-    const rawScope = typeof params.scope === 'string' ? params.scope : '';
-    if (rawScope && !VALID_CONFIRMATION_SCOPES.has(rawScope as ConfirmationScope)) {
-      log.warn(`Invalid confirmation scope '${rawScope}', falling back to 'tool_domain'`);
-    }
-    const scope: ConfirmationScope = VALID_CONFIRMATION_SCOPES.has(rawScope as ConfirmationScope)
-      ? (rawScope as ConfirmationScope)
-      : 'tool_domain';
-    const rule: SessionPermissionRule = {
-      tool: pending.tool,
-      domain: pending.domain,
-      scope,
-    };
-
-    // Adjust rule fields based on scope
-    if (scope === 'tool_all') {
-      rule.domain = null;
-    } else if (scope === 'domain_all') {
-      if (pending.domain === null) {
-        // domain_all without a domain context would match all domains — fall back to tool_domain
-        log.warn(
-          `domain_all scope requested for '${pending.tool}' but no domain context — falling back to tool_domain`,
-        );
-        rule.scope = 'tool_domain';
-      } else {
-        rule.tool = null;
-      }
-    }
-
-    const isDuplicate = state.sessionPermissions.some(
-      r => r.tool === rule.tool && r.domain === rule.domain && r.scope === rule.scope,
-    );
-    if (!isDuplicate) {
-      pushSessionPermission(state, rule);
-    }
-  }
-
-  pending.resolve(decision);
+  pending.resolve({ action: decision, alwaysAllow });
 };
 
 /**
@@ -735,7 +585,6 @@ const handleConfirmationResponse = (state: ServerState, params: Record<string, u
  */
 const rejectAllPendingConfirmations = (state: ServerState): void => {
   for (const [id, pending] of state.pendingConfirmations) {
-    clearTimeout(pending.timerId);
     pending.reject(new Error('Extension disconnected — confirmation cancelled'));
     state.pendingConfirmations.delete(id);
   }
@@ -890,11 +739,8 @@ export {
   handleTabSyncAll,
   handleTabStateChanged,
   handleConfigGetState,
-  handleConfigSetToolEnabled,
-  handleConfigSetAllToolsEnabled,
-  handleConfigSetToolsEnabled,
-  handleConfigSetBrowserToolEnabled,
-  handleConfigSetAllBrowserToolsEnabled,
+  handleConfigSetToolPermission,
+  handleConfigSetPluginPermission,
   handlePluginSearch,
   handlePluginInstall,
   handlePluginUpdateFromRegistry,

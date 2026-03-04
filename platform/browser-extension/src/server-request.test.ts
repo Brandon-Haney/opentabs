@@ -29,8 +29,12 @@ beforeEach(() => {
 describe('sendServerRequest', () => {
   test('sends a JSON-RPC message via sendToServer with incrementing integer id', () => {
     // Fire two requests — catch rejections from cleanup
-    const p1 = sendServerRequest('config.setToolEnabled', { plugin: 'slack', tool: 'send', enabled: true });
-    const p2 = sendServerRequest('config.setBrowserToolEnabled', { tool: 'screenshot', enabled: false });
+    const p1 = sendServerRequest('config.setToolPermission', { plugin: 'slack', tool: 'send', permission: 'auto' });
+    const p2 = sendServerRequest('config.setToolPermission', {
+      plugin: 'browser',
+      tool: 'screenshot',
+      permission: 'off',
+    });
     p1.catch(() => {});
     p2.catch(() => {});
 
@@ -41,15 +45,15 @@ describe('sendServerRequest', () => {
 
     expect(first).toMatchObject({
       jsonrpc: '2.0',
-      method: 'config.setToolEnabled',
-      params: { plugin: 'slack', tool: 'send', enabled: true },
+      method: 'config.setToolPermission',
+      params: { plugin: 'slack', tool: 'send', permission: 'auto' },
     });
     expect(typeof first.id).toBe('number');
 
     expect(second).toMatchObject({
       jsonrpc: '2.0',
-      method: 'config.setBrowserToolEnabled',
-      params: { tool: 'screenshot', enabled: false },
+      method: 'config.setToolPermission',
+      params: { plugin: 'browser', tool: 'screenshot', permission: 'off' },
     });
     expect(typeof second.id).toBe('number');
 
@@ -77,7 +81,7 @@ describe('sendServerRequest', () => {
   });
 
   test('rejects when consumeServerResponse receives a matching error', async () => {
-    const promise = sendServerRequest('config.setToolEnabled', { plugin: 'x', tool: 'y', enabled: true });
+    const promise = sendServerRequest('config.setToolPermission', { plugin: 'x', tool: 'y', permission: 'auto' });
 
     const sentData = mockSendToServer.mock.calls[0]?.[0] as Record<string, unknown>;
     const requestId = sentData.id as number;

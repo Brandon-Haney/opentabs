@@ -1,11 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { normalizePluginName, OFFICIAL_SCOPE, PLUGIN_PREFIX, resolvePluginPackageCandidates } from './constants.js';
-
-describe('OFFICIAL_SCOPE', () => {
-  test('is @opentabs-dev', () => {
-    expect(OFFICIAL_SCOPE).toBe('@opentabs-dev');
-  });
-});
+import { normalizePluginName, PLUGIN_PREFIX, resolvePluginPackageCandidates } from './constants.js';
 
 describe('PLUGIN_PREFIX', () => {
   test('is opentabs-plugin-', () => {

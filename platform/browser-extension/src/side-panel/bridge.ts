@@ -146,6 +146,10 @@ const removePlugin = (name: string): Promise<{ ok: true }> =>
 const updatePlugin = (name: string): Promise<PluginInstallResult> =>
   sendBgMessage<PluginInstallResult>({ type: 'bg:updatePlugin', name });
 
+/** Set the skip-permissions runtime flag on the MCP server */
+const setSkipPermissions = (skipPermissions: boolean): Promise<unknown> =>
+  sendBgMessage({ type: 'bg:setSkipPermissions', skipPermissions });
+
 /** Send a confirmation response to the MCP server via the background script (fire-and-forget) */
 const sendConfirmationResponse = (id: string, decision: 'allow' | 'deny', alwaysAllow?: boolean): void => {
   chrome.runtime
@@ -178,6 +182,7 @@ export {
   sendConfirmationResponse,
   setAllToolsPermission,
   setPluginPermission,
+  setSkipPermissions,
   setToolPermission,
   updatePlugin,
 };

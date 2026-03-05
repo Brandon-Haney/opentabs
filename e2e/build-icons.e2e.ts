@@ -273,11 +273,12 @@ test.describe('plugin icon build validation', () => {
   // Auto-generation quality
   // -------------------------------------------------------------------------
 
-  test('auto-generated inactive icon preserves visual structure — 3 distinct colors → 3 distinct grays', () => {
+  test('auto-generated inactive icon converts colors to achromatic grays with minimum clamp', () => {
     const pluginDir = path.join(tmpDir, 'e2e-test');
     copyPlugin(pluginDir);
 
-    // Red (luminance ~54), green (luminance ~182), blue (luminance ~18) — all very different
+    // Green (luminance ~182) is above the MIN_INACTIVE_GRAY clamp (153) and stays distinct.
+    // Red (luminance ~54) and blue (luminance ~18) both clamp to #999999, producing 2 distinct grays.
     fs.writeFileSync(path.join(pluginDir, 'icon.svg'), makeSvg(['#ff0000', '#00ff00', '#0000ff']));
     fs.rmSync(path.join(pluginDir, 'icon-inactive.svg'), { force: true });
 
@@ -290,8 +291,8 @@ test.describe('plugin icon build validation', () => {
     const inactiveSvg = manifest.iconInactiveSvg as string;
     const grayColors = extractHexColors(inactiveSvg);
 
-    // Should have exactly 3 distinct gray values
-    expect(grayColors.length).toBe(3);
+    // Red and blue both clamp to #999999; green stays at a higher gray → 2 distinct values
+    expect(grayColors.length).toBe(2);
 
     // All should be achromatic
     for (const color of grayColors) {

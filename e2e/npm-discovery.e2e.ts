@@ -208,7 +208,7 @@ test.describe('npm auto-discovery pipeline', () => {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-npm-disc-call-cfg-'));
     const config = {
       ...configWithPlugins([], { 'npm-disc-call_echo': true }),
-      plugins: {
+      permissions: {
         'e2e-test': { permission: 'auto' as const },
         'npm-disc-call': { permission: 'auto' as const },
         browser: { permission: 'auto' as const },

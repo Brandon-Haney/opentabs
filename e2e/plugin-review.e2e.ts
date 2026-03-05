@@ -60,6 +60,11 @@ interface ReviewFixtures {
 const test = base.extend<ReviewFixtures>({
   mcpServer: async ({ browserName: _ }, use) => {
     const configDir = createTestConfigDir();
+    // Override: all plugins default to 'off' (no permissions entries) for review testing
+    writeTestConfig(configDir, {
+      localPlugins: [path.resolve(E2E_TEST_PLUGIN_DIR)],
+      permissions: {},
+    });
     const server = await startMcpServer(configDir, true, undefined, {
       OPENTABS_DANGEROUSLY_SKIP_PERMISSIONS: '',
     });
@@ -105,6 +110,16 @@ const test = base.extend<ReviewFixtures>({
     await client.close();
   },
 });
+
+// ---------------------------------------------------------------------------
+// Radix Select helper
+// ---------------------------------------------------------------------------
+
+/** Click a Radix Select trigger (by aria-label) and choose an option by display text. */
+const selectPermission = async (page: Page, ariaLabel: string, optionText: string) => {
+  await page.locator(`[aria-label="${ariaLabel}"]`).click();
+  await page.locator('[role="option"]', { hasText: optionText }).click();
+};
 
 // ---------------------------------------------------------------------------
 // Helper: wait for unreviewed dialog in the side panel
@@ -415,7 +430,7 @@ test.describe('Side panel — unreviewed icon', () => {
 
     // The ShieldQuestionMark icon should be visible in the plugin card header
     const pluginCard = sidePanel.locator('button[aria-expanded]').filter({ hasText: 'E2E Test' });
-    const shieldIcon = pluginCard.locator('svg.text-muted-foreground');
+    const shieldIcon = pluginCard.locator('svg.lucide-shield-question-mark');
     await expect(shieldIcon).toBeVisible({ timeout: 5_000 });
 
     await sidePanel.close();
@@ -446,8 +461,7 @@ test.describe('Side panel — unreviewed icon', () => {
 
     // The ShieldQuestionMark icon should NOT be visible for a reviewed plugin
     const pluginCard = sidePanel.locator('button[aria-expanded]').filter({ hasText: 'E2E Test' });
-    // ShieldQuestionMark has the muted-foreground class — it should be absent
-    const shieldIcon = pluginCard.locator('svg.text-muted-foreground');
+    const shieldIcon = pluginCard.locator('svg.lucide-shield-question-mark');
     await expect(shieldIcon).toBeHidden({ timeout: 5_000 });
 
     await sidePanel.close();
@@ -471,9 +485,9 @@ test.describe('Side panel — unreviewed plugin confirmation dialog', () => {
     await expect(sidePanel.getByText('E2E Test')).toBeVisible({ timeout: 30_000 });
 
     // Change the plugin permission from 'off' to 'auto' — should trigger the dialog
-    const pluginSelect = sidePanel.locator('select[aria-label="Permission for e2e-test plugin"]');
-    await expect(pluginSelect).toBeVisible({ timeout: 5_000 });
-    await pluginSelect.selectOption('auto');
+    const pluginTrigger = sidePanel.locator('[aria-label="Permission for e2e-test plugin"]');
+    await expect(pluginTrigger).toBeVisible({ timeout: 5_000 });
+    await selectPermission(sidePanel, 'Permission for e2e-test plugin', 'Auto');
 
     // Dialog should appear
     await waitForUnreviewedDialog(sidePanel);
@@ -510,9 +524,9 @@ test.describe('Side panel — unreviewed plugin confirmation dialog', () => {
     await expect(sidePanel.getByText('E2E Test')).toBeVisible({ timeout: 30_000 });
 
     // Attempt to change from 'off' to 'ask'
-    const pluginSelect = sidePanel.locator('select[aria-label="Permission for e2e-test plugin"]');
-    await expect(pluginSelect).toBeVisible({ timeout: 5_000 });
-    await pluginSelect.selectOption('ask');
+    const pluginTrigger = sidePanel.locator('[aria-label="Permission for e2e-test plugin"]');
+    await expect(pluginTrigger).toBeVisible({ timeout: 5_000 });
+    await selectPermission(sidePanel, 'Permission for e2e-test plugin', 'Ask');
 
     // Dialog should appear
     await waitForUnreviewedDialog(sidePanel);
@@ -555,9 +569,9 @@ test.describe('Side panel — unreviewed plugin confirmation dialog', () => {
     await expect(sidePanel.getByText('E2E Test')).toBeVisible({ timeout: 30_000 });
 
     // Change reviewed plugin from 'off' to 'auto' — no dialog expected
-    const pluginSelect = sidePanel.locator('select[aria-label="Permission for e2e-test plugin"]');
-    await expect(pluginSelect).toBeVisible({ timeout: 5_000 });
-    await pluginSelect.selectOption('auto');
+    const pluginTrigger = sidePanel.locator('[aria-label="Permission for e2e-test plugin"]');
+    await expect(pluginTrigger).toBeVisible({ timeout: 5_000 });
+    await selectPermission(sidePanel, 'Permission for e2e-test plugin', 'Auto');
 
     // Wait for the MCP server to reflect the change — no dialog should appear
     await waitForToolList(

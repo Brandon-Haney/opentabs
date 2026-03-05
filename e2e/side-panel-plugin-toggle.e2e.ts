@@ -396,10 +396,17 @@ test.describe('Side panel — plugin-level permission select', () => {
   test('plugin permission select changes the default for all tools', async () => {
     const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
     const prefixedToolNames = readPluginToolNames();
+    const pluginVersion = (
+      JSON.parse(fs.readFileSync(path.join(E2E_TEST_PLUGIN_DIR, 'package.json'), 'utf-8')) as { version: string }
+    ).version;
 
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-toggle-all-'));
-    // Start with e2e-test plugin at 'auto' so tools default to auto
-    writeTestConfig(configDir, { localPlugins: [absPluginPath], permissions: { 'e2e-test': { permission: 'auto' } } });
+    // Start with e2e-test plugin at 'auto' and marked as reviewed so the unreviewed
+    // confirmation dialog does not interfere when toggling permissions
+    writeTestConfig(configDir, {
+      localPlugins: [absPluginPath],
+      permissions: { 'e2e-test': { permission: 'auto', reviewedVersion: pluginVersion } },
+    });
 
     // Disable skipPermissions so permission selects are interactive
     const server = await startMcpServer(configDir, true, undefined, { OPENTABS_DANGEROUSLY_SKIP_PERMISSIONS: '' });

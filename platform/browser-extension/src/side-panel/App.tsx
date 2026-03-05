@@ -54,6 +54,7 @@ const App = () => {
   const [removingPlugins, setRemovingPlugins] = useState<Set<string>>(new Set());
   const [installErrors, setInstallErrors] = useState<Map<string, string>>(new Map());
   const [pluginErrors, setPluginErrors] = useState<Map<string, string>>(new Map());
+  const [browserToolsOpen, setBrowserToolsOpen] = useState(false);
 
   const pluginErrorTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const npmSearchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -81,6 +82,18 @@ const App = () => {
     },
     [],
   );
+
+  useEffect(() => {
+    chrome.storage.session.get('browserToolsOpen').then(
+      result => {
+        const stored = result.browserToolsOpen as boolean | undefined;
+        if (stored === true) setBrowserToolsOpen(true);
+      },
+      () => {
+        // Storage unavailable — keep default (collapsed)
+      },
+    );
+  }, []);
 
   const showPluginError = (pluginName: string, message: string) => {
     const existing = pluginErrorTimers.current.get(pluginName);
@@ -424,7 +437,15 @@ const App = () => {
             ) : hasContent ? (
               <>
                 {browserTools.length > 0 && (
-                  <Accordion type="multiple" className="mb-2 space-y-2">
+                  <Accordion
+                    type="multiple"
+                    value={browserToolsOpen ? ['browser-tools'] : []}
+                    onValueChange={val => {
+                      const isOpen = val.includes('browser-tools');
+                      setBrowserToolsOpen(isOpen);
+                      chrome.storage.session.set({ browserToolsOpen: isOpen }).catch(() => {});
+                    }}
+                    className="mb-2 space-y-2">
                     <BrowserToolsCard
                       tools={browserTools}
                       activeTools={activeTools}

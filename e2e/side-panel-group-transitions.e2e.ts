@@ -99,6 +99,57 @@ test.describe('Side panel group transitions', () => {
     }
   });
 
+  test('accordion auto-collapses when plugin transitions between groups', async () => {
+    const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
+
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-group-collapse-'));
+    writeTestConfig(configDir, {
+      localPlugins: [absPluginPath],
+      permissions: { 'e2e-test': { permission: 'auto' }, browser: { permission: 'auto' } },
+    });
+
+    const server = await startMcpServer(configDir, true);
+    const testServer = await startTestServer();
+    const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port, server.secret);
+    setupAdapterSymlink(configDir, extensionDir);
+
+    try {
+      // Wait for extension to connect and complete initial sync before opening the tab.
+      // Opening the tab before syncAll causes the ready state to be reported in syncAll
+      // rather than as a separate tab.stateChanged event.
+      await waitForExtensionConnected(server);
+      await waitForLog(server, 'tab.syncAll received', 15_000);
+
+      const sidePanel = await openSidePanel(context);
+      await expect(sidePanel.getByText('E2E Test')).toBeVisible({ timeout: 30_000 });
+
+      // Open a matching tab — plugin becomes ready via tab.stateChanged
+      const appTab = await context.newPage();
+      await appTab.goto(testServer.url, { waitUntil: 'load' });
+      await waitForLog(server, 'tab.stateChanged: e2e-test → ready', 15_000);
+
+      // Expand the plugin card by clicking its accordion trigger
+      const trigger = sidePanel.locator('button[aria-expanded]').filter({ hasText: 'E2E Test' });
+      await trigger.click();
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+      // Close the matching tab — plugin transitions to not-connected group
+      await appTab.close();
+      await waitForLog(server, 'tab.stateChanged: e2e-test → closed', 15_000);
+
+      // The card should be auto-collapsed after the group transition
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false', { timeout: 10_000 });
+
+      await sidePanel.close();
+    } finally {
+      await context.close().catch(() => {});
+      await server.kill();
+      await testServer.kill();
+      fs.rmSync(cleanupDir, { recursive: true, force: true });
+      cleanupTestConfigDir(configDir);
+    }
+  });
+
   test('plugin moves from ready to NOT CONNECTED group when tab closes', async () => {
     const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
 
@@ -114,16 +165,19 @@ test.describe('Side panel group transitions', () => {
     setupAdapterSymlink(configDir, extensionDir);
 
     try {
-      // Open a matching tab first so the plugin starts in the ready group
-      const appTab = await context.newPage();
-      await appTab.goto(testServer.url, { waitUntil: 'load' });
-
+      // Wait for extension to connect and complete initial sync before opening the tab.
+      // Opening the tab before syncAll causes the ready state to be reported in syncAll
+      // rather than as a separate tab.stateChanged event.
       await waitForExtensionConnected(server);
-      await waitForLog(server, 'tab.stateChanged: e2e-test → ready', 15_000);
+      await waitForLog(server, 'tab.syncAll received', 15_000);
 
-      // Open side panel — plugin should be in the ready group
+      // Open side panel, then open a matching tab so we get a real stateChanged event
       const sidePanel = await openSidePanel(context);
       await expect(sidePanel.getByText('E2E Test')).toBeVisible({ timeout: 30_000 });
+
+      const appTab = await context.newPage();
+      await appTab.goto(testServer.url, { waitUntil: 'load' });
+      await waitForLog(server, 'tab.stateChanged: e2e-test → ready', 15_000);
 
       // Verify the plugin card is in the ready group (no reduced opacity)
       const accordionItem = pluginAccordionItem(sidePanel, 'E2E Test');

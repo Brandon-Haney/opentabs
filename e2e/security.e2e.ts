@@ -412,6 +412,97 @@ test.describe('Rate limiting on POST /reload endpoint', () => {
 // US-004: Extension disconnect during pending ask confirmation
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// US-006: Unauthenticated /health returns minimal response
+// ---------------------------------------------------------------------------
+
+test.describe('/health endpoint: authenticated vs unauthenticated response', () => {
+  let configDir = '';
+
+  test.beforeEach(() => {
+    configDir = createTestConfigDir();
+  });
+
+  test.afterEach(() => {
+    if (configDir) cleanupTestConfigDir(configDir);
+  });
+
+  test('unauthenticated /health returns 200 with minimal { status: "ok" }', async () => {
+    const server = await startMcpServer(configDir, true);
+    try {
+      await server.waitForHealth(h => h.status === 'ok');
+
+      // Request without any auth header
+      const res = await fetch(`http://localhost:${server.port}/health`);
+      expect(res.status).toBe(200);
+
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body.status).toBe('ok');
+
+      // Minimal response must NOT include detailed fields
+      expect(body.plugins).toBeUndefined();
+      expect(body.pluginDetails).toBeUndefined();
+      expect(body.auditSummary).toBeUndefined();
+      expect(body.extensionConnected).toBeUndefined();
+      expect(body.toolCount).toBeUndefined();
+
+      // Version header is present on both authenticated and unauthenticated responses
+      expect(res.headers.get('x-opentabs-version')).toBeTruthy();
+    } finally {
+      await server.kill();
+    }
+  });
+
+  test('authenticated /health returns 200 with full response including plugins', async () => {
+    const server = await startMcpServer(configDir, true);
+    try {
+      await server.waitForHealth(h => h.status === 'ok');
+
+      const res = await fetch(`http://localhost:${server.port}/health`, {
+        headers: { Authorization: `Bearer ${server.secret}` },
+      });
+      expect(res.status).toBe(200);
+
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body.status).toBe('ok');
+
+      // Full response includes detailed fields
+      expect(typeof body.plugins).toBe('number');
+      expect(Array.isArray(body.pluginDetails)).toBe(true);
+      expect(body.auditSummary).toBeDefined();
+      expect(typeof body.extensionConnected).toBe('boolean');
+      expect(typeof body.toolCount).toBe('number');
+
+      // Version header is present
+      expect(res.headers.get('x-opentabs-version')).toBeTruthy();
+    } finally {
+      await server.kill();
+    }
+  });
+
+  test('invalid Bearer token returns minimal response (same as unauthenticated)', async () => {
+    const server = await startMcpServer(configDir, true);
+    try {
+      await server.waitForHealth(h => h.status === 'ok');
+
+      const res = await fetch(`http://localhost:${server.port}/health`, {
+        headers: { Authorization: 'Bearer wrong-secret-value' },
+      });
+      // /health does not return 401 — it returns the minimal 200 response
+      // for any request that fails auth (matching unauthenticated behavior)
+      expect(res.status).toBe(200);
+
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body.status).toBe('ok');
+      expect(body.plugins).toBeUndefined();
+      expect(body.pluginDetails).toBeUndefined();
+      expect(body.auditSummary).toBeUndefined();
+    } finally {
+      await server.kill();
+    }
+  });
+});
+
 askTest.describe('Extension disconnect during pending ask confirmation', () => {
   askTest(
     'disconnecting extension while confirmation is pending returns error quickly',

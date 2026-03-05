@@ -21,6 +21,52 @@ import {
 import { openSidePanel, setupAdapterSymlink, waitForExtensionConnected } from './helpers.js';
 
 test.describe('Side panel search details', () => {
+  test('no results empty state when search matches nothing', async () => {
+    test.slow();
+
+    const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-no-results-'));
+    writeTestConfig(configDir, {
+      localPlugins: [absPluginPath],
+      permissions: {
+        'e2e-test': { permission: 'auto' },
+        browser: { permission: 'auto' },
+      },
+    });
+
+    const server = await startMcpServer(configDir, false);
+    const { context, cleanupDir, extensionDir } = await launchExtensionContext(server.port, server.secret);
+    setupAdapterSymlink(configDir, extensionDir);
+
+    try {
+      await waitForExtensionConnected(server);
+
+      const sidePanel = await openSidePanel(context);
+
+      // Wait for plugins to load
+      await expect(sidePanel.getByText('E2E Test')).toBeVisible({ timeout: 30_000 });
+
+      const searchInput = sidePanel.getByPlaceholder('Search plugins and tools...');
+
+      // Type a nonsense string that matches no installed plugins and no npm results
+      await searchInput.fill('xyzzy99nonexistent');
+
+      // Wait for npm search to complete and 'No results' to appear
+      await expect(sidePanel.getByText('No results')).toBeVisible({ timeout: 15_000 });
+
+      // No section headers should be shown
+      await expect(sidePanel.getByText('Installed')).toBeHidden();
+      await expect(sidePanel.getByText('Available')).toBeHidden();
+
+      await sidePanel.close();
+    } finally {
+      await context.close().catch(() => {});
+      await server.kill();
+      fs.rmSync(cleanupDir, { recursive: true, force: true });
+      cleanupTestConfigDir(configDir);
+    }
+  });
+
   test('search filters installed plugins by tool name and shows Installed header', async () => {
     const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-search-filter-'));

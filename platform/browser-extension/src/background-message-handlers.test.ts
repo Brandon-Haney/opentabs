@@ -39,10 +39,16 @@ const {
   mockUpdateServerStateCache,
   mockSendServerRequest,
   mockRejectAllPendingServerRequests,
+  mockAddPendingBrowserToolUpdate,
+  mockRemovePendingBrowserToolUpdate,
+  mockAddPendingAllBrowserToolsUpdate,
+  mockRemovePendingAllBrowserToolsUpdate,
   mockAddPendingPluginToolUpdate,
   mockRemovePendingPluginToolUpdate,
   mockAddPendingPluginAllToolsUpdate,
   mockRemovePendingPluginAllToolsUpdate,
+  mockAddPendingPluginPermissionUpdate,
+  mockRemovePendingPluginPermissionUpdate,
   mockGetPendingConfirmations,
 } = vi.hoisted(() => ({
   mockSendToServer: vi.fn<(data: unknown) => void>(),
@@ -77,10 +83,16 @@ const {
     Promise.resolve({}),
   ),
   mockRejectAllPendingServerRequests: vi.fn(),
+  mockAddPendingBrowserToolUpdate: vi.fn(),
+  mockRemovePendingBrowserToolUpdate: vi.fn(),
+  mockAddPendingAllBrowserToolsUpdate: vi.fn(),
+  mockRemovePendingAllBrowserToolsUpdate: vi.fn(),
   mockAddPendingPluginToolUpdate: vi.fn(),
   mockRemovePendingPluginToolUpdate: vi.fn(),
   mockAddPendingPluginAllToolsUpdate: vi.fn(),
   mockRemovePendingPluginAllToolsUpdate: vi.fn(),
+  mockAddPendingPluginPermissionUpdate: vi.fn(),
+  mockRemovePendingPluginPermissionUpdate: vi.fn(),
   mockGetPendingConfirmations: vi.fn<() => unknown[]>(() => []),
 }));
 
@@ -115,13 +127,19 @@ vi.mock('./plugin-storage.js', () => ({
 }));
 
 vi.mock('./server-state-cache.js', () => ({
+  addPendingAllBrowserToolsUpdate: mockAddPendingAllBrowserToolsUpdate,
+  addPendingBrowserToolUpdate: mockAddPendingBrowserToolUpdate,
   addPendingPluginAllToolsUpdate: mockAddPendingPluginAllToolsUpdate,
+  addPendingPluginPermissionUpdate: mockAddPendingPluginPermissionUpdate,
   addPendingPluginToolUpdate: mockAddPendingPluginToolUpdate,
   getCachesInitialized: mockGetCachesInitialized,
   getServerStateCache: mockGetServerStateCache,
   clearServerStateCache: mockClearServerStateCache,
   loadServerStateCacheFromSession: mockLoadServerStateCacheFromSession,
+  removePendingAllBrowserToolsUpdate: mockRemovePendingAllBrowserToolsUpdate,
+  removePendingBrowserToolUpdate: mockRemovePendingBrowserToolUpdate,
   removePendingPluginAllToolsUpdate: mockRemovePendingPluginAllToolsUpdate,
+  removePendingPluginPermissionUpdate: mockRemovePendingPluginPermissionUpdate,
   removePendingPluginToolUpdate: mockRemovePendingPluginToolUpdate,
   updateServerStateCache: mockUpdateServerStateCache,
 }));
@@ -1678,6 +1696,90 @@ describe('handleBgSetAllToolsPermission', () => {
     // Concurrent new plugin preserved
     expect(revertCall.plugins.find(p => p.name === 'github')).toBeDefined();
     expect(revertCall.plugins).toHaveLength(2);
+  });
+
+  test('plugin=browser: optimistically updates browserTools and calls sendServerRequest', async () => {
+    mockGetServerStateCache.mockReturnValue({
+      plugins: [],
+      failedPlugins: [],
+      browserTools: [
+        { name: 'browser_screenshot', displayName: 'Screenshot', description: 'desc', permission: 'auto' },
+        { name: 'browser_click', displayName: 'Click', description: 'desc', permission: 'ask' },
+      ],
+      serverVersion: '1.0.0',
+    });
+
+    mockSendServerRequest.mockResolvedValueOnce({ ok: true });
+
+    const sendResponse = vi.fn();
+    handleBgSetAllToolsPermission({ plugin: 'browser', permission: 'off' }, sendResponse);
+
+    expect(mockUpdateServerStateCache).toHaveBeenCalledOnce();
+    const updateCall = mockUpdateServerStateCache.mock.calls[0]?.[0] as {
+      browserTools: Array<{ permission: string }>;
+    };
+    expect(updateCall.browserTools.every(t => t.permission === 'off')).toBe(true);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+    expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+  });
+
+  test('plugin=browser: registers pending updates and clears on success', async () => {
+    mockGetServerStateCache.mockReturnValue({
+      plugins: [],
+      failedPlugins: [],
+      browserTools: [
+        { name: 'browser_screenshot', displayName: 'Screenshot', description: 'desc', permission: 'auto' },
+        { name: 'browser_click', displayName: 'Click', description: 'desc', permission: 'ask' },
+      ],
+      serverVersion: '1.0.0',
+    });
+
+    mockSendServerRequest.mockResolvedValueOnce({ ok: true });
+
+    const sendResponse = vi.fn();
+    handleBgSetAllToolsPermission({ plugin: 'browser', permission: 'off' }, sendResponse);
+
+    expect(mockAddPendingAllBrowserToolsUpdate).toHaveBeenCalledWith(['browser_screenshot', 'browser_click'], 'off');
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+    expect(mockRemovePendingAllBrowserToolsUpdate).toHaveBeenCalledWith(['browser_screenshot', 'browser_click']);
+  });
+
+  test('plugin=browser: error rollback reverts browserTools to original permissions', async () => {
+    const initialCache = {
+      plugins: [],
+      failedPlugins: [],
+      browserTools: [
+        { name: 'browser_screenshot', displayName: 'Screenshot', description: 'desc', permission: 'auto' as const },
+        { name: 'browser_click', displayName: 'Click', description: 'desc', permission: 'ask' as const },
+      ],
+      serverVersion: '1.0.0',
+    };
+
+    const concurrentCache = {
+      plugins: [],
+      failedPlugins: [],
+      browserTools: [
+        { name: 'browser_screenshot', displayName: 'Screenshot', description: 'desc', permission: 'off' as const },
+        { name: 'browser_click', displayName: 'Click', description: 'desc', permission: 'off' as const },
+      ],
+      serverVersion: '1.0.0',
+    };
+
+    mockGetServerStateCache.mockReturnValueOnce(initialCache).mockReturnValueOnce(concurrentCache);
+    mockSendServerRequest.mockRejectedValueOnce(new Error('Server error'));
+
+    const sendResponse = vi.fn();
+    handleBgSetAllToolsPermission({ plugin: 'browser', permission: 'off' }, sendResponse);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+
+    const revertCall = mockUpdateServerStateCache.mock.calls[1]?.[0] as {
+      browserTools: Array<{ name: string; permission: string }>;
+    };
+    expect(revertCall.browserTools.find(t => t.name === 'browser_screenshot')?.permission).toBe('auto');
+    expect(revertCall.browserTools.find(t => t.name === 'browser_click')?.permission).toBe('ask');
   });
 });
 

@@ -83,7 +83,8 @@ const ToolRow = ({
   return (
     <div
       className={cn(
-        'flex items-center gap-2 border-border border-b px-3 py-1.5 transition-colors last:border-b-0 even:bg-muted/10',
+        'flex items-center gap-2 border-border border-b border-l-2 border-l-transparent px-3 py-1.5 transition-colors last:border-b-0 even:bg-muted/10',
+        active && 'border-l-primary bg-primary/5',
         enabled ? 'hover:bg-primary/10' : 'hover:bg-muted/50',
         disabled && 'opacity-50',
       )}>

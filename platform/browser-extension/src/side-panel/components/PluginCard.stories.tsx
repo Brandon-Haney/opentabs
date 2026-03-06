@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { useState } from 'react';
+import { expect, screen, userEvent, within } from 'storybook/test';
 import type { PluginState } from '../bridge';
 import { PluginCard } from './PluginCard';
 import { Accordion } from './retro/Accordion';
@@ -65,6 +66,12 @@ const ReadyDemo = () => {
 
 const Ready: Story = {
   render: () => <ReadyDemo />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const trigger = canvas.getByText('Slack');
+    await userEvent.click(trigger);
+    await expect(canvas.getByText('Send Message')).toBeVisible();
+  },
 };
 
 const TabClosedDemo = () => {
@@ -183,6 +190,13 @@ const WithMenuDemo = () => {
 
 const WithMenu: Story = {
   render: () => <WithMenuDemo />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const menuTrigger = canvas.getByLabelText('Plugin options');
+    await userEvent.click(menuTrigger);
+    const menuItems = await screen.findAllByRole('menuitem');
+    await expect(menuItems.length).toBeGreaterThan(0);
+  },
 };
 
 const WithMenuAndUpdateDemo = () => {

@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { useState } from 'react';
+import { expect, within } from 'storybook/test';
 import type { BrowserToolState, PluginSearchResult, PluginState } from '../bridge';
 import { SearchResults } from './SearchResults';
 
@@ -138,7 +139,14 @@ const BothDemo = () => {
   );
 };
 
-const Both: Story = { render: () => <BothDemo /> };
+const Both: Story = {
+  render: () => <BothDemo />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText('Installed')).toBeVisible();
+    await expect(canvas.getByText('Available')).toBeVisible();
+  },
+};
 
 const NoResultsDemo = () => {
   const [plugins, setPlugins] = useState([mockPlugin()]);

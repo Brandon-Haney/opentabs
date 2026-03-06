@@ -540,3 +540,12 @@ export const selectPermission = async (page: Page, ariaLabel: string, optionText
   await page.locator(`[aria-label="${ariaLabel}"]`).click();
   await page.locator('[role="option"]', { hasText: optionText }).click();
 };
+
+/** Expand all collapsed "N hidden" tool sections within a plugin card. */
+export const expandHiddenTools = async (page: Page): Promise<void> => {
+  const hiddenToggles = page.locator('button', { hasText: /\d+ hidden/ });
+  const count = await hiddenToggles.count();
+  for (let i = 0; i < count; i++) {
+    await hiddenToggles.nth(i).click();
+  }
+};

@@ -33,6 +33,7 @@ import {
   writeTestConfig,
 } from './fixtures.js';
 import {
+  expandHiddenTools,
   openSidePanel,
   openTestAppTab,
   selectPermission,
@@ -521,6 +522,9 @@ test.describe('Side panel — unreviewed plugin confirmation dialog', () => {
     // Expand the plugin card to reveal tool rows
     const pluginCard = sidePanel.locator('button[aria-expanded]').filter({ hasText: 'E2E Test' });
     await pluginCard.click();
+
+    // Expand collapsed hidden tool sections (off tools are collapsed when >= 3 per group)
+    await expandHiddenTools(sidePanel);
 
     // Change an individual tool from 'off' to 'auto' — should trigger the dialog
     await selectPermission(sidePanel, 'Permission for echo tool', 'Auto');

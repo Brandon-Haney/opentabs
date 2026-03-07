@@ -15,7 +15,8 @@
     "description": "OpenTabs plugin for Notion",
     "urlPatterns": [
       "*://*.notion.so/*"
-    ]
+    ],
+    "homepage": "https://www.notion.so"
   },
   "exports": {
     ".": {

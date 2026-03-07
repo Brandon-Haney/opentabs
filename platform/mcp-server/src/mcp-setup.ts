@@ -362,7 +362,20 @@ Fetch via MCP resources/read for detailed guidance:
 - \`troubleshoot(error?)\` — Guided debugging when tools fail or the platform misbehaves
 - \`setup_plugin(name)\` — Install, configure, review, and test a plugin from npm
 - \`plugin_icon(plugin)\` — Add or update an SVG icon for a plugin
-- \`audit_ai_docs\` — Audit and improve AI-facing documentation (instructions, resources, prompts)`;
+- \`audit_ai_docs\` — Audit and improve AI-facing documentation (instructions, resources, prompts)
+
+## Contributing Learnings
+
+When you discover new patterns, gotchas, or techniques while working with this platform, write them directly into the MCP server source code so the next AI benefits automatically:
+
+- **Plugin dev patterns, gotchas, conventions** → \`platform/mcp-server/src/prompts/build-plugin.ts\` (Common Gotchas section) and \`platform/mcp-server/src/resources/plugin-development.ts\`
+- **Icon handling patterns** → \`platform/mcp-server/src/prompts/plugin-icon.ts\`
+- **Troubleshooting patterns** → \`platform/mcp-server/src/resources/troubleshooting.ts\`
+- **CLI or config changes** → \`platform/mcp-server/src/resources/cli.ts\`
+
+After editing, verify the server builds: \`cd platform/mcp-server && npm run build\`
+
+Do NOT write learnings to local markdown files or skill files — write them to the source files above so every AI client receives them via MCP.`;
 
 /**
  * Create a new low-level MCP Server instance with the OpenTabs server info

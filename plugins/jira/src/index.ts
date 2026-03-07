@@ -27,6 +27,7 @@ class JiraPlugin extends OpenTabsPlugin {
   readonly description = 'OpenTabs plugin for Jira';
   override readonly displayName = 'Jira';
   readonly urlPatterns = ['*://*.atlassian.net/*'];
+  override readonly excludePatterns = ['*://*.atlassian.net/wiki/*'];
   readonly tools: ToolDefinition[] = [
     // Issues
     searchIssues,

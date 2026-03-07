@@ -89,7 +89,7 @@ test.describe('Side panel — plugin list rendering', () => {
       const e2ePluginCard = sidePanelPage.locator('button[aria-expanded]').filter({ hasText: 'E2E Test' });
 
       // With no matching tab open, the PluginIcon shows a closed state (faded ghost border)
-      await expect(e2ePluginCard.locator('[class*="border-border/30"]')).toBeVisible({
+      await expect(e2ePluginCard.locator('xpath=..').locator('[class*="border-border/30"]')).toBeVisible({
         timeout: 5_000,
       });
 
@@ -128,7 +128,7 @@ test.describe('Side panel — plugin list rendering', () => {
       });
 
       // The PluginIcon now shows a ready state (solid border, no faded indicator)
-      await expect(e2ePluginCard.locator('[class*="border-border/30"]')).toBeHidden({
+      await expect(e2ePluginCard.locator('xpath=..').locator('[class*="border-border/30"]')).toBeHidden({
         timeout: 15_000,
       });
 

@@ -154,6 +154,10 @@ const updatePlugin = (name: string): Promise<PluginInstallResult> =>
 const setSkipPermissions = (skipPermissions: boolean): Promise<unknown> =>
   sendBgMessage({ type: 'bg:setSkipPermissions', skipPermissions });
 
+/** Focus an existing matching tab for a plugin, or open its homepage in a new tab */
+const openPluginTab = (pluginName: string): Promise<{ opened: boolean; tabId?: number }> =>
+  sendBgMessage<{ opened: boolean; tabId?: number }>({ type: 'bg:openPluginTab', pluginName });
+
 /** Send a confirmation response to the MCP server via the background script (fire-and-forget) */
 const sendConfirmationResponse = (id: string, decision: 'allow' | 'deny', alwaysAllow?: boolean): void => {
   chrome.runtime
@@ -181,6 +185,7 @@ export {
   installPlugin,
   matchesPlugin,
   matchesTool,
+  openPluginTab,
   removeFailedPlugin,
   removePlugin,
   searchPlugins,

@@ -176,6 +176,12 @@ export interface BgUpdatePluginMessage {
   name: string;
 }
 
+/** Side panel → Background: focus or open a tab for a plugin */
+export interface BgOpenPluginTabMessage {
+  type: 'bg:openPluginTab';
+  pluginName: string;
+}
+
 /** Side panel → Background → Offscreen: MCP server port changed */
 export interface PortChangedMessage {
   type: 'port-changed';
@@ -200,6 +206,7 @@ export type InternalMessage =
   | BgRemovePluginMessage
   | BgRemoveFailedPluginMessage
   | BgUpdatePluginMessage
+  | BgOpenPluginTabMessage
   | OffscreenGetLogsMessage
   | BgForceReconnectMessage
   | PluginLogsMessage

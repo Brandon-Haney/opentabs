@@ -14,8 +14,10 @@ const mockPlugin = (overrides?: Partial<PluginState>): PluginState => ({
   source: 'local',
   tabState: 'ready',
   urlPatterns: ['*://*.slack.com/*'],
+  homepage: 'https://app.slack.com',
   sdkVersion: '0.0.3',
   reviewed: true,
+  tabs: [{ tabId: 1, url: 'https://app.slack.com/client/T123', title: 'Slack', ready: true }],
   tools: [
     {
       name: 'send_message',
@@ -76,7 +78,7 @@ const Ready: Story = {
 };
 
 const TabClosedDemo = () => {
-  const [plugins, setPlugins] = useState([mockPlugin({ tabState: 'closed' })]);
+  const [plugins, setPlugins] = useState([mockPlugin({ tabState: 'closed', tabs: undefined })]);
   const plugin = plugins[0];
   if (!plugin) return null;
   return <PluginCard plugin={plugin} activeTools={new Set()} setPlugins={setPlugins} />;
@@ -95,6 +97,103 @@ const TabUnavailableDemo = () => {
 
 const TabUnavailable: Story = {
   render: () => <TabUnavailableDemo />,
+};
+
+const ReadyMultipleTabsDemo = () => {
+  const [plugins, setPlugins] = useState([
+    mockPlugin({
+      tabs: [
+        { tabId: 1, url: 'https://app.slack.com/client/T111', title: 'Slack — #general', ready: true },
+        { tabId: 2, url: 'https://app.slack.com/client/T222', title: 'Slack — #engineering', ready: true },
+        { tabId: 3, url: 'https://app.slack.com/client/T333', title: 'Slack — DMs', ready: true },
+      ],
+    }),
+  ]);
+  const plugin = plugins[0];
+  if (!plugin) return null;
+  return <PluginCard plugin={plugin} activeTools={new Set()} setPlugins={setPlugins} />;
+};
+
+const ReadyMultipleTabs: Story = {
+  render: () => <ReadyMultipleTabsDemo />,
+};
+
+const ClosedWithHomepageDemo = () => {
+  const [plugins, setPlugins] = useState([mockPlugin({ tabState: 'closed', tabs: undefined })]);
+  const plugin = plugins[0];
+  if (!plugin) return null;
+  return <PluginCard plugin={plugin} activeTools={new Set()} setPlugins={setPlugins} />;
+};
+
+const ClosedWithHomepage: Story = {
+  render: () => <ClosedWithHomepageDemo />,
+};
+
+const ClosedWithoutHomepageDemo = () => {
+  const [plugins, setPlugins] = useState([mockPlugin({ tabState: 'closed', tabs: undefined, homepage: undefined })]);
+  const plugin = plugins[0];
+  if (!plugin) return null;
+  return <PluginCard plugin={plugin} activeTools={new Set()} setPlugins={setPlugins} />;
+};
+
+const ClosedWithoutHomepage: Story = {
+  render: () => <ClosedWithoutHomepageDemo />,
+};
+
+const UnavailableWithTabsDemo = () => {
+  const [plugins, setPlugins] = useState([
+    mockPlugin({
+      tabState: 'unavailable',
+      tabs: [
+        { tabId: 1, url: 'https://app.slack.com/client/T111', title: 'Slack — loading', ready: false },
+        { tabId: 2, url: 'https://app.slack.com/client/T222', title: 'Slack — loading', ready: false },
+      ],
+    }),
+  ]);
+  const plugin = plugins[0];
+  if (!plugin) return null;
+  return <PluginCard plugin={plugin} activeTools={new Set()} setPlugins={setPlugins} />;
+};
+
+const UnavailableWithTabs: Story = {
+  render: () => <UnavailableWithTabsDemo />,
+};
+
+const OpenTabThemePairDemo = () => {
+  const [plugins, setPlugins] = useState([
+    mockPlugin({
+      tabs: [
+        { tabId: 1, url: 'https://app.slack.com/client/T111', title: 'Slack — #general', ready: true },
+        { tabId: 2, url: 'https://app.slack.com/client/T222', title: 'Slack — #engineering', ready: true },
+      ],
+    }),
+  ]);
+  const plugin = plugins[0];
+  if (!plugin) return null;
+  return <PluginCard plugin={plugin} activeTools={new Set()} setPlugins={setPlugins} />;
+};
+
+const OpenTabThemePair: Story = {
+  render: () => (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <span className="font-mono text-muted-foreground text-xs">Light</span>
+        <div style={lightVars}>
+          <Accordion type="multiple" defaultValue={['slack']}>
+            <OpenTabThemePairDemo />
+          </Accordion>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="font-mono text-muted-foreground text-xs">Dark</span>
+        <div style={darkVars}>
+          <Accordion type="multiple" defaultValue={['slack']}>
+            <OpenTabThemePairDemo />
+          </Accordion>
+        </div>
+      </div>
+    </div>
+  ),
 };
 
 const ReadyWithUpdateDemo = () => {
@@ -133,7 +232,9 @@ const MultiplePluginsDemo = () => {
       name: 'github',
       displayName: 'GitHub',
       urlPatterns: ['*://github.com/*'],
+      homepage: 'https://github.com',
       tabState: 'closed',
+      tabs: undefined,
       tools: [
         {
           name: 'create_issue',
@@ -148,8 +249,10 @@ const MultiplePluginsDemo = () => {
       name: 'datadog',
       displayName: 'Datadog',
       urlPatterns: ['*://*.datadoghq.com/*'],
+      homepage: 'https://app.datadoghq.com',
       tabState: 'unavailable',
       source: 'npm',
+      tabs: [{ tabId: 5, url: 'https://app.datadoghq.com/dashboard', title: 'Datadog', ready: false }],
       tools: [
         {
           name: 'query_metrics',
@@ -682,6 +785,11 @@ export {
   Ready,
   TabClosed,
   TabUnavailable,
+  ReadyMultipleTabs,
+  ClosedWithHomepage,
+  ClosedWithoutHomepage,
+  UnavailableWithTabs,
+  OpenTabThemePair,
   ReadyWithUpdate,
   WithActiveTool,
   MultiplePlugins,

@@ -129,7 +129,7 @@ test.describe('Side panel data flow — tab state changes', () => {
       const e2ePluginCard = sidePanelPage.locator('button[aria-expanded]').filter({ hasText: 'E2E Test' });
 
       // 5. Verify the PluginIcon shows closed state (faded ghost border)
-      await expect(e2ePluginCard.locator('[class*="border-border/30"]')).toBeVisible({
+      await expect(e2ePluginCard.locator('xpath=..').locator('[class*="border-border/30"]')).toBeVisible({
         timeout: 5_000,
       });
 
@@ -174,7 +174,7 @@ test.describe('Side panel data flow — tab state changes', () => {
       });
 
       // Verify the PluginIcon shows ready state (solid border, no faded indicator)
-      await expect(e2ePluginCard.locator('[class*="border-border/30"]')).toBeHidden({
+      await expect(e2ePluginCard.locator('xpath=..').locator('[class*="border-border/30"]')).toBeHidden({
         timeout: 15_000,
       });
 
@@ -211,7 +211,7 @@ test.describe('Side panel data flow — tab state changes', () => {
       });
 
       // Verify the PluginIcon shows closed state again (faded ghost border)
-      await expect(e2ePluginCard.locator('[class*="border-border/30"]')).toBeVisible({
+      await expect(e2ePluginCard.locator('xpath=..').locator('[class*="border-border/30"]')).toBeVisible({
         timeout: 15_000,
       });
 
@@ -289,7 +289,7 @@ test.describe('Side panel data flow — tab state changes', () => {
         timeout: 15_000,
       });
       const e2ePluginCard2 = sidePanelPage.locator('button[aria-expanded]').filter({ hasText: 'E2E Test' });
-      await expect(e2ePluginCard2.locator('[class*="border-border/30"]')).toBeHidden({
+      await expect(e2ePluginCard2.locator('xpath=..').locator('[class*="border-border/30"]')).toBeHidden({
         timeout: 15_000,
       });
 
@@ -328,7 +328,7 @@ test.describe('Side panel data flow — tab state changes', () => {
 
       // Reload side panel and verify PluginIcon shows unavailable state (faded ghost border)
       await sidePanelPage.reload({ waitUntil: 'load' });
-      await expect(e2ePluginCard2.locator('[class*="border-border/30"]')).toBeVisible({
+      await expect(e2ePluginCard2.locator('xpath=..').locator('[class*="border-border/30"]')).toBeVisible({
         timeout: 15_000,
       });
 
@@ -367,7 +367,7 @@ test.describe('Side panel data flow — tab state changes', () => {
       await expect(sidePanelPage.getByText('E2E Test')).toBeVisible({
         timeout: 15_000,
       });
-      await expect(e2ePluginCard2.locator('[class*="border-border/30"]')).toBeHidden({
+      await expect(e2ePluginCard2.locator('xpath=..').locator('[class*="border-border/30"]')).toBeHidden({
         timeout: 15_000,
       });
 

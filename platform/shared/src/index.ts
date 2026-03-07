@@ -311,6 +311,8 @@ export interface ConfigStatePlugin {
   permission: ToolPermission;
   source: 'npm' | 'local';
   tabState: TabState;
+  /** Individual matching tabs with per-tab details. Only present when tabState is not 'closed'. */
+  tabs?: PluginTabInfo[];
   urlPatterns: string[];
   excludePatterns?: string[];
   homepage?: string;

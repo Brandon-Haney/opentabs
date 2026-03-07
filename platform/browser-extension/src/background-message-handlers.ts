@@ -1,10 +1,10 @@
-import type { ConfigStatePlugin, TabState, ToolPermission } from '@opentabs-dev/shared';
+import type { ConfigStatePlugin, PluginTabInfo, TabState, ToolPermission } from '@opentabs-dev/shared';
 import { clearAllConfirmationBadges, clearConfirmationBadge, getPendingConfirmations } from './confirmation-badge.js';
 import { buildWsUrl, SERVER_PORT_KEY, WS_CONNECTED_KEY } from './constants.js';
 import type { DisconnectReason, InternalMessage, PluginTabStateInfo } from './extension-messages.js';
 import { handleServerMessage } from './message-router.js';
 import { forwardToSidePanel, sendToServer } from './messaging.js';
-import { getAllPluginMeta } from './plugin-storage.js';
+import { getAllPluginMeta, getPluginMeta } from './plugin-storage.js';
 import { rejectAllPendingServerRequests, sendServerRequest } from './server-request.js';
 import {
   addPendingAllBrowserToolsUpdate,
@@ -23,6 +23,7 @@ import {
   removePendingPluginToolUpdate,
   updateServerStateCache,
 } from './server-state-cache.js';
+import { findAllMatchingTabs } from './tab-matching.js';
 import {
   clearTabStateCache,
   getLastKnownStates,
@@ -181,11 +182,13 @@ const handleBgGetFullState: MessageHandler = (_message, sendResponse) => {
 
       // Tab state from lastKnownState cache (serialized JSON)
       let tabState: TabState = 'closed';
+      let tabs: PluginTabInfo[] | undefined;
       const serialized = tabStates.get(meta.name);
       if (serialized) {
         try {
           const parsed = JSON.parse(serialized) as PluginTabStateInfo;
           tabState = parsed.state;
+          if (parsed.tabs.length > 0) tabs = parsed.tabs;
         } catch {
           // Fall back to 'closed' on parse error
         }
@@ -219,6 +222,7 @@ const handleBgGetFullState: MessageHandler = (_message, sendResponse) => {
         permission: serverPlugin?.permission ?? meta.permission,
         tools,
         tabState,
+        tabs,
         source: serverPlugin?.source ?? 'local',
         reviewed: serverPlugin?.reviewed ?? false,
         sdkVersion: serverPlugin?.sdkVersion,
@@ -601,6 +605,48 @@ const handlePortChanged: MessageHandler = (message, sendResponse) => {
   sendResponse({ ok: true });
 };
 
+/** Round-robin index per plugin for cycling through multiple matching tabs */
+const cycleIndex = new Map<string, number>();
+
+/** Handle bg:openPluginTab — focus an existing matching tab or open the plugin's homepage */
+const handleBgOpenPluginTab: MessageHandler = (message, sendResponse) => {
+  const pluginName = message.pluginName as string | undefined;
+  if (!pluginName) {
+    sendResponse({ opened: false });
+    return;
+  }
+
+  (async () => {
+    const meta = await getPluginMeta(pluginName);
+    if (!meta) return { opened: false };
+
+    const tabs = await findAllMatchingTabs(meta);
+
+    if (tabs.length > 0) {
+      const prevIdx = cycleIndex.get(pluginName) ?? -1;
+      const nextIdx = (prevIdx + 1) % tabs.length;
+      cycleIndex.set(pluginName, nextIdx);
+      const tab = tabs[nextIdx];
+      if (tab?.id !== undefined) {
+        await chrome.tabs.update(tab.id, { active: true });
+        if (tab.windowId !== undefined) {
+          await chrome.windows.update(tab.windowId, { focused: true });
+        }
+        return { opened: true, tabId: tab.id };
+      }
+    }
+
+    if (meta.homepage) {
+      const newTab = await chrome.tabs.create({ url: meta.homepage });
+      return { opened: true, tabId: newTab.id };
+    }
+
+    return { opened: false };
+  })()
+    .then(result => sendResponse(result))
+    .catch(() => sendResponse({ opened: false }));
+};
+
 // ---------------------------------------------------------------------------
 // Dispatch map and listener registration
 // ---------------------------------------------------------------------------
@@ -619,6 +665,7 @@ const backgroundHandlers = new Map<InternalMessage['type'], MessageHandler>([
   ['bg:removePlugin', handleBgRemovePlugin],
   ['bg:removeFailedPlugin', handleBgRemoveFailedPlugin],
   ['bg:updatePlugin', handleBgUpdatePlugin],
+  ['bg:openPluginTab', handleBgOpenPluginTab],
   ['plugin:logs', handlePluginLogs],
   ['tool:progress', handleToolProgress],
   ['sp:confirmationResponse', handleSpConfirmationResponse],
@@ -641,6 +688,7 @@ const EXTENSION_ONLY_TYPES: ReadonlySet<InternalMessage['type']> = new Set([
   'bg:removePlugin',
   'bg:removeFailedPlugin',
   'bg:updatePlugin',
+  'bg:openPluginTab',
   'offscreen:getLogs',
   'sp:confirmationResponse',
   'port-changed',
@@ -679,6 +727,7 @@ export {
   backgroundHandlerNames,
   handleBgGetFullState,
   handleBgInstallPlugin,
+  handleBgOpenPluginTab,
   handleBgRemoveFailedPlugin,
   handleBgRemovePlugin,
   handleBgSearchPlugins,

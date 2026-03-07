@@ -361,6 +361,42 @@ const AllStatesDemo = () => {
 
 const AllStates: Story = { render: () => <AllStatesDemo /> };
 
+const WithInstallErrorDemo = () => {
+  const [plugins, setPlugins] = useState<PluginState[]>([]);
+  return (
+    <SearchResults
+      plugins={plugins}
+      failedPlugins={[]}
+      browserTools={[]}
+      activeTools={new Set()}
+      setPlugins={setPlugins}
+      setBrowserTools={() => undefined}
+      toolFilter="notion"
+      npmResults={[
+        mockNpmResult(),
+        mockNpmResult({
+          name: '@opentabs-dev/opentabs-plugin-linear',
+          description: 'OpenTabs plugin for Linear.',
+          version: '0.8.0',
+        }),
+      ]}
+      npmSearching={false}
+      installingPlugins={new Set()}
+      onInstall={() => undefined}
+      installErrors={
+        new Map([
+          [
+            '@opentabs-dev/opentabs-plugin-notion',
+            'npm ERR! 404 Not Found - GET https://registry.npmjs.org/@opentabs-dev/opentabs-plugin-notion',
+          ],
+        ])
+      }
+    />
+  );
+};
+
+const WithInstallError: Story = { render: () => <WithInstallErrorDemo /> };
+
 export default meta;
 export {
   InstalledOnly,
@@ -372,4 +408,5 @@ export {
   InstallingPlugin,
   WithBrowserTools,
   AllStates,
+  WithInstallError,
 };

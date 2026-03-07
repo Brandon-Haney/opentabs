@@ -15,7 +15,8 @@
     "description": "OpenTabs plugin for Figma",
     "urlPatterns": [
       "*://*.figma.com/*"
-    ]
+    ],
+    "homepage": "https://www.figma.com/files/recents-and-sharing"
   },
   "exports": {
     ".": {

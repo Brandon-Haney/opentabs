@@ -41,6 +41,14 @@ const Auto: Story = {
 
 const Active: Story = { args: { ...Auto.args, active: true } };
 
+const Muted: Story = {
+  args: {
+    ...Off.args,
+    permission: 'auto',
+    muted: true,
+  },
+};
+
 const Disabled: Story = {
   args: {
     ...Ask.args,
@@ -209,6 +217,7 @@ export {
   Ask,
   Auto,
   Active,
+  Muted,
   Disabled,
   LongDescription,
   WithSummary,

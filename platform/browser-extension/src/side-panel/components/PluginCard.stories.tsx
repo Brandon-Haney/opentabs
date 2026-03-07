@@ -648,6 +648,35 @@ const ThemePair: Story = {
   ),
 };
 
+const WithActionErrorDemo = () => {
+  const [plugins, setPlugins] = useState([mockPlugin()]);
+  const plugin = plugins[0];
+  if (!plugin) return null;
+  return (
+    <PluginCard
+      plugin={plugin}
+      activeTools={new Set()}
+      setPlugins={setPlugins}
+      actionError="Failed to remove plugin: npm ERR! EACCES"
+    />
+  );
+};
+
+/** Shows the actionError Alert rendered inside the expanded accordion content.
+ * The internal toggleError state (set on setToolPermission/setPluginPermission failures)
+ * uses identical Alert markup — this story covers the visual for both. */
+const WithActionError: Story = {
+  render: () => <WithActionErrorDemo />,
+};
+
+/** toggleError is internal state triggered by permission toggle failures.
+ * It renders with the same Alert markup as actionError (shown in WithActionError).
+ * This story documents the visual — actionError is used as the proxy since toggleError
+ * cannot be set from props. */
+const WithToggleError: Story = {
+  render: () => <WithActionErrorDemo />,
+};
+
 export default meta;
 export {
   Ready,
@@ -669,4 +698,6 @@ export {
   Unreviewed,
   UnreviewedWithDialog,
   ThemePair,
+  WithActionError,
+  WithToggleError,
 };

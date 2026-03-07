@@ -149,5 +149,58 @@ const NoFilterMatch: Story = {
   render: () => <NoFilterMatchDemo />,
 };
 
+const EmptyDemo = () => (
+  <div>
+    <PluginList plugins={[]} failedPlugins={[]} activeTools={new Set()} setPlugins={() => undefined} toolFilter="" />
+    <p className="mt-2 font-mono text-muted-foreground text-xs">
+      No plugins installed — PluginList renders nothing (expected behavior).
+    </p>
+  </div>
+);
+
+const Empty: Story = {
+  render: () => <EmptyDemo />,
+};
+
+const WithPluginErrorsDemo = () => {
+  const [plugins, setPlugins] = useState(mockPlugins);
+  return (
+    <PluginList
+      plugins={plugins}
+      failedPlugins={[]}
+      activeTools={new Set()}
+      setPlugins={setPlugins}
+      toolFilter=""
+      onUpdate={() => undefined}
+      onRemove={() => undefined}
+      pluginErrors={new Map([['slack', 'Failed to remove plugin: permission denied']])}
+    />
+  );
+};
+
+const WithPluginErrors: Story = {
+  render: () => <WithPluginErrorsDemo />,
+};
+
+const WithRemovingPluginDemo = () => {
+  const [plugins, setPlugins] = useState(mockPlugins);
+  return (
+    <PluginList
+      plugins={plugins}
+      failedPlugins={[]}
+      activeTools={new Set()}
+      setPlugins={setPlugins}
+      toolFilter=""
+      onUpdate={() => undefined}
+      onRemove={() => undefined}
+      removingPlugins={new Set(['github'])}
+    />
+  );
+};
+
+const WithRemovingPlugin: Story = {
+  render: () => <WithRemovingPluginDemo />,
+};
+
 export default meta;
-export { Default, WithFailedPlugins, FilteredByTool, NoFilterMatch };
+export { Default, WithFailedPlugins, FilteredByTool, NoFilterMatch, Empty, WithPluginErrors, WithRemovingPlugin };

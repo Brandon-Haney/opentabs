@@ -323,19 +323,6 @@ If `git push` is rejected because the remote has new commits, `git pull` and the
 
 The pre-commit hook auto-stages any dirty `package-lock.json` file whose sibling `package.json` is being committed. This prevents lockfile drift caused by `npm install` or build side effects. You do not need to manually `git add` lockfiles — the hook handles it.
 
-### lint-staged Stash Hazard
-
-The pre-commit hook runs lint-staged, which stashes all unstaged working directory changes before linting and pops them after. If the stash pop fails (e.g., because the commit modified files that overlap with unstaged changes — common during version bumps or lock file updates), **unstaged edits to unrelated files are silently lost** in a dangling stash. The commit succeeds but the working directory reverts to the committed state.
-
-**After every commit where you have unstaged changes, verify they survived:**
-
-```bash
-git diff --stat          # Must still show your expected modifications
-git stash list           # Must be empty (or not contain unexpected entries)
-```
-
-If changes are missing, recover them with `git stash pop` or `git stash apply`.
-
 ### Concurrent AI Work
 
 Multiple AI agents (ralph workers, perfect scripts, other Claude sessions) may be running simultaneously. Unstaged changes in the working directory may belong to another agent's in-progress work.

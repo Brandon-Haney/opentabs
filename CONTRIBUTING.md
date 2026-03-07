@@ -120,16 +120,19 @@ All checks must pass before merging.
 
 ## Git Hooks
 
-The project uses [Husky](https://typicode.github.io/husky/) for git hooks:
+The project uses [Lefthook](https://github.com/evilmartians/lefthook) for git hooks:
 
 **Pre-commit** (runs on every commit):
 
 - Rejects any accidentally staged ralph state files (`.ralph/prd.json`, `.ralph/progress.txt`)
-- Runs `lint-staged`: Biome check (lint + format) on staged `.ts`, `.tsx`, and `.json` files; Biome format on `.md` files
+- Auto-stages dirty `package-lock.json` files whose sibling `package.json` is staged
+- Biome check (lint + format) on staged `.ts` and `.tsx` files
+- Biome format on staged `.json` and `.md` files
 
 **Pre-push** (runs before every push):
 
 - `npm run build` — full production build
+- `npm run build:plugins` — build all plugins
 - `npm run type-check` — TypeScript type checking
 - `npm run test` — unit tests
 

@@ -137,12 +137,14 @@ test.describe('Icon pipeline — side panel rendering', () => {
 
       // 1. With no matching tab open (closed state), capture the inactive icon's SVG content
       const e2ePluginButton = sidePanelPage.locator('button[aria-expanded]').filter({ hasText: 'E2E Test' });
-      const iconContainer = e2ePluginButton.locator('[class*="border-border"]').first();
+      const iconContainer = e2ePluginButton.locator('xpath=..').locator('[class*="border-border"]').first();
       const inactiveHtml = await iconContainer.innerHTML();
       expect(inactiveHtml).toContain('<svg');
 
       // Closed state: faded ghost border (not-ready indicator)
-      await expect(e2ePluginButton.locator('[class*="border-border/30"]')).toBeVisible({ timeout: 5_000 });
+      await expect(e2ePluginButton.locator('xpath=..').locator('[class*="border-border/30"]')).toBeVisible({
+        timeout: 5_000,
+      });
 
       // 2. Open a matching tab to transition to 'ready' state
       const appTab = await context.newPage();
@@ -179,12 +181,14 @@ test.describe('Icon pipeline — side panel rendering', () => {
 
       // 3. Capture the active icon's SVG content
       const activePluginButton = sidePanelPage.locator('button[aria-expanded]').filter({ hasText: 'E2E Test' });
-      const activeIconContainer = activePluginButton.locator('[class*="border-border"]').first();
+      const activeIconContainer = activePluginButton.locator('xpath=..').locator('[class*="border-border"]').first();
       const activeHtml = await activeIconContainer.innerHTML();
       expect(activeHtml).toContain('<svg');
 
       // Ready state: solid border (no faded indicator)
-      await expect(activePluginButton.locator('[class*="border-border/30"]')).toBeHidden({ timeout: 5_000 });
+      await expect(activePluginButton.locator('xpath=..').locator('[class*="border-border/30"]')).toBeHidden({
+        timeout: 5_000,
+      });
 
       // The active and inactive SVG content should differ (different fill values)
       expect(activeHtml).not.toBe(inactiveHtml);
@@ -250,7 +254,7 @@ test.describe('Icon pipeline — side panel rendering', () => {
       await expect(noIconCard).toBeVisible({ timeout: 10_000 });
 
       // The letter avatar span is inside the PluginIcon border container
-      const avatarContainer = noIconCard.locator('[class*="border-border"]').first();
+      const avatarContainer = noIconCard.locator('xpath=..').locator('[class*="border-border"]').first();
       const letterSpan = avatarContainer.locator('span');
       await expect(letterSpan).toBeVisible({ timeout: 5_000 });
       await expect(letterSpan).toHaveText('T');

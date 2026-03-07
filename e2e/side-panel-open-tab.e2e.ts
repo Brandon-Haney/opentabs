@@ -4,10 +4,11 @@
  * 1. Clicking the icon focuses a matching tab
  * 2. Repeated clicks cycle through multiple matching tabs (round-robin)
  * 3. Tooltip shows the correct tab count
- * 4. Icon is disabled when no tabs exist and no homepage
+ * 4. Clicking the icon opens the homepage when no matching tab exists
  */
 
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -58,7 +59,7 @@ const waitForPluginTabState = async (
 };
 
 // ---------------------------------------------------------------------------
-// US-005: Open tab feature — focus and cycle
+// Open tab feature — focus, cycle, and homepage open
 // ---------------------------------------------------------------------------
 
 test.describe('Side panel open tab', () => {
@@ -259,14 +260,13 @@ test.describe('Side panel open tab', () => {
       await waitForExtensionConnected(server);
       await waitForLog(server, 'tab.syncAll received', 15_000);
 
-      // Open side panel with no matching tabs (closed state, no homepage)
+      // Open side panel with no matching tabs (closed state, has homepage)
       const sidePanelPage = await openSidePanel(context);
       await expect(sidePanelPage.getByText('E2E Test')).toBeVisible({ timeout: 30_000 });
 
-      // When closed and no homepage, the tooltip shows the version.
-      // The e2e-test plugin has no homepage, so the icon should show version text.
-      const versionButton = sidePanelPage.locator('button[aria-label^="v0.0."]');
-      await expect(versionButton).toBeVisible({ timeout: 5_000 });
+      // When closed and has homepage, the tooltip says "Open {name} in new tab"
+      const closedButton = sidePanelPage.locator('button[aria-label="Open E2E Test in new tab"]');
+      await expect(closedButton).toBeVisible({ timeout: 5_000 });
 
       // Open one matching tab
       const appTab1 = await context.newPage();
@@ -326,7 +326,7 @@ test.describe('Side panel open tab', () => {
     }
   });
 
-  test('icon not clickable when no tabs and no homepage', async () => {
+  test('clicking icon opens homepage when no matching tab exists', async () => {
     const absPluginPath = path.resolve(E2E_TEST_PLUGIN_DIR);
     const prefixedToolNames = readPluginToolNames();
     const tools: Record<string, boolean> = {};
@@ -334,7 +334,15 @@ test.describe('Side panel open tab', () => {
       tools[t] = true;
     }
 
-    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-opentab-disabled-'));
+    // Start a minimal HTTP server on the homepage port (9876) so the opened
+    // tab stays at http://localhost:9876/ instead of navigating to chrome-error://
+    const homepageServer = http.createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<html><body>Homepage</body></html>');
+    });
+    await new Promise<void>(resolve => homepageServer.listen(9876, resolve));
+
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-sp-opentab-homepage-'));
     writeTestConfig(configDir, { localPlugins: [absPluginPath], tools });
 
     const server = await startMcpServer(configDir, true);
@@ -345,24 +353,59 @@ test.describe('Side panel open tab', () => {
       await waitForExtensionConnected(server);
       await waitForLog(server, 'tab.syncAll received', 15_000);
 
-      // Open side panel with no matching tabs
+      // Open side panel with no matching tabs — plugin is in 'closed' state
       const sidePanelPage = await openSidePanel(context);
       await expect(sidePanelPage.getByText('E2E Test')).toBeVisible({ timeout: 30_000 });
 
-      // The e2e-test plugin has no homepage, so in closed state the icon
-      // button should be disabled. The aria-label is the version string.
-      const iconButton = sidePanelPage.locator('button[aria-label^="v0.0."]');
+      // The e2e-test plugin has homepage http://localhost:9876, so in closed
+      // state the icon button should be enabled with "Open ... in new tab" tooltip.
+      const iconButton = sidePanelPage.locator('button[aria-label="Open E2E Test in new tab"]');
       await expect(iconButton).toBeVisible({ timeout: 5_000 });
-      await expect(iconButton).toBeDisabled();
+      await expect(iconButton).toBeEnabled();
 
-      // Verify no cursor-pointer class on the disabled button
-      const hasPointer = await iconButton.evaluate(el => el.classList.contains('cursor-pointer'));
-      expect(hasPointer).toBe(false);
+      // Click the icon — should open a new tab at the homepage URL.
+      // Use waitForEvent('page') to capture the new tab created by
+      // chrome.tabs.create in the background script.
+      const [newPage] = await Promise.all([context.waitForEvent('page', { timeout: 15_000 }), iconButton.click()]);
+
+      // Verify the new page URL matches the plugin's homepage
+      await expect
+        .poll(() => newPage.url(), {
+          timeout: 10_000,
+          message: 'New page URL did not match homepage (localhost:9876)',
+        })
+        .toContain('localhost:9876');
+
+      // After the new tab opens, the plugin should transition from 'closed' to
+      // 'unavailable' or 'ready' (the homepage matches urlPatterns http://localhost/*)
+      await expect
+        .poll(
+          async () => {
+            try {
+              const res = await fetch(`http://localhost:${server.port}/health`, {
+                headers: { Authorization: `Bearer ${server.secret ?? ''}` },
+                signal: AbortSignal.timeout(3_000),
+              });
+              const body = (await res.json()) as {
+                pluginDetails?: Array<{ name: string; tabState: string }>;
+              };
+              return body.pluginDetails?.find(p => p.name === 'e2e-test')?.tabState;
+            } catch {
+              return undefined;
+            }
+          },
+          {
+            timeout: 30_000,
+            message: 'Plugin did not transition from closed after homepage tab opened',
+          },
+        )
+        .not.toBe('closed');
 
       await sidePanelPage.close();
     } finally {
       await context.close().catch(() => {});
       await server.kill();
+      homepageServer.close();
       fs.rmSync(cleanupDir, { recursive: true, force: true });
       cleanupTestConfigDir(configDir);
     }

@@ -15,7 +15,8 @@
     "description": "OpenTabs plugin for Discord",
     "urlPatterns": [
       "*://discord.com/*"
-    ]
+    ],
+    "homepage": "https://discord.com/channels/@me"
   },
   "exports": {
     ".": {

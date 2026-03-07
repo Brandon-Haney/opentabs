@@ -28,6 +28,10 @@ const Disabled: Story = {
   args: { ...Off.args, value: 'ask', disabled: true },
 };
 
+const Muted: Story = {
+  args: { ...Off.args, value: 'auto', muted: true },
+};
+
 const InteractiveDemo = () => {
   const [value, setValue] = useState<ToolPermission>('ask');
   return <PermissionSelect value={value} onValueChange={setValue} disabled={false} ariaLabel="Permission" />;
@@ -69,4 +73,4 @@ const AllStates: Story = {
 };
 
 export default meta;
-export { Off, Ask, Auto, Disabled, Interactive, AllStates };
+export { Off, Ask, Auto, Disabled, Muted, Interactive, AllStates };

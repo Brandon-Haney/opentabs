@@ -174,5 +174,18 @@ const AllStates: Story = {
   ),
 };
 
+const Muted: Story = {
+  render: () => (
+    <PluginMenu
+      plugin={mockNpmPlugin()}
+      onUpdate={() => undefined}
+      onRemove={() => undefined}
+      updating={false}
+      removing={false}
+      muted={true}
+    />
+  ),
+};
+
 export default meta;
-export { Default, WithUpdate, LocalPlugin, WithConfirmDialog, UpdateBadge, AllStates };
+export { Default, WithUpdate, LocalPlugin, WithConfirmDialog, UpdateBadge, AllStates, Muted };

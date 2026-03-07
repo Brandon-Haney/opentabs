@@ -26,6 +26,7 @@ import {
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
   ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
@@ -216,6 +217,13 @@ const registerMcpHandlers = (server: McpServerInstance, state: ServerState): voi
     resources: getAllResources(state),
   }));
 
+  // Handler: resources/templates/list — return an empty list (no parameterized
+  // resource templates). Registering this handler prevents MCP clients from
+  // receiving an unhandled-method error when they call resources/templates/list.
+  server.setRequestHandler(ListResourceTemplatesRequestSchema, () => ({
+    resourceTemplates: [],
+  }));
+
   // Handler: resources/read — resolve a resource by URI.
   server.setRequestHandler(ReadResourceRequestSchema, request => {
     const { uri } = request.params as { uri: string };
@@ -373,17 +381,19 @@ Fetch via MCP resources/read for detailed guidance:
 
 ## Contributing Learnings (Mandatory)
 
-After completing any plugin development, troubleshooting, or platform task, you **must** write new patterns, gotchas, and techniques back into the MCP server source code. This is how the platform self-improves — every AI session makes the next one better.
+After completing any plugin development, troubleshooting, or platform task, you **must** write new patterns, gotchas, and techniques back into the MCP server source code.
+
+**Why this matters:** The source files listed below are compiled into the MCP resources and prompts that this server serves. When you edit them, the next build produces updated content that every future AI agent receives automatically via \`resources/read\` and \`prompts/get\`. This creates a self-improving loop — every AI session that builds a plugin, fixes an issue, or discovers a gotcha makes every subsequent session smarter. You are both a consumer and a contributor to these resources.
 
 **Where to write:**
 
-| What you learned | Write to |
-|---|---|
-| Plugin dev patterns, gotchas, conventions | \`platform/mcp-server/src/prompts/build-plugin.ts\` and \`platform/mcp-server/src/resources/plugin-development.ts\` |
-| Icon handling patterns | \`platform/mcp-server/src/prompts/plugin-icon.ts\` |
-| Troubleshooting patterns | \`platform/mcp-server/src/resources/troubleshooting.ts\` |
-| CLI or config changes | \`platform/mcp-server/src/resources/cli.ts\` |
-| New workflow triggers or instruction gaps | \`platform/mcp-server/src/mcp-setup.ts\` (\`SERVER_INSTRUCTIONS\`) |
+| What you learned | Write to | Served as |
+|---|---|---|
+| Plugin dev patterns, gotchas, conventions | \`platform/mcp-server/src/prompts/build-plugin.ts\` and \`platform/mcp-server/src/resources/plugin-development.ts\` | \`build_plugin\` prompt + \`opentabs://guide/plugin-development\` resource |
+| Icon handling patterns | \`platform/mcp-server/src/prompts/plugin-icon.ts\` | \`plugin_icon\` prompt |
+| Troubleshooting patterns | \`platform/mcp-server/src/resources/troubleshooting.ts\` | \`opentabs://guide/troubleshooting\` resource |
+| CLI or config changes | \`platform/mcp-server/src/resources/cli.ts\` | \`opentabs://reference/cli\` resource |
+| New workflow triggers or instruction gaps | \`platform/mcp-server/src/mcp-setup.ts\` (\`SERVER_INSTRUCTIONS\`) | MCP initialize instructions (pushed to every session) |
 
 **Rules:**
 - Check for duplicates before adding — scan existing content first

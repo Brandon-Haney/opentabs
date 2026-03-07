@@ -2,6 +2,7 @@ import {
   CallToolRequestSchema,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
+  ListResourceTemplatesRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, test } from 'vitest';
 import { z } from 'zod';
@@ -1069,12 +1070,27 @@ describe('registerMcpHandlers — prompts/get handler', () => {
 });
 
 describe('registerMcpHandlers — handler count', () => {
-  test('registers exactly 6 handlers: tools/list, tools/call, prompts/list, prompts/get, resources/list, resources/read', () => {
+  test('registers exactly 7 handlers: tools/list, tools/call, prompts/list, prompts/get, resources/list, resources/templates/list, resources/read', () => {
     const state = createState();
     const { server, handlers } = createMockServer();
     registerMcpHandlers(server, state);
 
-    expect(handlers.size).toBe(6);
+    expect(handlers.size).toBe(7);
+  });
+});
+
+describe('registerMcpHandlers — resources/templates/list handler', () => {
+  test('returns an empty resourceTemplates array', () => {
+    const state = createState();
+    const { server, handlers } = createMockServer();
+    registerMcpHandlers(server, state);
+
+    const handler = getHandler(handlers, ListResourceTemplatesRequestSchema);
+    const result = handler({ params: { name: '' } }, mockExtra) as {
+      resourceTemplates: unknown[];
+    };
+
+    expect(result.resourceTemplates).toEqual([]);
   });
 });
 

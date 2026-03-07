@@ -432,10 +432,12 @@ npm run check  # build + type-check + lint + format:check
 
 This phase is **mandatory**. Every plugin build surfaces new patterns, gotchas, and friction. Write them directly into the source code so the next AI benefits automatically.
 
+**How the self-improvement loop works:** The files listed below are TypeScript source files that compile into the MCP resources and prompts this server serves. When you edit them and the server rebuilds, every future AI agent that connects will automatically receive your learnings via \`resources/read\` and \`prompts/get\`. You are currently reading this prompt because a previous session wrote (or improved) it. Your additions will reach the next agent the same way.
+
 **Where to write learnings:**
 
-- **Gotchas, advanced patterns, reference material** → \`platform/mcp-server/src/resources/plugin-development.ts\` in the \`PLUGIN_DEVELOPMENT_CONTENT\` constant (the \`opentabs://guide/plugin-development\` MCP resource).
-- **Workflow steps, code templates, conventions, gotcha quick-list** → \`platform/mcp-server/src/prompts/build-plugin.ts\` in the \`buildPluginPromptText\` function (this prompt — you are reading it now).
+- **Gotchas, advanced patterns, reference material** → \`platform/mcp-server/src/resources/plugin-development.ts\` in the \`PLUGIN_DEVELOPMENT_CONTENT\` constant → served as the \`opentabs://guide/plugin-development\` MCP resource.
+- **Workflow steps, code templates, conventions, gotcha quick-list** → \`platform/mcp-server/src/prompts/build-plugin.ts\` in the \`buildPluginPromptText\` function → served as the \`build_plugin\` MCP prompt (this prompt — you are reading it now).
 
 **Rules:**
 - Check for duplicates before adding — scan existing gotchas and sections

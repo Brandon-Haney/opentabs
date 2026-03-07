@@ -294,9 +294,10 @@ describe('performReload', () => {
 
     await performReload(state, [srv], emptyTransports(), true);
 
-    // registerMcpHandlers calls setRequestHandler 6 times:
-    // prompts/list, prompts/get, resources/list, resources/read, tools/list, tools/call
-    expect(registerCalled).toBe(6);
+    // registerMcpHandlers calls setRequestHandler 7 times:
+    // prompts/list, prompts/get, resources/list, resources/templates/list,
+    // resources/read, tools/list, tools/call
+    expect(registerCalled).toBe(7);
   });
 
   test('does NOT re-register MCP handlers on initial load', async () => {

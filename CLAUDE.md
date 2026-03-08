@@ -50,6 +50,33 @@ The OpenTabs MCP server you are developing is also the MCP server you are connec
 
 When the user says "reload the extension", "check the side panel", "send a Slack message", or "screenshot Discord" — they expect you to use these MCP tools directly. You are both the developer and a live consumer of this platform.
 
+### MCP Workflow Triggers
+
+The MCP server provides prompts and resources containing accumulated workflow patterns, code templates, and common gotchas from previous AI sessions. These are available via MCP prompts (slash commands), the `plugin_get_workflow` tool, and MCP resources.
+
+**When a user's request matches a trigger below, invoke the corresponding prompt OR call `plugin_get_workflow` before proceeding:**
+
+| User intent | Prompt (slash command) | `plugin_get_workflow` alternative |
+|---|---|---|
+| Build / create / develop a plugin | `build_plugin(url, name?)` | `plugin_get_workflow(workflow: "build_plugin", url: "...")` |
+| Troubleshoot a failing tool or issue | `troubleshoot(error?)` | `plugin_get_workflow(workflow: "troubleshoot", error: "...")` |
+| Install / set up / configure a plugin | `setup_plugin(name)` | `plugin_get_workflow(workflow: "setup_plugin", name: "...")` |
+| Add or update a plugin icon | `plugin_icon(plugin)` | — |
+| Audit or improve AI-facing docs | `audit_ai_docs` | — |
+| After completing ANY task | `contribute_learnings(task?)` | — |
+
+**When asked to build a plugin, you MUST invoke the `build_plugin` prompt or call `plugin_get_workflow` first.** These contain critical site analysis steps, API discovery patterns, auth detection techniques, and common gotchas. Do NOT attempt to build a plugin from general knowledge.
+
+**MCP resources** (fetch via `resources/read`):
+- `opentabs://status` — Live server state, plugins, tabs (fetch first when diagnosing issues)
+- `opentabs://guide/quick-start` — Installation and configuration
+- `opentabs://guide/plugin-development` — Building plugins: SDK, patterns
+- `opentabs://guide/troubleshooting` — Common errors and fixes
+- `opentabs://reference/sdk-api` — Plugin SDK API reference
+- `opentabs://reference/cli` — CLI commands reference
+- `opentabs://reference/browser-tools` — Browser tools by category
+- `opentabs://guide/self-improvement` — Self-improvement loop and contribution rules
+
 ### Tech Stack
 
 - **Language**: TypeScript (strict, ES Modules)

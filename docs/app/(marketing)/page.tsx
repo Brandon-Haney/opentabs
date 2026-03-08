@@ -268,9 +268,10 @@ export default function Home() {
             <p className="max-w-3xl text-muted-foreground text-sm leading-relaxed">
               If an official MCP server works well for you, absolutely use it. We started building OpenTabs for apps
               that don&apos;t ship official MCP support — Discord, Figma, Linear, and many others had nothing when we
-              began. Along the way, we noticed that setting up separate API keys for each service adds up when you use
-              ten of them, and the web app often has access to more features than the public API exposes. We see
-              OpenTabs and official servers as complementary — use whatever works best, or mix and match.
+              began. And some probably never will — we&apos;re not holding our breath for a Domino&apos;s MCP server.
+              Along the way, we noticed that setting up separate API keys for each service adds up when you use ten of
+              them, and the web app often has access to more features than the public API exposes. We see OpenTabs and
+              official servers as complementary — use whatever works best, or mix and match.
             </p>
           </div>
           <div>

@@ -1,6 +1,7 @@
 import type { PluginTabInfo, TabState } from '@opentabs-dev/shared';
 import { IS_READY_TIMEOUT_MS, READINESS_POLL_INTERVAL_MS } from './constants.js';
 import type { PluginMeta, PluginTabStateInfo } from './extension-messages.js';
+import { setLastSeenUrl } from './last-seen-urls.js';
 import { forwardToSidePanel, sendTabStateNotification, sendToServer } from './messaging.js';
 import { getAllPluginMeta } from './plugin-storage.js';
 import { findAllMatchingTabs, urlMatchesPatterns } from './tab-matching.js';
@@ -210,6 +211,8 @@ const sendTabSyncAll = async (): Promise<void> => {
           scheduleLastKnownStatePersist();
           return Promise.resolve();
         });
+        const earlyUrl = partialState.state !== 'closed' ? partialState.tabs[0]?.url : undefined;
+        if (earlyUrl) void setLastSeenUrl(plugin.name, earlyUrl);
         forwardToSidePanel({
           type: 'sp:serverMessage',
           data: {
@@ -228,6 +231,8 @@ const sendTabSyncAll = async (): Promise<void> => {
         scheduleLastKnownStatePersist();
         return Promise.resolve();
       });
+      const finalUrl = stateInfo.state !== 'closed' ? stateInfo.tabs[0]?.url : undefined;
+      if (finalUrl) void setLastSeenUrl(plugin.name, finalUrl);
       forwardToSidePanel({
         type: 'sp:serverMessage',
         data: {
@@ -382,6 +387,9 @@ const notifyAffectedPlugins = async (affectedPlugins: PluginMeta[]): Promise<voi
         // latest state and don't produce duplicate notifications.
         lastKnownState.set(plugin.name, serialized);
         scheduleLastKnownStatePersist();
+
+        const changedUrl = newState.state !== 'closed' ? newState.tabs[0]?.url : undefined;
+        if (changedUrl) void setLastSeenUrl(plugin.name, changedUrl);
 
         sendTabStateNotification(plugin.name, newState);
       }),

@@ -681,6 +681,39 @@ describe('readAndValidateIcons', () => {
     expect(result.iconInactiveSvg).not.toContain('#ff0000');
     expect(result.iconInactiveSvg).not.toContain('#00ff00');
   });
+
+  test('namespaces gradient IDs in all four icon variants', async () => {
+    const svgWithGradient =
+      '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g1"><stop stop-color="#ff0000"/></linearGradient></defs><rect fill="url(#g1)"/></svg>';
+    await writeTestFile(join(tmpDir, 'icon.svg'), svgWithGradient);
+    const result = await readAndValidateIcons(tmpDir, 'myplugin');
+    // All four variants should have the namespaced ID
+    expect(result.iconSvg).toContain('id="myplugin-g1"');
+    expect(result.iconSvg).toContain('url(#myplugin-g1)');
+    expect(result.iconSvg).not.toContain('id="g1"');
+    expect(result.iconInactiveSvg).toContain('id="myplugin-g1"');
+    expect(result.iconDarkSvg).toContain('id="myplugin-g1"');
+    expect(result.iconDarkInactiveSvg).toContain('id="myplugin-g1"');
+  });
+
+  test('auto-generated inactive icon contains namespaced IDs', async () => {
+    const svgWithGradient =
+      '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="a"><stop stop-color="#ff0000"/></linearGradient></defs><rect fill="url(#a)"/></svg>';
+    await writeTestFile(join(tmpDir, 'icon.svg'), svgWithGradient);
+    const result = await readAndValidateIcons(tmpDir, 'jira');
+    // The auto-generated inactive variant should have namespaced IDs
+    expect(result.iconInactiveSvg).toContain('id="jira-a"');
+    expect(result.iconInactiveSvg).toContain('url(#jira-a)');
+    // Original generic ID should NOT be present
+    expect(result.iconInactiveSvg).not.toMatch(/id="a"/);
+  });
+
+  test('icons without IDs are unaffected by namespacing', async () => {
+    await writeTestFile(join(tmpDir, 'icon.svg'), VALID_ICON_SVG);
+    const result = await readAndValidateIcons(tmpDir, 'test-plugin');
+    expect(result.iconSvg).toContain('#ff0000');
+    expect(result.iconSvg).not.toContain('test-plugin-');
+  });
 });
 
 describe('resolvePluginPathForComparison', () => {

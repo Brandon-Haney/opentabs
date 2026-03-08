@@ -605,8 +605,23 @@ const handlePortChanged: MessageHandler = (message, sendResponse) => {
   sendResponse({ ok: true });
 };
 
-/** Round-robin index per plugin for cycling through multiple matching tabs */
-const cycleIndex = new Map<string, number>();
+/** Last-focused tab ID per plugin for round-robin cycling */
+const lastFocusedTabId = new Map<string, number>();
+
+type TabEntry = { tab: chrome.tabs.Tab; id: number };
+
+/** Pick the next tab to focus in a stable round-robin. */
+const pickNextTab = (sorted: TabEntry[], pluginName: string): TabEntry | undefined => {
+  if (sorted.length === 0) return undefined;
+  const lastId = lastFocusedTabId.get(pluginName);
+  if (lastId === undefined) {
+    // First click: pick the first non-active tab so the user sees immediate action
+    return sorted.find(t => !t.tab.active) ?? sorted[0];
+  }
+  const lastIdx = sorted.findIndex(t => t.id === lastId);
+  const nextIdx = (lastIdx + 1) % sorted.length;
+  return sorted[nextIdx];
+};
 
 /** Handle bg:openPluginTab — focus an existing matching tab or open the plugin's homepage */
 const handleBgOpenPluginTab: MessageHandler = (message, sendResponse) => {
@@ -623,16 +638,21 @@ const handleBgOpenPluginTab: MessageHandler = (message, sendResponse) => {
     const tabs = await findAllMatchingTabs(meta);
 
     if (tabs.length > 0) {
-      const prevIdx = cycleIndex.get(pluginName) ?? -1;
-      const nextIdx = (prevIdx + 1) % tabs.length;
-      cycleIndex.set(pluginName, nextIdx);
-      const tab = tabs[nextIdx];
-      if (tab?.id !== undefined) {
-        await chrome.tabs.update(tab.id, { active: true });
-        if (tab.windowId !== undefined) {
-          await chrome.windows.update(tab.windowId, { focused: true });
+      // Build a stable-order list with guaranteed IDs (filter narrows the type)
+      const withIds: Array<{ tab: chrome.tabs.Tab; id: number }> = [];
+      for (const tab of tabs) {
+        if (tab.id !== undefined) withIds.push({ tab, id: tab.id });
+      }
+      withIds.sort((a, b) => a.id - b.id);
+
+      const pick = pickNextTab(withIds, pluginName);
+      if (pick) {
+        lastFocusedTabId.set(pluginName, pick.id);
+        await chrome.tabs.update(pick.id, { active: true });
+        if (pick.tab.windowId !== undefined) {
+          await chrome.windows.update(pick.tab.windowId, { focused: true });
         }
-        return { opened: true, tabId: tab.id };
+        return { opened: true, tabId: pick.id };
       }
     }
 

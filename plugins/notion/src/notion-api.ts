@@ -1,4 +1,13 @@
-import { ToolError, parseRetryAfterMs } from '@opentabs-dev/plugin-sdk';
+import {
+  ToolError,
+  clearAuthCache,
+  getAuthCache,
+  getCookie,
+  getLocalStorage,
+  parseRetryAfterMs,
+  setAuthCache,
+  waitUntil,
+} from '@opentabs-dev/plugin-sdk';
 
 // --- Types ---
 
@@ -7,43 +16,10 @@ interface NotionAuth {
   spaceId: string;
 }
 
-// --- Token persistence via globalThis (survives adapter re-injection) ---
-
-const getPersistedAuth = (): NotionAuth | null => {
-  try {
-    const ns = (globalThis as Record<string, unknown>).__openTabs as Record<string, unknown> | undefined;
-    const cache = ns?.tokenCache as Record<string, string | undefined> | undefined;
-    const raw = cache?.notion;
-    if (!raw) return null;
-    return JSON.parse(raw) as NotionAuth;
-  } catch {
-    return null;
-  }
-};
-
-const setPersistedAuth = (auth: NotionAuth): void => {
-  try {
-    const g = globalThis as Record<string, unknown>;
-    if (!g.__openTabs) g.__openTabs = {};
-    const ns = g.__openTabs as Record<string, unknown>;
-    if (!ns.tokenCache) ns.tokenCache = {};
-    const cache = ns.tokenCache as Record<string, string | undefined>;
-    cache.notion = JSON.stringify(auth);
-  } catch {}
-};
-
-const clearPersistedAuth = (): void => {
-  try {
-    const ns = (globalThis as Record<string, unknown>).__openTabs as Record<string, unknown> | undefined;
-    const cache = ns?.tokenCache as Record<string, string | undefined> | undefined;
-    if (cache) cache.notion = undefined;
-  } catch {}
-};
-
 // --- Auth extraction ---
 
 const getAuth = (): NotionAuth | null => {
-  const persisted = getPersistedAuth();
+  const persisted = getAuthCache<NotionAuth>('notion');
   if (persisted) return persisted;
 
   // Extract userId from notion_user_id cookie
@@ -55,27 +31,18 @@ const getAuth = (): NotionAuth | null => {
   if (!spaceId) {
     // Return auth with just userId; spaceId will be resolved on first API call
     const auth: NotionAuth = { userId, spaceId: '' };
-    setPersistedAuth(auth);
+    setAuthCache('notion', auth);
     return auth;
   }
 
   const auth: NotionAuth = { userId, spaceId };
-  setPersistedAuth(auth);
+  setAuthCache('notion', auth);
   return auth;
-};
-
-const getCookie = (name: string): string | null => {
-  try {
-    const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
-    return match?.[1] !== undefined ? decodeURIComponent(match[1]) : null;
-  } catch {
-    return null;
-  }
 };
 
 const getSpaceIdFromLocalStorage = (): string | null => {
   try {
-    const lastVisitedRoute = localStorage.getItem('LRU:KeyValueStore2:lastVisitedRouteSpaceId');
+    const lastVisitedRoute = getLocalStorage('LRU:KeyValueStore2:lastVisitedRouteSpaceId');
     if (lastVisitedRoute) {
       // LRU format: JSON with value field
       const parsed = JSON.parse(lastVisitedRoute) as { value?: string };
@@ -88,7 +55,7 @@ const getSpaceIdFromLocalStorage = (): string | null => {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key?.includes('spaceId')) {
-        const val = localStorage.getItem(key);
+        const val = getLocalStorage(key);
         if (val) {
           try {
             const parsed = JSON.parse(val) as { value?: string };
@@ -111,23 +78,10 @@ const getSpaceIdFromLocalStorage = (): string | null => {
 export const isAuthenticated = (): boolean => getAuth() !== null;
 
 export const waitForAuth = (): Promise<boolean> =>
-  new Promise(resolve => {
-    let elapsed = 0;
-    const interval = 500;
-    const maxWait = 5000;
-    const timer = setInterval(() => {
-      elapsed += interval;
-      if (isAuthenticated()) {
-        clearInterval(timer);
-        resolve(true);
-        return;
-      }
-      if (elapsed >= maxWait) {
-        clearInterval(timer);
-        resolve(false);
-      }
-    }, interval);
-  });
+  waitUntil(() => isAuthenticated(), { interval: 500, timeout: 5000 }).then(
+    () => true,
+    () => false,
+  );
 
 // --- Resolve spaceId if missing ---
 
@@ -141,7 +95,7 @@ const resolveSpaceId = async (auth: NotionAuth): Promise<string> => {
     const firstSpaceId = Object.keys(userSpaces.space)[0];
     if (firstSpaceId) {
       auth.spaceId = firstSpaceId;
-      setPersistedAuth(auth);
+      setAuthCache('notion', auth);
       return firstSpaceId;
     }
   }
@@ -192,7 +146,7 @@ export const notionApi = async <T>(endpoint: string, body: Record<string, unknow
 
     // Clear persisted auth on 401
     if (response.status === 401) {
-      clearPersistedAuth();
+      clearAuthCache('notion');
     }
 
     if (response.status === 429) {

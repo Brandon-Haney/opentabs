@@ -158,6 +158,10 @@ const setSkipPermissions = (skipPermissions: boolean): Promise<unknown> =>
 const openPluginTab = (pluginName: string): Promise<{ opened: boolean; tabId?: number }> =>
   sendBgMessage<{ opened: boolean; tabId?: number }>({ type: 'bg:openPluginTab', pluginName });
 
+/** Open a folder in the system file manager (relayed to MCP server) */
+const openFolder = (path: string): Promise<{ ok: true }> =>
+  sendBgMessage<{ ok: true }>({ type: 'bg:openFolder', path });
+
 /** Send a confirmation response to the MCP server via the background script (fire-and-forget) */
 const sendConfirmationResponse = (id: string, decision: 'allow' | 'deny', alwaysAllow?: boolean): void => {
   chrome.runtime
@@ -185,6 +189,7 @@ export {
   installPlugin,
   matchesPlugin,
   matchesTool,
+  openFolder,
   openPluginTab,
   removeFailedPlugin,
   removePlugin,

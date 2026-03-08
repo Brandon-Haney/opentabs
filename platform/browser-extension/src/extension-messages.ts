@@ -182,6 +182,12 @@ export interface BgOpenPluginTabMessage {
   pluginName: string;
 }
 
+/** Side panel → Background: open a folder in the system file manager (relayed to MCP server) */
+export interface BgOpenFolderMessage {
+  type: 'bg:openFolder';
+  path: string;
+}
+
 /** Side panel → Background → Offscreen: MCP server port changed */
 export interface PortChangedMessage {
   type: 'port-changed';
@@ -207,6 +213,7 @@ export type InternalMessage =
   | BgRemoveFailedPluginMessage
   | BgUpdatePluginMessage
   | BgOpenPluginTabMessage
+  | BgOpenFolderMessage
   | OffscreenGetLogsMessage
   | BgForceReconnectMessage
   | PluginLogsMessage

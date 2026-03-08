@@ -535,6 +535,22 @@ Zod types must be precise: use `.int()` for integer fields, `.min()`/`.max()` fo
 - No `.transform()`/`.pipe()`/`.preprocess()` in Zod schemas (breaks JSON Schema serialization)
 - `.refine()` callbacks must never throw — Zod 4 runs them even on invalid base values
 
+### Consistency Rules for Multi-Tool Plugins
+
+When building plugins with 15+ tools, inconsistency across files is the primary quality problem. Establish these patterns in `schemas.ts` **before** writing any tool files, then follow them rigidly:
+
+1. **Define shared API response types in `schemas.ts`** — e.g., `AsanaResponse<T>` for single-item endpoints, `AsanaList<T>` for paginated lists. Every tool file imports and uses these instead of declaring local `interface RawResponse { data: ... }` variants.
+
+2. **Export all Raw interfaces from `schemas.ts`** — `RawTask`, `RawProject`, etc. Tool files import them. Never redeclare a Raw interface locally in a tool file. This prevents N copies of the same interface drifting apart.
+
+3. **Define OPT_FIELDS constants for every entity** — if an API requires explicit field selection (like Asana's `opt_fields`), define a constant for each entity type (`TASK_OPT_FIELDS`, `PROJECT_OPT_FIELDS`, `SECTION_OPT_FIELDS`, etc.) in `schemas.ts`. Pass it from every endpoint that returns that entity, including POST/PUT responses. Missing `opt_fields` causes silently incomplete data.
+
+4. **Use one variable name for API responses** — pick `data` and use it everywhere. Not `result` in some files and `res` in others.
+
+5. **Handle pagination the same way in every list tool** — put `offset: params.offset` directly in the query object (the API helper skips `undefined` values). Do not use `if (params.offset !== undefined)` conditionals in some files and direct assignment in others.
+
+6. **Never use type casts to work around API typing** — if you need `as Parameters<typeof mapProject>[0]`, the generic type parameter to `api<T>()` is wrong. Fix the type, don't cast.
+
 ### Code Cleanliness
 
 Plugin code serves as a learning reference for other agents and developers. Every file must be clean, tidy, and self-evident:
@@ -561,6 +577,9 @@ Extract from localStorage, sessionStorage, page globals (`window.__APP_STATE__`,
 ### XHR/Fetch Interception
 For apps with internal RPC or obfuscated APIs: monkey-patch `XMLHttpRequest.prototype.open/setRequestHeader/send` at adapter load time to capture auth headers. Store on `globalThis`. Re-patch on each adapter load (avoid stale `if (installed) return` guards).
 
+### First-Party API Headers
+Some apps (e.g., Asana) use HttpOnly cookie auth where GET requests work automatically with `credentials: 'include'` but POST/PUT/DELETE requests return 401 unless a specific first-party header is present. Look in CORS `Access-Control-Allow-Headers` for custom headers like `X-Allow-Asana-Client`, `X-Requested-With`, or similar. These are not CSRF tokens — they are gate headers that distinguish first-party app requests from third-party API calls. The header value is typically a static string (`'1'`). Check the CORS response headers during Phase 2 network analysis.
+
 ### Opaque Auth Headers
 Some apps compute cryptographic tokens via obfuscated JS — capture and replay, don't generate. Poll with timeout for the header to appear.
 
@@ -583,6 +602,8 @@ Some apps compute cryptographic tokens via obfuscated JS — capture and replay,
 13. Trusted Types CSP blocks `innerHTML` — use `html.replace(/<[^>]+>/g, '')` for HTML-to-text
 14. When one API path is blocked, explore internal extension APIs, `webpackChunk`-based module access, or programmatic interfaces on `window`
 15. Internal API endpoints can be deprecated without warning — test each endpoint independently, remove broken tools
+16. When using sub-agents to write tool files in parallel, define ALL shared types (Raw interfaces, response envelope types, OPT_FIELDS constants) in `schemas.ts` **before** dispatching tool file generation — otherwise each agent invents its own local types and you end up rewriting everything for consistency
+17. Some APIs authorize GET and POST differently — GET may work with just cookies while POST requires an additional header. Always test both read and write operations during Phase 2 discovery, not just reads
 
 ---
 

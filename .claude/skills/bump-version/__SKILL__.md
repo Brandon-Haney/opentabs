@@ -191,6 +191,58 @@ Do not skip the plugin lock file update or commit stale lock files. The retry is
 
 ---
 
+## Remote Execution via Ralph PRD
+
+Version bumps can be offloaded to a ralph worker on the remote PC instead of running locally. This avoids the slow local build+publish cycle. Use the `ralph` skill to create and publish the PRD.
+
+### PRD Template
+
+```json
+{
+  "project": "OpenTabs Platform",
+  "description": "Bump all platform packages and plugins from <OLD> to <NEW>, publish to npm, and rebuild plugins with updated lock files.",
+  "qualityChecks": "npm run build && npm run type-check && npm run lint && npm run knip && npm run test",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Bump version from <OLD> to <NEW> and publish to npm",
+      "description": "Load the bump-version skill and execute every step: bump all version references, build, publish all 7 platform packages to npm in dependency order, rebuild all plugins to update lock files, and commit everything.",
+      "acceptanceCriteria": [
+        "All 7 platform package.json files have version <NEW>",
+        "Chrome extension manifest.json has version <NEW>",
+        "All plugin package.json files have version <NEW> with SDK/tools dep ranges ^<NEW>",
+        "All 7 platform packages are published to npm at <NEW> (verify with npm view)",
+        "All plugin package-lock.json files reference the published <NEW> versions",
+        "npm run build exits 0",
+        "npm run type-check exits 0",
+        "No hardcoded <OLD> version strings remain in platform/ TypeScript source"
+      ],
+      "priority": 1,
+      "passes": false,
+      "e2eCheckpoint": false,
+      "model": "opus",
+      "notes": "Use the `skill` tool to load the `bump-version` skill, then follow every step exactly.\n\nThe skill is at `.claude/skills/bump-version/__SKILL__.md` — read it first.\n\nKey steps in order:\n1. Update version in all 7 platform package.json files: shared, plugin-sdk, browser-extension, mcp-server, plugin-tools, cli, create-plugin\n2. Update version in platform/browser-extension/manifest.json\n3. Update version AND dependency ranges in all plugin package.json files (plugins/*/package.json)\n4. Run `npm install --package-lock-only` at repo root to update root lock file\n5. Scan for hardcoded '<OLD>' strings in platform/**/*.ts\n6. Run `npm run build` and `npm run type-check`\n7. Commit the version bump (message: 'bump version to <NEW>')\n8. Verify npm auth: `npm whoami` must return 'opentabs-dev-admin'\n9. Publish in this exact order:\n   - cd platform/shared && npm publish\n   - cd platform/browser-extension && npm publish\n   - cd platform/mcp-server && npm publish\n   - cd platform/plugin-sdk && npm publish\n   - cd platform/plugin-tools && npm publish\n   - cd platform/cli && npm publish\n   - cd platform/create-plugin && npm publish\n10. After all 7 are published, verify: `npm view @opentabs-dev/shared@<NEW> version`\n11. Run `npm run build:plugins` to install published versions and rebuild all plugins\n12. Commit plugin lock file updates (message: 'update plugin lock files for <NEW>')\n\nConstraints:\n- Do NOT change any publishConfig.access values — all packages are restricted\n- Do NOT bump the docs/ version — it is independent\n- Do NOT modify the root package.json — it has no version field\n- Do NOT change any code logic — this is a version-only change\n- Plugin packages use `^<NEW>` semver ranges, NOT exact versions\n- The publish MUST happen before build:plugins, because plugins install from the npm registry\n- If npm publish fails for a package, retry after 10 seconds (registry propagation delay)"
+    }
+  ]
+}
+```
+
+### Why `qualityChecks` Is Set
+
+The PRD sets a custom `qualityChecks` that **excludes `npm run test:e2e`**. E2E tests require a real Chrome browser with the extension loaded — ralph workers run in Docker containers without a display or Chrome extension, so E2E tests always fail. The version bump only changes `package.json` files and does not affect browser behavior, so skipping E2E is safe.
+
+Without custom `qualityChecks`, the ralph safety net runs the default verification suite (including E2E) after the final story, causing the worker to waste time investigating pre-existing E2E failures unrelated to the version bump.
+
+### Workflow
+
+1. Load the `ralph` skill
+2. Replace `<OLD>` and `<NEW>` in the template above with the actual version numbers
+3. Write the PRD to the queue repo and publish via `producer.sh`
+4. A worker claims it, bumps versions, publishes to npm, rebuilds plugins, and pushes the branch
+5. The consolidator merges the branch into `main`
+
+---
+
 ## Checklist
 
 ### Version Bump

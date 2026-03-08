@@ -159,10 +159,11 @@ const SearchResults = ({
         <Empty className="border-muted">
           <Empty.Content>
             <Empty.Icon className="h-10 w-10 text-muted-foreground" />
-            <Empty.Title className="text-base">No results for &ldquo;{toolFilter}&rdquo;</Empty.Title>
+            <Empty.Title className="text-base">No plugins found</Empty.Title>
             <Empty.Separator />
             <Empty.Description className="text-xs">
-              Try searching by plugin name, tool name, or description.
+              Can&rsquo;t find what you&rsquo;re looking for? Ask your AI assistant to build a custom plugin for you
+              &mdash; it only takes a minute.
             </Empty.Description>
           </Empty.Content>
         </Empty>

@@ -51,8 +51,8 @@ test.describe('Side panel search details', () => {
       // Type a nonsense string that matches no installed plugins and no npm results
       await searchInput.fill('xyzzy99nonexistent');
 
-      // Wait for npm search to complete and 'No results' to appear
-      await expect(sidePanel.getByText('No results')).toBeVisible({ timeout: 15_000 });
+      // Wait for npm search to complete and 'No plugins found' to appear
+      await expect(sidePanel.getByText('No plugins found')).toBeVisible({ timeout: 15_000 });
 
       // No section headers should be shown
       await expect(sidePanel.getByText('Installed')).toBeHidden();

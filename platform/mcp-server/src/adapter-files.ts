@@ -164,11 +164,17 @@ const writeExecFile = async (state: ServerState, execId: string, code: string): 
 
   const resultKey = `__execResult_${execId}`;
   const asyncKey = `__execAsync_${execId}`;
+  const startedKey = `__execStarted_${execId}`;
 
   // Wrap user code to capture sync/async results and errors.
   // The wrapper stores results at namespaced keys on globalThis.__openTabs
   // so concurrent executions do not collide. The extension reads the
   // namespaced key matching this execution's UUID and cleans it up.
+  //
+  // The __startedKey sentinel is set synchronously at the top of the IIFE
+  // before the try block, so the polling function can distinguish between
+  // "IIFE hasn't executed yet" (keep polling) and "sync code produced no
+  // result" (genuine failure).
   //
   // User code is placed inline inside an inner function expression, avoiding
   // eval-like constructs (new Function, eval) that strict CSP blocks. The
@@ -179,6 +185,8 @@ const writeExecFile = async (state: ServerState, execId: string, code: string): 
     '  var __ot = globalThis.__openTabs = globalThis.__openTabs || {};',
     `  var __resultKey = ${JSON.stringify(resultKey)};`,
     `  var __asyncKey = ${JSON.stringify(asyncKey)};`,
+    `  var __startedKey = ${JSON.stringify(startedKey)};`,
+    '  __ot[__startedKey] = true;',
     '  try {',
     '    var __r = (async function() {',
     code,

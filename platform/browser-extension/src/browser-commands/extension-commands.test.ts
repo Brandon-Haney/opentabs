@@ -509,7 +509,7 @@ describe('handleBrowserExecuteScript', () => {
       });
       expect(cleanupCall).toBeDefined();
       const opts = (cleanupCall as unknown[])[0] as Record<string, unknown>;
-      expect(opts.args).toEqual(['__execResult_abc123', '__execAsync_abc123']);
+      expect(opts.args).toEqual(['__execResult_abc123', '__execAsync_abc123', '__execStarted_abc123']);
     });
 
     test('runs cleanup script when inner EXEC_MAX_ASYNC_WAIT_MS fires before outer timeout', async () => {
@@ -539,7 +539,7 @@ describe('handleBrowserExecuteScript', () => {
       const lastCall = (calls[calls.length - 1] as unknown[])[0] as Record<string, unknown>;
       expect(lastCall.world).toBe('MAIN');
       expect(typeof lastCall.func).toBe('function');
-      expect(lastCall.args).toEqual(['__execResult_abc123', '__execAsync_abc123']);
+      expect(lastCall.args).toEqual(['__execResult_abc123', '__execAsync_abc123', '__execStarted_abc123']);
     });
   });
 });

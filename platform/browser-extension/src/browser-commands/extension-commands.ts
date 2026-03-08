@@ -391,6 +391,7 @@ export const handleBrowserExecuteScript = async (
     const execUuid = execFile.replace(/^__exec-/, '').replace(/\.js$/, '');
     const resultKey = `__execResult_${execUuid}`;
     const asyncKey = `__execAsync_${execUuid}`;
+    const startedKey = `__execStarted_${execUuid}`;
 
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const cancelled = { value: false };
@@ -415,7 +416,7 @@ export const handleBrowserExecuteScript = async (
           const results = await chrome.scripting.executeScript({
             target: { tabId },
             world: 'MAIN',
-            func: (truncLimit: number, rKey: string, aKey: string) => {
+            func: (truncLimit: number, rKey: string, aKey: string, sKey: string) => {
               const ot = (globalThis as Record<string, unknown>).__openTabs as Record<string, unknown> | undefined;
               if (!ot) return { pending: false, result: { error: '__openTabs not found' } };
 
@@ -440,16 +441,20 @@ export const handleBrowserExecuteScript = async (
                 // Clean up namespaced globals for this execution
                 Reflect.deleteProperty(ot, rKey);
                 Reflect.deleteProperty(ot, aKey);
+                Reflect.deleteProperty(ot, sKey);
                 return { pending: false, result: captured };
               }
 
               // Async code hasn't resolved yet — keep polling
               if (isAsync) return { pending: true };
 
+              // IIFE hasn't executed yet — keep polling
+              if (ot[sKey] !== true) return { pending: true };
+
               // Sync code produced no result (should not happen)
               return { pending: false, result: { error: 'No result captured' } };
             },
-            args: [EXEC_RESULT_TRUNCATION_LIMIT, resultKey, asyncKey],
+            args: [EXEC_RESULT_TRUNCATION_LIMIT, resultKey, asyncKey, startedKey],
           });
 
           const first = results[0] as { result?: { pending: boolean; result?: unknown } } | undefined;
@@ -474,14 +479,15 @@ export const handleBrowserExecuteScript = async (
           .executeScript({
             target: { tabId },
             world: 'MAIN',
-            func: (rKey: string, aKey: string) => {
+            func: (rKey: string, aKey: string, sKey: string) => {
               const ot = (globalThis as Record<string, unknown>).__openTabs as Record<string, unknown> | undefined;
               if (ot) {
                 Reflect.deleteProperty(ot, rKey);
                 Reflect.deleteProperty(ot, aKey);
+                Reflect.deleteProperty(ot, sKey);
               }
             },
-            args: [resultKey, asyncKey],
+            args: [resultKey, asyncKey, startedKey],
           })
           .catch(() => {});
       }

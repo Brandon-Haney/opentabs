@@ -1,48 +1,26 @@
-import { ToolError } from '@opentabs-dev/plugin-sdk';
+import {
+  ToolError,
+  clearAuthCache,
+  getAuthCache,
+  getLocalStorage,
+  parseRetryAfterMs,
+  setAuthCache,
+  waitUntil,
+} from '@opentabs-dev/plugin-sdk';
 
 const TOKEN_KEY = 'supabase.dashboard.auth.token';
-const PLUGIN_NAME = 'supabase';
+const NAMESPACE = 'supabase';
 
 interface SupabaseAuth {
   accessToken: string;
 }
 
-const getPersistedAuth = (): SupabaseAuth | null => {
-  try {
-    const ns = (globalThis as Record<string, unknown>).__openTabs as Record<string, unknown> | undefined;
-    const cache = ns?.tokenCache as Record<string, string | undefined> | undefined;
-    const token = cache?.[PLUGIN_NAME];
-    return token ? { accessToken: token } : null;
-  } catch {
-    return null;
-  }
-};
-
-const setPersistedAuth = (token: string): void => {
-  try {
-    const g = globalThis as Record<string, unknown>;
-    if (!g.__openTabs) g.__openTabs = {};
-    const ns = g.__openTabs as Record<string, unknown>;
-    if (!ns.tokenCache) ns.tokenCache = {};
-    const cache = ns.tokenCache as Record<string, string | undefined>;
-    cache[PLUGIN_NAME] = token;
-  } catch {}
-};
-
-const clearPersistedAuth = (): void => {
-  try {
-    const ns = (globalThis as Record<string, unknown>).__openTabs as Record<string, unknown> | undefined;
-    const cache = ns?.tokenCache as Record<string, string | undefined> | undefined;
-    if (cache) cache[PLUGIN_NAME] = undefined;
-  } catch {}
-};
-
 const getAuth = (): SupabaseAuth | null => {
-  const persisted = getPersistedAuth();
+  const persisted = getAuthCache<SupabaseAuth>(NAMESPACE);
   if (persisted) return persisted;
 
   try {
-    const raw = localStorage.getItem(TOKEN_KEY);
+    const raw = getLocalStorage(TOKEN_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as {
       access_token?: string;
@@ -50,8 +28,9 @@ const getAuth = (): SupabaseAuth | null => {
     };
     const token = parsed.access_token;
     if (!token) return null;
-    setPersistedAuth(token);
-    return { accessToken: token };
+    const auth: SupabaseAuth = { accessToken: token };
+    setAuthCache(NAMESPACE, auth);
+    return auth;
   } catch {
     return null;
   }
@@ -60,23 +39,10 @@ const getAuth = (): SupabaseAuth | null => {
 export const isAuthenticated = (): boolean => getAuth() !== null;
 
 export const waitForAuth = (): Promise<boolean> =>
-  new Promise(resolve => {
-    let elapsed = 0;
-    const interval = 500;
-    const maxWait = 5000;
-    const timer = setInterval(() => {
-      elapsed += interval;
-      if (isAuthenticated()) {
-        clearInterval(timer);
-        resolve(true);
-        return;
-      }
-      if (elapsed >= maxWait) {
-        clearInterval(timer);
-        resolve(false);
-      }
-    }, interval);
-  });
+  waitUntil(() => isAuthenticated(), { interval: 500, timeout: 5000 }).then(
+    () => true,
+    () => false,
+  );
 
 export const api = async <T>(
   endpoint: string,
@@ -131,12 +97,12 @@ export const api = async <T>(
     const errorBody = (await response.text().catch(() => '')).substring(0, 512);
 
     if (response.status === 401 || response.status === 403) {
-      clearPersistedAuth();
+      clearAuthCache(NAMESPACE);
       throw ToolError.auth(`Auth error (${response.status}): ${errorBody}`);
     }
     if (response.status === 429) {
       const retryAfter = response.headers.get('Retry-After');
-      const retryMs = retryAfter ? Number(retryAfter) * 1000 : undefined;
+      const retryMs = retryAfter !== null ? parseRetryAfterMs(retryAfter) : undefined;
       throw ToolError.rateLimited(`Rate limited: ${endpoint} — ${errorBody}`, retryMs);
     }
     if (response.status === 404) throw ToolError.notFound(`Not found: ${endpoint} — ${errorBody}`);

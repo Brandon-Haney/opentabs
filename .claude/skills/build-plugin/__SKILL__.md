@@ -55,13 +55,34 @@ Study existing infrastructure before writing code:
 
 | Category | Functions |
 |---|---|
-| Fetch | `fetchFromPage`, `fetchJSON`, `postJSON`, `putJSON`, `patchJSON`, `deleteJSON`, `postForm`, `postFormData` — all accept optional Zod schema for response validation |
-| DOM | `waitForSelector`, `waitForSelectorRemoval`, `querySelectorAll` (returns array), `getTextContent`, `observeDOM` (MutationObserver, returns cleanup fn) |
-| Storage | `getLocalStorage`, `setLocalStorage`, `removeLocalStorage`, `getSessionStorage`, `setSessionStorage`, `removeSessionStorage`, `getCookie` |
+| Fetch | `fetchFromPage`, `fetchJSON`, `fetchText`, `postJSON`, `putJSON`, `patchJSON`, `deleteJSON`, `postForm`, `postFormData` — all accept optional Zod schema for response validation. `buildQueryString` for URL parameter construction. `httpStatusToToolError` for HTTP status → ToolError mapping. `parseRetryAfterMs` for Retry-After header parsing. |
+| DOM | `waitForSelector`, `waitForSelectorRemoval`, `querySelectorAll` (returns array), `getTextContent`, `getMetaContent` (reads `<meta>` tag content by name), `observeDOM` (MutationObserver, returns cleanup fn) |
+| Storage | `getLocalStorage`, `setLocalStorage`, `removeLocalStorage`, `getSessionStorage`, `setSessionStorage`, `removeSessionStorage`, `getCookie`, `findLocalStorageEntry` (search keys by predicate) |
+| Auth Cache | `getAuthCache<T>(namespace)`, `setAuthCache<T>(namespace, value)`, `clearAuthCache(namespace)` — persist tokens to `globalThis.__openTabs.tokenCache` to survive adapter re-injection |
 | Page State | `getPageGlobal` (dot-notation deep access, e.g., `'app.auth.token'`), `getCurrentUrl`, `getPageTitle` |
 | Timing | `sleep`, `retry({ maxAttempts?, delay?, backoff?, maxDelay?, signal? })`, `waitUntil(predicate, { interval?, timeout?, signal? })` |
 | Errors | `ToolError` (.auth, .notFound, .rateLimited, .timeout, .validation, .internal), `httpStatusToToolError`, `parseRetryAfterMs` |
 | Logging | `log.debug`, `log.info`, `log.warn`, `log.error` — routes through extension to MCP clients |
+
+### SDK-First Rule (Mandatory)
+
+**You MUST use SDK utilities for every operation they cover. Never reimplement functionality that the SDK already provides.** This is not a suggestion — it is a hard requirement. Every plugin that manually reimplements SDK functionality creates maintenance debt and inconsistency.
+
+| Operation | MUST use | NEVER do |
+|---|---|---|
+| Auth polling | `waitUntil(() => isAuthenticated(), { interval: 500, timeout: 5000 })` | Manual `setInterval` + elapsed counter |
+| Token persistence | `getAuthCache<T>(name)` / `setAuthCache(name, value)` / `clearAuthCache(name)` | Manual `globalThis.__openTabs.tokenCache` access |
+| Cookie reading | `getCookie(name)` | Manual `document.cookie.split()` or `.match()` |
+| localStorage reading | `getLocalStorage(key)` | Direct `localStorage.getItem(key)` |
+| Page globals | `getPageGlobal('path.to.value')` | Manual `(window as any).path.to.value` casts |
+| Meta tags | `getMetaContent('meta-name')` | Manual `document.querySelector('meta[name="..."]')` |
+| HTTP error mapping | `httpStatusToToolError(response, msg)` | Manual `if (status === 429) ... if (status === 401) ...` chains |
+| JSON fetch | `fetchJSON(url, init)` or `postJSON(url, body, init)` | Manual `fetch()` + `response.json()` + error handling |
+| Text fetch | `fetchText(url, init)` | Manual `fetch()` + `response.text()` |
+| Query strings | `buildQueryString({ page: 1, limit: 20 })` | Manual `URLSearchParams` construction |
+| Search localStorage | `findLocalStorageEntry(key => key.includes('token'))` | Manual `for (let i = 0; i < localStorage.length; i++)` loops |
+
+If the SDK utility doesn't cover your exact use case (e.g., the API needs custom headers beyond what `fetchJSON` supports), use `fetchFromPage` as the base and compose SDK utilities on top — never bypass the SDK entirely.
 
 2. **Study an existing plugin** (e.g., `plugins/github/`) as reference:
    - `src/index.ts` — plugin class, imports all tools
@@ -198,88 +219,123 @@ src/
 
 ### API Wrapper (`<name>-api.ts`)
 
+The API wrapper must use SDK utilities — never reimplement fetch, error classification, cookie parsing, token persistence, or auth polling manually.
+
 ```typescript
-import { ToolError, parseRetryAfterMs } from '@opentabs-dev/plugin-sdk';
+import {
+  ToolError,
+  fetchJSON,
+  fetchText,
+  postJSON,
+  putJSON,
+  patchJSON,
+  deleteJSON,
+  buildQueryString,
+  getAuthCache,
+  setAuthCache,
+  clearAuthCache,
+  getLocalStorage,
+  getCookie,
+  getPageGlobal,
+  getMetaContent,
+  waitUntil,
+} from '@opentabs-dev/plugin-sdk';
+import type { FetchFromPageOptions } from '@opentabs-dev/plugin-sdk';
 
-const API_BASE = 'https://example.com/api';
+// --- Auth token extraction ---
+// Use SDK utilities for every source: getLocalStorage, getCookie, getPageGlobal, getMetaContent
 
-const getAuth = (): { token: string } | null => {
-  // 1. Check globalThis persistence (survives re-injection)
-  // 2. Try localStorage, page globals, cookies
-  // Return null if not authenticated
+interface MyAuth {
+  token: string;
+  // add other auth fields as needed (accountId, userId, etc.)
+}
+
+const getAuth = (): MyAuth | null => {
+  // 1. Check persisted cache first (survives adapter re-injection)
+  const cached = getAuthCache<MyAuth>('<name>');
+  if (cached) return cached;
+
+  // 2. Try localStorage, page globals, cookies — use SDK utilities
+  const token = getLocalStorage('auth_token')
+    ?? (getPageGlobal('__APP_STATE__.auth.token') as string | undefined)
+    ?? getCookie('auth_token');
+  if (!token) return null;
+
+  const auth: MyAuth = { token };
+  setAuthCache('<name>', auth);
+  return auth;
 };
 
 export const isAuthenticated = (): boolean => getAuth() !== null;
 
-export const waitForAuth = (): Promise<boolean> =>
-  new Promise(resolve => {
-    let elapsed = 0;
-    const timer = setInterval(() => {
-      elapsed += 500;
-      if (isAuthenticated()) { clearInterval(timer); resolve(true); return; }
-      if (elapsed >= 5000) { clearInterval(timer); resolve(false); }
-    }, 500);
-  });
+// Use SDK waitUntil — never use manual setInterval polling
+export const waitForAuth = async (): Promise<boolean> => {
+  try {
+    await waitUntil(() => isAuthenticated(), { interval: 500, timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// --- API caller ---
+// For simple GET+JSON: use fetchJSON directly in tool handlers
+// For custom headers or auth injection: wrap fetchJSON/postJSON with auth logic
+
+const API_BASE = 'https://example.com/api';
 
 export const api = async <T>(endpoint: string, options: {
   method?: string;
-  body?: Record<string, unknown>;
+  body?: unknown;
   query?: Record<string, string | number | boolean | undefined>;
 } = {}): Promise<T> => {
   const auth = getAuth();
   if (!auth) throw ToolError.auth('Not authenticated — please log in.');
 
-  let url = `${API_BASE}${endpoint}`;
-  if (options.query) {
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(options.query))
-      if (v !== undefined) params.append(k, String(v));
-    const qs = params.toString();
-    if (qs) url += `?${qs}`;
-  }
+  // Use SDK buildQueryString — never manually construct URLSearchParams
+  const qs = options.query ? buildQueryString(options.query) : '';
+  const url = qs ? `${API_BASE}${endpoint}?${qs}` : `${API_BASE}${endpoint}`;
 
-  const headers: Record<string, string> = { Authorization: `Bearer ${auth.token}` };
-  let fetchBody: string | undefined;
-  if (options.body) {
-    headers['Content-Type'] = 'application/json';
-    fetchBody = JSON.stringify(options.body);
-  }
+  // Common headers (auth + CSRF)
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${auth.token}`,
+  };
 
-  // CSRF token for mutating requests (cookie-based auth)
+  // CSRF token for writes — use SDK getMetaContent
   const method = options.method ?? 'GET';
   if (method !== 'GET') {
-    const csrf = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content;
+    const csrf = getMetaContent('csrf-token') ?? getCookie('csrf_token');
     if (csrf) headers['X-CSRF-Token'] = csrf;
   }
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method, headers, body: fetchBody,
-      credentials: 'include', signal: AbortSignal.timeout(30_000),
-    });
-  } catch (err: unknown) {
-    if (err instanceof DOMException && err.name === 'TimeoutError')
-      throw ToolError.timeout(`Timed out: ${endpoint}`);
-    throw new ToolError(`Network error: ${err instanceof Error ? err.message : String(err)}`,
-      'network_error', { category: 'internal', retryable: true });
+  // Use SDK fetch utilities — they handle credentials, timeout, and error classification
+  const init: FetchFromPageOptions = { method, headers };
+
+  if (options.body) {
+    // For JSON bodies, use postJSON/putJSON/patchJSON directly
+    // For custom methods, set body and Content-Type manually
+    headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(options.body);
   }
 
-  if (!response.ok) {
-    const body = (await response.text().catch(() => '')).substring(0, 512);
-    if (response.status === 429) {
-      const retryAfter = response.headers.get('Retry-After');
-      throw ToolError.rateLimited(`Rate limited: ${endpoint}`, retryAfter ? parseRetryAfterMs(retryAfter) : undefined);
-    }
-    if (response.status === 401 || response.status === 403)
-      throw ToolError.auth(`Auth error (${response.status}): ${body}`);
-    if (response.status === 404) throw ToolError.notFound(`Not found: ${endpoint}`);
-    if (response.status === 422) throw ToolError.validation(`Validation error: ${body}`);
-    throw ToolError.internal(`API error (${response.status}): ${endpoint} — ${body}`);
-  }
+  // fetchJSON handles: credentials:'include', 30s timeout, HTTP status→ToolError,
+  // JSON parsing, and 204 empty responses. You do NOT need to handle any of this.
+  const data = await fetchJSON<T>(url, init);
+  return data as T;
 
-  if (response.status === 204) return {} as T;
-  return (await response.json()) as T;
+  // On 401/403 errors, clear the cached auth so it re-reads on next call:
+  // clearAuthCache('<name>');
+};
+
+// For endpoints that return raw text (diffs, logs, raw file content):
+export const apiRaw = async (endpoint: string): Promise<string> => {
+  const auth = getAuth();
+  if (!auth) throw ToolError.auth('Not authenticated — please log in.');
+
+  const url = `${API_BASE}${endpoint}`;
+  return fetchText(url, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+  });
 };
 ```
 
@@ -327,12 +383,13 @@ class MyPlugin extends OpenTabsPlugin {
   readonly description = 'OpenTabs plugin for <DisplayName>';
   override readonly displayName = '<DisplayName>';
   readonly urlPatterns = ['*://*.example.com/*'];
-  override readonly homepage = 'https://example.com';
+  override readonly excludePatterns = []; // optional: exclude URL patterns
+  override readonly homepage = 'https://example.com'; // optional: URL to open when no tab exists
   readonly tools: ToolDefinition[] = [sendMessage];
 
   async isReady(): Promise<boolean> {
     if (isAuthenticated()) return true;
-    return waitForAuth();
+    return waitForAuth(); // uses SDK waitUntil internally — see api wrapper above
   }
 }
 
@@ -574,8 +631,11 @@ Zod types must be precise: use `.int()` for integer fields, `.min()`/`.max()` fo
 
 - One file per tool in `src/tools/`
 - Defensive mapping with fallback defaults (`data.field ?? ''`) — never trust API shapes
-- `credentials: 'include'` on all fetch calls
-- 30-second timeout via `AbortSignal.timeout(30_000)`
+- **Use SDK fetch utilities** (`fetchJSON`, `postJSON`, etc.) — they automatically handle `credentials: 'include'`, 30-second timeout, and HTTP error classification. Never use raw `fetch()` with manual timeout/error handling.
+- **Use SDK storage utilities** (`getLocalStorage`, `getCookie`, `getPageGlobal`, `getMetaContent`) — never access `localStorage`, `document.cookie`, or `window` globals directly
+- **Use SDK auth cache** (`getAuthCache`, `setAuthCache`, `clearAuthCache`) — never access `globalThis.__openTabs.tokenCache` directly
+- **Use SDK `waitUntil`** for polling — never use manual `setInterval` + elapsed counter
+- **Use SDK `buildQueryString`** for URL parameters — never manually construct `URLSearchParams`
 - `.js` extension on all imports (ESM)
 - No `.transform()`/`.pipe()`/`.preprocess()` in Zod schemas (breaks JSON Schema serialization)
 - `.refine()` callbacks must never throw — Zod 4 runs them even on invalid base values
@@ -613,11 +673,20 @@ Plugin code serves as a learning reference for other agents and developers. Ever
 
 ## Auth Patterns
 
+**SDK utilities for auth detection (use these, never reimplement):**
+- `getCookie(name)` — read non-HttpOnly cookies (CSRF tokens, login indicators)
+- `getLocalStorage(key)` — read localStorage tokens (handles iframe fallback for apps that delete `window.localStorage`)
+- `getPageGlobal('path.to.value')` — read page globals like `window.boot_data.token` (safe deep access with prototype pollution protection)
+- `getMetaContent('meta-name')` — read `<meta>` tag content (common for CSRF tokens and user IDs)
+- `getAuthCache<T>(namespace)` / `setAuthCache(namespace, value)` / `clearAuthCache(namespace)` — persist tokens to survive adapter re-injection
+- `waitUntil(() => isAuthenticated(), { interval: 500, timeout: 5000 })` — poll for auth readiness
+- `findLocalStorageEntry(key => key.includes('auth'))` — search localStorage keys by pattern (for MSAL tokens, Auth0 keys, etc.)
+
 ### Session Cookies (most common)
-Apps using HttpOnly session cookies: use `credentials: 'include'`, detect auth via page globals or DOM signals. Auth detection sources include: non-HttpOnly indicator cookies (check `document.cookie`), base64-encoded profile cookies (e.g., `atob(cookieValue)` → `{ firstName, email }` confirms login state), page globals, or DOM signals. Mutating requests often need a CSRF token — check three sources: `<meta name="csrf-token">` tag, non-HttpOnly cookies, or bootstrap globals (e.g., `window.initData.csrfToken`). The CSRF value is typically sent as a header (`X-CSRF-Token`) or a body field (`_csrf`).
+Apps using HttpOnly session cookies: SDK's `fetchJSON`/`postJSON` automatically include `credentials: 'include'`. Detect auth via `getPageGlobal('__initialData.isAuthenticated')`, `getCookie('session_indicator')`, or `getMetaContent('user-id')`. Mutating requests often need a CSRF token — check three sources: `getMetaContent('csrf-token')`, `getCookie('csrf_token')`, or `getPageGlobal('initData.csrfToken')`. The CSRF value is typically sent as a header (`X-CSRF-Token`) or a body field (`_csrf`).
 
 ### Bearer Tokens
-Extract from localStorage, sessionStorage, page globals (`window.__APP_STATE__`, `window.boot_data`), or intercepted XHR headers. Cache on `globalThis.__openTabs.tokenCache.<pluginName>` to survive adapter re-injection (module-level variables reset on extension reload). Clear on 401 to handle rotation.
+Extract from `getLocalStorage('auth_token')`, `getPageGlobal('__APP_STATE__.auth.token')`, or `getCookie('auth_token')`. **Always persist with `setAuthCache(pluginName, authObj)` to survive adapter re-injection** (module-level variables reset on extension reload). Clear with `clearAuthCache(pluginName)` on 401 to handle rotation.
 
 ### XHR/Fetch Interception
 For apps with internal RPC or obfuscated APIs: monkey-patch `XMLHttpRequest.prototype.open/setRequestHeader/send` at adapter load time to capture auth headers. Store on `globalThis`. Re-patch on each adapter load (avoid stale `if (installed) return` guards).
@@ -633,9 +702,9 @@ Some apps compute cryptographic tokens via obfuscated JS — capture and replay,
 ## Gotchas
 
 1. All plugin code runs in the browser — no Node.js APIs
-2. SPAs hydrate asynchronously — `isReady()` must poll (500ms interval, 5s max)
-3. Some apps delete `window.localStorage` — use iframe fallback
-4. Module-level variables reset on extension reload — persist tokens on `globalThis.__openTabs.tokenCache.<pluginName>`
+2. SPAs hydrate asynchronously — `isReady()` must poll using `waitUntil(() => isAuthenticated(), { interval: 500, timeout: 5000 })` — never use manual `setInterval`
+3. Some apps delete `window.localStorage` — use SDK `getLocalStorage(key)` which has an automatic iframe fallback. Never use `localStorage.getItem()` directly.
+4. Module-level variables reset on extension reload — persist tokens using SDK `setAuthCache(pluginName, authObj)` / `getAuthCache<T>(pluginName)` — never access `globalThis.__openTabs.tokenCache` manually
 5. HttpOnly cookies are invisible to JS — use `credentials: 'include'`, detect auth from DOM/globals
 6. Parse error response bodies before classifying by HTTP status — many apps reuse 403 for auth vs permission
 7. Cross-origin API + cookies: check CORS before choosing fetch strategy

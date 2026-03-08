@@ -599,13 +599,13 @@ describe('readAndValidateIcons', () => {
   });
 
   test('returns empty when no icon files exist', async () => {
-    const result = await readAndValidateIcons(tmpDir);
+    const result = await readAndValidateIcons(tmpDir, 'test-plugin');
     expect(result).toEqual({});
   });
 
   test('auto-generates inactive icon when only icon.svg exists', async () => {
     await writeTestFile(join(tmpDir, 'icon.svg'), VALID_ICON_SVG);
-    const result = await readAndValidateIcons(tmpDir);
+    const result = await readAndValidateIcons(tmpDir, 'test-plugin');
     expect(result.iconSvg).toBeDefined();
     expect(result.iconInactiveSvg).toBeDefined();
     // The active icon preserves original colors and is minified
@@ -618,7 +618,7 @@ describe('readAndValidateIcons', () => {
   test('uses manual override when both icon files exist', async () => {
     await writeTestFile(join(tmpDir, 'icon.svg'), VALID_ICON_SVG);
     await writeTestFile(join(tmpDir, 'icon-inactive.svg'), VALID_INACTIVE_SVG);
-    const result = await readAndValidateIcons(tmpDir);
+    const result = await readAndValidateIcons(tmpDir, 'test-plugin');
     expect(result.iconSvg).toBeDefined();
     expect(result.iconInactiveSvg).toBeDefined();
     // Manual override should contain the original gray value
@@ -627,18 +627,18 @@ describe('readAndValidateIcons', () => {
 
   test('throws when icon-inactive.svg exists without icon.svg', async () => {
     await writeTestFile(join(tmpDir, 'icon-inactive.svg'), VALID_INACTIVE_SVG);
-    await expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon-inactive.svg requires icon.svg');
+    await expect(readAndValidateIcons(tmpDir, 'test-plugin')).rejects.toThrow('icon-inactive.svg requires icon.svg');
   });
 
   test('throws when icon.svg is invalid (missing viewBox)', async () => {
     await writeTestFile(join(tmpDir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
-    await expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon.svg validation failed');
+    await expect(readAndValidateIcons(tmpDir, 'test-plugin')).rejects.toThrow('icon.svg validation failed');
   });
 
   test('throws when icon.svg has non-square viewBox', async () => {
     const nonSquare = '<svg viewBox="0 0 32 24" xmlns="http://www.w3.org/2000/svg"><rect/></svg>';
     await writeTestFile(join(tmpDir, 'icon.svg'), nonSquare);
-    await expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon.svg validation failed');
+    await expect(readAndValidateIcons(tmpDir, 'test-plugin')).rejects.toThrow('icon.svg validation failed');
   });
 
   test('throws when icon-inactive.svg has invalid structure', async () => {
@@ -647,7 +647,7 @@ describe('readAndValidateIcons', () => {
       join(tmpDir, 'icon-inactive.svg'),
       '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="#808080"/></svg>',
     );
-    await expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon-inactive.svg validation failed');
+    await expect(readAndValidateIcons(tmpDir, 'test-plugin')).rejects.toThrow('icon-inactive.svg validation failed');
   });
 
   test('throws when icon-inactive.svg has saturated colors', async () => {
@@ -655,7 +655,9 @@ describe('readAndValidateIcons', () => {
       '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><circle fill="#ff0000"/></svg>';
     await writeTestFile(join(tmpDir, 'icon.svg'), VALID_ICON_SVG);
     await writeTestFile(join(tmpDir, 'icon-inactive.svg'), coloredInactive);
-    await expect(readAndValidateIcons(tmpDir)).rejects.toThrow('icon-inactive.svg color validation failed');
+    await expect(readAndValidateIcons(tmpDir, 'test-plugin')).rejects.toThrow(
+      'icon-inactive.svg color validation failed',
+    );
   });
 
   test('minifies SVGs before returning', async () => {
@@ -666,7 +668,7 @@ describe('readAndValidateIcons', () => {
       '</svg>',
     ].join('\n');
     await writeTestFile(join(tmpDir, 'icon.svg'), unminified);
-    const result = await readAndValidateIcons(tmpDir);
+    const result = await readAndValidateIcons(tmpDir, 'test-plugin');
     expect(result.iconSvg).not.toContain('<!--');
     expect(result.iconSvg).not.toContain('\n');
   });
@@ -675,9 +677,42 @@ describe('readAndValidateIcons', () => {
     const multiColor =
       '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect fill="#ff0000"/><circle stroke="#00ff00"/></svg>';
     await writeTestFile(join(tmpDir, 'icon.svg'), multiColor);
-    const result = await readAndValidateIcons(tmpDir);
+    const result = await readAndValidateIcons(tmpDir, 'test-plugin');
     expect(result.iconInactiveSvg).not.toContain('#ff0000');
     expect(result.iconInactiveSvg).not.toContain('#00ff00');
+  });
+
+  test('namespaces gradient IDs in all four icon variants', async () => {
+    const svgWithGradient =
+      '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g1"><stop stop-color="#ff0000"/></linearGradient></defs><rect fill="url(#g1)"/></svg>';
+    await writeTestFile(join(tmpDir, 'icon.svg'), svgWithGradient);
+    const result = await readAndValidateIcons(tmpDir, 'myplugin');
+    // All four variants should have the namespaced ID
+    expect(result.iconSvg).toContain('id="myplugin-g1"');
+    expect(result.iconSvg).toContain('url(#myplugin-g1)');
+    expect(result.iconSvg).not.toContain('id="g1"');
+    expect(result.iconInactiveSvg).toContain('id="myplugin-g1"');
+    expect(result.iconDarkSvg).toContain('id="myplugin-g1"');
+    expect(result.iconDarkInactiveSvg).toContain('id="myplugin-g1"');
+  });
+
+  test('auto-generated inactive icon contains namespaced IDs', async () => {
+    const svgWithGradient =
+      '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="a"><stop stop-color="#ff0000"/></linearGradient></defs><rect fill="url(#a)"/></svg>';
+    await writeTestFile(join(tmpDir, 'icon.svg'), svgWithGradient);
+    const result = await readAndValidateIcons(tmpDir, 'jira');
+    // The auto-generated inactive variant should have namespaced IDs
+    expect(result.iconInactiveSvg).toContain('id="jira-a"');
+    expect(result.iconInactiveSvg).toContain('url(#jira-a)');
+    // Original generic ID should NOT be present
+    expect(result.iconInactiveSvg).not.toMatch(/id="a"/);
+  });
+
+  test('icons without IDs are unaffected by namespacing', async () => {
+    await writeTestFile(join(tmpDir, 'icon.svg'), VALID_ICON_SVG);
+    const result = await readAndValidateIcons(tmpDir, 'test-plugin');
+    expect(result.iconSvg).toContain('#ff0000');
+    expect(result.iconSvg).not.toContain('test-plugin-');
   });
 });
 

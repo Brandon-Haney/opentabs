@@ -35,6 +35,7 @@ import { z } from 'zod';
 import {
   generateDarkIcon,
   generateInactiveIcon,
+  namespaceSvgIds,
   validateIconSvg,
   validateInactiveIconColors,
 } from '../validate-icon.js';
@@ -448,7 +449,7 @@ interface IconResult {
  *   icon-dark.svg          — optional dark mode variant (auto-generated if absent)
  *   icon-dark-inactive.svg — optional dark mode inactive override (auto-generated if absent)
  */
-const readAndValidateIcons = async (projectDir: string): Promise<IconResult> => {
+const readAndValidateIcons = async (projectDir: string, pluginName: string): Promise<IconResult> => {
   const iconPath = join(projectDir, 'icon.svg');
   const inactivePath = join(projectDir, 'icon-inactive.svg');
   const darkPath = join(projectDir, 'icon-dark.svg');
@@ -574,10 +575,10 @@ const readAndValidateIcons = async (projectDir: string): Promise<IconResult> => 
   );
 
   return {
-    iconSvg: minifiedIcon,
-    iconInactiveSvg: minifiedInactive,
-    iconDarkSvg: minifiedDark,
-    iconDarkInactiveSvg: minifiedDarkInactive,
+    iconSvg: namespaceSvgIds(minifiedIcon, pluginName),
+    iconInactiveSvg: namespaceSvgIds(minifiedInactive, pluginName),
+    iconDarkSvg: namespaceSvgIds(minifiedDark, pluginName),
+    iconDarkInactiveSvg: namespaceSvgIds(minifiedDarkInactive, pluginName),
   };
 };
 
@@ -974,7 +975,7 @@ const runBuild = async (projectDir: string): Promise<void> => {
   const pkgJson = validatePackageJson(pkgJsonRaw, projectDir);
 
   // Step 1b: Read and validate icon files (if present)
-  const icons = await readAndValidateIcons(projectDir);
+  const icons = await readAndValidateIcons(projectDir, pkgJson.name);
 
   // Determine entry point — look for compiled output in dist/
   const entryPoint = resolve(projectDir, 'dist', 'index.js');

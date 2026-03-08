@@ -6,6 +6,7 @@ import {
   MAX_ICON_SIZE,
   MIN_ICON_CONTRAST,
   MIN_INACTIVE_GRAY,
+  namespaceSvgIds,
   validateIconSvg,
   validateInactiveIconColors,
 } from './validate-icon.js';
@@ -1344,5 +1345,128 @@ describe('generateDarkIcon', () => {
     const svg = svgWrap('<rect fill="rgb(255 0 0)"/>');
     const result = generateDarkIcon(svg);
     expect(result).toContain('fill="rgb(255 0 0)"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// namespaceSvgIds
+// ---------------------------------------------------------------------------
+
+describe('namespaceSvgIds', () => {
+  test('rewrites id and url(#id) references', () => {
+    const svg = svgWrap('<defs><linearGradient id="grad1"><stop/></linearGradient></defs><rect fill="url(#grad1)"/>');
+    const result = namespaceSvgIds(svg, 'myplugin');
+    expect(result).toContain('id="myplugin-grad1"');
+    expect(result).toContain('url(#myplugin-grad1)');
+    expect(result).not.toContain('id="grad1"');
+    expect(result).not.toContain('url(#grad1)');
+  });
+
+  test('rewrites xlink:href="#id" references', () => {
+    const svg = svgWrap('<linearGradient id="a"/><linearGradient xlink:href="#a"/>');
+    const result = namespaceSvgIds(svg, 'test');
+    expect(result).toContain('id="test-a"');
+    expect(result).toContain('xlink:href="#test-a"');
+    expect(result).not.toContain('xlink:href="#a"');
+  });
+
+  test('rewrites href="#id" references', () => {
+    const svg = svgWrap('<linearGradient id="a"/><use href="#a"/>');
+    const result = namespaceSvgIds(svg, 'test');
+    expect(result).toContain('id="test-a"');
+    expect(result).toContain('href="#test-a"');
+    expect(result).not.toContain('href="#a"');
+  });
+
+  test('rewrites multiple IDs independently', () => {
+    const svg = svgWrap(
+      '<defs><linearGradient id="a"><stop/></linearGradient><linearGradient id="b"><stop/></linearGradient></defs><path fill="url(#a)"/><path fill="url(#b)"/>',
+    );
+    const result = namespaceSvgIds(svg, 'multi');
+    expect(result).toContain('id="multi-a"');
+    expect(result).toContain('id="multi-b"');
+    expect(result).toContain('url(#multi-a)');
+    expect(result).toContain('url(#multi-b)');
+    expect(result).not.toContain('id="a"');
+    expect(result).not.toContain('id="b"');
+  });
+
+  test('SVG with no IDs returns unchanged', () => {
+    const svg = svgWrap('<rect fill="#ff0000"/>');
+    const result = namespaceSvgIds(svg, 'prefix');
+    expect(result).toBe(svg);
+  });
+
+  test('IDs with regex special characters are handled correctly', () => {
+    const svg = svgWrap('<defs><linearGradient id="a.b+c"><stop/></linearGradient></defs><rect fill="url(#a.b+c)"/>');
+    const result = namespaceSvgIds(svg, 'p');
+    expect(result).toContain('id="p-a.b+c"');
+    expect(result).toContain('url(#p-a.b+c)');
+    expect(result).not.toContain('id="a.b+c"');
+  });
+
+  test('passthrough values (fill="none", fill="currentColor") are not affected', () => {
+    const svg = svgWrap(
+      '<defs><linearGradient id="g"><stop/></linearGradient></defs><rect fill="none" stroke="currentColor"/><circle fill="url(#g)"/>',
+    );
+    const result = namespaceSvgIds(svg, 'ns');
+    expect(result).toContain('fill="none"');
+    expect(result).toContain('stroke="currentColor"');
+    expect(result).toContain('id="ns-g"');
+    expect(result).toContain('url(#ns-g)');
+  });
+
+  test('real-world Jira icon scenario (linearGradient with id="a" and id="b", url(#a), url(#b))', () => {
+    const svg = svgWrap(
+      '<defs><linearGradient id="a"><stop stop-color="#0052CC"/><stop offset="1" stop-color="#2684FF"/></linearGradient><linearGradient id="b"><stop stop-color="#0052CC"/><stop offset="1" stop-color="#2684FF"/></linearGradient></defs><path fill="#2684FF" d="M0 0h32"/><path fill="url(#a)" d="M16 0"/><path fill="url(#b)" d="M16 16"/>',
+    );
+    const result = namespaceSvgIds(svg, 'jira');
+    expect(result).toContain('id="jira-a"');
+    expect(result).toContain('id="jira-b"');
+    expect(result).toContain('url(#jira-a)');
+    expect(result).toContain('url(#jira-b)');
+    expect(result).not.toContain('id="a"');
+    expect(result).not.toContain('id="b"');
+    expect(result).toContain('fill="#2684FF"');
+  });
+
+  test('real-world Confluence icon scenario (xlink:href="#a" in gradient)', () => {
+    const svg = svgWrap(
+      '<defs><linearGradient id="a"><stop stop-color="#0052CC"/></linearGradient><linearGradient xlink:href="#a" id="b"/></defs><path fill="url(#a)"/><path fill="url(#b)"/>',
+    );
+    const result = namespaceSvgIds(svg, 'confluence');
+    expect(result).toContain('id="confluence-a"');
+    expect(result).toContain('id="confluence-b"');
+    expect(result).toContain('xlink:href="#confluence-a"');
+    expect(result).toContain('url(#confluence-a)');
+    expect(result).toContain('url(#confluence-b)');
+  });
+
+  test('clipPath with id and url(#id) reference', () => {
+    const svg = svgWrap(
+      '<defs><clipPath id="clip0"><rect width="32" height="32"/></clipPath></defs><g clip-path="url(#clip0)"><circle cx="16" cy="16" r="12" fill="#ff0000"/></g>',
+    );
+    const result = namespaceSvgIds(svg, 'discord');
+    expect(result).toContain('id="discord-clip0"');
+    expect(result).toContain('url(#discord-clip0)');
+    expect(result).not.toContain('id="clip0"');
+  });
+
+  test('two SVGs with same IDs namespaced differently produce non-colliding IDs', () => {
+    const svg1 = svgWrap('<defs><linearGradient id="a"><stop/></linearGradient></defs><rect fill="url(#a)"/>');
+    const svg2 = svgWrap('<defs><linearGradient id="a"><stop/></linearGradient></defs><rect fill="url(#a)"/>');
+    const result1 = namespaceSvgIds(svg1, 'jira');
+    const result2 = namespaceSvgIds(svg2, 'confluence');
+    expect(result1).toContain('id="jira-a"');
+    expect(result2).toContain('id="confluence-a"');
+    expect(result1).not.toContain('id="confluence-a"');
+    expect(result2).not.toContain('id="jira-a"');
+  });
+
+  test('already-namespaced SVG gets double-prefixed (no idempotence detection)', () => {
+    const svg = svgWrap('<defs><linearGradient id="p-a"><stop/></linearGradient></defs><rect fill="url(#p-a)"/>');
+    const result = namespaceSvgIds(svg, 'p');
+    expect(result).toContain('id="p-p-a"');
+    expect(result).toContain('url(#p-p-a)');
   });
 });

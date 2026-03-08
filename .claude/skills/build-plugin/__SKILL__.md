@@ -80,9 +80,20 @@ The most critical phase. Use browser tools to understand the web app's APIs and 
 
 ### Core Principle: Use Real APIs, Never the DOM
 
-Every tool must use the web app's own APIs — HTTP endpoints, WebSocket channels, or internal RPC. DOM scraping is never acceptable: fragile, limited, slow.
+Every tool must use the web app's own APIs — HTTP endpoints, WebSocket channels, or internal RPC. DOM scraping and HTML parsing are **never acceptable** — they are fragile, limited, slow, and produce unreliable plugins that break on any UI change.
 
 **Only acceptable DOM uses:** `isReady()` auth detection, URL hash navigation, last-resort compose flows (rare).
+
+**If the first round of API discovery only turns up telemetry, analytics, or HTML endpoints, do not give up.** Dig deeper — every non-trivial web app has internal APIs. Try these escalation techniques before concluding a site has no APIs:
+
+1. **Read JavaScript source bundles** — use `browser_list_resources(tabId, type: "Script")` and `browser_get_resource_content` to read the app's JS bundles. Search for API base URLs, endpoint paths, GraphQL queries, and fetch/XHR call patterns. Minified code still contains string literals like `"/api/v1/"`, `"graphql"`, `"mutation"`, etc.
+2. **Intercept XHR/fetch at the network level** — enable network capture, then interact with every feature in the app (click buttons, open modals, filter lists, paginate). Many APIs are only called on user interaction, not on page load.
+3. **Search for GraphQL** — look for requests to `/graphql`, `/gql`, or request bodies containing `"query"` or `"operationName"`. Modern apps increasingly use GraphQL even when they serve HTML pages.
+4. **Check mobile/API subdomains** — try `api.example.com`, `m.example.com`, `mobile-api.example.com`. Mobile apps often use cleaner APIs than the web UI.
+5. **Inspect React/Vue/Angular state stores** — use `browser_execute_script` to access `__REACT_DEVTOOLS_GLOBAL_HOOK__`, Vue devtools, or Angular internals to find how the app fetches and stores data.
+6. **Monkey-patch fetch/XHR globally** — install interceptors before navigating, then use every feature to capture all network calls with full request/response bodies.
+
+**The AI must exhaust every discovery technique before reporting to the user that a site has no usable APIs.** Never lower the standard by falling back to HTML parsing — instead, report the finding honestly and let the human decide whether to proceed, pivot to a different site, or suggest additional discovery approaches.
 
 ### Discovery Workflow
 

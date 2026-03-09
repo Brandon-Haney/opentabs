@@ -55,7 +55,9 @@ The plugin SDK provides utility functions that run in the page context, reducing
 - `postFormData<T>(url, body: FormData, init?, schema?)` → `Promise<T>` — POST with multipart/form-data body, returns parsed JSON
 - `httpStatusToToolError(response, message)` → `ToolError` — maps HTTP status codes to the appropriate `ToolError` category (auth, not_found, rate_limit, etc.)
 - `parseRetryAfterMs(value)` → `number | undefined` — parses a `Retry-After` header value (seconds or HTTP-date) into milliseconds
-- `buildQueryString(params)` → `string` — converts a record of key-value pairs to a URL query string (no leading `?`), filtering out undefined values
+- `parseRateLimitHeader(headers)` → `number | undefined` — checks Retry-After, x-rate-limit-reset, x-ratelimit-reset, and RateLimit-Reset headers in order and normalizes to milliseconds until reset; returns undefined if no header is found or value is invalid
+- `buildQueryString(params)` → `string` — converts a record of `string | number | boolean | (string | number | boolean)[]` values to a URL query string (no leading `?`), filtering out undefined values; array values produce multiple entries for the same key
+- `stripUndefined<T>(obj)` → `Partial<T>` — filters out keys with undefined values from an object, keeping null, 0, false, and empty string; useful for building request bodies without conditional assignment chains
 
 ### Storage Utilities (`storage.ts`)
 

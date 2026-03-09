@@ -718,9 +718,150 @@ Plugin code serves as a learning reference for other agents and developers. Ever
 - **Consistent structure across tools** — every list tool returns `{ items, has_more, quota_remaining }`, every get tool returns `{ item }`, every search tool returns `{ results, has_more, quota_remaining }`. Structural consistency makes the plugin predictable.
 - **Import only what you use** — no `import type { SEResponse }` if the tool never references that type directly
 
+### Schema and Mapper Pattern
+
+Every plugin must co-locate three things in `src/tools/schemas.ts` for each API entity:
+
+1. **Zod output schema** — the clean shape returned to the AI agent
+2. **Raw interface** — all fields optional, matching the actual API response shape
+3. **Defensive mapper** — converts raw to clean with `?? defaultValue` for every field
+
+```typescript
+// src/tools/schemas.ts
+import { z } from 'zod';
+
+export const userSchema = z.object({
+  id: z.string().describe('User ID'),
+  name: z.string().describe('Display name'),
+  email: z.string().describe('Email address'),
+});
+
+export interface RawUser {
+  id?: string;
+  name?: string;
+  email?: string;
+}
+
+export const mapUser = (u: RawUser) => ({
+  id: u.id ?? '',
+  name: u.name ?? '',
+  email: u.email ?? '',
+});
+```
+
+**Rules:**
+- Raw interfaces have ALL fields optional — APIs change, and defensive mapping prevents crashes
+- Mappers use `??` not `||` — `??` preserves `0`, `false`, and `''` which are valid values
+- Shared schemas go in `schemas.ts` — never duplicate a schema across tool files
+- For request bodies with optional fields, use `stripUndefined(params)` from the SDK instead of manual `if (x !== undefined) body.x = x` chains
+
+### Void Operation Pattern
+
+Tools that perform an action with no meaningful return data (delete, archive, close, reopen, etc.) must return `{ success: true }`:
+
+```typescript
+output: z.object({
+  success: z.boolean().describe('Whether the operation succeeded'),
+}),
+handle: async (params) => {
+  await api(`/items/${params.id}`, { method: 'DELETE' });
+  return { success: true };
+},
+```
+
+Do NOT return empty objects (`{}`), do NOT use `deleted`/`archived`/`closed` — always `success`.
+
+### Tool Naming
+
+| Convention | Example | Note |
+|---|---|---|
+| Current user's profile | `get_current_user` | Not `get_me` or `get_user_profile` with magic `@me` |
+| Send a message | `send_message` with `text` param | Not `content` or `body` |
+| Reply to something | `reply_to_tweet_id`, `thread_ts` | Use the platform's native threading concept |
+| List resources | `list_<plural>` | e.g., `list_projects`, `list_issues` |
+| Get single resource | `get_<singular>` | e.g., `get_project`, `get_issue` |
+| Create resource | `create_<singular>` | e.g., `create_project` |
+| Update resource | `update_<singular>` | e.g., `update_project` |
+| Delete resource | `delete_<singular>` | e.g., `delete_project` |
+
+### Group Naming
+
+Use **plural nouns** for resource groups: `Projects`, `Issues`, `Messages`, `Users`.
+Use **singular nouns** for singleton groups: `Account`, `Organization`.
+
+### Icon Conventions
+
+Use Lucide icons consistently:
+
+| Operation | Icon |
+|---|---|
+| Get current user | `user` |
+| List resources | `list` or resource-specific (e.g., `folder` for projects) |
+| Get single | Same as list, or `-open` variant |
+| Create | `plus` or resource-specific (e.g., `folder-plus`) |
+| Update | `pencil` or resource-specific (e.g., `folder-pen`) |
+| Delete | `trash-2` or resource-specific (e.g., `folder-x`) |
+| Search | `search` |
+| Send message | `send` |
+| Settings/config | `settings` |
+
+### Pagination Patterns
+
+**Offset pagination** (most common — GitHub, GitLab, Bitbucket, Zendesk):
+```typescript
+input: z.object({
+  page: z.number().int().min(1).optional().describe('Page number (default 1)'),
+  per_page: z.number().int().min(1).max(100).optional().describe('Results per page (default 30, max 100)'),
+}),
+output: z.object({
+  items: z.array(itemSchema),
+  // no cursor needed — caller increments page
+}),
+```
+
+**Cursor pagination** (Sentry, Bluesky, Slack):
+```typescript
+input: z.object({
+  cursor: z.string().optional().describe('Pagination cursor from a previous response'),
+  limit: z.number().int().min(1).max(100).optional().describe('Max results (default 25)'),
+}),
+output: z.object({
+  items: z.array(itemSchema),
+  cursor: z.string().describe('Cursor for next page, empty if no more'),
+}),
+```
+
+### Commerce Plugin Template
+
+For food ordering, e-commerce, or any transactional service, the standard flow is:
+
+| Phase | Tools | Notes |
+|---|---|---|
+| 1. Find location | `find_stores`, `search_address` | Input: lat/lng or address text |
+| 2. Browse menu | `get_menu_categories`, `get_product` | Always requires store ID |
+| 3. Manage cart | `create_cart`, `add_product_to_cart`, `update_product_quantity`, `get_cart` | Cart state may be server-side (UUID) or client-side (Redux) |
+| 4. Checkout | `get_checkout_summary`, `navigate_to_checkout` | navigate_to_checkout brings the user to the payment page |
+
+**UI sync after mutations:** When the plugin mutates state (add to cart, etc.) through APIs, the SPA's UI may not reflect the change. Three proven strategies:
+1. **BroadcastChannel** — post a sync message on the app's own channel
+2. **Redux dispatch** — dispatch the app's own action (e.g., `store.dispatch({ type: 'ADD_PRODUCT_TO_CART' })`)
+3. **localStorage + reload** — stash state, navigate, apply on load
+
 ---
 
 ## Auth Patterns
+
+### Auth Detection Sources
+
+| Source | SDK Utility | Example |
+|---|---|---|
+| Non-HttpOnly cookie | `getCookie('token')` | Sentry, Bitbucket, LinkedIn, Reddit |
+| localStorage token | `getLocalStorage('auth')` | Discord, Todoist, Bluesky |
+| Page global | `getPageGlobal('boot_data.token')` | Slack, Cloudflare, Asana, Airtable |
+| Meta tag | `getMetaContent('user-id')` | GitHub, Jira, Confluence, GitLab |
+| localStorage scan | `findLocalStorageEntry(key => key.includes('auth'))` | Teams (MSAL), ClickHouse (Auth0) |
+| Webpack chunks | Custom extraction from `webpackChunk_*` | X (GraphQL operation hashes) |
+| XHR interception | Monkey-patch XMLHttpRequest | ClickUp (WebSocket JWT) |
 
 **SDK utilities for auth detection (use these, never reimplement):**
 - `getCookie(name)` — read non-HttpOnly cookies (CSRF tokens, login indicators)
@@ -778,6 +919,7 @@ Some apps compute cryptographic tokens via obfuscated JS — capture and replay,
 26. SPA client-side flags (e.g., `sessionExpired`, `isStale`) in the Redux store may not reflect actual HTTP session validity. These flags get set during client-side session refresh flows or navigation events, even when the user's cookies and API access are still valid. For `isReady()` auth detection, prefer checking for the presence of loaded user data (e.g., `accountProfile.data` being non-null) over trusting boolean flags that the SPA's session management may toggle independently
 27. Some apps use **BFF orchestration layers** that expose a single POST endpoint per operation (e.g., `/apiproxy/v1/orchestra/<operationId>`) with a body like `{ operationId, variables }`. These combine multiple backend calls into one response. To discover all available operations, search JS bundles for the operation ID constant module — it typically exports a plain object mapping constant names to string IDs (e.g., `{PRICE_ORDER:"price-order", PLACE_ORDER:"submit-order", GET_FAVORITE_PRODUCTS:"get-favorite-products"}`). Create an `orchestraApi(operationId, variables)` helper in the API wrapper alongside the standard REST `api()` helper
 28. Some apps use **gRPC-Web** with protobuf encoding instead of REST/GraphQL. The SPA loads a protobuf library (typically `google-protobuf`) and exposes compiled message classes on a page global (e.g., `window.proto`). Each class has `serializeBinary()`, `deserializeBinary(bytes)`, and `toObject()` methods, plus dynamic setters (`setClusterId`, `setName`). The gRPC-Web transport POSTs to `/<package.Service>/<Method>` with `Content-Type: application/grpc-web+proto` and a 5-byte frame header (flag:1 + big-endian-length:4 + payload:N). Response frames use flag=0 for data and flag=128 for trailers (containing `grpc-status` and `grpc-message`). Map gRPC status codes to ToolError: 3→validation, 5→notFound, 7→auth, 8→rateLimited, 16→auth. Since the message classes are generated code with dynamic setters, create a `setField(msg, setter, value)` helper to avoid lint warnings from `as any` casts. Request classes may live across multiple proto namespaces — search all of them when constructing requests
+29. **Non-standard rate limit headers**: Not all APIs use `Retry-After`. Use `parseRateLimitHeader(headers)` from the SDK which checks: `Retry-After` (standard), `x-rate-limit-reset` (X/Twitter — epoch seconds), `x-ratelimit-reset` (Reddit — seconds until reset), `RateLimit-Reset` (IETF draft — seconds). Always handle rate limits in the API wrapper rather than individual tool handlers
 
 ---
 

@@ -4,7 +4,7 @@ description: Clone the repo, install dependencies, and run the full OpenTabs pla
 lastUpdated: 2026-03-02
 ---
 
-This guide walks you through setting up the OpenTabs monorepo for local development. By the end, you'll have the MCP server, Chrome extension, and a test plugin running with hot reload.
+Thanks for wanting to contribute — let me get you set up. By the end of this page, you'll have the MCP server, Chrome extension, and a test plugin running with hot reload.
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ cd opentabs
 npm install
 ```
 
-`npm install` resolves all platform packages via the `workspaces` field in the root `package.json`. Plugins in `plugins/` are standalone projects — they have their own `node_modules` and are not part of the workspace.
+`npm install` resolves all platform packages via the `workspaces` field in the root `package.json`. Plugins in `plugins/` are deliberately standalone — they have their own `node_modules` and are not part of the workspace. This separation matters: plugins depend on published SDK packages, not workspace links, so the development experience matches what real plugin authors get.
 
 ## Build Everything
 
@@ -28,7 +28,7 @@ npm install
 npm run build
 ```
 
-This runs the full build pipeline:
+This runs the full build pipeline. It does a lot, but it's idempotent — run it as many times as you want:
 
 1. `tsc --build` — compiles all platform packages via project references (incremental; use `npm run build:force` to add `--force` for a clean rebuild)
 2. Browser tools catalog — generates the static browser tool catalog used by the side panel
@@ -45,7 +45,7 @@ This runs the full build pipeline:
 3. Click **Load unpacked**
 4. Select the `~/.opentabs/extension/` folder
 
-The extension is now installed. It will connect to the MCP server automatically when the server starts.
+That's it — the extension connects to the MCP server automatically when the server starts.
 
 ## Start the Dev Server
 
@@ -53,7 +53,7 @@ The extension is now installed. It will connect to the MCP server automatically 
 npm run dev
 ```
 
-This starts the dev orchestrator (`scripts/dev.ts`), which runs three processes in parallel:
+This is the main development command. It starts the dev orchestrator (`scripts/dev.ts`), which runs three processes in parallel:
 
 - **`[tsc]`** — `tsc --build --watch` for incremental TypeScript compilation across all platform packages
 - **`[mcp]`** — the MCP server via the dev proxy, which hot-reloads when compiled files change
@@ -122,7 +122,7 @@ OPENTABS_DEV=1 npm run dev
 
 ## Build a Test Plugin
 
-Plugins are standalone projects outside the workspace. To test changes to the platform SDK or plugin tools:
+Plugins are standalone projects outside the workspace — this is intentional. To test your changes against a real plugin:
 
 ```bash
 cd plugins/e2e-test
@@ -142,7 +142,7 @@ npm run build
 
 ## Quality Checks
 
-Run all checks before committing:
+Run all of these before committing. I mean all of them — not just the ones you think are relevant to your change:
 
 ```bash
 npm run build         # Full production build
@@ -154,7 +154,7 @@ npm run test          # Unit tests (Vitest)
 npm run test:e2e      # E2E tests (Playwright)
 ```
 
-Every command must exit 0. The pre-commit hook runs Biome on staged files via `lint-staged`.
+Every single one must exit 0. The pre-commit hook catches some of this via `lint-staged`, but run the full suite yourself — don't rely on the hook to catch everything.
 
 ### E2E Tests
 

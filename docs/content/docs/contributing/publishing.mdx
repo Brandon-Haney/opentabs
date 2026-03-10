@@ -4,11 +4,11 @@ description: How to publish platform packages to npm, manage versions, and updat
 lastUpdated: 2026-03-01
 ---
 
-The platform packages are published as private packages to the npm registry under the `@opentabs-dev` org. This guide covers authentication setup, the publish workflow, and updating plugins after a release.
+I publish the platform packages as private packages to the npm registry under the `@opentabs-dev` org. The process is mostly automated, but there are enough moving parts that I wrote it all down. Here's the full workflow.
 
 ## Packages
 
-Seven platform packages are published. They must be published in dependency order:
+Seven platform packages are published. The dependency order matters — get it wrong and downstream packages reference versions that don't exist yet:
 
 <Table>
   <Table.Header>
@@ -81,7 +81,7 @@ npm whoami
 
 ## Publishing a Release
 
-The `scripts/publish.ts` script handles the entire publish workflow:
+I automated the entire publish workflow in a single script. It handles everything in one shot:
 
 ```bash
 npx tsx scripts/publish.ts 0.0.17
@@ -101,7 +101,7 @@ Six packages use `"publishConfig": { "access": "restricted" }` explicitly. `brow
 
 ## After Publishing
 
-After publishing new platform package versions, update plugin dependencies:
+After a release, every plugin that depends on `@opentabs-dev/*` packages needs its dependencies updated. This is the tedious part:
 
 ```bash
 cd plugins/slack
@@ -114,13 +114,13 @@ The `opentabs-plugin build` command embeds the installed SDK version as `sdkVers
 
 ## Version Compatibility
 
-The MCP server uses major.minor comparison for SDK version checks:
+The MCP server checks that plugins weren't built with a newer SDK than it understands. It uses major.minor comparison:
 
 - A plugin's major.minor must be **less than or equal to** the server's major.minor
 - Patch differences are always fine
 - Plugins without `sdkVersion` in `tools.json` (predating this feature) load with a warning
 
-This means you can publish a patch release (e.g., `0.0.16` → `0.0.17`) and existing plugins continue to work without rebuilding. A minor or major bump (e.g., `0.0.x` → `0.1.0`) requires plugins to be rebuilt with the new SDK.
+In practice, this means patch releases are painless — existing plugins keep working without rebuilding. A minor or major bump (e.g., `0.0.x` → `0.1.0`) requires plugins to rebuild with the new SDK.
 
 ## What NOT to Publish
 

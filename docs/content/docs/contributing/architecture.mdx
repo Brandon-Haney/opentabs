@@ -4,13 +4,13 @@ description: How the MCP server, Chrome extension, and plugins work together to 
 lastUpdated: 2026-03-02
 ---
 
-OpenTabs has three main components: the **MCP server** (discovers plugins and dispatches requests), the **Chrome extension** (injects plugin adapters into browser tabs), and **plugins** (define tools that run in the page context). All communication uses JSON-RPC 2.0.
+OpenTabs is three things working together: an **MCP server** that discovers plugins and dispatches tool calls, a **Chrome extension** that injects adapters into browser tabs, and **plugins** that define what your agent can actually do. All communication uses JSON-RPC 2.0. Let me walk you through how each piece works and why I made the choices I did.
 
 <ArchitectureIllustration />
 
 ## MCP Server
 
-The MCP server runs on `localhost:9515` (configurable via the `PORT` env var). The `opentabs` CLI also accepts `OPENTABS_PORT` as a user-facing convenience — it reads the value and passes it to the server process as `PORT` when spawning. It is an HTTP + WebSocket server (`node:http` + `ws`) with two responsibilities:
+The MCP server is a single localhost process — no cloud, no relay servers, nothing phoning home. It runs on `localhost:9515` (configurable via the `PORT` env var). The `opentabs` CLI also accepts `OPENTABS_PORT` as a user-facing convenience — it reads the value and passes it to the server process as `PORT` when spawning. It is an HTTP + WebSocket server (`node:http` + `ws`) with two responsibilities:
 
 1. **Plugin discovery** — resolves plugins from npm and local paths, loads their metadata and adapter bundles, and builds an immutable registry
 2. **Request dispatch** — registers plugin tools as MCP capabilities, dispatches calls to the Chrome extension via WebSocket, and relays results back to MCP clients
@@ -74,7 +74,7 @@ The MCP server runs on `localhost:9515` (configurable via the `PORT` env var). T
 
 ### Discovery Pipeline
 
-Plugin discovery is a five-phase pipeline in `platform/mcp-server/src/discovery.ts`:
+Plugin discovery turned out to need more stages than you'd expect. It's a five-phase pipeline in `platform/mcp-server/src/discovery.ts`:
 
 1. **Discover npm plugins** — scans global `node_modules` for packages matching `opentabs-plugin-*` and `@*/opentabs-plugin-*`
 2. **Resolve local plugins** — reads filesystem paths from `config.localPlugins` and resolves them to absolute directories
@@ -86,7 +86,7 @@ Errors in any phase are collected but non-fatal — other plugins still load. Fa
 
 ### Plugin Registry
 
-The `PluginRegistry` (`platform/mcp-server/src/registry.ts`) is immutable (`Object.freeze()`). It maintains two internal `Map`s:
+The `PluginRegistry` (`platform/mcp-server/src/registry.ts`) is immutable (`Object.freeze()`). Mutations during hot reload are a nightmare to debug, and immutability makes the whole thing predictable. It maintains two internal `Map`s:
 
 - `plugins` — name → `RegisteredPlugin`
 - `toolLookup` — prefixed tool name → `ToolLookupEntry` (with pre-compiled Ajv validators)
@@ -95,7 +95,7 @@ When plugins change, a new registry is built and atomically swapped on the serve
 
 ### Trust Tiers
 
-Each plugin is assigned a trust tier based on its source:
+Not all plugins deserve the same level of trust. Each one is assigned a tier based on where it came from:
 
 <Table>
   <Table.Header>
@@ -128,7 +128,7 @@ Trust tier prefixes are added to tool descriptions so AI agents can see the prov
 
 ### Hot Reload Architecture
 
-In dev mode, the MCP server runs behind a thin dev proxy (`src/dev-proxy.ts`). The proxy holds all HTTP and WebSocket connections while watching `dist/` for `.js` file changes. On change (debounced 300ms), the proxy kills the current worker process and forks a new one. The new worker starts on an ephemeral port, signals its actual port to the proxy via IPC, and the proxy resumes forwarding traffic.
+Fast feedback during development matters a lot. In dev mode, the MCP server runs behind a thin dev proxy (`src/dev-proxy.ts`). The proxy holds all HTTP and WebSocket connections while watching `dist/` for `.js` file changes. On change (debounced 300ms), the proxy kills the current worker process and forks a new one. The new worker starts on an ephemeral port, signals its actual port to the proxy via IPC, and the proxy resumes forwarding traffic.
 
 On each hot reload cycle:
 
@@ -141,11 +141,11 @@ On each hot reload cycle:
 
 ## Chrome Extension
 
-The Chrome extension is a Manifest V3 extension with three main parts: a **background service worker**, an **offscreen document**, and a **side panel**.
+The Chrome extension is the bridge between the server and your browser tabs. It's a Manifest V3 extension with three main parts: a **background service worker**, an **offscreen document**, and a **side panel**.
 
 ### Persistent WebSocket
 
-MV3 service workers can be suspended at any time. To maintain a persistent WebSocket, the extension uses an offscreen document — a hidden HTML page with a stable execution context. The offscreen document:
+This part was tricky. MV3 service workers can be suspended at any time — Chrome just kills them to save memory. To maintain a persistent WebSocket, I use an offscreen document — a hidden HTML page with a stable execution context. The offscreen document:
 
 - Connects to `ws://localhost:9515/ws`
 - Authenticates via the `Sec-WebSocket-Protocol` header (keeps the secret out of URLs and logs)
@@ -156,7 +156,7 @@ A Chrome alarm re-ensures the offscreen document exists under memory pressure.
 
 ### Adapter Injection
 
-Plugin adapters are injected into matching tabs as IIFE bundles using `chrome.scripting.executeScript()` with `files` and `world: 'MAIN'`:
+Getting code into web pages sounds simple until you hit Content Security Policy. Plugin adapters are injected as IIFE bundles using `chrome.scripting.executeScript()` with `files` and `world: 'MAIN'`:
 
 1. A tab loads and reaches `status === 'complete'`
 2. The background script queries matching tabs by URL pattern
@@ -210,7 +210,7 @@ To discover which tabs are available for a plugin, use the `plugin_list_tabs` MC
 
 ## Wire Protocol
 
-All server ↔ extension communication uses JSON-RPC 2.0 over WebSocket with a 10 MB message size limit.
+The wire protocol is the glue between server and extension. All communication uses JSON-RPC 2.0 over WebSocket with a 10 MB message size limit.
 
 **Server → Extension:**
 
@@ -376,6 +376,8 @@ Tool dispatch timeout resets on each progress notification. The extension's scri
 
 ## Security
 
+This is the part I think about the most. Your browser sessions are the keys to your digital life — email, work tools, everything. Any system that touches them needs to be paranoid about security. I won't pretend the model is perfect, but here's every layer of protection I built in.
+
 ### Authentication
 
 - **`/mcp`**: Bearer token in the `Authorization` header — the 64-character hex `secret` from `~/.opentabs/extension/auth.json`
@@ -443,7 +445,7 @@ Session permission rules (created by "Allow Always" actions) are checked before 
 
 ### Confirmation System
 
-When a browser tool evaluates to `ask`, the server requests human approval through the Chrome extension's side panel:
+When a browser tool evaluates to `ask`, the server pauses and asks you. The confirmation flows through the Chrome extension's side panel:
 
 1. Server sends `confirmation.request` to the extension with a UUID, tool name, domain, tab ID, truncated parameter preview, and timeout
 2. The side panel displays an approval dialog
@@ -480,7 +482,7 @@ Session permission rules are stored in memory and reset when the server restarts
 
 ## Key Source Files
 
-For deeper understanding, start with these files:
+If you want to go deeper, these are the files I'd start with:
 
 - `platform/mcp-server/src/index.ts` — server entry point, HTTP routes, WebSocket handling
 - `platform/mcp-server/src/discovery.ts` — five-phase plugin discovery pipeline

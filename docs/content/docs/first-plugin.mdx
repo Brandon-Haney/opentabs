@@ -4,7 +4,9 @@ description: Create your first OpenTabs plugin in 10 minutes — scaffold, defin
 lastUpdated: 2026-03-01
 ---
 
-Build a working OpenTabs plugin from scratch. By the end, you'll have a tool that AI agents can call through your browser.
+This is the part we're most excited about.
+
+You're going to build a working plugin from scratch. By the end, your AI agent will be able to call a tool that runs inside a real browser tab — using `document` and `window` directly, the same way the page's own JavaScript does. It takes about 10 minutes.
 
 <FirstPluginFlow />
 
@@ -21,7 +23,7 @@ cd my-app
 npm install
 ```
 
-This creates a standalone npm package. The plugin is registered with the MCP server on first build.
+This creates a standalone npm package with everything wired up. The plugin gets registered with the MCP server on first build.
 
 ## 2. Define a tool
 
@@ -47,6 +49,8 @@ export const getPageTitle = defineTool({
   },
 });
 ```
+
+Notice what's happening in `handle()`: you're calling `document.title` and `window.location.href` directly. That's not a simulation or a proxy — your code runs in the actual page context, same as if you typed it in the DevTools console. You have the real DOM, the real `window`, the real everything. That's how plugins access internal APIs too: same `fetch()` calls the web app makes, with the same cookies, the same auth headers, the same session.
 
 ## 3. Register the tool
 
@@ -80,7 +84,7 @@ export default new MyAppPlugin();
 npm run build
 ```
 
-This compiles your plugin, generates the adapter bundle and tool manifest, and notifies the running MCP server.
+This compiles your plugin, generates the adapter bundle and tool manifest, and notifies the running MCP server. That last part is important — you don't need to restart anything. The server picks up the new plugin immediately.
 
 ## 5. Test it
 
@@ -98,11 +102,17 @@ opentabs status
 
 ## What just happened?
 
+Here's the full chain, because it's worth understanding:
+
 1. **`npm run build`** compiled your TypeScript and bundled an adapter IIFE — a self-contained script that runs in the page context
 2. The build auto-registered your plugin in `~/.opentabs/config.json` and called `POST /reload` to notify the server
 3. The server sent the plugin definition to the Chrome extension via WebSocket
 4. The extension injected the adapter into matching tabs
 5. When the AI agent called the tool, the request flowed: MCP client → server → extension → adapter → page → back
+
+That's the whole platform in five steps. Your tool code ran inside the actual web page, with full access to the page's DOM, APIs, and authenticated session. The result traveled back through the extension, the server, and into your AI's context.
+
+Fun fact: most of the plugins in this repo were built by AI in under five minutes. Point your agent at a website, tell it to build a plugin, and it handles the API discovery, scaffolding, and testing. Your agent wrote it, you can read every line, and it runs in your browser with your session. That's a pretty good trust model.
 
 ## Next steps
 

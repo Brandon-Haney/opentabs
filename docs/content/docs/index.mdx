@@ -4,9 +4,13 @@ description: OpenTabs gives AI agents access to any web application through your
 lastUpdated: 2026-02-28
 ---
 
-OpenTabs gives AI agents access to any web application through your browser. No API keys, no OAuth, no service accounts — just your existing logged-in sessions.
+You're already logged into dozens of web apps in Chrome. Why should your AI need a separate set of credentials?
 
-Your AI assistant connects to an MCP server that dispatches tool calls to a Chrome extension. The extension runs plugin code directly in the page, with full access to the DOM, cookies, and session storage. If you can see it in your browser, your AI agent can interact with it.
+OpenTabs gives your AI agent access to web applications through your existing browser sessions. We reverse-engineered the internal APIs that web apps use — the same endpoints their own frontend calls — and exposed them as MCP tools your AI agent can call directly. No API keys. No OAuth. No service accounts. If you can see it in a tab, your agent can use it.
+
+No screenshots. No DOM scraping. No pixel-guessing. When your AI wants to send a Slack message, it calls `slack_send_message` — the exact same API call Slack's own web app makes, running in your browser, using your existing session. It's fast, it's cheap on tokens (tokens are money), and the knowledge gets packaged into a reusable plugin anyone can install.
+
+Works with Claude Code, Cursor, Windsurf, [OpenCode](https://opencode.ai), and any MCP client that supports Streamable HTTP.
 
 ## Who Is This For?
 
@@ -18,21 +22,35 @@ Your AI assistant connects to an MCP server that dispatches tool calls to a Chro
 
 ## How It Works
 
+Those internal APIs need to run inside your browser — that's where your sessions live. So the architecture has two halves: an MCP server that your AI talks to, and a Chrome extension that actually executes the calls in the right tab.
+
 <HowItWorks />
 
-1. **You start the MCP server** — it discovers installed plugins and exposes their tools to any MCP client (Claude Code, Cursor, etc.).
+1. **Your AI sends a tool call** — send a message, create an issue, query metrics, whatever you need. It's just a normal MCP tool call.
 
-2. **The Chrome extension connects** — it receives plugin definitions from the server and watches for matching tabs. When you open a tab that matches a plugin's URL pattern, the extension injects the plugin's adapter into the page.
+2. **OpenTabs routes it to the right tab** — the MCP server finds the matching browser tab and dispatches the call through the Chrome extension.
 
-3. **Your AI agent calls a tool** — the server dispatches the call through the extension to the right tab. The plugin code runs in the page context with your authenticated session, and the result flows back to the agent.
+3. **It runs on the real web app** — the plugin adapter executes the action in the page using your logged-in session. Same API call the web app's own frontend makes. Results flow back to the agent.
+
+## What's Included
+
+OpenTabs ships with plugins for messaging, project management, code hosting, design tools, monitoring, and more. Each one talks to the real web app through your authenticated session.
+
+Plus built-in browser tools that work on any tab — screenshots, clicking, typing, scrolling, network capture, cookies, DOM inspection, and more. No plugin needed for those.
 
 ## Key Features
 
-- **Zero-configuration access** — uses your existing browser sessions. No API keys, no OAuth, no service accounts.
-- **Plugin ecosystem** — anyone can create and publish OpenTabs plugins as standalone npm packages. Install with `npm install -g` and they're auto-discovered.
-- **Built-in browser tools** — tab management, screenshots, DOM interaction, network capture, cookies, console logs, and more — available for every tab, no plugin required.
-- **Works with any MCP client** — Claude Code, Cursor, and any client that supports Streamable HTTP transport.
-- **Hot reload for developers** — the MCP server detects plugin changes automatically. Zero-restart development workflow.
+- **Your sessions, not your keys** — uses your existing browser sessions. No API keys to manage, no OAuth flows to set up, no service accounts to provision. You're already logged in.
+- **Real API calls, not browser automation** — plugins call the web app's internal APIs directly. Structured, typed, deterministic. No DOM scraping, no pixel-guessing, no "click the third button from the left."
+- **Plugins are just npm packages** — anyone can create and publish OpenTabs plugins. Install with a single command and they're auto-discovered by the server.
+- **Built-in browser tools** — tab management, screenshots, DOM interaction, network capture, cookies, console logs — available for every tab, no plugin required.
+- **Hot reload** — the MCP server detects plugin changes automatically. Build, and it's live.
+
+## A Note on Trust
+
+My honest recommendation: build your own plugins instead of installing third-party ones. Plugins run in your browser with your logged-in sessions — you should know what the code does. Point your AI agent at any website and it'll build a plugin for you in minutes. Your agent wrote it, you can read every line, and it runs in your browser with your session. That's a pretty good trust model.
+
+If you do install a plugin from someone else, the system has your back: every plugin starts disabled, and when you enable one, your AI reviews the source code first. But nothing beats code you wrote (or watched your AI write) yourself.
 
 ## Next Steps
 

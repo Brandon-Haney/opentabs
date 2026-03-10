@@ -4,13 +4,13 @@ description: Install OpenTabs for your role — user, plugin developer, or platf
 lastUpdated: 2026-03-02
 ---
 
-Choose the installation path that matches your role. Each section is self-contained — follow only the one that applies to you.
+What you install depends on what you're here to do. Pick your path and skip the rest.
 
 <InstallPaths />
 
 ## For Users
 
-Use OpenTabs with existing plugins and the built-in browser tools. You need **Node.js 22+** and **Google Chrome** (or any Chromium-based browser).
+You want to use OpenTabs with existing plugins and the built-in browser tools. You need **Node.js 22+** and **Google Chrome** (or any Chromium-based browser).
 
 ### Install the CLI
 
@@ -22,9 +22,11 @@ Use OpenTabs with existing plugins and the built-in browser tools. You need **No
 opentabs start
 ```
 
-On first run, this creates the `~/.opentabs/` directory, generates an auth secret, and installs the Chrome extension files.
+First run creates the `~/.opentabs/` directory, generates an auth secret, and installs the Chrome extension files. It also prints ready-to-copy config blocks for Claude Code, Cursor, Windsurf, and OpenCode with your secret already filled in. Hang onto those for step 4.
 
 ### Load the Chrome extension
+
+Yeah, you have to manually load it. Chrome doesn't let you distribute Manifest V3 extensions outside the Chrome Web Store for localhost servers. It takes 30 seconds:
 
 1. Open `chrome://extensions/` in Chrome
 2. Enable **Developer mode** (top-right toggle)
@@ -34,13 +36,9 @@ The extension connects to the server automatically.
 
 ### Configure your MCP client
 
-Get your auth secret:
+Grab the config block that `opentabs start` printed and paste it into your client's config file. That's it.
 
-```bash
-opentabs config show --json --show-secret | jq -r .secret
-```
-
-Add the server to your MCP client. For Claude Code, the easiest way is the CLI:
+For Claude Code, the fastest way is the CLI:
 
 ```bash
 claude mcp add --transport http opentabs http://127.0.0.1:9515/mcp \
@@ -63,7 +61,7 @@ Or merge it manually into `~/.claude.json` (under `"mcpServers"`):
 }
 ```
 
-Replace `YOUR_SECRET_HERE` with the secret from the previous command.
+Replace `YOUR_SECRET_HERE` with the secret from the config output.
 
 ### Install plugins
 
@@ -79,17 +77,17 @@ opentabs status
 opentabs doctor
 ```
 
-You're ready. Your AI agent can now use all registered plugin tools and the built-in browser tools.
+You're good. Your AI agent can now use all registered plugin tools and the built-in browser tools.
 
 ---
 
 ## For Plugin Developers
 
-Build your own OpenTabs plugins. You need everything in **For Users** above.
+This is the fun part. You need everything from [For Users](#for-users) above, plus the scaffolding tools.
 
 ### Set up the user environment
 
-Follow the [For Users](#for-users) section above first. You need a working OpenTabs installation to test your plugins.
+Follow the [For Users](#for-users) section first. You need a working OpenTabs installation to test against.
 
 ### Scaffold a new plugin
 
@@ -110,21 +108,23 @@ This compiles your plugin, generates `dist/adapter.iife.js` and `dist/tools.json
 
 ### Rebuild and reload
 
-Every time you rebuild, the server picks up your changes automatically:
+The feedback loop is fast. Every time you rebuild, the server picks up your changes automatically:
 
 ```bash
 npm run build   # Compiles, builds adapter, and notifies the server via POST /reload
 ```
 
-The `opentabs-plugin build` step (part of `npm run build`) calls `POST /reload` on the running server, triggering plugin rediscovery. No server restart needed.
+No server restart. No extension reload. Just build and it's live.
 
-See the [Plugin Development guide](/docs/guides/plugin-development) for a complete walkthrough of building your first plugin.
+Honest recommendation: build your own plugins rather than installing third-party ones. Plugins run in your browser with your logged-in sessions — you should know what the code does. Point your AI agent at any website and it'll build a plugin for you in minutes. Your agent wrote it, you can read every line. That's a pretty good trust model.
+
+See the [Plugin Development guide](/docs/guides/plugin-development) for a complete walkthrough.
 
 ---
 
 ## For Contributors
 
-Work on the OpenTabs platform itself. You need **[Node.js](https://nodejs.org)** (v22+) and **Google Chrome**.
+Welcome aboard. You need **[Node.js](https://nodejs.org)** (v22+) and **Google Chrome**.
 
 ### Clone and build
 
@@ -147,7 +147,7 @@ npm run build
 npm run dev
 ```
 
-This starts the MCP server with the dev proxy for hot reload (contributor-only). When you rebuild platform packages (`npm run build`), the dev proxy detects the changes and restarts the worker process.
+This starts the MCP server with the dev proxy for hot reload. When you rebuild platform packages (`npm run build`), the dev proxy detects the changes and restarts the worker process. The whole thing is designed so you can edit, build, and see results without restarting anything manually.
 
 ### Configure your MCP client
 
@@ -170,7 +170,7 @@ npm run test          # Unit tests
 npm run test:e2e      # E2E tests (Playwright)
 ```
 
-All commands must exit 0 before committing. See the [Development Setup guide](/docs/contributing/dev-setup) for the full contributor workflow.
+All six must exit 0 before committing. No exceptions. See the [Development Setup guide](/docs/contributing/dev-setup) for the full contributor workflow.
 
 ---
 

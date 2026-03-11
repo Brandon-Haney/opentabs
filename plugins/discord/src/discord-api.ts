@@ -1,7 +1,6 @@
 import {
   clearAuthCache,
   getAuthCache,
-  getLocalStorage,
   parseRetryAfterMs,
   setAuthCache,
   ToolError,
@@ -13,41 +12,72 @@ interface DiscordAuth {
 }
 
 /**
- * Extract auth token from Discord. Checks two sources in order:
- * 1. Persisted cache on globalThis (survives adapter re-injection)
- * 2. localStorage via direct access or iframe fallback
- *
- * The adapter is injected at `status: 'loading'` (before Discord's JavaScript
- * runs), so localStorage still has the token on first injection. Once read,
- * the token is persisted on globalThis so it survives both Discord's
- * localStorage deletion and extension-triggered adapter re-injection.
+ * Extract the auth token from Discord's webpack module registry.
+ * Discord keeps the token in an internal module that exposes a `getToken()`
+ * method. We push a one-shot chunk into `webpackChunkdiscord_app` to walk
+ * the module cache and find it. Many i18n modules also have `getToken()`
+ * (returning `{locale, ast}`), so we filter by return type — only a string
+ * result is the auth token.
  */
-const getAuth = (): DiscordAuth | null => {
-  const persisted = getAuthCache<string>('discord');
-  if (persisted) return { token: persisted };
-
-  const raw = getLocalStorage('token');
-  if (!raw) return null;
-
+const getTokenFromWebpack = (): string | null => {
   try {
-    const token = JSON.parse(raw) as unknown;
-    if (typeof token !== 'string' || token.length === 0) return null;
-    setAuthCache('discord', token);
-    return { token };
+    const chunks = (globalThis as Record<string, unknown>).webpackChunkdiscord_app as
+      | { push(entry: unknown): void }
+      | undefined;
+    if (!chunks) return null;
+
+    let token: string | null = null;
+    chunks.push([
+      [Symbol()],
+      {},
+      (require: { c: Record<string, { exports?: Record<string, unknown> }> }) => {
+        for (const mod of Object.values(require.c)) {
+          const exports = mod?.exports;
+          if (!exports) continue;
+          const def = (exports.default ?? exports) as Record<string, unknown>;
+          if (typeof def?.getToken !== 'function') continue;
+          const result: unknown = (def.getToken as () => unknown)();
+          if (typeof result === 'string' && result.length > 0) {
+            token = result;
+            break;
+          }
+        }
+      },
+    ]);
+    return token;
   } catch {
     return null;
   }
 };
 
+/**
+ * Extract auth token from Discord. Checks two sources in order:
+ * 1. Persisted cache on globalThis (survives adapter re-injection)
+ * 2. Discord's internal webpack module registry via `getToken()`
+ *
+ * Once extracted, the token is cached on globalThis so subsequent calls
+ * avoid the webpack walk.
+ */
+const getAuth = (): DiscordAuth | null => {
+  const persisted = getAuthCache<string>('discord');
+  if (persisted) return { token: persisted };
+
+  const token = getTokenFromWebpack();
+  if (!token) return null;
+
+  setAuthCache('discord', token);
+  return { token };
+};
+
 export const isDiscordAuthenticated = (): boolean => getAuth() !== null;
 
 /**
- * Wait for Discord to populate the auth token after SPA hydration.
- * Polls at 500ms intervals for up to 5 seconds.
+ * Wait for Discord's SPA to hydrate and populate its internal token manager.
+ * Polls at 500ms intervals for up to 10 seconds.
  */
 export const waitForDiscordAuth = async (): Promise<boolean> => {
   try {
-    await waitUntil(() => isDiscordAuthenticated(), { interval: 500, timeout: 5000 });
+    await waitUntil(() => isDiscordAuthenticated(), { interval: 500, timeout: 10_000 });
     return true;
   } catch {
     return false;
@@ -86,7 +116,7 @@ const VALIDATION_ERRORS = new Set([
 
 /**
  * Make an authenticated request to the Discord API (v9).
- * Automatically extracts the token from localStorage and handles error classification.
+ * Automatically extracts the token and handles error classification.
  */
 export const discordApi = async <T extends Record<string, unknown>>(
   endpoint: string,

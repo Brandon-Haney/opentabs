@@ -169,74 +169,143 @@ const toDisplayName = (name: string): string =>
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 
-/** npm search --json result shape */
-interface NpmSearchJsonEntry {
+const NPM_REGISTRY = 'https://registry.npmjs.org';
+
+/** Shape of a package object within the npm registry search API response. */
+interface NpmRegistrySearchPackage {
   name: string;
   description?: string;
   version: string;
-  author?: { name?: string };
   publisher?: { username?: string };
 }
 
 /**
- * Search the npm registry for opentabs plugins via `npm search`.
- * Delegates auth to npm itself (reads ~/.npmrc), supporting private packages.
+ * Fetch all opentabs plugins from the npm registry search API with pagination.
+ * Returns raw package entries; caller is responsible for filtering and mapping.
+ */
+const fetchAllPlugins = async (signal: AbortSignal): Promise<NpmRegistrySearchPackage[]> => {
+  const results: NpmRegistrySearchPackage[] = [];
+  let from = 0;
+  const size = 250;
+  while (true) {
+    const url = `${NPM_REGISTRY}/-/v1/search?text=keywords:opentabs-plugin&size=${size}&from=${from}`;
+    const resp = await fetch(url, { signal });
+    if (!resp.ok) break;
+    const data = (await resp.json()) as { objects: Array<{ package: NpmRegistrySearchPackage }>; total: number };
+    for (const obj of data.objects) {
+      results.push(obj.package);
+    }
+    if (results.length >= data.total) break;
+    from += size;
+  }
+  return results;
+};
+
+/**
+ * Probe the npm registry for an exact package match.
+ * Tries scoped (@opentabs-dev/opentabs-plugin-{query}) and unscoped (opentabs-plugin-{query})
+ * candidates, or probes the query directly if it already looks like a full package name.
+ */
+const probeDirectPackage = async (query: string, signal: AbortSignal): Promise<NpmRegistrySearchPackage | null> => {
+  const candidates =
+    query.startsWith('@') || query.startsWith('opentabs-plugin-')
+      ? [query]
+      : [`@opentabs-dev/opentabs-plugin-${query}`, `opentabs-plugin-${query}`];
+
+  for (const pkg of candidates) {
+    try {
+      const resp = await fetch(`${NPM_REGISTRY}/${pkg}`, { signal });
+      if (!resp.ok) continue;
+      const data = (await resp.json()) as {
+        name: string;
+        description?: string;
+        'dist-tags'?: Record<string, string>;
+        versions?: Record<string, { _npmUser?: { name?: string } }>;
+      };
+      const latest = data['dist-tags']?.latest;
+      const versionData = latest ? data.versions?.[latest] : undefined;
+      return {
+        name: data.name,
+        description: data.description ?? '',
+        version: latest ?? '0.0.0',
+        publisher: versionData?._npmUser?.name ? { username: versionData._npmUser.name } : undefined,
+      };
+    } catch {}
+  }
+  return null;
+};
+
+/**
+ * Search the npm registry for opentabs plugins via the registry HTTP API.
+ * When a query is provided, also performs a direct package probe so exact-name
+ * matches (e.g. "notion") are always found even if keyword search ranks them
+ * beyond the result window. Direct probe results appear first (exact match priority).
  *
  * @throws Error with `code` property for structured JSON-RPC error handling:
- *   - code -32603: npm search failed
+ *   - code -32603: registry search failed
  */
 const searchNpmPlugins = async (query?: string): Promise<PluginSearchResult[]> => {
-  const searchTerm = query ? `keywords:opentabs-plugin ${query}` : 'keywords:opentabs-plugin';
-  const { promise: resultPromise, kill } = spawnAsync(platformExec('npm'), ['search', searchTerm, '--json']);
-
-  let rejectTimeout: (reason: Error) => void;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    rejectTimeout = reject;
-  });
-  const timerId = setTimeout(
-    () => rejectTimeout(new Error(`npm search timed out after ${NPM_SUBPROCESS_TIMEOUT_MS}ms`)),
-    NPM_SUBPROCESS_TIMEOUT_MS,
-  );
-
-  let result: Awaited<typeof resultPromise>;
-  try {
-    result = await Promise.race([resultPromise, timeoutPromise]);
-  } finally {
-    clearTimeout(timerId);
-    kill();
-  }
-
-  if (result.exitCode !== 0) {
-    const stderr = result.stderr.trim();
-    const error = new Error(stderr || 'npm search failed') as Error & { code: number };
-    error.code = -32603;
-    throw error;
-  }
+  const controller = new AbortController();
+  const timerId = setTimeout(() => controller.abort(), NPM_SUBPROCESS_TIMEOUT_MS);
 
   try {
-    const entries = JSON.parse(result.stdout.trim()) as NpmSearchJsonEntry[];
-    const results = entries.map(entry => ({
-      name: entry.name,
-      displayName: toDisplayName(entry.name),
-      description: entry.description ?? '',
-      version: entry.version,
-      author: entry.publisher?.username ?? entry.author?.name ?? 'unknown',
-    }));
+    const [allPackages, probeResult] = await Promise.all([
+      fetchAllPlugins(controller.signal),
+      query ? probeDirectPackage(query, controller.signal) : Promise.resolve(null),
+    ]);
 
-    // npm search is full-text relevance-based: `keywords:opentabs-plugin slack` returns ALL
-    // opentabs plugins ranked by relevance, not just those matching "slack". Post-filter to
-    // only include results where the query appears in the short name or description.
+    let filtered: NpmRegistrySearchPackage[];
     if (query) {
       const q = query.toLowerCase();
-      return results.filter(
-        r => extractShortName(r.name).toLowerCase().includes(q) || r.description.toLowerCase().includes(q),
+      filtered = allPackages.filter(
+        pkg =>
+          extractShortName(pkg.name).toLowerCase().includes(q) || (pkg.description ?? '').toLowerCase().includes(q),
       );
+    } else {
+      filtered = allPackages;
     }
+
+    // Merge: direct probe first, then keyword results (deduplicated by name)
+    const seen = new Set<string>();
+    const results: PluginSearchResult[] = [];
+
+    if (probeResult) {
+      seen.add(probeResult.name);
+      results.push({
+        name: probeResult.name,
+        displayName: toDisplayName(probeResult.name),
+        description: probeResult.description ?? '',
+        version: probeResult.version,
+        author: probeResult.publisher?.username ?? 'unknown',
+      });
+    }
+
+    for (const pkg of filtered) {
+      if (seen.has(pkg.name)) continue;
+      seen.add(pkg.name);
+      results.push({
+        name: pkg.name,
+        displayName: toDisplayName(pkg.name),
+        description: pkg.description ?? '',
+        version: pkg.version,
+        author: pkg.publisher?.username ?? 'unknown',
+      });
+    }
+
     return results;
-  } catch {
-    const error = new Error('Failed to parse npm search output') as Error & { code: number };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      const error = new Error(`npm search timed out after ${NPM_SUBPROCESS_TIMEOUT_MS}ms`) as Error & { code: number };
+      error.code = -32603;
+      throw error;
+    }
+    const error = new Error(err instanceof Error ? err.message : 'npm registry search failed') as Error & {
+      code: number;
+    };
     error.code = -32603;
     throw error;
+  } finally {
+    clearTimeout(timerId);
   }
 };
 

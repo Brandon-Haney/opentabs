@@ -1,4 +1,4 @@
-import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
+import { OpenTabsPlugin, notifyReadinessChanged } from '@opentabs-dev/plugin-sdk';
 import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import { isAuthenticated, waitForAuth } from './chipotle-api.js';
 import { findRestaurants } from './tools/find-restaurants.js';
@@ -42,6 +42,33 @@ class ChipotlePlugin extends OpenTabsPlugin {
     getRewardCategories,
     getExtrasCampaigns,
   ];
+
+  private authPollTimer?: ReturnType<typeof setInterval>;
+  private lastAuthState = false;
+
+  /**
+   * Poll the Vuex auth state every 500ms. When the auth state transitions
+   * (login or logout), call notifyReadinessChanged() so the extension re-probes
+   * isReady() immediately instead of waiting for the 30-second poll cycle.
+   *
+   * Chipotle's SPA login/logout flow writes the JWT to the `cmg-vuex`
+   * localStorage key without changing the URL, so neither tab navigation events
+   * nor the onNavigate hook fire.
+   */
+  override onActivate(): void {
+    this.lastAuthState = isAuthenticated();
+    this.authPollTimer = setInterval(() => {
+      const current = isAuthenticated();
+      if (current !== this.lastAuthState) {
+        this.lastAuthState = current;
+        notifyReadinessChanged();
+      }
+    }, 500);
+  }
+
+  override onDeactivate(): void {
+    clearInterval(this.authPollTimer);
+  }
 
   async isReady(): Promise<boolean> {
     if (isAuthenticated()) return true;

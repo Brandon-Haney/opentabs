@@ -4,13 +4,11 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { normalizePluginName, PLUGIN_PREFIX, resolvePluginPackageCandidates } from '@opentabs-dev/shared';
+import { normalizePluginName, resolvePluginPackageCandidates } from '@opentabs-dev/shared';
 import type { MockInstance } from 'vitest';
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
   buildDirectLookupCandidates,
-  KNOWN_OFFICIAL_PLUGIN_SLUGS,
-  parseMaintainer,
   readLocalPluginInfo,
   removeFromLocalPlugins,
   resolvePackageName,
@@ -42,10 +40,9 @@ const createMockChild = (exitCode: number, stdoutData: string): EventEmitter => 
 // ---------------------------------------------------------------------------
 
 describe('buildDirectLookupCandidates', () => {
-  test('returns known official plugin packages when no query is provided', () => {
-    const expected = KNOWN_OFFICIAL_PLUGIN_SLUGS.map(slug => `@opentabs-dev/${PLUGIN_PREFIX}${slug}`);
-    expect(buildDirectLookupCandidates()).toEqual(expected);
-    expect(buildDirectLookupCandidates(undefined)).toEqual(expected);
+  test('returns empty array when no query is provided', () => {
+    expect(buildDirectLookupCandidates()).toEqual([]);
+    expect(buildDirectLookupCandidates(undefined)).toEqual([]);
   });
 
   test('returns official and community candidates for a shorthand query', () => {
@@ -68,36 +65,6 @@ describe('buildDirectLookupCandidates', () => {
 
   test('returns full unscoped name as-is when query starts with opentabs-plugin-', () => {
     expect(buildDirectLookupCandidates('opentabs-plugin-slack')).toEqual(['opentabs-plugin-slack']);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// parseMaintainer
-// ---------------------------------------------------------------------------
-
-describe('parseMaintainer', () => {
-  test('extracts name from string with email in angle brackets', () => {
-    expect(parseMaintainer('opentabs-dev-admin <admin@example.com>')).toBe('opentabs-dev-admin');
-  });
-
-  test('returns trimmed string when no angle bracket is present', () => {
-    expect(parseMaintainer('opentabs-dev-admin')).toBe('opentabs-dev-admin');
-  });
-
-  test('returns undefined for empty array (no first element)', () => {
-    expect(parseMaintainer(undefined)).toBeUndefined();
-  });
-
-  test('extracts name from object with name field (backwards compatibility)', () => {
-    expect(parseMaintainer({ name: 'alice', email: 'alice@example.com' })).toBe('alice');
-  });
-
-  test('extracts username from object without name field', () => {
-    expect(parseMaintainer({ username: 'alice' })).toBe('alice');
-  });
-
-  test('returns undefined for object with neither name nor username', () => {
-    expect(parseMaintainer({ email: 'alice@example.com' })).toBeUndefined();
   });
 });
 

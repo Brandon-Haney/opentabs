@@ -254,55 +254,47 @@ const handlePluginRemove = async (name: string, options: PluginRemoveOptions): P
 
 // --- Search handler ---
 
+const NPM_REGISTRY = 'https://registry.npmjs.org';
+
+const extractShortName = (name: string): string => (name.split('/').pop() ?? name).replace(/^opentabs-plugin-/, '');
+
 /**
- * Extract a display name from an npm maintainer entry.
- * npm view returns maintainers as strings like "name <email@example.com>".
- * Object format `{ name, username }` is also handled for compatibility.
+ * Build a list of candidate package names to probe directly on the npm registry.
+ *
+ * When a query is provided (e.g., "slack"), generates the official and community
+ * package names to check via direct registry lookup. This catches private/scoped
+ * packages that keyword search may miss.
+ *
+ * When no query is provided, returns an empty list (the paginated keyword search
+ * fetches all opentabs plugins).
  */
-const parseMaintainer = (entry: unknown): string | undefined => {
-  if (typeof entry === 'string') {
-    const match = entry.match(/^(.+?)\s*</);
-    return match?.[1]?.trim() || entry.trim() || undefined;
-  }
-  if (entry && typeof entry === 'object') {
-    const obj = entry as Record<string, unknown>;
-    if (typeof obj.name === 'string') return obj.name;
-    if (typeof obj.username === 'string') return obj.username;
-  }
-  return undefined;
+const buildDirectLookupCandidates = (query?: string): string[] => {
+  if (!query) return [];
+  if (query.startsWith('@') || query.startsWith(PLUGIN_PREFIX)) return [query];
+  return [`@opentabs-dev/${PLUGIN_PREFIX}${query}`, `${PLUGIN_PREFIX}${query}`];
 };
 
 /**
- * Fetch package metadata via `npm view`.
- * Delegates auth to npm itself (reads ~/.npmrc), supporting private packages.
+ * Fetch package metadata from the npm registry HTTP API.
  */
-const fetchPackageInfo = (pkg: string): NpmSearchPackage | null => {
+const fetchPackageInfo = async (pkg: string): Promise<NpmSearchPackage | null> => {
   try {
-    const result = spawnProcessSync(platformExec('npm'), [
-      'view',
-      pkg,
-      'name',
-      'description',
-      'version',
-      'maintainers',
-      '--json',
-    ]);
-    if (result.exitCode !== 0) return null;
-
-    const data = JSON.parse(result.stdout.trim()) as Record<string, unknown>;
-    const name = typeof data.name === 'string' ? data.name : pkg;
-    const version = typeof data.version === 'string' ? data.version : null;
-    if (!version) return null;
-
-    const description = typeof data.description === 'string' ? data.description : undefined;
-    const maintainers = Array.isArray(data.maintainers) ? data.maintainers : [];
-    const authorName = parseMaintainer(maintainers[0]);
-
+    const resp = await fetch(`${NPM_REGISTRY}/${pkg}`);
+    if (!resp.ok) return null;
+    const data = (await resp.json()) as {
+      name: string;
+      description?: string;
+      'dist-tags'?: Record<string, string>;
+      versions?: Record<string, { _npmUser?: { name?: string } }>;
+    };
+    const latest = data['dist-tags']?.latest;
+    if (!latest) return null;
+    const versionData = data.versions?.[latest];
     return {
-      name,
-      description,
-      version,
-      publisher: authorName ? { username: authorName } : undefined,
+      name: data.name,
+      description: data.description,
+      version: latest,
+      publisher: versionData?._npmUser?.name ? { username: versionData._npmUser.name } : undefined,
     };
   } catch {
     return null;
@@ -310,101 +302,71 @@ const fetchPackageInfo = (pkg: string): NpmSearchPackage | null => {
 };
 
 /**
- * Known official plugin slugs for the @opentabs-dev scope.
- *
- * When a search is performed with no query, these slugs are probed directly on
- * the npm registry so that private @opentabs-dev packages — which `npm search`
- * excludes from keyword results — are still discoverable.
+ * Search the npm registry for opentabs plugins via the registry HTTP API.
+ * Fetches all results with pagination (250 per page).
  */
-const KNOWN_OFFICIAL_PLUGIN_SLUGS = ['slack'] as const;
-
-/**
- * Build a list of candidate package names to probe directly on the npm registry.
- *
- * When a query is provided (e.g., "slack"), generates the official and community
- * package names to check via direct registry lookup. This catches private/scoped
- * packages that `npm search` excludes from keyword-based results.
- *
- * When no query is provided, probes all known official plugin package names so
- * that private @opentabs-dev packages are included in no-query searches.
- */
-const buildDirectLookupCandidates = (query?: string): string[] => {
-  if (!query) {
-    return KNOWN_OFFICIAL_PLUGIN_SLUGS.map(slug => `@opentabs-dev/${PLUGIN_PREFIX}${slug}`);
-  }
-  // If the query is already a fully qualified name, probe it directly
-  if (query.startsWith('@') || query.startsWith(PLUGIN_PREFIX)) return [query];
-  return [`@opentabs-dev/${PLUGIN_PREFIX}${query}`, `${PLUGIN_PREFIX}${query}`];
-};
-
-/** npm search --json result shape */
-interface NpmSearchJsonEntry {
-  name: string;
-  description?: string;
-  version: string;
-  author?: { name?: string; username?: string };
-  publisher?: { username?: string };
-}
-
-const extractShortName = (name: string): string => (name.split('/').pop() ?? name).replace(/^opentabs-plugin-/, '');
-
-/**
- * Search for opentabs plugins via `npm search`.
- * Delegates auth to npm itself.
- */
-const npmSearchPlugins = (query?: string): NpmSearchPackage[] => {
-  const searchTerm = query ? `keywords:opentabs-plugin ${query}` : 'keywords:opentabs-plugin';
-  const result = spawnProcessSync(platformExec('npm'), ['search', searchTerm, '--json']);
-  if (result.exitCode !== 0) return [];
-
+const npmSearchPlugins = async (query?: string): Promise<NpmSearchPackage[]> => {
+  const results: NpmSearchPackage[] = [];
+  let from = 0;
+  const size = 250;
   try {
-    const entries = JSON.parse(result.stdout.trim()) as NpmSearchJsonEntry[];
-    const results = entries.map(entry => ({
-      name: entry.name,
-      description: entry.description,
-      version: entry.version,
-      publisher: entry.publisher?.username
-        ? { username: entry.publisher.username }
-        : entry.author?.name
-          ? { username: entry.author.name }
-          : undefined,
-    }));
-    if (query) {
-      const q = query.toLowerCase();
-      return results.filter(
-        r => extractShortName(r.name).toLowerCase().includes(q) || (r.description ?? '').toLowerCase().includes(q),
-      );
+    while (true) {
+      const url = `${NPM_REGISTRY}/-/v1/search?text=keywords:opentabs-plugin&size=${size}&from=${from}`;
+      const resp = await fetch(url);
+      if (!resp.ok) break;
+      const data = (await resp.json()) as {
+        objects: Array<{
+          package: { name: string; description?: string; version: string; publisher?: { username: string } };
+        }>;
+        total: number;
+      };
+      for (const obj of data.objects) {
+        const pkg = obj.package;
+        results.push({
+          name: pkg.name,
+          description: pkg.description,
+          version: pkg.version,
+          publisher: pkg.publisher?.username ? { username: pkg.publisher.username } : undefined,
+        });
+      }
+      if (results.length >= data.total) break;
+      from += size;
     }
-    return results;
   } catch {
-    return [];
+    return results;
   }
+  if (query) {
+    const q = query.toLowerCase();
+    return results.filter(
+      r => extractShortName(r.name).toLowerCase().includes(q) || (r.description ?? '').toLowerCase().includes(q),
+    );
+  }
+  return results;
 };
 
-const handlePluginSearch = (query?: string): void => {
-  // Run npm keyword search
-  const searchResults = npmSearchPlugins(query);
-
-  // Also probe direct candidates for private packages not in keyword search
+const handlePluginSearch = async (query?: string): Promise<void> => {
+  // Run keyword search and direct probe in parallel
   const directCandidates = buildDirectLookupCandidates(query);
-  const directResults = directCandidates.map(candidate => fetchPackageInfo(candidate));
+  const [searchResults, ...directResults] = await Promise.all([
+    npmSearchPlugins(query),
+    ...directCandidates.map(candidate => fetchPackageInfo(candidate)),
+  ]);
 
-  // Collect results from keyword search
+  // Merge: direct probe results first (exact match priority), then keyword results (deduplicated)
   const results: NpmSearchPackage[] = [];
   const seenNames = new Set<string>();
+
+  for (const info of directResults) {
+    if (info && !seenNames.has(info.name)) {
+      seenNames.add(info.name);
+      results.push(info);
+    }
+  }
 
   for (const pkg of searchResults) {
     if (!seenNames.has(pkg.name)) {
       seenNames.add(pkg.name);
       results.push(pkg);
-    }
-  }
-
-  // Merge in direct lookup results (private packages not in keyword search)
-  for (const info of directResults) {
-    if (info && !seenNames.has(info.name)) {
-      seenNames.add(info.name);
-      results.push(info);
     }
   }
 
@@ -708,8 +670,8 @@ Examples:
   $ opentabs plugin search slack
   $ opentabs plugin search          # lists all available plugins`,
     )
-    .action((query?: string) => {
-      handlePluginSearch(query);
+    .action(async (query?: string) => {
+      await handlePluginSearch(query);
     });
 
   pluginCmd
@@ -803,8 +765,6 @@ export {
   warnIfNotPlugin,
   removeFromLocalPlugins,
   buildDirectLookupCandidates,
-  parseMaintainer,
-  KNOWN_OFFICIAL_PLUGIN_SLUGS,
   scanNpmPlugins,
   readLocalPluginInfo,
 };

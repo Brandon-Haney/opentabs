@@ -11,7 +11,7 @@
     "opentabs-plugin"
   ],
   "opentabs": {
-    "displayName": "Google Gemini",
+    "displayName": "Gemini",
     "description": "OpenTabs plugin for Google Gemini",
     "urlPatterns": [
       "*://gemini.google.com/*"

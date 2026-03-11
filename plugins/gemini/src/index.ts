@@ -11,7 +11,7 @@ import { sendMessage } from './tools/send-message.js';
 class GeminiPlugin extends OpenTabsPlugin {
   readonly name = 'gemini';
   readonly description = 'OpenTabs plugin for Google Gemini';
-  override readonly displayName = 'Google Gemini';
+  override readonly displayName = 'Gemini';
   readonly urlPatterns = ['*://gemini.google.com/*'];
   override readonly homepage = 'https://gemini.google.com';
   readonly tools: ToolDefinition[] = [

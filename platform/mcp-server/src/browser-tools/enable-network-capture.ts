@@ -4,7 +4,7 @@
 
 import { z } from 'zod';
 import { dispatchToExtension } from '../extension-protocol.js';
-import { getAnyConnection } from '../state.js';
+import { getAnyConnection, getConnectionForTab } from '../state.js';
 import { defineBrowserTool } from './definition.js';
 
 const enableNetworkCapture = defineBrowserTool({
@@ -53,7 +53,8 @@ const enableNetworkCapture = defineBrowserTool({
       ...(args.maxConsoleLogs !== undefined ? { maxConsoleLogs: args.maxConsoleLogs } : {}),
       ...(args.maxWsFrames !== undefined ? { maxWsFrames: args.maxWsFrames } : {}),
     });
-    getAnyConnection(state)?.activeNetworkCaptures.add(args.tabId);
+    const conn = getConnectionForTab(state, args.tabId) ?? getAnyConnection(state);
+    conn?.activeNetworkCaptures.add(args.tabId);
     return result;
   },
 });

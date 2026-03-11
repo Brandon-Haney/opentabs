@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { WsHandle } from '@opentabs-dev/shared';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
+  dispatchToAllConnections,
   dispatchToExtension,
   handleExtensionMessage,
   isDispatchError,
@@ -3448,5 +3449,232 @@ describe('multi-connection — sendConfirmationRequest broadcasts to all', () =>
     const [, pending] = [...state.pendingConfirmations.entries()][0] ?? [];
     pending?.resolve({ action: 'allow', alwaysAllow: false });
     return promise;
+  });
+});
+
+describe('multi-connection — resolveConnection with connectionId', () => {
+  test('connectionId takes priority over tabId when both are present', () => {
+    const state = createState();
+    const { conn: connA, ws: wsA } = createMockConnection('conn-a');
+    const { conn: connB, ws: wsB } = createMockConnection('conn-b');
+    // Tab 10 is owned by connA
+    connA.tabMapping.set('slack', {
+      state: 'ready',
+      tabs: [{ tabId: 10, url: 'https://app.slack.com', title: 'Slack', ready: true }],
+    });
+    state.extensionConnections.set('conn-a', connA);
+    state.extensionConnections.set('conn-b', connB);
+
+    // Pass tabId pointing to connA but connectionId pointing to connB
+    const promise = dispatchToExtension(state, 'tool.dispatch', {
+      plugin: 'slack',
+      tool: 'send',
+      tabId: 10,
+      connectionId: 'conn-b',
+    });
+
+    // connectionId should win — connB receives the dispatch
+    expect(wsB.sent).toHaveLength(1);
+    expect(wsA.sent).toHaveLength(0);
+
+    const pending = [...state.pendingDispatches.values()][0];
+    pending?.resolve('ok');
+    if (pending) clearTimeout(pending.timerId);
+    return promise;
+  });
+
+  test('connectionId routes to the matching connection', () => {
+    const state = createState();
+    const { conn: connA, ws: wsA } = createMockConnection('conn-a');
+    const { conn: connB, ws: wsB } = createMockConnection('conn-b');
+    state.extensionConnections.set('conn-a', connA);
+    state.extensionConnections.set('conn-b', connB);
+
+    const promise = dispatchToExtension(state, 'tool.dispatch', {
+      plugin: 'slack',
+      connectionId: 'conn-b',
+    });
+
+    expect(wsB.sent).toHaveLength(1);
+    expect(wsA.sent).toHaveLength(0);
+
+    const pending = [...state.pendingDispatches.values()][0];
+    pending?.resolve('ok');
+    if (pending) clearTimeout(pending.timerId);
+    return promise;
+  });
+
+  test('unknown connectionId falls back to tabId routing', () => {
+    const state = createState();
+    const { conn: connA, ws: wsA } = createMockConnection('conn-a');
+    const { conn: connB, ws: wsB } = createMockConnection('conn-b');
+    connB.tabMapping.set('slack', {
+      state: 'ready',
+      tabs: [{ tabId: 20, url: 'https://app.slack.com', title: 'Slack', ready: true }],
+    });
+    state.extensionConnections.set('conn-a', connA);
+    state.extensionConnections.set('conn-b', connB);
+
+    const promise = dispatchToExtension(state, 'tool.dispatch', {
+      plugin: 'slack',
+      connectionId: 'nonexistent',
+      tabId: 20,
+    });
+
+    // connectionId not found → falls through to tabId → connB
+    expect(wsB.sent).toHaveLength(1);
+    expect(wsA.sent).toHaveLength(0);
+
+    const pending = [...state.pendingDispatches.values()][0];
+    pending?.resolve('ok');
+    if (pending) clearTimeout(pending.timerId);
+    return promise;
+  });
+
+  test('unknown connectionId and no tabId falls back to getAnyConnection', () => {
+    const state = createState();
+    const { conn: connA, ws: wsA } = createMockConnection('conn-a');
+    const { conn: connB, ws: wsB } = createMockConnection('conn-b');
+    state.extensionConnections.set('conn-a', connA);
+    state.extensionConnections.set('conn-b', connB);
+
+    const promise = dispatchToExtension(state, 'tool.dispatch', {
+      plugin: 'slack',
+      connectionId: 'nonexistent',
+    });
+
+    // Falls back to any connection (first in map iteration = conn-a)
+    const totalSent = wsA.sent.length + wsB.sent.length;
+    expect(totalSent).toBe(1);
+
+    const pending = [...state.pendingDispatches.values()][0];
+    pending?.resolve('ok');
+    if (pending) clearTimeout(pending.timerId);
+    return promise;
+  });
+
+  test('single connection bypasses connectionId check', () => {
+    const state = createState();
+    const { conn, ws } = createMockConnection('conn-a');
+    state.extensionConnections.set('conn-a', conn);
+
+    // Even with a different connectionId, single-connection shortcut returns the only one
+    const promise = dispatchToExtension(state, 'tool.dispatch', {
+      plugin: 'slack',
+      connectionId: 'different-id',
+    });
+
+    expect(ws.sent).toHaveLength(1);
+
+    const pending = [...state.pendingDispatches.values()][0];
+    pending?.resolve('ok');
+    if (pending) clearTimeout(pending.timerId);
+    return promise;
+  });
+});
+
+describe('dispatchToAllConnections', () => {
+  test('rejects when no connections exist', async () => {
+    const state = createState();
+
+    await expect(dispatchToAllConnections(state, 'browser.listTabs', {})).rejects.toThrow('Extension not connected');
+  });
+
+  test('dispatches to all connections and collects results', async () => {
+    const state = createState();
+    const { conn: connA, ws: wsA } = createMockConnection('conn-a');
+    const { conn: connB, ws: wsB } = createMockConnection('conn-b');
+    state.extensionConnections.set('conn-a', connA);
+    state.extensionConnections.set('conn-b', connB);
+
+    const promise = dispatchToAllConnections(state, 'browser.listTabs', {});
+
+    // Both connections should receive the dispatch
+    expect(wsA.sent).toHaveLength(1);
+    expect(wsB.sent).toHaveLength(1);
+
+    // Extract dispatch IDs and settle them
+    const msgA = JSON.parse(wsA.sent[0] as string) as { id: string };
+    const msgB = JSON.parse(wsB.sent[0] as string) as { id: string };
+
+    const pendingA = state.pendingDispatches.get(msgA.id);
+    const pendingB = state.pendingDispatches.get(msgB.id);
+    pendingA?.resolve([{ id: 1, title: 'Tab A' }]);
+    pendingB?.resolve([{ id: 2, title: 'Tab B' }]);
+    if (pendingA) clearTimeout(pendingA.timerId);
+    if (pendingB) clearTimeout(pendingB.timerId);
+
+    const results = await promise;
+    expect(results).toHaveLength(2);
+    expect(results).toEqual(
+      expect.arrayContaining([
+        { connectionId: 'conn-a', result: [{ id: 1, title: 'Tab A' }] },
+        { connectionId: 'conn-b', result: [{ id: 2, title: 'Tab B' }] },
+      ]),
+    );
+  });
+
+  test('handles partial failures — successful connection results are returned', async () => {
+    const state = createState();
+    const { conn: connA, ws: wsA } = createMockConnection('conn-a');
+    const { conn: connB, ws: wsB } = createMockConnection('conn-b');
+    state.extensionConnections.set('conn-a', connA);
+    state.extensionConnections.set('conn-b', connB);
+
+    const promise = dispatchToAllConnections(state, 'browser.listTabs', {});
+
+    const msgA = JSON.parse(wsA.sent[0] as string) as { id: string };
+    const msgB = JSON.parse(wsB.sent[0] as string) as { id: string };
+
+    const pendingA = state.pendingDispatches.get(msgA.id);
+    const pendingB = state.pendingDispatches.get(msgB.id);
+
+    // connA succeeds, connB fails
+    pendingA?.resolve([{ id: 1, title: 'Tab A' }]);
+    pendingB?.reject(new Error('Connection lost'));
+    if (pendingA) clearTimeout(pendingA.timerId);
+    if (pendingB) clearTimeout(pendingB.timerId);
+
+    const results = await promise;
+    // Only connA's results should be returned
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual({ connectionId: 'conn-a', result: [{ id: 1, title: 'Tab A' }] });
+  });
+
+  test('single connection dispatch works correctly', async () => {
+    const state = createState();
+    const { conn, ws } = createMockConnection('conn-a');
+    state.extensionConnections.set('conn-a', conn);
+
+    const promise = dispatchToAllConnections(state, 'browser.listTabs', {});
+
+    expect(ws.sent).toHaveLength(1);
+
+    const msg = JSON.parse(ws.sent[0] as string) as { id: string };
+    const pending = state.pendingDispatches.get(msg.id);
+    pending?.resolve([{ id: 1, title: 'Tab' }]);
+    if (pending) clearTimeout(pending.timerId);
+
+    const results = await promise;
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual({ connectionId: 'conn-a', result: [{ id: 1, title: 'Tab' }] });
+  });
+
+  test('injects __opentabs_dispatchId into sent params', async () => {
+    const state = createState();
+    const { conn, ws } = createMockConnection('conn-a');
+    state.extensionConnections.set('conn-a', conn);
+
+    const promise = dispatchToAllConnections(state, 'browser.listTabs', { extra: 'data' });
+
+    const msg = JSON.parse(ws.sent[0] as string) as { id: string; params: Record<string, unknown> };
+    expect(msg.params.__opentabs_dispatchId).toBe(msg.id);
+    expect(msg.params.extra).toBe('data');
+
+    const pending = state.pendingDispatches.get(msg.id);
+    pending?.resolve([]);
+    if (pending) clearTimeout(pending.timerId);
+
+    await promise;
   });
 });

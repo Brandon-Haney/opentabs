@@ -29,6 +29,7 @@ import {
   clearTabStateCache,
   getLastKnownStates,
   loadLastKnownStateFromSession,
+  notifyAffectedPlugins,
   stopReadinessPoll,
 } from './tab-state.js';
 import { notifyDispatchProgress } from './tool-dispatch.js';
@@ -314,6 +315,24 @@ const handleToolProgress: MessageHandler = (message, sendResponse) => {
     notifyDispatchProgress(dispatchId);
   }
   sendResponse({ ok: true });
+};
+
+/**
+ * Handle plugin:readinessChanged — adapter signaled readiness may have changed.
+ * Re-probes the plugin's readiness across all matching tabs and sends a
+ * tab.stateChanged notification if the state actually changed.
+ */
+const handlePluginReadinessChanged: MessageHandler = (message, _sendResponse) => {
+  const plugin = message.plugin;
+  if (typeof plugin !== 'string' || plugin === '') return;
+
+  (async () => {
+    const meta = await getPluginMeta(plugin);
+    if (!meta) return;
+    await notifyAffectedPlugins([meta]);
+  })().catch((err: unknown) => {
+    console.warn('[opentabs] handlePluginReadinessChanged failed:', err);
+  });
 };
 
 /** Handle sp:confirmationResponse — forward confirmation response to the MCP server */
@@ -714,6 +733,7 @@ const backgroundHandlers = new Map<InternalMessage['type'], MessageHandler>([
   ['bg:openPluginTab', handleBgOpenPluginTab],
   ['bg:openFolder', handleBgOpenFolder],
   ['plugin:logs', handlePluginLogs],
+  ['plugin:readinessChanged', handlePluginReadinessChanged],
   ['tool:progress', handleToolProgress],
   ['sp:confirmationResponse', handleSpConfirmationResponse],
   ['port-changed', handlePortChanged],
@@ -787,6 +807,7 @@ export {
   handleBgUpdatePlugin,
   handleOffscreenGetUrl,
   handlePluginLogs,
+  handlePluginReadinessChanged,
   handlePortChanged,
   handleSpConfirmationResponse,
   handleToolProgress,

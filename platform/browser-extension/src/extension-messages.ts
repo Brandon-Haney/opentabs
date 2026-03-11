@@ -97,6 +97,12 @@ export interface SpRelayMessage {
   data: Record<string, unknown>;
 }
 
+/** Content script relay → Background: adapter signaled readiness state may have changed */
+export interface PluginReadinessChangedMessage {
+  type: 'plugin:readinessChanged';
+  plugin: string;
+}
+
 /** Content script relay → Background: tool progress notification from adapter IIFE */
 export interface ToolProgressMessage {
   type: 'tool:progress';
@@ -217,6 +223,7 @@ export type InternalMessage =
   | OffscreenGetLogsMessage
   | BgForceReconnectMessage
   | PluginLogsMessage
+  | PluginReadinessChangedMessage
   | ToolProgressMessage
   | SpGetStateMessage
   | SpConnectionStateMessage

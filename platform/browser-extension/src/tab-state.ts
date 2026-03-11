@@ -544,6 +544,7 @@ export {
   getAggregateState,
   getLastKnownStates,
   loadLastKnownStateFromSession,
+  notifyAffectedPlugins,
   sendTabSyncAll,
   startReadinessPoll,
   stopReadinessPoll,

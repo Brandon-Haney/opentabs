@@ -174,6 +174,16 @@ See the [Development Setup guide](https://opentabs.dev/docs/contributing/dev-set
 
 This project wouldn't exist without [Claude Code](https://github.com/anthropics/claude-code), [OpenCode](https://github.com/anomalyco/opencode), [Ralph](https://github.com/snarktank/ralph), and [RetroUI](https://github.com/Logging-Studio/RetroUI). Genuinely grateful for all of them.
 
+## One More Thing
+
+I asked Claude to talk to Gemini about what makes ChatGPT good. Three rounds, no scripting. Just two AIs being professionals.
+
+<p align="center">
+  <a href="https://youtu.be/WRrCeRfiVaI">
+    <img src="https://img.youtube.com/vi/WRrCeRfiVaI/maxresdefault.jpg" alt="Claude talking to Gemini about ChatGPT through OpenTabs" width="700" />
+  </a>
+</p>
+
 ## Disclaimer
 
 OpenTabs is an independent open-source project. It is **not affiliated with, endorsed by, or sponsored by** any of the third-party services it integrates with. All product names, logos, trademarks, and registered trademarks are the property of their respective owners. Use of these names in plugin identifiers is for identification purposes only and does not imply any association or endorsement.

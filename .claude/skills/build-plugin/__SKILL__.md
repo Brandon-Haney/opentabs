@@ -8,7 +8,7 @@ Build a production-ready OpenTabs plugin. Each phase builds on the previous — 
 
 **Plugin self-sufficiency is non-negotiable.** A plugin adapter must be able to complete any task entirely on its own — through its own tools, using SDK utilities and the site's APIs. Browser tools (`browser_execute_script`, `browser_click_element`, etc.) are development aids for testing and debugging during the build process. They are NOT part of the plugin's runtime capabilities. Users may disable browser tools entirely during normal use, and the AI agent must still be able to accomplish every workflow using only the plugin's tools. If a workflow requires browser interaction (e.g., clicking a checkout button), the plugin must expose a tool that does it programmatically via the site's API or DOM manipulation within the adapter — not rely on the agent calling a browser tool.
 
-**Self-review is mandatory and automatic** — do not wait for the user to ask. See Phase 7 "Mandatory Self-Review Before Completion" for the full checklist. The standard: could this code be published as the canonical example of how to build a plugin? If not, fix it.
+**Self-review is mandatory and automatic** — do not wait for the user to ask. See Phase 8 "Mandatory Self-Review Before Completion" for the full checklist. The standard: could this code be published as the canonical example of how to build a plugin? If not, fix it.
 
 **Plugins must be generic — no personal information, no organization-specific content.** Plugins are published as npm packages and shared publicly. Every piece of source code, comment, description, schema, tool name, example value, and commit message must be completely free of:
 
@@ -508,7 +508,66 @@ export const mapMessage = (m: RawMessage) => ({
 
 ---
 
-## Phase 6: Icon
+## Phase 6: README
+
+Replace the scaffolded `README.md` with a user-facing README that shows what the plugin does, how to install it, and every tool it provides. The README is the npm package page — it must be useful to someone deciding whether to install the plugin, not to someone developing it.
+
+**The README must follow this exact structure:**
+
+```markdown
+# <DisplayName>
+
+<One-line description> — gives AI agents access to <DisplayName> through your authenticated browser session.
+
+## Install
+
+\`\`\`bash
+opentabs plugin install <name>
+\`\`\`
+
+Or install globally via npm:
+
+\`\`\`bash
+npm install -g @opentabs-dev/opentabs-plugin-<name>
+\`\`\`
+
+## Setup
+
+1. Open [<domain>](https://<domain>) in Chrome and log in
+2. Open the OpenTabs side panel — the <DisplayName> plugin should appear as **ready**
+
+## Tools (<total count>)
+
+### <Group Name> (<count>)
+
+| Tool | Description | Type |
+|---|---|---|
+| `<tool_name>` | <summary from defineTool> | Read or Write |
+
+(repeat for every group)
+
+## How It Works
+
+This plugin runs inside your <DisplayName> tab through the [OpenTabs](https://opentabs.dev) Chrome extension. It uses your existing browser session — no API tokens or OAuth apps required. All operations happen as you, with your permissions.
+
+<Optional: 1-2 sentences about anything unique to this plugin's auth or architecture — e.g., "Enterprise Grid workspaces store both an organization-level token and workspace-level tokens. This plugin automatically selects the correct token for each API call.">
+
+## License
+
+MIT
+```
+
+**Rules:**
+- **Every tool must appear in the table.** The table is generated from the implemented tools — do not list planned or removed tools.
+- **Group tools by their `group` field** from `defineTool`. Use the group name as the section heading with the count in parentheses.
+- **Classify each tool as Read or Write.** Read tools fetch data without side effects (list, get, search). Write tools mutate state (create, update, delete, send, archive, pin, star, react, invite, kick, join, leave, upload).
+- **Use the `summary` field** from `defineTool` as the Description column — it's already a concise one-liner.
+- **No developer content.** No project structure, no code examples, no authentication patterns, no "Adding Tools" section, no shared schemas. Users don't need to know how the plugin is built.
+- **No personal information.** No organization names, workspace names, or account details. Use generic examples.
+
+---
+
+## Phase 7: Icon
 
 ### Finding the Icon
 
@@ -556,7 +615,7 @@ Place as `plugins/<name>/icon.svg` (and optional variants). Build auto-generates
 
 ---
 
-## Phase 7: Build and Test
+## Phase 8: Build and Test
 
 ### Build
 
@@ -716,7 +775,7 @@ Only after multiple genuine attempts across these techniques should you remove t
 
 ---
 
-## Phase 8: Write Learnings Back
+## Phase 9: Write Learnings Back
 
 **This phase is mandatory, not optional.** After all tools pass testing, explicitly evaluate your session for reusable knowledge. You must **show your reasoning to the user** — even if the conclusion is "nothing new to contribute."
 

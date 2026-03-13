@@ -86,16 +86,15 @@ describe('create-opentabs-plugin CLI', () => {
       expect(indexContent).toContain('export default new MyPluginPlugin()');
     });
 
-    test('README.md explains the package.json opentabs field', async () => {
+    test('README.md contains install instructions and tool section placeholder', async () => {
       runCli(['my-plugin', '--domain', 'example.com'], { cwd: tmpDir, configDir });
 
       const readme = await readFile(join(tmpDir, 'my-plugin', 'README.md'), 'utf-8');
       expect(readme).toContain('opentabs-plugin-my-plugin');
-      expect(readme).toContain('"opentabs"');
-      expect(readme).toContain('urlPatterns');
-      expect(readme).toContain('displayName');
-      expect(readme).toContain('dist/adapter.iife.js');
-      expect(readme).toContain('tools.json');
+      expect(readme).toContain('## Install');
+      expect(readme).toContain('## Setup');
+      expect(readme).toContain('## Tools');
+      expect(readme).toContain('example.com');
     });
 
     test('src/tools/example.ts contains a defineTool call with Zod schemas', async () => {

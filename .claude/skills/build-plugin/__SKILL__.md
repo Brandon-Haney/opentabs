@@ -756,8 +756,9 @@ Only after multiple genuine attempts across these techniques should you remove t
 3. Eliminate duplication: shared fields use `.extend()`, shared mapper logic uses spread composition
 4. Verify every export is consumed, every function parameter is used, every return field is read
 5. **PII scan** — grep the entire plugin directory for organization names, real user/team/channel IDs, email addresses, workspace URLs, and any other data observed during the test session. Remove anything that is not a generic placeholder. The plugin must read as if it was written without knowledge of any specific organization.
-6. Run `npm run format` then `npm run check` — all must exit 0
-7. Verify the code is clean enough to serve as a reference implementation for other agents to learn from
+6. **README verification** — open `README.md` and confirm: (a) the tool table lists every tool from `index.ts` with correct group/description/Read-Write type, (b) no `<!-- TODO -->` placeholder remains, (c) the tool count in `## Tools (N)` matches the actual count, (d) no developer boilerplate (project structure, code examples, authentication patterns). The README is the npm page — if it still says "No tools implemented yet", the plugin is not done.
+7. Run `npm run format` then `npm run check` — all must exit 0
+8. Verify the code is clean enough to serve as a reference implementation for other agents to learn from
 
 ### Final Verification Gate
 
@@ -770,6 +771,7 @@ Only after multiple genuine attempts across these techniques should you remove t
 5. **Round-trip chains tested** — at least one write→read chain was verified (e.g., list→get, or create→list to confirm).
 6. **No Zod `z.unknown()` in output schemas** — this produces empty JSON Schema `{}` that MCP clients reject. Use concrete types (`z.string()`, `z.array(z.string())`, `z.record(z.string(), z.string())`, etc.).
 7. **All optional input parameters have working defaults** — tools work when called with only required parameters (no "variable X of required type Y was not provided" errors).
+8. **README is complete** — `README.md` contains the tool table with every tool listed (grouped, with Read/Write type), install/setup instructions, and no scaffold placeholders or developer boilerplate.
 
 **When you say "done", the plugin is production-ready. No cleanup pass needed. No review requested. Done means done.**
 

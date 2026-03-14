@@ -9,7 +9,10 @@ import type { MockInstance } from 'vitest';
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
   buildDirectLookupCandidates,
+  findPluginDir,
+  pluginNameFromPackage,
   readLocalPluginInfo,
+  readPluginConfigSchema,
   removeFromLocalPlugins,
   resolvePackageName,
   scanNpmPlugins,
@@ -542,5 +545,147 @@ describe('scanNpmPlugins', () => {
     const entries = await scanNpmPlugins();
 
     expect(entries).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pluginNameFromPackage
+// ---------------------------------------------------------------------------
+
+describe('pluginNameFromPackage', () => {
+  test('strips opentabs-plugin- prefix from unscoped package', () => {
+    expect(pluginNameFromPackage('opentabs-plugin-slack')).toBe('slack');
+  });
+
+  test('strips prefix from official scoped package', () => {
+    expect(pluginNameFromPackage('@opentabs-dev/opentabs-plugin-slack')).toBe('slack');
+  });
+
+  test('includes scope for non-official scoped package', () => {
+    expect(pluginNameFromPackage('@myorg/opentabs-plugin-jira')).toBe('myorg-jira');
+  });
+
+  test('returns name as-is when no prefix matches', () => {
+    expect(pluginNameFromPackage('some-package')).toBe('some-package');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readPluginConfigSchema
+// ---------------------------------------------------------------------------
+
+describe('readPluginConfigSchema', () => {
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = mkdtempSync(join(tmpdir(), 'opentabs-configschema-test-'));
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  test('reads configSchema from dist/tools.json', async () => {
+    const pluginDir = join(testDir, 'my-plugin');
+    mkdirSync(join(pluginDir, 'dist'), { recursive: true });
+    const schema = { instanceUrl: { type: 'url', label: 'Instance URL', required: true } };
+    await writeFile(
+      join(pluginDir, 'dist', 'tools.json'),
+      JSON.stringify({ tools: [], configSchema: schema }),
+      'utf-8',
+    );
+
+    const result = await readPluginConfigSchema(pluginDir);
+
+    expect(result).toEqual(schema);
+  });
+
+  test('returns null when dist/tools.json is missing', async () => {
+    const pluginDir = join(testDir, 'missing-plugin');
+    mkdirSync(pluginDir, { recursive: true });
+
+    const result = await readPluginConfigSchema(pluginDir);
+
+    expect(result).toBeNull();
+  });
+
+  test('returns null when configSchema is absent from tools.json', async () => {
+    const pluginDir = join(testDir, 'no-schema');
+    mkdirSync(join(pluginDir, 'dist'), { recursive: true });
+    await writeFile(join(pluginDir, 'dist', 'tools.json'), JSON.stringify({ tools: [] }), 'utf-8');
+
+    const result = await readPluginConfigSchema(pluginDir);
+
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findPluginDir
+// ---------------------------------------------------------------------------
+
+describe('findPluginDir', () => {
+  let testDir: string;
+  const savedConfigDir = process.env.OPENTABS_CONFIG_DIR;
+
+  beforeEach(() => {
+    testDir = mkdtempSync(join(tmpdir(), 'opentabs-findplugin-test-'));
+    process.env.OPENTABS_CONFIG_DIR = testDir;
+    vi.mocked(spawn).mockReset();
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+    if (savedConfigDir !== undefined) {
+      process.env.OPENTABS_CONFIG_DIR = savedConfigDir;
+    } else {
+      delete process.env.OPENTABS_CONFIG_DIR;
+    }
+  });
+
+  test('finds plugin in local plugins by short name', async () => {
+    const pluginDir = join(testDir, 'my-plugin');
+    mkdirSync(pluginDir, { recursive: true });
+    await writeFile(join(pluginDir, 'package.json'), JSON.stringify({ name: 'opentabs-plugin-myapp' }), 'utf-8');
+    await writeFile(join(testDir, 'config.json'), JSON.stringify({ localPlugins: [pluginDir] }), 'utf-8');
+
+    const result = await findPluginDir('myapp');
+
+    expect(result).not.toBeNull();
+    expect(result?.shortName).toBe('myapp');
+    expect(result?.dir).toBe(pluginDir);
+  });
+
+  test('finds plugin in global npm by shorthand name', async () => {
+    const globalRoot = join(testDir, 'global');
+    const pluginDir = join(globalRoot, '@opentabs-dev', 'opentabs-plugin-slack');
+    mkdirSync(pluginDir, { recursive: true });
+    await writeFile(
+      join(pluginDir, 'package.json'),
+      JSON.stringify({ name: '@opentabs-dev/opentabs-plugin-slack' }),
+      'utf-8',
+    );
+    // No config.json → no local plugins
+    await writeFile(join(testDir, 'config.json'), JSON.stringify({}), 'utf-8');
+
+    // Mock npm root -g
+    vi.mocked(spawn).mockImplementation(() => createMockChild(0, `${globalRoot}\n`) as ReturnType<typeof spawn>);
+
+    const result = await findPluginDir('slack');
+
+    expect(result).not.toBeNull();
+    expect(result?.shortName).toBe('slack');
+    expect(result?.packageName).toBe('@opentabs-dev/opentabs-plugin-slack');
+  });
+
+  test('returns null when plugin is not found', async () => {
+    await writeFile(join(testDir, 'config.json'), JSON.stringify({}), 'utf-8');
+    vi.mocked(spawn).mockImplementation(
+      () => createMockChild(0, `${join(testDir, 'global')}\n`) as ReturnType<typeof spawn>,
+    );
+
+    const result = await findPluginDir('nonexistent');
+
+    expect(result).toBeNull();
   });
 });

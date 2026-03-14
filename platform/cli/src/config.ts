@@ -160,3 +160,12 @@ export const isConnectionRefused = (err: unknown): boolean => {
   const cause = (err as TypeError & { cause?: { code?: string } }).cause;
   return cause?.code === 'ECONNREFUSED';
 };
+
+/** Read settings for a specific plugin from a raw config object. */
+export const getPluginSettings = (config: Record<string, unknown>, pluginName: string): Record<string, unknown> => {
+  const settings = config.settings;
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return {};
+  const pluginSettings = (settings as Record<string, unknown>)[pluginName];
+  if (!pluginSettings || typeof pluginSettings !== 'object' || Array.isArray(pluginSettings)) return {};
+  return pluginSettings as Record<string, unknown>;
+};

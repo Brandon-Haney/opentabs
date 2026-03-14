@@ -1,11 +1,14 @@
 /**
- * `opentabs plugin` command — plugin management (create, search, install, remove, list).
+ * `opentabs plugin` command — plugin management (create, search, install, remove, list, configure).
  */
 
 import { spawn, spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import {
+  type ConfigSchema,
+  type ConfigSettingDefinition,
   DEFAULT_HOST,
   normalizePluginName,
   PLUGIN_PREFIX,
@@ -20,6 +23,7 @@ import {
   atomicWriteConfig,
   getConfigPath,
   getLocalPluginsFromConfig,
+  getPluginSettings,
   isConnectionRefused,
   readAuthSecret,
   readConfig,
@@ -653,6 +657,262 @@ const handlePluginList = async (options: PluginListOptions): Promise<void> => {
   }
 };
 
+// --- Configure handler ---
+
+/**
+ * Derive the short plugin name from a package name.
+ * Mirrors pluginNameFromPackage in mcp-server/src/loader.ts.
+ */
+const pluginNameFromPackage = (pkgName: string): string => {
+  const prefixPattern = new RegExp(`^${PLUGIN_PREFIX}`);
+  if (pkgName.startsWith('@')) {
+    const parts = pkgName.split('/');
+    const scopePart = parts[0] ?? '';
+    const namePart = parts[1] ?? '';
+    const pluginSuffix = namePart.replace(prefixPattern, '');
+    if (scopePart === '@opentabs-dev') return pluginSuffix;
+    const scope = scopePart.slice(1);
+    return `${scope}-${pluginSuffix}`;
+  }
+  return pkgName.replace(prefixPattern, '');
+};
+
+/**
+ * Find a plugin directory on disk by scanning local plugins and global npm.
+ * Returns the absolute path to the plugin directory and the package name, or null.
+ */
+const findPluginDir = async (name: string): Promise<{ dir: string; packageName: string; shortName: string } | null> => {
+  const configPath = getConfigPath();
+  const { config } = await readConfig(configPath);
+  const localPlugins = config ? getLocalPluginsFromConfig(config) : [];
+
+  // Check local plugins first
+  for (const entry of localPlugins) {
+    const resolved = resolvePluginPath(entry, configPath);
+    try {
+      const pkgJsonText = await readFile(join(resolved, 'package.json'), 'utf-8');
+      const pkgJson = JSON.parse(pkgJsonText) as Record<string, unknown>;
+      const pkgName = typeof pkgJson.name === 'string' ? pkgJson.name : null;
+      if (!pkgName) continue;
+      const shortName = pluginNameFromPackage(pkgName);
+      if (shortName === name || pkgName === name) {
+        return { dir: resolved, packageName: pkgName, shortName };
+      }
+    } catch {
+      // Skip unreadable local plugins
+    }
+  }
+
+  // Check global npm
+  try {
+    const rootResult = await spawnProcessAsync(platformExec('npm'), ['root', '-g']);
+    if (rootResult.exitCode !== 0) return null;
+    const globalRoot = rootResult.stdout.trim();
+
+    // Try candidate package names
+    const candidates = resolvePluginPackageCandidates(name);
+    for (const candidate of candidates) {
+      const pluginDir = join(globalRoot, candidate);
+      try {
+        const pkgJsonText = await readFile(join(pluginDir, 'package.json'), 'utf-8');
+        const pkgJson = JSON.parse(pkgJsonText) as Record<string, unknown>;
+        const pkgName = typeof pkgJson.name === 'string' ? pkgJson.name : candidate;
+        return { dir: pluginDir, packageName: pkgName, shortName: pluginNameFromPackage(pkgName) };
+      } catch {
+        // Package not installed at this candidate path
+      }
+    }
+  } catch {
+    // npm not available
+  }
+
+  return null;
+};
+
+/**
+ * Read configSchema from a plugin's dist/tools.json manifest.
+ */
+const readPluginConfigSchema = async (pluginDir: string): Promise<ConfigSchema | null> => {
+  try {
+    const toolsJsonPath = join(pluginDir, 'dist', TOOLS_FILENAME);
+    const manifest = JSON.parse(await readFile(toolsJsonPath, 'utf-8')) as Record<string, unknown>;
+    const configSchema = manifest.configSchema;
+    if (!configSchema || typeof configSchema !== 'object' || Array.isArray(configSchema)) return null;
+    return configSchema as ConfigSchema;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Prompt for a single field value using readline.
+ */
+const promptField = async (
+  rl: ReturnType<typeof createInterface>,
+  key: string,
+  definition: ConfigSettingDefinition,
+  currentValue: unknown,
+): Promise<string | number | boolean | undefined> => {
+  const label = definition.label || key;
+  const required = definition.required === true;
+  const hasCurrentValue = currentValue !== undefined && currentValue !== null;
+
+  console.log();
+  console.log(`  ${pc.bold(label)}${required ? pc.red(' *') : ''}`);
+  if (definition.description) {
+    console.log(`  ${pc.dim(definition.description)}`);
+  }
+
+  if (definition.type === 'select' && definition.options) {
+    console.log(`  ${pc.dim('Options:')}`);
+    for (let i = 0; i < definition.options.length; i++) {
+      const marker = currentValue === definition.options[i] ? pc.green('→') : ' ';
+      console.log(`  ${marker} ${(i + 1).toString()}) ${definition.options[i]}`);
+    }
+    const hint = hasCurrentValue ? `current: ${String(currentValue)}` : (definition.placeholder ?? '');
+    const prompt = hint
+      ? `  Enter choice (1-${definition.options.length}) [${hint}]: `
+      : `  Enter choice (1-${definition.options.length}): `;
+
+    while (true) {
+      const answer = await rl.question(prompt);
+      if (answer.trim() === '' && hasCurrentValue) return currentValue as string;
+      if (answer.trim() === '' && !required) return undefined;
+      const num = parseInt(answer.trim(), 10);
+      if (num >= 1 && num <= definition.options.length) {
+        return definition.options[num - 1];
+      }
+      // Allow typing the option value directly
+      if (definition.options.includes(answer.trim())) {
+        return answer.trim();
+      }
+      console.log(pc.red(`  Invalid choice. Enter a number between 1 and ${definition.options.length}.`));
+    }
+  }
+
+  if (definition.type === 'boolean') {
+    const currentDisplay = hasCurrentValue ? (currentValue ? 'yes' : 'no') : '';
+    const hint = currentDisplay || 'yes/no';
+    const prompt = `  (${hint}): `;
+
+    while (true) {
+      const answer = await rl.question(prompt);
+      if (answer.trim() === '' && hasCurrentValue) return currentValue as boolean;
+      if (answer.trim() === '' && !required) return undefined;
+      const lower = answer.trim().toLowerCase();
+      if (['yes', 'y', 'true', '1'].includes(lower)) return true;
+      if (['no', 'n', 'false', '0'].includes(lower)) return false;
+      console.log(pc.red('  Enter yes or no.'));
+    }
+  }
+
+  if (definition.type === 'number') {
+    const hint = hasCurrentValue ? String(currentValue) : (definition.placeholder ?? '');
+    const prompt = hint ? `  Value [${hint}]: ` : '  Value: ';
+
+    while (true) {
+      const answer = await rl.question(prompt);
+      if (answer.trim() === '' && hasCurrentValue) return currentValue as number;
+      if (answer.trim() === '' && !required) return undefined;
+      if (answer.trim() === '' && required) {
+        console.log(pc.red('  This field is required.'));
+        continue;
+      }
+      const num = Number(answer.trim());
+      if (!Number.isNaN(num)) return num;
+      console.log(pc.red('  Enter a valid number.'));
+    }
+  }
+
+  // url or string
+  const hint = hasCurrentValue ? String(currentValue) : (definition.placeholder ?? '');
+  const prompt = hint ? `  Value [${hint}]: ` : '  Value: ';
+
+  while (true) {
+    const answer = await rl.question(prompt);
+    if (answer.trim() === '' && hasCurrentValue) return currentValue as string;
+    if (answer.trim() === '' && !required) return undefined;
+    if (answer.trim() === '' && required) {
+      console.log(pc.red('  This field is required.'));
+      continue;
+    }
+    if (definition.type === 'url') {
+      try {
+        new URL(answer.trim());
+      } catch {
+        console.log(pc.red('  Invalid URL. Enter a valid URL (e.g., https://example.com).'));
+        continue;
+      }
+    }
+    return answer.trim();
+  }
+};
+
+const handlePluginConfigure = async (name: string, options: { port?: number }): Promise<void> => {
+  const found = await findPluginDir(name);
+  if (!found) {
+    console.error(pc.red(`Plugin "${name}" is not installed.`));
+    console.error(`Install it first: ${pc.cyan(`opentabs plugin install ${name}`)}`);
+    process.exit(1);
+  }
+
+  const configSchema = await readPluginConfigSchema(found.dir);
+  if (!configSchema || Object.keys(configSchema).length === 0) {
+    console.error(pc.red(`Plugin "${found.shortName}" does not have any configurable settings.`));
+    process.exit(1);
+  }
+
+  const configPath = getConfigPath();
+  const { config } = await readConfig(configPath);
+  const currentSettings = config ? getPluginSettings(config, found.shortName) : {};
+
+  console.log();
+  console.log(`Configuring ${pc.bold(found.shortName)}`);
+  console.log(pc.dim('Press Enter to keep the current value. Required fields are marked with *'));
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const newSettings: Record<string, unknown> = {};
+
+  try {
+    for (const [key, definition] of Object.entries(configSchema)) {
+      const value = await promptField(rl, key, definition, currentSettings[key]);
+      if (value !== undefined) {
+        newSettings[key] = value;
+      }
+    }
+  } finally {
+    rl.close();
+  }
+
+  // Save settings to config.json
+  const saveResult = await readConfig(configPath);
+  const saveConfig = saveResult.config ?? {};
+
+  if (!saveConfig.settings || typeof saveConfig.settings !== 'object' || Array.isArray(saveConfig.settings)) {
+    saveConfig.settings = {};
+  }
+  const settingsMap = saveConfig.settings as Record<string, unknown>;
+
+  if (Object.keys(newSettings).length > 0) {
+    settingsMap[found.shortName] = newSettings;
+  } else {
+    delete settingsMap[found.shortName];
+  }
+
+  // Clean up empty settings map
+  if (Object.keys(settingsMap).length === 0) {
+    delete saveConfig.settings;
+  }
+
+  await atomicWriteConfig(configPath, `${JSON.stringify(saveConfig, null, 2)}\n`);
+
+  console.log();
+  console.log(pc.green('Settings saved.'));
+
+  // Notify server (best-effort)
+  await notifyServer({ port: options.port, warnIfNotRunning: true });
+};
+
 // --- Command registration ---
 
 const registerPluginCommand = (program: Command): void => {
@@ -730,6 +990,22 @@ Examples:
     .action((name: string, _options: unknown, command: Command) => handlePluginRemove(name, command.optsWithGlobals()));
 
   pluginCmd
+    .command('configure')
+    .alias('config')
+    .description('Configure plugin settings (e.g., instance URL for self-hosted tools)')
+    .argument('<name>', 'Plugin name (e.g., sqlpad, github)')
+    .addHelpText(
+      'after',
+      `
+Examples:
+  $ opentabs plugin configure sqlpad
+  $ opentabs plugin configure github`,
+    )
+    .action((name: string, _options: unknown, command: Command) =>
+      handlePluginConfigure(name, command.optsWithGlobals()),
+    );
+
+  pluginCmd
     .command('create')
     .description('Scaffold a new plugin project')
     .argument('[name]', 'Plugin name (lowercase alphanumeric + hyphens)')
@@ -771,4 +1047,8 @@ export {
   buildDirectLookupCandidates,
   scanNpmPlugins,
   readLocalPluginInfo,
+  findPluginDir,
+  readPluginConfigSchema,
+  pluginNameFromPackage,
+  handlePluginConfigure,
 };

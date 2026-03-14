@@ -6,6 +6,7 @@ import { afterAll, afterEach, describe, expect, test } from 'vitest';
 import {
   ensureAuthSecret,
   getLocalPluginsFromConfig,
+  getPluginSettings,
   isConnectionRefused,
   parsePidFile,
   readConfig,
@@ -292,6 +293,38 @@ describe('ensureAuthSecret', () => {
     const secret = await ensureAuthSecret();
     expect(typeof secret).toBe('string');
     expect(secret.length).toBe(64);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getPluginSettings
+// ---------------------------------------------------------------------------
+
+describe('getPluginSettings', () => {
+  test('returns plugin settings from config', () => {
+    const config = { settings: { slack: { instanceUrl: 'https://slack.example.com' } } };
+    expect(getPluginSettings(config, 'slack')).toEqual({ instanceUrl: 'https://slack.example.com' });
+  });
+
+  test('returns empty object when plugin has no settings', () => {
+    const config = { settings: { slack: { instanceUrl: 'https://slack.example.com' } } };
+    expect(getPluginSettings(config, 'github')).toEqual({});
+  });
+
+  test('returns empty object when settings key is missing', () => {
+    expect(getPluginSettings({}, 'slack')).toEqual({});
+  });
+
+  test('returns empty object when settings is not an object', () => {
+    expect(getPluginSettings({ settings: 'bad' }, 'slack')).toEqual({});
+    expect(getPluginSettings({ settings: null }, 'slack')).toEqual({});
+    expect(getPluginSettings({ settings: [1, 2] }, 'slack')).toEqual({});
+  });
+
+  test('returns empty object when plugin settings is not an object', () => {
+    expect(getPluginSettings({ settings: { slack: 'bad' } }, 'slack')).toEqual({});
+    expect(getPluginSettings({ settings: { slack: null } }, 'slack')).toEqual({});
+    expect(getPluginSettings({ settings: { slack: [1] } }, 'slack')).toEqual({});
   });
 });
 

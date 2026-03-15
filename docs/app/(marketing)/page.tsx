@@ -107,16 +107,23 @@ export default function Home() {
             <br />
             already logged in
           </Text>
+          <p className="mx-auto mb-4 max-w-xl font-medium text-foreground text-sm">
+            This is not another Playwright wrapper. Chrome&apos;s{' '}
+            <Link
+              href="https://developer.chrome.com/blog/webmcp-epp"
+              target="_blank"
+              className="underline underline-offset-4">
+              WebMCP
+            </Link>{' '}
+            is heading in the right direction, but it requires every web service to opt in — and that will take years. We
+            didn&apos;t wait. We reverse-engineered the internal APIs that web apps already use and exposed them as MCP
+            tools today. No screenshots. No DOM. No guessing.
+          </p>
           <p className="mx-auto mb-4 max-w-xl text-lg text-muted-foreground">
-            Most MCP servers ask for your API keys. I thought that was a bit odd. You&apos;re already logged into Slack,
-            GitHub, Jira, and a dozen other apps in Chrome.
+            Most MCP servers ask for your API keys. You&apos;re already logged into Slack, GitHub, Jira, and a dozen
+            other apps in Chrome.
           </p>
-          <p className="mx-auto mb-4 max-w-xl font-medium text-foreground text-lg">Let your AI use them.</p>
-          <p className="mx-auto mb-10 max-w-xl text-muted-foreground text-sm">
-            This is not another Playwright wrapper. We reverse-engineered the internal APIs that web apps use and exposed them as
-            MCP tools. Your AI calls the same backend endpoints the frontend calls — through your session. No screenshots.
-            No DOM. No guessing.
-          </p>
+          <p className="mx-auto mb-10 max-w-xl font-medium text-foreground text-lg">Let your AI use them.</p>
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link href="/docs/quick-start" passHref>
               <Button>Get Started</Button>
@@ -360,11 +367,12 @@ export default function Home() {
                 className="underline underline-offset-4">
                 Chrome&apos;s WebMCP
               </Link>{' '}
-              is a proposal where websites expose structured MCP tools natively in the browser. I think it&apos;s a
-              great idea — it&apos;s probably how this should work long-term. The timeline depends on web services
-              choosing to adopt it, and that kind of shift takes a while. WebMCP is in early preview today. OpenTabs
-              works right now, with the apps you already use, in about five minutes. If WebMCP becomes widespread,
-              OpenTabs plugins can evolve to use it.
+              is the reactive version of the same idea — websites opt in and expose structured tools to AI agents
+              natively. I think it&apos;s the right long-term direction. But adoption depends on every web service
+              choosing to participate, deciding which features to expose, and rolling it out. That takes years, and even
+              then you&apos;re limited to what each service decides to surface. OpenTabs is the proactive version.
+              Instead of waiting, we reverse-engineer the APIs and expose them today. If WebMCP becomes widespread,
+              OpenTabs plugins can evolve to use it — but you don&apos;t have to wait.
             </p>
           </div>
         </div>

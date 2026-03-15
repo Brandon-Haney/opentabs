@@ -2,6 +2,8 @@
 
 **Your browser is already logged in. Let your AI use it.**
 
+**This is not another Playwright wrapper.** Chrome's [WebMCP](https://developer.chrome.com/blog/webmcp-epp) is heading in the right direction — websites exposing structured tools to AI agents — but it requires every web service to opt in, and that will take years. OpenTabs doesn't wait. We reverse-engineered the internal APIs that web apps already use behind the scenes and exposed them as [MCP tools](https://modelcontextprotocol.io/) today. Your AI calls the same backend endpoints the web app's own frontend calls — running in your browser, through your existing session. No screenshots. No DOM scraping. No pixel-guessing.
+
 Here's Claude checking a Robinhood portfolio, ordering from Panda Express, and sending a Discord message — all through the browser, in one shot:
 
 <p align="center">
@@ -10,9 +12,7 @@ Here's Claude checking a Robinhood portfolio, ordering from Panda Express, and s
   </a>
 </p>
 
-**This is not another Playwright wrapper.** We reverse-engineered the internal APIs that web apps call behind the scenes and exposed them as [MCP tools](https://modelcontextprotocol.io/). Your AI calls the same backend endpoints the web app's own frontend uses — running in your browser, through your existing session.
-
-No screenshots. No DOM scraping. No pixel-guessing. `discord_send_message` hits Discord's real backend — fast, deterministic, cheap on tokens, and the knowledge gets packaged into a reusable plugin anyone can install.
+`discord_send_message` hits Discord's real backend — fast, deterministic, cheap on tokens, and the knowledge gets packaged into a reusable plugin anyone can install.
 
 ## How It Works
 
@@ -121,9 +121,9 @@ OpenTabs plugins call the web app's internal APIs directly. A send-message tool 
 
 **What about Chrome's WebMCP?**
 
-[Chrome's WebMCP](https://developer.chrome.com/blog/webmcp-epp) is a proposal where websites expose structured MCP tools natively in the browser. I think it's a great idea — it's probably how this should work long-term.
+[Chrome's WebMCP](https://developer.chrome.com/blog/webmcp-epp) is the reactive version of the same idea — websites opt in and expose structured tools to AI agents natively. I think it's the right long-term direction. But adoption depends on every web service choosing to participate, deciding which features to expose, and rolling it out. That takes years, and even then you're limited to what each service decides to surface.
 
-The timeline depends on web services choosing to adopt it, and that kind of shift takes a while. WebMCP is in early preview today. OpenTabs works right now, with the apps you already use, in about five minutes. If WebMCP becomes widespread, OpenTabs plugins can evolve to use it.
+OpenTabs is the proactive version. Instead of waiting for websites to expose their APIs, we reverse-engineer them and expose them today. If WebMCP becomes widespread, OpenTabs plugins can evolve to use it — but you don't have to wait.
 
 ## How This Was Built
 

@@ -59,7 +59,19 @@ const spawnProcessAsync = (cmd: string, args: string[]): Promise<SpawnResult> =>
     const stderrChunks: Buffer[] = [];
     child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
     child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
-    child.on('error', reject);
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EINVAL') {
+        reject(
+          new Error(
+            `Failed to spawn '${cmd}': invalid argument (EINVAL). ` +
+              `This typically happens on Windows when environment variables contain invalid values. ` +
+              `Try running in a clean terminal.`,
+          ),
+        );
+      } else {
+        reject(err);
+      }
+    });
     child.on('close', code => {
       resolve({
         exitCode: code ?? 1,
@@ -72,7 +84,19 @@ const spawnProcessAsync = (cmd: string, args: string[]): Promise<SpawnResult> =>
 const spawnInherit = (cmd: string, args: string[]): Promise<number> =>
   new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: 'inherit' });
-    child.on('error', reject);
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EINVAL') {
+        reject(
+          new Error(
+            `Failed to spawn '${cmd}': invalid argument (EINVAL). ` +
+              `This typically happens on Windows when environment variables contain invalid values. ` +
+              `Try running in a clean terminal.`,
+          ),
+        );
+      } else {
+        reject(err);
+      }
+    });
     child.on('close', code => resolve(code ?? 1));
   });
 

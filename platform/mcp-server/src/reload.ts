@@ -264,6 +264,12 @@ const reloadCore = async ({ state, sessionServers, transports }: ReloadCoreArgs)
     // This ensures an atomic swap: if any step throws, state retains its previous values.
     const newRegistry = registry;
     const newPluginPermissions = { ...config.permissions };
+    // Preserve the in-memory browser permission when the disk config has no
+    // browser entry. The browser permission may have been set at runtime via
+    // the extension or MCP and not yet flushed to disk.
+    if (!newPluginPermissions.browser && state.pluginPermissions.browser) {
+      newPluginPermissions.browser = state.pluginPermissions.browser;
+    }
     const newPluginSettings = { ...config.settings };
     const newPluginPaths = [...config.localPlugins];
     const newDiscoveryErrors = errors;

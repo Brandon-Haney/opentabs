@@ -52,7 +52,19 @@ const spawnStreaming = (
     return Readable.toWeb(readable) as unknown as ReadableStream<Uint8Array>;
   };
   const exited = new Promise<number>((resolve, reject) => {
-    child.on('error', reject);
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EINVAL') {
+        reject(
+          new Error(
+            `Failed to start server: invalid argument (EINVAL). ` +
+              `This typically happens on Windows when environment variables contain invalid values. ` +
+              `Try running in a clean terminal or check your system PATH.`,
+          ),
+        );
+      } else {
+        reject(err);
+      }
+    });
     child.on('close', code => resolve(code ?? 1));
   });
   return {
@@ -361,6 +373,17 @@ const handleStart = async (options: StartOptions): Promise<void> => {
       detached: true,
     });
     child.unref();
+
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EINVAL') {
+        console.error(pc.red('Error: Failed to start server: invalid argument (EINVAL).'));
+        console.error(pc.dim('This typically happens on Windows when environment variables contain invalid values.'));
+        console.error(pc.dim('Try running in a clean terminal or check your system PATH.'));
+      } else {
+        console.error(pc.red(`Error: Failed to start server: ${err.message}`));
+      }
+      process.exit(1);
+    });
 
     const pid = child.pid;
     if (pid === undefined) {

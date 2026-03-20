@@ -24,7 +24,24 @@ interface OutlookAuth {
 }
 
 /**
+ * Scopes required for mail operations. A token must include at least one of these
+ * to be usable for reading/sending mail.
+ */
+const MAIL_SCOPES = ['mail.read', 'mail.readwrite', 'mail.send'];
+
+/**
+ * Check whether a token's target scopes include at least one mail-related scope.
+ */
+const hasMailScope = (target: string): boolean => {
+  const lower = target.toLowerCase();
+  return MAIL_SCOPES.some(scope => lower.includes(scope));
+};
+
+/**
  * Search MSAL v2 token cache for a valid access token matching a target scope pattern.
+ * When matching Graph API tokens, also verifies the token has mail scopes — some
+ * enterprise tenants issue Graph tokens with User.Read but without Mail.Read, which
+ * causes 403 errors on /me/messages endpoints.
  */
 const findMsalV2Token = (clientId: string, scopeMatch: string): OutlookAuth | null => {
   const tokenKeysRaw = getLocalStorage(`msal.2.token.keys.${clientId}`);
@@ -51,6 +68,13 @@ const findMsalV2Token = (clientId: string, scopeMatch: string): OutlookAuth | nu
 
       const expiresOn = Number.parseInt(parsed.expiresOn, 10);
       if (expiresOn && expiresOn * 1000 < Date.now()) continue;
+
+      // For Graph API tokens, verify mail scopes are present.
+      // Enterprise tenants may have a Graph token with only User.Read that will
+      // 403 on mail endpoints. Skip it so we fall through to the Outlook REST token.
+      if (scopeMatch.includes('graph.microsoft.com') && !hasMailScope(target)) {
+        continue;
+      }
 
       const apiBase = scopeMatch.includes('graph.microsoft.com') ? GRAPH_API_BASE : OUTLOOK_API_BASE;
       return { token: parsed.secret, apiBase };

@@ -1,5 +1,5 @@
 import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
-import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
+import type { ConfigSchema, ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import { isAuthenticated, waitForAuth } from './gitlab-api.js';
 import { createIssue } from './tools/create-issue.js';
 import { createMergeRequest } from './tools/create-merge-request.js';
@@ -30,6 +30,16 @@ class GitLabPlugin extends OpenTabsPlugin {
   override readonly displayName = 'GitLab';
   readonly urlPatterns = ['*://gitlab.com/*'];
   override readonly homepage = 'https://gitlab.com';
+  override readonly configSchema: ConfigSchema = {
+    instanceUrl: {
+      type: 'url' as const,
+      label: 'GitLab URL',
+      description:
+        'The URL of your self-hosted GitLab instance (e.g., https://gitlab.example.com). Leave empty to use gitlab.com.',
+      required: false,
+      placeholder: 'https://gitlab.example.com',
+    },
+  };
   readonly tools: ToolDefinition[] = [
     // Projects
     listProjects,

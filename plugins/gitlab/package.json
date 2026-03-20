@@ -22,7 +22,16 @@
     "urlPatterns": [
       "*://gitlab.com/*"
     ],
-    "homepage": "https://gitlab.com"
+    "homepage": "https://gitlab.com",
+    "configSchema": {
+      "instanceUrl": {
+        "type": "url",
+        "label": "GitLab URL",
+        "description": "The URL of your self-hosted GitLab instance (e.g., https://gitlab.example.com). Leave empty to use gitlab.com.",
+        "required": false,
+        "placeholder": "https://gitlab.example.com"
+      }
+    }
   },
   "exports": {
     ".": {

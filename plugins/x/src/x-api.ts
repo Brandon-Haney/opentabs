@@ -1,4 +1,4 @@
-import { ToolError, getCookie, getPageGlobal, parseRetryAfterMs, waitUntil } from '@opentabs-dev/plugin-sdk';
+import { ToolError, getCookie, getPageGlobal, log, parseRetryAfterMs, waitUntil } from '@opentabs-dev/plugin-sdk';
 
 /** Static bearer token for X web client — same for all users, embedded in the JS bundle. */
 const BEARER_TOKEN =
@@ -63,6 +63,60 @@ const USER_FEATURES: Record<string, boolean> = {
   responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
   responsive_web_graphql_timeline_navigation_enabled: true,
 };
+
+// ---------------------------------------------------------------------------
+// Client transaction ID signing (required by some endpoints like SearchTimeline)
+// ---------------------------------------------------------------------------
+
+/** Monotonically incrementing counter for unique webpack chunk probe IDs. */
+let probeCounter = 0;
+
+/** Cached signing function from X's internal module. */
+let cachedSignFn: ((host: string, path: string, method: string) => Promise<string>) | null = null;
+
+/** Get the transaction ID signing function from X's webpack module system. */
+const getSignFn = (): typeof cachedSignFn => {
+  if (cachedSignFn) return cachedSignFn;
+  try {
+    let requireFn: ((id: number) => Record<string, unknown>) | null = null;
+    const chunks = (globalThis as Record<string, unknown>).webpackChunk_twitter_responsive_web as
+      | Array<unknown>
+      | undefined;
+    if (!chunks || !Array.isArray(chunks)) return null;
+    (chunks as { push: (entry: unknown) => void }).push([
+      [`__ot_sign_${++probeCounter}`],
+      {},
+      (req: (id: number) => Record<string, unknown>) => {
+        requireFn = req;
+      },
+    ]);
+    if (!requireFn) return null;
+    const mod = (requireFn as (id: number) => Record<string, unknown>)(938838);
+    const jJ = mod.jJ as typeof cachedSignFn;
+    if (typeof jJ === 'function') {
+      cachedSignFn = jJ;
+      return cachedSignFn;
+    }
+  } catch {
+    log.debug('Could not load X transaction ID signing module');
+  }
+  return null;
+};
+
+/** Generate a signed x-client-transaction-id header value. */
+const getTransactionId = async (path: string, method: string): Promise<string | null> => {
+  const signFn = getSignFn();
+  if (!signFn) return null;
+  try {
+    return await signFn('x.com', path, method);
+  } catch {
+    return null;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// GraphQL operation discovery
+// ---------------------------------------------------------------------------
 
 /** GraphQL operation IDs — extracted from the X web client JS bundle at runtime. */
 const OPS: Record<string, string> = {};
@@ -158,7 +212,7 @@ const classifyError = async (response: Response, operation: string): Promise<nev
 export const graphqlQuery = async <T>(
   operation: string,
   variables: Record<string, unknown>,
-  options?: { features?: Record<string, boolean>; fieldToggles?: Record<string, boolean> },
+  options?: { features?: Record<string, boolean>; fieldToggles?: Record<string, boolean>; signed?: boolean },
 ): Promise<T> => {
   const hash = getOpHash(operation);
   const params = new URLSearchParams();
@@ -168,10 +222,18 @@ export const graphqlQuery = async <T>(
     params.set('fieldToggles', JSON.stringify(options.fieldToggles));
   }
 
+  const path = `${GRAPHQL_BASE}/${hash}/${operation}`;
+  const headers = getHeaders();
+
+  if (options?.signed) {
+    const txId = await getTransactionId(`/i/api/graphql/${hash}/${operation}`, 'GET');
+    if (txId) headers['x-client-transaction-id'] = txId;
+  }
+
   let response: Response;
   try {
-    response = await fetch(`${GRAPHQL_BASE}/${hash}/${operation}?${params.toString()}`, {
-      headers: getHeaders(),
+    response = await fetch(`${path}?${params.toString()}`, {
+      headers,
       credentials: 'include',
       signal: AbortSignal.timeout(30_000),
     });

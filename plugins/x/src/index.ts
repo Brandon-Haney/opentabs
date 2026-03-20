@@ -31,6 +31,7 @@ import { removeBookmark } from './tools/remove-bookmark.js';
 // Bookmarks & Explore
 import { getBookmarks } from './tools/get-bookmarks.js';
 import { getTrending } from './tools/get-trending.js';
+import { searchTweets } from './tools/search-tweets.js';
 
 // Lists
 import { getList } from './tools/get-list.js';
@@ -75,6 +76,7 @@ class XPlugin extends OpenTabsPlugin {
     // Bookmarks & Explore
     getBookmarks,
     getTrending,
+    searchTweets,
     // Lists
     getList,
     createList,

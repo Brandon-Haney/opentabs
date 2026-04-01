@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { hasGraphAuth, isSharePoint, sharepointGetRange, workbookApi } from '../excel-api.js';
 import type { RawRange } from './schemas.js';
 import { rangeSchema, mapRange } from './schemas.js';
 
@@ -18,6 +18,20 @@ export const getRange = defineTool({
   }),
   output: z.object({ range: rangeSchema }),
   handle: async params => {
+    if (isSharePoint() && !hasGraphAuth()) {
+      const data = await sharepointGetRange(params.address, params.worksheet);
+      return {
+        range: {
+          address: data.address || `${params.worksheet}!${params.address}`,
+          row_count: data.values.length,
+          column_count: data.values[0]?.length ?? 0,
+          values: data.values,
+          formulas: [],
+          text: data.values.map(row => row.map(v => String(v ?? ''))),
+          number_format: [],
+        },
+      };
+    }
     const data = await workbookApi<RawRange>(
       `/worksheets('${encodeURIComponent(params.worksheet)}')/range(address='${encodeURIComponent(params.address)}')`,
     );

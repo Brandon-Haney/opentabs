@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { requireGraphAuth, workbookApi } from '../excel-api.js';
 import type { RawWorksheet } from './schemas.js';
 import { worksheetSchema, mapWorksheet } from './schemas.js';
 
@@ -17,6 +17,7 @@ export const addWorksheet = defineTool({
   }),
   output: z.object({ worksheet: worksheetSchema }),
   handle: async params => {
+    requireGraphAuth('Add Worksheet');
     const body: Record<string, unknown> = {};
     if (params.name) body.name = params.name;
     const data = await workbookApi<RawWorksheet>('/worksheets', { method: 'POST', body });

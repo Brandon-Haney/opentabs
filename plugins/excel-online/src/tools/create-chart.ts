@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { requireGraphAuth, workbookApi } from '../excel-api.js';
 import type { RawChart } from './schemas.js';
 import { chartSchema, mapChart } from './schemas.js';
 
@@ -25,6 +25,7 @@ export const createChart = defineTool({
   }),
   output: z.object({ chart: chartSchema }),
   handle: async params => {
+    requireGraphAuth('Create Chart');
     const data = await workbookApi<RawChart>(`/worksheets('${encodeURIComponent(params.worksheet)}')/charts/Add`, {
       method: 'POST',
       body: {

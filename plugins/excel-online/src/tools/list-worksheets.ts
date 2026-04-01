@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { hasGraphAuth, isSharePoint, sharepointGetWorksheetNames, workbookApi } from '../excel-api.js';
 import type { GraphListResponse, RawWorksheet } from './schemas.js';
 import { worksheetSchema, mapWorksheet } from './schemas.js';
 
@@ -15,6 +15,17 @@ export const listWorksheets = defineTool({
   input: z.object({}),
   output: z.object({ worksheets: z.array(worksheetSchema) }),
   handle: async () => {
+    if (isSharePoint() && !hasGraphAuth()) {
+      const names = await sharepointGetWorksheetNames();
+      return {
+        worksheets: names.map((name, i) => ({
+          id: name,
+          name,
+          position: i,
+          visibility: 'Visible',
+        })),
+      };
+    }
     const data = await workbookApi<GraphListResponse<RawWorksheet>>('/worksheets');
     return { worksheets: (data.value ?? []).map(mapWorksheet) };
   },

@@ -235,6 +235,248 @@ const injectPluginConfig = async (
 };
 
 /**
+ * Inject a token-refresh relay listener into a tab's ISOLATED world.
+ * Listens for 'opentabs:request-token-refresh' postMessages from MAIN world
+ * adapters (triggered on 401 when using a bridged Graph token) and forwards
+ * them to the background to re-read from Outlook and re-inject.
+ */
+const injectTokenRefreshRelay = async (tabId: number): Promise<void> => {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: () => {
+        const guard = '__opentabs_token_refresh_relay';
+        const win = window as unknown as Record<string, unknown>;
+        if (win[guard]) return;
+        win[guard] = true;
+
+        window.addEventListener('message', event => {
+          if (event.source !== window) return;
+          const data = event.data as Record<string, unknown> | undefined;
+          if (!data || data.type !== 'opentabs:request-token-refresh') return;
+          const plugin = data.plugin;
+          if (typeof plugin !== 'string') return;
+          chrome.runtime.sendMessage({ type: 'plugin:requestTokenRefresh', plugin }).catch(() => {});
+        });
+      },
+      args: [],
+    });
+  } catch (err) {
+    console.warn(`[opentabs] injectTokenRefreshRelay failed for tab ${String(tabId)}:`, err);
+  }
+};
+
+/**
+ * Inject an externally-sourced Graph API token into a tab's MAIN world.
+ * Sets globalThis.__openTabs.graphToken so plugins on domains with encrypted
+ * MSAL caches (e.g., SharePoint) can use it as an auth fallback.
+ */
+const injectGraphToken = async (tabId: number, token: string, expiresOn?: number): Promise<void> => {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: (t: string, exp: number | undefined) => {
+        const ot = ((globalThis as Record<string, unknown>).__openTabs ?? {}) as Record<string, unknown>;
+        (globalThis as Record<string, unknown>).__openTabs = ot;
+        ot.graphToken = { token: t, expiresOn: exp };
+      },
+      args: [token, expiresOn],
+    });
+  } catch (err) {
+    console.warn(`[opentabs] injectGraphToken failed for tab ${String(tabId)}:`, err);
+  }
+};
+
+/** URL patterns for M365 apps that store unencrypted MSAL Graph tokens. */
+const M365_TOKEN_SOURCE_PATTERNS = [
+  '*://outlook.cloud.microsoft/*',
+  '*://outlook.live.com/*',
+  '*://outlook.office.com/*',
+  '*://outlook.office365.com/*',
+  '*://teams.microsoft.com/*',
+  '*://teams.live.com/*',
+];
+
+/**
+ * Read an unencrypted Graph API access token with Files scope from an Outlook
+ * or Teams tab's localStorage. Returns null if no valid token is found.
+ * Skips expired tokens so the caller can fall back to the refresh grant.
+ */
+const readGraphTokenFromM365Tab = async (): Promise<{ token: string; expiresOn?: number } | null> => {
+  const tabIds = await queryMatchingTabIds(M365_TOKEN_SOURCE_PATTERNS);
+  if (tabIds.length === 0) return null;
+
+  for (const tabId of tabIds) {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: () => {
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key || !key.includes('accesstoken') || !key.includes('graph.microsoft.com')) continue;
+            try {
+              const parsed = JSON.parse(localStorage.getItem(key) ?? '');
+              if (!parsed.secret) continue;
+              const target: string = parsed.target ?? '';
+              if (!target.toLowerCase().includes('files.readwrite')) continue;
+              const expiresOn = Number.parseInt(parsed.expires_on ?? parsed.expiresOn, 10);
+              if (expiresOn && expiresOn < Math.floor(Date.now() / 1000)) continue;
+              return { token: parsed.secret as string, expiresOn: expiresOn || undefined };
+            } catch {
+              // Parse failed — try next entry
+            }
+          }
+          return null;
+        },
+        args: [],
+      });
+      const first = results[0] as { result?: { token: string; expiresOn?: number } | null } | undefined;
+      if (first?.result) return first.result;
+    } catch {
+      // Tab inaccessible — try next tab
+    }
+  }
+  return null;
+};
+
+/**
+ * Read the MSAL refresh token and associated metadata from an Outlook or Teams tab.
+ * Returns the refresh token, client ID, and tenant ID needed for the OAuth
+ * refresh_token grant.
+ */
+const readRefreshTokenFromM365Tab = async (): Promise<{
+  refreshToken: string;
+  clientId: string;
+  tenantId: string;
+} | null> => {
+  const tabIds = await queryMatchingTabIds(M365_TOKEN_SOURCE_PATTERNS);
+  if (tabIds.length === 0) return null;
+
+  for (const tabId of tabIds) {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: () => {
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key || !key.toLowerCase().includes('refreshtoken')) continue;
+            try {
+              const parsed = JSON.parse(localStorage.getItem(key) ?? '');
+              if (!parsed.secret || !parsed.clientId) continue;
+              // Derive tenant ID from the home_account_id (format: "uid.tid")
+              const homeAccountId: string = parsed.home_account_id ?? parsed.homeAccountId ?? '';
+              const dotIdx = homeAccountId.indexOf('.');
+              const tenantId = dotIdx > 0 ? homeAccountId.slice(dotIdx + 1) : '';
+              if (!tenantId) continue;
+              return {
+                refreshToken: parsed.secret as string,
+                clientId: parsed.clientId as string,
+                tenantId,
+              };
+            } catch {
+              // Parse failed — try next entry
+            }
+          }
+          return null;
+        },
+        args: [],
+      });
+      const first = results[0] as
+        | {
+            result?: { refreshToken: string; clientId: string; tenantId: string } | null;
+          }
+        | undefined;
+      if (first?.result) return first.result;
+    } catch {
+      // Tab inaccessible — try next tab
+    }
+  }
+  return null;
+};
+
+/**
+ * Use the OAuth refresh_token grant to get a fresh Graph API access token.
+ * Runs in the background service worker (no CORS restrictions).
+ */
+const refreshAccessTokenViaOAuth = async (
+  refreshToken: string,
+  tenantId: string,
+  clientId: string,
+): Promise<{ token: string; expiresOn: number } | null> => {
+  try {
+    const resp = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        scope: 'https://graph.microsoft.com/.default',
+      }).toString(),
+    });
+    if (!resp.ok) return null;
+    const data = (await resp.json()) as { access_token?: string; expires_in?: number };
+    if (!data.access_token) return null;
+    const expiresOn = Math.floor(Date.now() / 1000) + (data.expires_in ?? 3600);
+    return { token: data.access_token, expiresOn };
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Acquire a Graph API token with Files.ReadWrite scope from an Outlook or Teams
+ * tab. Tries the cached access token first, then falls back to the OAuth
+ * refresh_token grant for reliability.
+ */
+const acquireGraphToken = async (): Promise<{ token: string; expiresOn?: number } | null> => {
+  // Try reading a fresh access token directly
+  const existing = await readGraphTokenFromM365Tab();
+  if (existing?.expiresOn && existing.expiresOn > Math.floor(Date.now() / 1000) + 300) {
+    return existing;
+  }
+
+  // Access token expired or about to expire — use refresh_token grant
+  const refreshInfo = await readRefreshTokenFromM365Tab();
+  if (refreshInfo) {
+    const fresh = await refreshAccessTokenViaOAuth(
+      refreshInfo.refreshToken,
+      refreshInfo.tenantId,
+      refreshInfo.clientId,
+    );
+    if (fresh) return fresh;
+  }
+
+  // Fall back to the possibly-stale access token (better than nothing)
+  return existing;
+};
+
+/**
+ * Bridge a Graph API token from an Outlook/Teams tab into a SharePoint tab.
+ * SharePoint encrypts its MSAL tokens, making them unreadable by adapters.
+ * M365 apps (Outlook, Teams) store unencrypted Graph tokens with
+ * Files.ReadWrite.All scope that work for the Excel workbook API.
+ * Falls back to the OAuth refresh_token grant when the access token is expired.
+ */
+const bridgeGraphTokenIfNeeded = async (tabId: number): Promise<void> => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab.url || !/\.sharepoint\.com/i.test(tab.url)) return;
+
+    const graphToken = await acquireGraphToken();
+    if (graphToken) {
+      await injectGraphToken(tabId, graphToken.token, graphToken.expiresOn);
+    }
+  } catch {
+    // Best-effort — proceed with injection even without bridged token
+  }
+};
+
+/**
  * Inject an adapter file into a single tab via chrome.scripting.executeScript.
  *
  * Uses content-hashed filenames so each adapter version gets a unique path,
@@ -257,6 +499,16 @@ const injectAdapterFile = async (
   // Inject resolved settings into MAIN world before the adapter IIFE so
   // getConfig() returns values in onActivate and tool handlers.
   await injectPluginConfig(tabId, resolvedSettings ?? {});
+
+  // Bridge a Graph API token from Outlook for SharePoint tabs where
+  // MSAL tokens are encrypted and unreadable by the adapter.
+  await bridgeGraphTokenIfNeeded(tabId);
+
+  // Install a relay for token refresh requests from adapters on SharePoint.
+  // When a bridged token expires and the adapter gets a 401, it posts a
+  // 'opentabs:request-token-refresh' message which is forwarded to the
+  // background to re-read from Outlook and re-inject.
+  await injectTokenRefreshRelay(tabId);
 
   const adapterFile = adapterFilePath ?? `adapters/${pluginName}.js`;
   try {
@@ -611,11 +863,23 @@ const reinjectStoredPlugins = async (): Promise<void> => {
   }
 };
 
+/**
+ * Re-read the Graph token from an Outlook tab and inject it into the requesting
+ * SharePoint tab. Called when an adapter reports a 401 on a bridged token.
+ */
+const refreshGraphTokenForTab = async (tabId: number): Promise<void> => {
+  const graphToken = await acquireGraphToken();
+  if (graphToken) {
+    await injectGraphToken(tabId, graphToken.token, graphToken.expiresOn);
+  }
+};
+
 export {
   cleanupAdaptersInMatchingTabs,
   injectPluginIntoMatchingTabs,
   injectPluginsIntoTab,
   isSafePluginName,
   queryMatchingTabIds,
+  refreshGraphTokenForTab,
   reinjectStoredPlugins,
 };

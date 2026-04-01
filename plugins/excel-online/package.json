@@ -20,7 +20,8 @@
     "displayName": "Excel Online",
     "description": "OpenTabs plugin for Microsoft Excel Online",
     "urlPatterns": [
-      "*://excel.cloud.microsoft/*"
+      "*://excel.cloud.microsoft/*",
+      "*://*.sharepoint.com/*"
     ],
     "homepage": "https://excel.cloud.microsoft/"
   },

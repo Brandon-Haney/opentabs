@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { requireGraphAuth, workbookApi } from '../excel-api.js';
 import type { RawTable } from './schemas.js';
 import { tableSchema, mapTable } from './schemas.js';
 
@@ -18,6 +18,7 @@ export const createTable = defineTool({
   }),
   output: z.object({ table: tableSchema }),
   handle: async params => {
+    requireGraphAuth('Create Table');
     const data = await workbookApi<RawTable>('/tables/add', {
       method: 'POST',
       body: {

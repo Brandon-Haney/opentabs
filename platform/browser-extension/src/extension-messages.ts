@@ -103,6 +103,12 @@ export interface PluginReadinessChangedMessage {
   plugin: string;
 }
 
+/** Content script relay → Background: adapter requests a fresh Graph token (bridged token expired) */
+export interface PluginRequestTokenRefreshMessage {
+  type: 'plugin:requestTokenRefresh';
+  plugin: string;
+}
+
 /** Content script relay → Background: tool progress notification from adapter IIFE */
 export interface ToolProgressMessage {
   type: 'tool:progress';
@@ -232,6 +238,7 @@ export type InternalMessage =
   | BgForceReconnectMessage
   | PluginLogsMessage
   | PluginReadinessChangedMessage
+  | PluginRequestTokenRefreshMessage
   | ToolProgressMessage
   | SpGetStateMessage
   | SpConnectionStateMessage

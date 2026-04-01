@@ -1,6 +1,6 @@
-import { defineTool } from '@opentabs-dev/plugin-sdk';
+import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { hasGraphAuth, isSharePoint, workbookApi } from '../excel-api.js';
 import type { GraphListResponse, RawTableRow } from './schemas.js';
 import { tableRowSchema, mapTableRow } from './schemas.js';
 
@@ -17,6 +17,12 @@ export const getTableRows = defineTool({
   }),
   output: z.object({ rows: z.array(tableRowSchema) }),
   handle: async params => {
+    if (isSharePoint() && !hasGraphAuth()) {
+      throw ToolError.validation(
+        `get_table_rows requires a Graph API token on SharePoint. ` +
+          'Open Outlook or Teams in another tab, or use get_range with the table\'s cell range instead.',
+      );
+    }
     const data = await workbookApi<GraphListResponse<RawTableRow>>(
       `/tables('${encodeURIComponent(params.table)}')/rows`,
     );

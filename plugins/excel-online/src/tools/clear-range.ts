@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { requireGraphAuth, workbookApi } from '../excel-api.js';
 
 export const clearRange = defineTool({
   name: 'clear_range',
@@ -19,6 +19,7 @@ export const clearRange = defineTool({
     success: z.boolean().describe('Whether the operation succeeded'),
   }),
   handle: async params => {
+    requireGraphAuth('Clear Range');
     await workbookApi(
       `/worksheets('${encodeURIComponent(params.worksheet)}')/range(address='${encodeURIComponent(params.address)}')/clear`,
       { method: 'POST', body: { applyTo: params.apply_to ?? 'All' } },

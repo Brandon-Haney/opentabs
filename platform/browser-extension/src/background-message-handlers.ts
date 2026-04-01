@@ -346,6 +346,24 @@ const handlePluginReadinessChanged: MessageHandler = (message, _sendResponse) =>
   });
 };
 
+/**
+ * Handle plugin:requestTokenRefresh — adapter on a SharePoint tab received a 401
+ * and needs a fresh Graph token bridged from an Outlook tab.
+ * Since the handler doesn't receive sender.tab.id, we refresh all SharePoint tabs.
+ */
+const handlePluginRequestTokenRefresh: MessageHandler = (message, _sendResponse) => {
+  const plugin = message.plugin;
+  if (typeof plugin !== 'string' || plugin === '') return;
+
+  (async () => {
+    const { refreshGraphTokenForTab, queryMatchingTabIds } = await import('./iife-injection.js');
+    const sharepointTabIds = await queryMatchingTabIds(['*://*.sharepoint.com/*']);
+    await Promise.allSettled(sharepointTabIds.map(tabId => refreshGraphTokenForTab(tabId)));
+  })().catch((err: unknown) => {
+    console.warn('[opentabs] handlePluginRequestTokenRefresh failed:', err);
+  });
+};
+
 /** Handle sp:confirmationResponse — forward confirmation response to the MCP server */
 const handleSpConfirmationResponse: MessageHandler = (message, sendResponse) => {
   if (wsConnected) {
@@ -759,6 +777,7 @@ const backgroundHandlers = new Map<InternalMessage['type'], MessageHandler>([
   ['bg:openFolder', handleBgOpenFolder],
   ['plugin:logs', handlePluginLogs],
   ['plugin:readinessChanged', handlePluginReadinessChanged],
+  ['plugin:requestTokenRefresh', handlePluginRequestTokenRefresh],
   ['tool:progress', handleToolProgress],
   ['sp:confirmationResponse', handleSpConfirmationResponse],
   ['port-changed', handlePortChanged],

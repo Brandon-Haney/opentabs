@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { requireGraphAuth, workbookApi } from '../excel-api.js';
 import type { RawRange } from './schemas.js';
 import { rangeSchema, mapRange } from './schemas.js';
 
@@ -30,6 +30,7 @@ export const updateRange = defineTool({
   }),
   output: z.object({ range: rangeSchema }),
   handle: async params => {
+    requireGraphAuth('Update Range');
     const body: Record<string, unknown> = {};
     if (params.values !== undefined) body.values = params.values;
     if (params.formulas !== undefined) body.formulas = params.formulas;

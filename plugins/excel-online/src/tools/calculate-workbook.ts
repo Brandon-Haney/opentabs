@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { requireGraphAuth, workbookApi } from '../excel-api.js';
 
 export const calculateWorkbook = defineTool({
   name: 'calculate_workbook',
@@ -20,6 +20,7 @@ export const calculateWorkbook = defineTool({
     success: z.boolean().describe('Whether the operation succeeded'),
   }),
   handle: async params => {
+    requireGraphAuth('Calculate Workbook');
     await workbookApi('/application/calculate', {
       method: 'POST',
       body: { calculationType: params.calculation_type ?? 'Recalculate' },

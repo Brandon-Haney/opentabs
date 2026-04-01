@@ -34,7 +34,7 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
   readonly name = 'excel-online';
   readonly description = 'OpenTabs plugin for Microsoft Excel Online';
   override readonly displayName = 'Excel Online';
-  readonly urlPatterns = ['*://excel.cloud.microsoft/*'];
+  readonly urlPatterns = ['*://excel.cloud.microsoft/*', '*://*.sharepoint.com/*'];
   override readonly homepage = 'https://excel.cloud.microsoft/';
   readonly tools: ToolDefinition[] = [
     // Account

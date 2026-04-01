@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { requireGraphAuth, workbookApi } from '../excel-api.js';
 
 export const deleteWorksheet = defineTool({
   name: 'delete_worksheet',
@@ -17,6 +17,7 @@ export const deleteWorksheet = defineTool({
     success: z.boolean().describe('Whether the operation succeeded'),
   }),
   handle: async params => {
+    requireGraphAuth('Delete Worksheet');
     await workbookApi(`/worksheets('${encodeURIComponent(params.name)}')`, { method: 'DELETE' });
     return { success: true };
   },

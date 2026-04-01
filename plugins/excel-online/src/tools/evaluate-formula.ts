@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { requireGraphAuth, workbookApi } from '../excel-api.js';
 
 export const evaluateFormula = defineTool({
   name: 'evaluate_formula',
@@ -19,6 +19,7 @@ export const evaluateFormula = defineTool({
     error: z.string().describe('Error message if the formula failed, empty string on success'),
   }),
   handle: async params => {
+    requireGraphAuth('Evaluate Formula');
     // Write formula to a far-off temp cell, read the result, then clear it.
     // This is the most reliable approach with the Graph API.
     const tempCell = 'ZZ9999';

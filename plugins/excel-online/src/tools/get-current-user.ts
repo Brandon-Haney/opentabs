@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { getUserInfo } from '../excel-api.js';
+import { getUserInfo, hasGraphAuth, isSharePoint, sharepointGetCurrentUser } from '../excel-api.js';
 import { userSchema } from './schemas.js';
 
 export const getCurrentUser = defineTool({
@@ -14,6 +14,10 @@ export const getCurrentUser = defineTool({
   input: z.object({}),
   output: z.object({ user: userSchema }),
   handle: async () => {
+    if (isSharePoint() && !hasGraphAuth()) {
+      const user = sharepointGetCurrentUser();
+      return { user: { id: user.id, display_name: user.displayName, email: user.mail } };
+    }
     const data = await getUserInfo();
     return {
       user: {

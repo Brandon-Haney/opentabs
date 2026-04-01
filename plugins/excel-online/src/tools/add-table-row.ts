@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { requireGraphAuth, workbookApi } from '../excel-api.js';
 import type { RawTableRow } from './schemas.js';
 import { tableRowSchema, mapTableRow } from './schemas.js';
 
@@ -19,6 +19,7 @@ export const addTableRow = defineTool({
   }),
   output: z.object({ row: tableRowSchema }),
   handle: async params => {
+    requireGraphAuth('Add Table Row');
     const data = await workbookApi<RawTableRow>(`/tables('${encodeURIComponent(params.table)}')/rows`, {
       method: 'POST',
       body: { values: params.values, index: params.index ?? null },

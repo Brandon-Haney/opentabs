@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { requireGraphAuth, workbookApi } from '../excel-api.js';
 import type { RawNamedItem } from './schemas.js';
 import { namedItemSchema, mapNamedItem } from './schemas.js';
 
@@ -19,6 +19,7 @@ export const addNamedItem = defineTool({
   }),
   output: z.object({ item: namedItemSchema }),
   handle: async params => {
+    requireGraphAuth('Add Named Item');
     const body: Record<string, unknown> = {
       name: params.name,
       reference: params.reference,

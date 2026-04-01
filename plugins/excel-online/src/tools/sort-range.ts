@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { requireGraphAuth, workbookApi } from '../excel-api.js';
 
 export const sortRange = defineTool({
   name: 'sort_range',
@@ -28,6 +28,7 @@ export const sortRange = defineTool({
     success: z.boolean().describe('Whether the operation succeeded'),
   }),
   handle: async params => {
+    requireGraphAuth('Sort Range');
     const fields = params.fields.map(f => ({
       key: f.key,
       ascending: f.ascending ?? true,

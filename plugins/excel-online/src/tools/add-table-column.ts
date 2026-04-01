@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { requireGraphAuth, workbookApi } from '../excel-api.js';
 import type { RawTableColumn } from './schemas.js';
 import { tableColumnSchema, mapTableColumn } from './schemas.js';
 
@@ -19,6 +19,7 @@ export const addTableColumn = defineTool({
   }),
   output: z.object({ column: tableColumnSchema }),
   handle: async params => {
+    requireGraphAuth('Add Table Column');
     const body: Record<string, unknown> = { values: params.values };
     if (params.index !== undefined) body.index = params.index;
     const data = await workbookApi<RawTableColumn>(`/tables('${encodeURIComponent(params.table)}')/columns`, {

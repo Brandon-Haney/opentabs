@@ -1,6 +1,6 @@
 import { defineTool, stripUndefined } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { requireGraphAuth, workbookApi } from '../excel-api.js';
 import type { RawWorksheet } from './schemas.js';
 import { worksheetSchema, mapWorksheet } from './schemas.js';
 
@@ -20,6 +20,7 @@ export const updateWorksheet = defineTool({
   }),
   output: z.object({ worksheet: worksheetSchema }),
   handle: async params => {
+    requireGraphAuth('Update Worksheet');
     const body = stripUndefined({
       name: params.new_name,
       position: params.position,

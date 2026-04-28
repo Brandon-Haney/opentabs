@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { adfToMarkdown } from './adf.js';
 
 // --- Issue schema ---
 export const issueSchema = z.object({
@@ -18,7 +19,9 @@ export const issueSchema = z.object({
   labels: z.array(z.string()).describe('Issue labels'),
   created: z.string().describe('Creation timestamp'),
   updated: z.string().describe('Last updated timestamp'),
-  description_text: z.string().describe('Plain text representation of the description'),
+  description_text: z
+    .string()
+    .describe('Markdown rendering of the description (headings, lists, code, bold/italic, links preserved)'),
 });
 
 export interface JiraIssueFields {
@@ -32,13 +35,8 @@ export interface JiraIssueFields {
   labels?: string[];
   created?: string;
   updated?: string;
-  description?: { content?: Array<{ content?: Array<{ text?: string }> }> };
+  description?: unknown;
 }
-
-const extractText = (doc: JiraIssueFields['description'] | undefined): string => {
-  if (!doc?.content) return '';
-  return doc.content.map(block => (block.content ?? []).map(inline => inline.text ?? '').join('')).join('\n');
-};
 
 export const mapIssue = (issue: Record<string, unknown>): z.infer<typeof issueSchema> => {
   const fields = (issue.fields ?? {}) as JiraIssueFields;
@@ -59,7 +57,7 @@ export const mapIssue = (issue: Record<string, unknown>): z.infer<typeof issueSc
     labels: fields.labels ?? [],
     created: fields.created ?? '',
     updated: fields.updated ?? '',
-    description_text: extractText(fields.description),
+    description_text: adfToMarkdown(fields.description),
   };
 };
 
@@ -97,7 +95,9 @@ export const commentSchema = z.object({
   id: z.string().describe('Comment ID'),
   author_id: z.string().describe('Author account ID'),
   author_name: z.string().describe('Author display name'),
-  body_text: z.string().describe('Plain text representation of the comment'),
+  body_text: z
+    .string()
+    .describe('Markdown rendering of the comment body (headings, lists, code, bold/italic, links preserved)'),
   created: z.string().describe('Creation timestamp'),
   updated: z.string().describe('Last updated timestamp'),
 });
@@ -105,7 +105,7 @@ export const commentSchema = z.object({
 interface JiraComment {
   id?: string;
   author?: { accountId?: string; displayName?: string };
-  body?: { content?: Array<{ content?: Array<{ text?: string }> }> };
+  body?: unknown;
   created?: string;
   updated?: string;
 }
@@ -116,7 +116,7 @@ export const mapComment = (c: Record<string, unknown>): z.infer<typeof commentSc
     id: comment.id ?? '',
     author_id: comment.author?.accountId ?? '',
     author_name: comment.author?.displayName ?? '',
-    body_text: extractText(comment.body as JiraIssueFields['description'] | undefined),
+    body_text: adfToMarkdown(comment.body),
     created: comment.created ?? '',
     updated: comment.updated ?? '',
   };
@@ -173,18 +173,6 @@ export const mapUser = (u: Record<string, unknown>): z.infer<typeof userSchema> 
     account_type: user.accountType ?? '',
   };
 };
-
-// Jira uses Atlassian Document Format for descriptions and comments
-export const buildAdfText = (text: string): Record<string, unknown> => ({
-  type: 'doc',
-  version: 1,
-  content: [
-    {
-      type: 'paragraph',
-      content: [{ type: 'text', text }],
-    },
-  ],
-});
 
 // Standard issue fields for search queries
 export const ISSUE_FIELDS = [

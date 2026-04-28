@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
+import { markdownToAdf } from './adf.js';
 import { api } from '../jira-api.js';
-import { buildAdfText } from './schemas.js';
 
 export const createIssue = defineTool({
   name: 'create_issue',
@@ -17,7 +17,12 @@ export const createIssue = defineTool({
       .string()
       .optional()
       .describe('Issue type name (e.g. "Task", "Story", "Bug", "Epic"). Defaults to "Task"'),
-    description: z.string().optional().describe('Issue description in plain text'),
+    description: z
+      .string()
+      .optional()
+      .describe(
+        'Issue description in markdown. Supports headings, lists, fenced code, blockquotes, bold/italic/code/strike, and links.',
+      ),
     priority: z.string().optional().describe('Priority name (e.g. "Highest", "High", "Medium", "Low", "Lowest")'),
     assignee_id: z.string().optional().describe('Assignee account ID (use search_users to find IDs)'),
     labels: z.array(z.string()).optional().describe('Labels to apply to the issue'),
@@ -35,7 +40,7 @@ export const createIssue = defineTool({
     };
 
     if (params.description) {
-      fields.description = buildAdfText(params.description);
+      fields.description = markdownToAdf(params.description);
     }
     if (params.priority) {
       fields.priority = { name: params.priority };

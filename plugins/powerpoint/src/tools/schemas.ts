@@ -189,3 +189,53 @@ export const slideSchema = z.object({
   texts: z.array(z.string()).describe('Text content extracted from the slide'),
   has_notes: z.boolean().describe('Whether this slide has speaker notes'),
 });
+
+// --- Slide layout (structural tree) ---
+
+export const textRunSchema = z.object({
+  text: z.string().describe('Run text content'),
+  bold: z.boolean().optional().describe('Bold formatting'),
+  italic: z.boolean().optional().describe('Italic formatting'),
+  underline: z.boolean().optional().describe('Underline formatting'),
+  size: z.number().optional().describe('Font size in points'),
+  font: z.string().optional().describe('Font family name'),
+  color: z.string().optional().describe('Hex color (e.g. "FFCC00") or "scheme:<name>" for theme colors'),
+});
+
+export const textParagraphSchema = z.object({
+  runs: z.array(textRunSchema).describe('Formatted text runs within the paragraph'),
+  align: z.enum(['left', 'center', 'right', 'justify']).optional().describe('Horizontal alignment'),
+  level: z.number().int().optional().describe('Indent level (0 = top level)'),
+});
+
+export const shapeNodeSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.object({
+    id: z.string().describe('Shape id, unique within the slide'),
+    name: z.string().describe('Shape name from authoring tool'),
+    kind: z
+      .enum(['textbox', 'shape', 'placeholder', 'picture', 'group', 'table', 'chart', 'graphicFrame', 'connector'])
+      .describe('Shape category'),
+    preset: z.string().optional().describe('Preset geometry name for shapes ("rect", "ellipse", ...)'),
+    placeholder_type: z.string().optional().describe('Placeholder type ("title", "body", "ctrTitle", ...)'),
+    x: z.number().describe('X offset from slide top-left in inches'),
+    y: z.number().describe('Y offset from slide top-left in inches'),
+    w: z.number().describe('Width in inches'),
+    h: z.number().describe('Height in inches'),
+    rotation: z.number().optional().describe('Rotation in degrees (clockwise)'),
+    fill: z.string().optional().describe('Solid fill color — hex or "scheme:<name>" for theme colors'),
+    text: z.array(textParagraphSchema).optional().describe('Text content with per-run formatting'),
+    image_rel: z.string().optional().describe('Relationship id of embedded image (picture shapes only)'),
+    children: z.array(shapeNodeSchema).optional().describe('Child shapes for group shapes'),
+    inherited_geometry: z
+      .boolean()
+      .optional()
+      .describe('True when position/size are inherited from the slide layout/master'),
+  }),
+);
+
+export const slideLayoutSchema = z.object({
+  slide_number: z.number().int().describe('Slide number (1-indexed)'),
+  width: z.number().describe('Slide canvas width in inches'),
+  height: z.number().describe('Slide canvas height in inches'),
+  shapes: z.array(shapeNodeSchema).describe('All top-level shapes on the slide'),
+});

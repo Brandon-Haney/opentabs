@@ -7,8 +7,16 @@
  * - OOXML helpers: extract text from slides, modify slide XML, add/remove slides
  */
 
-import { getAuthCache, ToolError } from '@opentabs-dev/plugin-sdk';
-import { GRAPH_BASE, getCurrentDriveId } from './powerpoint-api.js';
+import { ToolError } from '@opentabs-dev/plugin-sdk';
+import { GRAPH_BASE, requireAuth } from './powerpoint-api.js';
+import {
+  deleteSession,
+  listSessions,
+  type PresentationSession,
+  peekSession,
+  storeSession,
+  touchSession,
+} from './session.js';
 
 // --- ZIP constants ---
 const LOCAL_FILE_HEADER_SIG = 0x04034b50;
@@ -241,36 +249,78 @@ export const extractNotesText = (notesXml: string): string => {
   return texts.join('');
 };
 
-/** Get the list of slide filenames from the presentation.xml rels. */
+/**
+ * Get the list of slide filenames in presentation order.
+ *
+ * Slide order is determined by `<p:sldIdLst>` in `ppt/presentation.xml`, not
+ * by the numeric suffix of the slide filename — inserted or duplicated slides
+ * can have a `slideN.xml` filename whose position in the deck doesn't match
+ * N. This walks sldIdLst, resolves each `r:id` against
+ * `ppt/_rels/presentation.xml.rels`, and returns the absolute slide paths in
+ * the order PowerPoint will render them.
+ *
+ * Falls back to numeric-suffix sort if either file is missing (defensive —
+ * a well-formed PPTX always has both).
+ */
 export const getSlideList = (entries: Map<string, Uint8Array>): string[] => {
   const presRelsData = entries.get('ppt/_rels/presentation.xml.rels');
   if (!presRelsData) return [];
 
-  const relsXml = TEXT_DECODER.decode(presRelsData);
-  const doc = parseXml(relsXml);
-  const slides: { target: string; id: string }[] = [];
-
-  const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_ELEMENT);
-  let node = walker.nextNode();
-  while (node) {
-    if (isElement(node) && getLocalName(node) === 'Relationship') {
-      const relType = node.getAttribute('Type') ?? '';
+  // Build rId → slide target map from the rels file.
+  const relsDoc = parseXml(TEXT_DECODER.decode(presRelsData));
+  const relsWalker = relsDoc.createTreeWalker(relsDoc, NodeFilter.SHOW_ELEMENT);
+  const rIdToTarget = new Map<string, string>();
+  let relsNode = relsWalker.nextNode();
+  while (relsNode) {
+    if (isElement(relsNode) && getLocalName(relsNode) === 'Relationship') {
+      const relType = relsNode.getAttribute('Type') ?? '';
       if (relType.includes('/slide') && !relType.includes('Layout') && !relType.includes('Master')) {
-        const target = node.getAttribute('Target') ?? '';
-        const id = node.getAttribute('Id') ?? '';
-        if (target) slides.push({ target, id });
+        const id = relsNode.getAttribute('Id') ?? '';
+        const target = relsNode.getAttribute('Target') ?? '';
+        if (id && target) rIdToTarget.set(id, target);
       }
     }
-    node = walker.nextNode();
+    relsNode = relsWalker.nextNode();
   }
 
-  slides.sort((a, b) => {
-    const numA = Number.parseInt(a.target.match(/slide(\d+)/)?.[1] ?? '0', 10);
-    const numB = Number.parseInt(b.target.match(/slide(\d+)/)?.[1] ?? '0', 10);
+  // Walk sldIdLst in presentation.xml to get the authoritative slide order.
+  const presData = entries.get('ppt/presentation.xml');
+  if (presData) {
+    const presDoc = parseXml(TEXT_DECODER.decode(presData));
+    const presWalker = presDoc.createTreeWalker(presDoc, NodeFilter.SHOW_ELEMENT);
+    let sldIdLst: Element | null = null;
+    let node = presWalker.nextNode();
+    while (node) {
+      if (isElement(node) && getLocalName(node) === 'sldIdLst') {
+        sldIdLst = node;
+        break;
+      }
+      node = presWalker.nextNode();
+    }
+
+    if (sldIdLst) {
+      const ordered: string[] = [];
+      for (const child of Array.from(sldIdLst.childNodes)) {
+        if (!isElement(child) || getLocalName(child) !== 'sldId') continue;
+        // r:id lookup is namespace-aware; try common variants.
+        const rId =
+          child.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id') ||
+          child.getAttribute('r:id') ||
+          '';
+        const target = rIdToTarget.get(rId);
+        if (target) ordered.push(`ppt/${target}`);
+      }
+      if (ordered.length > 0) return ordered;
+    }
+  }
+
+  // Fallback: sort rels entries by numeric suffix of their target path.
+  const fallback = Array.from(rIdToTarget.values()).sort((a, b) => {
+    const numA = Number.parseInt(a.match(/slide(\d+)/)?.[1] ?? '0', 10);
+    const numB = Number.parseInt(b.match(/slide(\d+)/)?.[1] ?? '0', 10);
     return numA - numB;
   });
-
-  return slides.map(s => `ppt/${s.target}`);
+  return fallback.map(t => `ppt/${t}`);
 };
 
 /** Get the notes filename for a given slide. */
@@ -298,33 +348,67 @@ export const getNotesForSlide = (entries: Map<string, Uint8Array>, slideFile: st
 
 // --- Download/Upload helpers ---
 
-/** Download a PPTX from the Graph API and return its ZIP entries. */
-export const downloadPptx = async (itemId: string): Promise<Map<string, Uint8Array>> => {
-  const auth = getAuthCache<{ token: string }>('powerpoint');
-  if (!auth) throw ToolError.auth('Not authenticated — please log in to Microsoft 365.');
-  const driveId = getCurrentDriveId();
+interface ItemMetadata {
+  eTag?: string;
+  '@microsoft.graph.downloadUrl'?: string;
+}
 
-  const itemResp = await fetch(`${GRAPH_BASE}/drives/${driveId}/items/${itemId}`, {
-    headers: { Authorization: `Bearer ${auth.token}` },
+/** Fetch item metadata from the Graph API. Used both for downloads and eTag verification. */
+const fetchItemMetadata = async (driveId: string, itemId: string, token: string): Promise<ItemMetadata> => {
+  const resp = await fetch(`${GRAPH_BASE}/drives/${driveId}/items/${itemId}`, {
+    headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(30_000),
   });
-  if (!itemResp.ok) throw ToolError.internal(`Failed to get item: ${itemResp.status}`);
-  const itemData = (await itemResp.json()) as { '@microsoft.graph.downloadUrl'?: string };
+  if (!resp.ok) throw ToolError.internal(`Failed to get item metadata: ${resp.status}`);
+  return (await resp.json()) as ItemMetadata;
+};
+
+/** Fetch the PPTX bytes via a pre-authenticated download URL. */
+const fetchPptxBytes = async (downloadUrl: string): Promise<Blob> => {
+  const resp = await fetch(downloadUrl, { signal: AbortSignal.timeout(60_000) });
+  if (!resp.ok) throw ToolError.internal(`Failed to download PPTX: ${resp.status}`);
+  return resp.blob();
+};
+
+/**
+ * Download a PPTX from the Graph API and return its ZIP entries.
+ *
+ * If a session is open for `{driveId}:{itemId}`, returns the cached entries
+ * by reference — tools mutate in place and the changes persist in the
+ * session until `commit_presentation` or `discard_presentation` is called.
+ */
+export const downloadPptx = async (itemId: string): Promise<Map<string, Uint8Array>> => {
+  const { token, driveId } = await requireAuth();
+
+  // Session fast path — skip both the metadata fetch and the content download.
+  const session = touchSession(driveId, itemId);
+  if (session) return session.entries;
+
+  const itemData = await fetchItemMetadata(driveId, itemId, token);
   const downloadUrl = itemData['@microsoft.graph.downloadUrl'];
   if (!downloadUrl) throw ToolError.internal('No download URL available');
 
-  const pptxResp = await fetch(downloadUrl, { signal: AbortSignal.timeout(60_000) });
-  if (!pptxResp.ok) throw ToolError.internal(`Failed to download PPTX: ${pptxResp.status}`);
-  const blob = await pptxResp.blob();
-
+  const blob = await fetchPptxBytes(downloadUrl);
   return readZip(blob);
 };
 
-/** Upload a PPTX to the Graph API by re-zipping the entries. */
+/**
+ * Upload a PPTX to the Graph API by re-zipping the entries.
+ *
+ * If a session is open for `{driveId}:{itemId}`, no HTTP happens — the
+ * session is marked dirty and the updated entries map is retained so that
+ * `commit_presentation` can flush them later.
+ */
 export const uploadPptx = async (itemId: string, entries: Map<string, Uint8Array>): Promise<void> => {
-  const auth = getAuthCache<{ token: string }>('powerpoint');
-  if (!auth) throw ToolError.auth('Not authenticated — please log in to Microsoft 365.');
-  const driveId = getCurrentDriveId();
+  const { token, driveId } = await requireAuth();
+
+  // Session fast path — defer the actual upload until commit.
+  const session = touchSession(driveId, itemId);
+  if (session) {
+    session.entries = entries;
+    session.dirty = true;
+    return;
+  }
 
   const blob = await writeZip(entries);
   const url = `${GRAPH_BASE}/drives/${driveId}/items/${itemId}/content`;
@@ -332,7 +416,7 @@ export const uploadPptx = async (itemId: string, entries: Map<string, Uint8Array
   const resp = await fetch(url, {
     method: 'PUT',
     headers: {
-      Authorization: `Bearer ${auth.token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     },
     body: blob,
@@ -342,6 +426,165 @@ export const uploadPptx = async (itemId: string, entries: Map<string, Uint8Array
     const errorBody = (await resp.text().catch(() => '')).substring(0, 512);
     throw ToolError.internal(`Failed to upload PPTX: ${resp.status} — ${errorBody}`);
   }
+};
+
+// --- Phase 4: session operations ---
+
+export interface OpenPresentationResult {
+  item_id: string;
+  etag: string;
+  slides: number;
+  opened_at: number;
+}
+
+/**
+ * Open an edit session for a presentation. Downloads the PPTX once, captures
+ * its eTag, and stores an in-memory copy. Subsequent edit tools will mutate
+ * the cached copy until `commitPresentation` or `discardPresentation`.
+ *
+ * Rejects if a session is already open for this item — agents should
+ * explicitly commit or discard before re-opening.
+ */
+export const openPresentation = async (itemId: string): Promise<OpenPresentationResult> => {
+  const { token, driveId } = await requireAuth();
+
+  const existing = peekSession(driveId, itemId);
+  if (existing) {
+    throw ToolError.validation(
+      `A session is already open for item ${itemId} (opened ${Math.round((Date.now() - existing.openedAt) / 1000)}s ago, dirty=${existing.dirty}). ` +
+        `Call commit_presentation or discard_presentation before opening a new session.`,
+    );
+  }
+
+  const itemData = await fetchItemMetadata(driveId, itemId, token);
+  const downloadUrl = itemData['@microsoft.graph.downloadUrl'];
+  if (!downloadUrl) throw ToolError.internal('No download URL available');
+  const etag = itemData.eTag;
+  if (!etag) {
+    throw ToolError.internal('Item metadata missing eTag — cannot guarantee safe commit. Refusing to open a session.');
+  }
+
+  const blob = await fetchPptxBytes(downloadUrl);
+  const entries = await readZip(blob);
+
+  const now = Date.now();
+  const session: PresentationSession = {
+    driveId,
+    itemId,
+    entries,
+    etag,
+    openedAt: now,
+    lastAccessedAt: now,
+    dirty: false,
+  };
+  storeSession(session);
+
+  return {
+    item_id: itemId,
+    etag,
+    slides: getSlideList(entries).length,
+    opened_at: now,
+  };
+};
+
+export interface CommitPresentationResult {
+  item_id: string;
+  slides: number;
+  was_dirty: boolean;
+  committed: boolean;
+}
+
+/**
+ * Flush a session's pending edits to the Graph API using an optimistic
+ * `If-Match` conditional PUT. If the server's eTag no longer matches the
+ * one captured at open time (someone else edited the file in the browser),
+ * the PUT returns 412 and this throws — pending edits are NOT saved and the
+ * session stays open so the agent can choose to discard and re-open.
+ *
+ * If the session is clean (nothing mutated), skips the upload and just
+ * clears the session.
+ */
+export const commitPresentation = async (itemId: string): Promise<CommitPresentationResult> => {
+  const { token, driveId } = await requireAuth();
+
+  const session = touchSession(driveId, itemId);
+  if (!session) {
+    throw ToolError.notFound(
+      `No open session for item ${itemId}. Call open_presentation first, or the previous session expired after 10 minutes of inactivity.`,
+    );
+  }
+
+  const slides = getSlideList(session.entries).length;
+
+  if (!session.dirty) {
+    deleteSession(driveId, itemId);
+    return { item_id: itemId, slides, was_dirty: false, committed: true };
+  }
+
+  const blob = await writeZip(session.entries);
+  const url = `${GRAPH_BASE}/drives/${driveId}/items/${itemId}/content`;
+  const resp = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'If-Match': session.etag,
+    },
+    body: blob,
+    signal: AbortSignal.timeout(60_000),
+  });
+
+  if (resp.status === 412) {
+    throw ToolError.validation(
+      `File changed in the browser since open_presentation (ETag mismatch). ` +
+        `Pending edits were NOT saved. Call discard_presentation and then open_presentation to reload the latest version, ` +
+        `or commit individual changes without a session.`,
+    );
+  }
+  if (!resp.ok) {
+    const errorBody = (await resp.text().catch(() => '')).substring(0, 512);
+    // Leave the session in place so the caller can retry or discard.
+    throw ToolError.internal(`Failed to commit session: ${resp.status} — ${errorBody}`);
+  }
+
+  deleteSession(driveId, itemId);
+  return { item_id: itemId, slides, was_dirty: true, committed: true };
+};
+
+export interface DiscardPresentationResult {
+  item_id: string;
+  discarded: boolean;
+}
+
+/** Drop a session without uploading. Idempotent — returns discarded=false if nothing was open. */
+export const discardPresentation = async (itemId: string): Promise<DiscardPresentationResult> => {
+  const { driveId } = await requireAuth();
+  const discarded = deleteSession(driveId, itemId);
+  return { item_id: itemId, discarded };
+};
+
+export interface ListedSession {
+  drive_id: string;
+  item_id: string;
+  opened_at: number;
+  last_accessed_at: number;
+  dirty: boolean;
+  slides: number;
+  idle_seconds: number;
+}
+
+/** Summarize all open sessions. Purges expired sessions as a side effect. */
+export const listPresentationSessions = (): ListedSession[] => {
+  const now = Date.now();
+  return listSessions().map(s => ({
+    drive_id: s.driveId,
+    item_id: s.itemId,
+    opened_at: s.openedAt,
+    last_accessed_at: s.lastAccessedAt,
+    dirty: s.dirty,
+    slides: getSlideList(s.entries).length,
+    idle_seconds: Math.round((now - s.lastAccessedAt) / 1000),
+  }));
 };
 
 /** Replace all text runs in a slide XML with new text content. */

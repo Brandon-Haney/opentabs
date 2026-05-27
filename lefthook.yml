@@ -3,16 +3,17 @@ pre-commit:
     reject-ralph-state:
       run: |
         if git diff --cached --name-only | grep -qE '\.ralph/(prd\.json|progress\.txt)$'; then
-          echo "ERROR: Ralph state files must not be committed:"
+          echo 'ERROR: Ralph state files must not be committed:'
           git diff --cached --name-only | grep -E '\.ralph/(prd\.json|progress\.txt)$'
-          echo ""
-          echo "Run: git rm --cached <file> to untrack them."
+          echo ''
+          echo 'Run: git rm --cached <file> to untrack them.'
           exit 1
         fi
     auto-stage-lockfiles:
       run: |
         for pkg in $(git diff --cached --name-only | grep 'package\.json$'); do
-          lockfile="$(dirname "$pkg")/package-lock.json"
+          dir=$(dirname "$pkg")
+          lockfile="$dir/package-lock.json"
           if [ -f "$lockfile" ] && git diff --name-only -- "$lockfile" | grep -q .; then
             git add "$lockfile"
           fi

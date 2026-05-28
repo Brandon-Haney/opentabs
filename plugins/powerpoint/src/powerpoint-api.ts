@@ -17,7 +17,14 @@ const LS_TOKEN_KEY = '__opentabs_powerpoint_graph_token';
 
 // --- SharePoint detection ---
 
-export const isSharePoint = (): boolean => /\.sharepoint\.com/i.test(getCurrentUrl());
+/** True when the current tab is hosted on a SharePoint/OneDrive site. */
+export const isSharePoint = (): boolean => {
+  try {
+    return new URL(getCurrentUrl()).hostname.toLowerCase().endsWith('.sharepoint.com');
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Whether the current tab is a PowerPoint document.
@@ -95,13 +102,18 @@ const getCapturedToken = (): string | null => {
 /** A plaintext Graph access token from the standalone app's MSAL localStorage. */
 const getMsalToken = (): string | null => {
   const entry = findLocalStorageEntry(
-    k => k.includes('accesstoken') && /(?:^|[\s/])graph\.microsoft\.com(?:[/\s]|$)/.test(k),
+    k =>
+      k.includes('accesstoken') && /(?:^|[\s/])graph\.microsoft\.com(?:[/\s]|$)/.test(k) && k.includes(MSAL_CLIENT_ID),
   );
   if (!entry) return null;
   try {
-    const data = JSON.parse(entry.value) as { secret?: string; expiresOn?: string };
-    if (!data.secret) return null;
-    if (data.expiresOn && Number(data.expiresOn) * 1000 < Date.now()) return null;
+    const data = JSON.parse(entry.value) as Record<string, unknown>;
+    if (typeof data.secret !== 'string' || data.secret.length === 0) return null;
+    // MSAL stores `expiresOn` as a unix-epoch-seconds string. A missing or
+    // unparseable value means we cannot prove the token is live — treat it as
+    // expired rather than risk returning a stale token.
+    const expiresOn = Number.parseInt(String(data.expiresOn ?? '0'), 10);
+    if (!(expiresOn > Math.floor(Date.now() / 1000))) return null;
     return data.secret;
   } catch {
     return null;
@@ -135,7 +147,7 @@ const getDriveIdSync = (): string | null => {
   const activeAccount = getLocalStorage(`msal.${MSAL_CLIENT_ID}.active-account`);
   if (activeAccount) {
     const match = activeAccount.match(/00000000-0000-0000-([0-9a-f]{4}-[0-9a-f]{12})/i);
-    if (match) return match[1]?.replace('-', '').toUpperCase() ?? null;
+    if (match) return match[1]?.replace(/-/g, '').toUpperCase() ?? null;
   }
 
   return null;

@@ -81,11 +81,15 @@ const getLocalStorageToken = (): string | null => {
   if (!entry) return null;
 
   try {
-    const parsed = JSON.parse(entry.value);
-    if (!parsed.secret) return null;
-    const expiresOn = Number.parseInt(parsed.expires_on, 10);
-    if (expiresOn && expiresOn < Math.floor(Date.now() / 1000)) return null;
-    return parsed.secret as string;
+    const parsed = JSON.parse(entry.value) as Record<string, unknown>;
+    if (typeof parsed.secret !== 'string' || parsed.secret.length === 0) return null;
+    // MSAL stores `expiresOn` as a unix-epoch-seconds string. A missing or
+    // unparseable value means we cannot prove the token is live — treat it as
+    // expired rather than risk returning a stale token (MSAL leaves expired AT
+    // entries in storage until the next refresh).
+    const expiresOn = Number.parseInt(String(parsed.expiresOn ?? '0'), 10);
+    if (!(expiresOn > Math.floor(Date.now() / 1000))) return null;
+    return parsed.secret;
   } catch {
     return null;
   }

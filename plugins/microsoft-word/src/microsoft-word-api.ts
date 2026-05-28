@@ -8,7 +8,6 @@ import {
   parseRetryAfterMs,
   waitUntil,
 } from '@opentabs-dev/plugin-sdk';
-import type { FetchFromPageOptions } from '@opentabs-dev/plugin-sdk';
 
 const GRAPH_API_BASE = 'https://graph.microsoft.com/v1.0';
 
@@ -85,11 +84,14 @@ const getMsalToken = (): string | null => {
     const raw = getLocalStorage(key);
     if (!raw) continue;
     try {
-      const parsed = JSON.parse(raw);
-      if (!parsed.secret) continue;
-      const expiresOn = Number.parseInt(parsed.expiresOn, 10);
-      if (expiresOn && expiresOn * 1000 < Date.now()) continue;
-      return parsed.secret as string;
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (typeof parsed.secret !== 'string' || parsed.secret.length === 0) continue;
+      // MSAL stores `expiresOn` as a unix-epoch-seconds string. A missing or
+      // unparseable value means we cannot prove the token is live — treat it as
+      // expired rather than risk returning a stale token.
+      const expiresOn = Number.parseInt(String(parsed.expiresOn ?? '0'), 10);
+      if (!(expiresOn > Math.floor(Date.now() / 1000))) continue;
+      return parsed.secret;
     } catch {
       // skip invalid token entries
     }
@@ -195,7 +197,7 @@ export const api = async <T>(
     Authorization: `Bearer ${token}`,
   };
 
-  const init: FetchFromPageOptions = { method, headers };
+  const init: RequestInit = { method, headers };
 
   if (options.body) {
     headers['Content-Type'] = 'application/json';

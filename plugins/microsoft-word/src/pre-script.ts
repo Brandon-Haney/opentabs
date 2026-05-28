@@ -26,14 +26,35 @@ interface CapturedGraphToken {
   exp: number;
 }
 
-const TOKEN_ENDPOINT = /login\.microsoftonline\.com\/[^/]+\/oauth2\/v2\.0\/token/i;
-const GRAPH_HOST = /(^|\/\/|\.)graph\.microsoft\.com(\/|$)/i;
+const GRAPH_HOSTNAME = 'graph.microsoft.com';
+const TOKEN_ENDPOINT_HOSTNAME = 'login.microsoftonline.com';
+const TOKEN_ENDPOINT_PATH = /\/oauth2\/v2\.0\/token$/i;
+/** Marker used to make the fetch patch idempotent under re-injection. */
+const PATCHED_MARKER = Symbol.for('opentabs.microsoft-word.fetch.patched');
 
 /** localStorage mirror so warm reloads and same-origin tabs reuse a captured token. */
 const LS_TOKEN_KEY = '__opentabs_word_graph_token';
 
+const parseUrl = (url: string): URL | null => {
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
+};
+
+const isGraphUrl = (url: string): boolean => parseUrl(url)?.hostname.toLowerCase() === GRAPH_HOSTNAME;
+
+const isTokenEndpointUrl = (url: string): boolean => {
+  const u = parseUrl(url);
+  return !!u && u.hostname.toLowerCase() === TOKEN_ENDPOINT_HOSTNAME && TOKEN_ENDPOINT_PATH.test(u.pathname);
+};
+
 definePreScript(({ set, log }) => {
-  const g = globalThis as { fetch: typeof fetch };
+  const g = globalThis as { fetch: typeof fetch & { [PATCHED_MARKER]?: true } };
+  // Idempotency: a second injection into the same realm (hot reload, future
+  // iframe-reuse) must not stack wrappers — that would recurse and double-stash.
+  if (g.fetch[PATCHED_MARKER]) return;
   const origFetch = g.fetch;
 
   const stash = (token: string, exp: number): void => {
@@ -64,11 +85,20 @@ definePreScript(({ set, log }) => {
     return undefined;
   };
 
+  /**
+   * Whether the AAD `scope` claim grants Microsoft Graph. The claim is a
+   * space-separated list of scope identifiers (some are URIs), e.g.
+   * `https://graph.microsoft.com/Files.Read.All openid profile`. We split and
+   * exact-match the hostname rather than substring-match the whole claim.
+   */
+  const scopeGrantsGraph = (scope: string): boolean =>
+    scope.split(/\s+/).some(s => parseUrl(s)?.hostname.toLowerCase() === GRAPH_HOSTNAME);
+
   const captureFromTokenResponse = (body: unknown): void => {
     if (!body || typeof body !== 'object') return;
     const data = body as { access_token?: string; scope?: string; expires_in?: number };
     if (typeof data.access_token !== 'string' || typeof data.scope !== 'string') return;
-    if (!GRAPH_HOST.test(data.scope)) return;
+    if (!scopeGrantsGraph(data.scope)) return;
     const ttl = typeof data.expires_in === 'number' && data.expires_in > 0 ? data.expires_in : 3600;
     stash(data.access_token, Math.floor(Date.now() / 1000) + ttl);
     log.debug(`[microsoft-word] captured Graph token from AAD token endpoint`);
@@ -77,8 +107,9 @@ definePreScript(({ set, log }) => {
   const patchedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
 
-    if (GRAPH_HOST.test(url)) {
-      const header = extractBearer(init?.headers) ?? (input instanceof Request ? extractBearer(input.headers) : undefined);
+    if (isGraphUrl(url)) {
+      const header =
+        extractBearer(init?.headers) ?? (input instanceof Request ? extractBearer(input.headers) : undefined);
       if (header?.startsWith('Bearer ') && header.length > 'Bearer '.length) {
         stash(header.slice('Bearer '.length), Math.floor(Date.now() / 1000) + 600);
       }
@@ -86,7 +117,7 @@ definePreScript(({ set, log }) => {
 
     const response = await origFetch(input, init);
 
-    if (TOKEN_ENDPOINT.test(url)) {
+    if (isTokenEndpointUrl(url)) {
       response
         .clone()
         .json()
@@ -99,6 +130,7 @@ definePreScript(({ set, log }) => {
     return response;
   };
 
-  g.fetch = patchedFetch;
+  (patchedFetch as typeof patchedFetch & { [PATCHED_MARKER]: true })[PATCHED_MARKER] = true;
+  g.fetch = patchedFetch as typeof fetch & { [PATCHED_MARKER]?: true };
   log.info('[microsoft-word] Graph token interceptor installed');
 });

@@ -178,10 +178,16 @@ definePreScript(({ set, log }) => {
     type XhrState = { url: string; bearer?: string };
     type XhrWithState = XMLHttpRequest & { [STATE]?: XhrState };
 
-    // The XHR.open spec is variadic — (method, url, async?, user?, password?).
-    // We forward exactly what we received via `apply` rather than spreading,
-    // so TypeScript doesn't need to model every overload.
-    const patchedOpen = function patchedOpen(this: XhrWithState, method: string, url: string | URL) {
+    // The XHR.open spec is variadic — `(method, url, async?, user?, password?)`.
+    // The rest tuple here covers the optional tail of the longer overload so
+    // we can forward every form without falling back to `arguments`.
+    type XhrOpenRest = [async?: boolean, username?: string | null, password?: string | null];
+    const patchedOpen = function patchedOpen(
+      this: XhrWithState,
+      method: string,
+      url: string | URL,
+      ...rest: XhrOpenRest
+    ) {
       const urlStr = typeof url === 'string' ? url : url.href;
       this[STATE] = { url: urlStr };
       this.addEventListener('load', () => {
@@ -203,15 +209,15 @@ definePreScript(({ set, log }) => {
           }
         }
       });
-      return origOpen.apply(this, arguments as unknown as Parameters<typeof origOpen>);
+      // The two `open` overloads (with/without async/user/password) don't
+      // unify when forwarding a rest tuple, so widen `origOpen` to a single
+      // signature that accepts unknown trailing args.
+      const forward = origOpen as (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) => void;
+      return forward.call(this, method, urlStr, ...rest);
     };
     Xhr.prototype.open = patchedOpen as typeof Xhr.prototype.open;
 
-    Xhr.prototype.setRequestHeader = function patchedSetRequestHeader(
-      this: XhrWithState,
-      name: string,
-      value: string,
-    ) {
+    Xhr.prototype.setRequestHeader = function patchedSetRequestHeader(this: XhrWithState, name: string, value: string) {
       if (name.toLowerCase() === 'authorization' && this[STATE]) {
         this[STATE].bearer = value;
       }

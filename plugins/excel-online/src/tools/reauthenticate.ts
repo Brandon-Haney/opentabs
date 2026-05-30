@@ -36,17 +36,18 @@ export const reauthenticate = defineTool({
   group: 'Account',
   input: z.object({}),
   output: z.object({
-    status: z.literal('reloading'),
+    status: z.enum(['reloading', 'skipped']),
     message: z.string(),
   }),
   handle: async () => {
     // Only meaningful on SharePoint/OneDrive — the standalone
-    // `excel.cloud.microsoft` app has no encrypted-cache problem.
+    // `excel.cloud.microsoft` app has no encrypted-cache problem, so
+    // there is nothing to clear and no reload to perform.
     if (!isSharePointWorkbook()) {
       return {
-        status: 'reloading' as const,
+        status: 'skipped' as const,
         message:
-          'This tab is not a SharePoint/OneDrive workbook — reauthenticate has no effect here. If you are seeing AUTH_ERROR, sign in to Microsoft 365 in this browser session.',
+          'This tab is not a SharePoint/OneDrive workbook — reauthenticate has no effect here. If you are seeing AUTH_ERROR on a standalone excel.cloud.microsoft tab, sign in to Microsoft 365 in this browser session.',
       };
     }
 

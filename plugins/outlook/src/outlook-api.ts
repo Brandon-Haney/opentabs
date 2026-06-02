@@ -24,26 +24,42 @@ interface OutlookAuth {
 }
 
 /**
- * Scopes required for mail operations. A token must include at least one of these
- * to be usable for reading/sending mail.
+ * A token capability. Mail and calendar require different Microsoft Graph scopes,
+ * and a token granted for one is not guaranteed to carry the other — enterprise
+ * tenants commonly issue a narrowly-scoped Graph token (User.Read only) alongside
+ * a broad Outlook REST token. Each capability is resolved against its own scope set
+ * and cached independently so calendar calls never inherit a mail-only token.
  */
-const MAIL_SCOPES = ['mail.read', 'mail.readwrite', 'mail.send'];
+type Capability = 'mail' | 'calendar';
 
-/**
- * Check whether a token's target scopes include at least one mail-related scope.
- */
-const hasMailScope = (target: string): boolean => {
-  const lower = target.toLowerCase();
-  return MAIL_SCOPES.some(scope => lower.includes(scope));
+/** Scopes that satisfy each capability. A usable token must include at least one. */
+const CAPABILITY_SCOPES: Record<Capability, string[]> = {
+  mail: ['mail.read', 'mail.readwrite', 'mail.send'],
+  calendar: ['calendars.read', 'calendars.readwrite'],
+};
+
+/** Per-capability auth cache key, keeping mail and calendar tokens separate. */
+const AUTH_CACHE_KEY: Record<Capability, string> = {
+  mail: 'outlook',
+  calendar: 'outlook-calendar',
 };
 
 /**
- * Search MSAL v2 token cache for a valid access token matching a target scope pattern.
- * When matching Graph API tokens, also verifies the token has mail scopes — some
- * enterprise tenants issue Graph tokens with User.Read but without Mail.Read, which
- * causes 403 errors on /me/messages endpoints.
+ * Check whether a token's target scopes satisfy the given capability.
  */
-const findMsalV2Token = (clientId: string, scopeMatch: string): OutlookAuth | null => {
+const hasCapabilityScope = (target: string, capability: Capability): boolean => {
+  const lower = target.toLowerCase();
+  return CAPABILITY_SCOPES[capability].some(scope => lower.includes(scope));
+};
+
+/**
+ * Search MSAL v2 token cache for a valid access token matching a target scope pattern
+ * and carrying the requested capability's scope. Some enterprise tenants issue tokens
+ * (Graph or REST) scoped for one capability but not another — e.g. a Graph token with
+ * only User.Read that 403s on mail endpoints, or a token without Calendars.* — so every
+ * candidate is verified against the capability scope before being accepted.
+ */
+const findMsalV2Token = (clientId: string, scopeMatch: string, capability: Capability): OutlookAuth | null => {
   const tokenKeysRaw = getLocalStorage(`msal.2.token.keys.${clientId}`);
   if (!tokenKeysRaw) return null;
 
@@ -69,12 +85,7 @@ const findMsalV2Token = (clientId: string, scopeMatch: string): OutlookAuth | nu
       const expiresOn = Number.parseInt(parsed.expiresOn, 10);
       if (expiresOn && expiresOn * 1000 < Date.now()) continue;
 
-      // For Graph API tokens, verify mail scopes are present.
-      // Enterprise tenants may have a Graph token with only User.Read that will
-      // 403 on mail endpoints. Skip it so we fall through to the Outlook REST token.
-      if (scopeMatch === 'graph.microsoft.com' && !hasMailScope(target)) {
-        continue;
-      }
+      if (!hasCapabilityScope(target, capability)) continue;
 
       const apiBase = scopeMatch === 'graph.microsoft.com' ? GRAPH_API_BASE : OUTLOOK_API_BASE;
       return { token: parsed.secret, apiBase };
@@ -86,9 +97,51 @@ const findMsalV2Token = (clientId: string, scopeMatch: string): OutlookAuth | nu
 };
 
 /**
- * Search MSAL v1 token cache for a valid Graph API access token.
+ * Search the MSAL v3 token cache for a valid access token matching a target scope
+ * pattern and carrying the requested capability's scope.
+ *
+ * MSAL v3 abandons the `msal.2.token.keys.<clientId>` index used by v2. Each access
+ * token is instead stored under a flat, pipe-delimited key of the form
+ * `msal.3|<homeAccountId>|<environment>|accesstoken|<clientId>|<tenant>|<scopes>|`
+ * with the entity JSON (containing `secret`, `target`, `expiresOn`) as the value.
+ * Tokens are located by scanning localStorage keys directly rather than via an index.
  */
-const findMsalV1Token = (clientId: string): OutlookAuth | null => {
+const findMsalV3Token = (scopeMatch: string, capability: Capability): OutlookAuth | null => {
+  const entry = findLocalStorageEntry(key => {
+    const lower = key.toLowerCase();
+    if (!lower.startsWith('msal.3|') || !lower.includes('|accesstoken|')) return false;
+    if (!lower.includes(scopeMatch)) return false;
+
+    const raw = getLocalStorage(key);
+    if (!raw) return false;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed.secret) return false;
+
+      const expiresOn = Number.parseInt(parsed.expiresOn, 10);
+      if (expiresOn && expiresOn * 1000 < Date.now()) return false;
+
+      return hasCapabilityScope(parsed.target ?? '', capability);
+    } catch {
+      return false;
+    }
+  });
+  if (!entry) return null;
+
+  try {
+    const parsed = JSON.parse(entry.value);
+    const apiBase = scopeMatch === 'graph.microsoft.com' ? GRAPH_API_BASE : OUTLOOK_API_BASE;
+    return { token: parsed.secret, apiBase };
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Search MSAL v1 token cache for a valid Graph API access token carrying the
+ * requested capability's scope.
+ */
+const findMsalV1Token = (clientId: string, capability: Capability): OutlookAuth | null => {
   const tokenKeysRaw = getLocalStorage(`msal.token.keys.${clientId}`);
   if (!tokenKeysRaw) return null;
 
@@ -109,6 +162,7 @@ const findMsalV1Token = (clientId: string): OutlookAuth | null => {
       if (!parsed.secret) continue;
       const expiresOn = Number.parseInt(parsed.expiresOn, 10);
       if (expiresOn && expiresOn * 1000 < Date.now()) continue;
+      if (!hasCapabilityScope(parsed.target ?? '', capability)) continue;
       return { token: parsed.secret, apiBase: GRAPH_API_BASE };
     } catch {
       // skip invalid entries
@@ -118,47 +172,54 @@ const findMsalV1Token = (clientId: string): OutlookAuth | null => {
 };
 
 /**
- * Extract a valid access token from MSAL localStorage cache.
+ * Extract a valid access token for the given capability from the MSAL localStorage cache.
  * Priority: Graph API token > Outlook REST API token.
  * Supports MSAL v2 (enterprise) and v1 (consumer) formats.
  */
-const getAuth = (): OutlookAuth | null => {
-  const cached = getAuthCache<OutlookAuth>('outlook');
+const getAuth = (capability: Capability): OutlookAuth | null => {
+  const cacheKey = AUTH_CACHE_KEY[capability];
+  const cached = getAuthCache<OutlookAuth>(cacheKey);
   if (cached) return cached;
 
-  // 1. Enterprise MSAL v2 — Graph API token
-  let auth = findMsalV2Token(MSAL_CLIENT_ID, 'graph.microsoft.com');
+  // 1. MSAL v3 — Graph API token (current cache schema on outlook.cloud.microsoft)
+  let auth = findMsalV3Token('graph.microsoft.com', capability);
 
-  // 2. Enterprise MSAL v2 — Outlook REST API token (has mail.readwrite scopes)
-  if (!auth) auth = findMsalV2Token(MSAL_CLIENT_ID, 'outlook.office.com');
+  // 2. MSAL v3 — Outlook REST API token
+  if (!auth) auth = findMsalV3Token('outlook.office.com', capability);
 
-  // 3. Consumer MSAL v1 — Graph API token
-  if (!auth) auth = findMsalV1Token(MSAL_CLIENT_ID_CONSUMER);
+  // 3. Enterprise MSAL v2 — Graph API token
+  if (!auth) auth = findMsalV2Token(MSAL_CLIENT_ID, 'graph.microsoft.com', capability);
 
-  // 4. Fallback: scan for any MSAL v2 entry with Graph scope
+  // 4. Enterprise MSAL v2 — Outlook REST API token
+  if (!auth) auth = findMsalV2Token(MSAL_CLIENT_ID, 'outlook.office.com', capability);
+
+  // 5. Consumer MSAL v1 — Graph API token
+  if (!auth) auth = findMsalV1Token(MSAL_CLIENT_ID_CONSUMER, capability);
+
+  // 6. Fallback: scan for any MSAL v2 entry with Graph scope
   if (!auth) {
     const entry = findLocalStorageEntry(key => key.startsWith('msal.2.token.keys.'));
     if (entry) {
       const cid = entry.key.replace('msal.2.token.keys.', '');
-      auth = findMsalV2Token(cid, 'graph.microsoft.com');
-      if (!auth) auth = findMsalV2Token(cid, 'outlook.office.com');
+      auth = findMsalV2Token(cid, 'graph.microsoft.com', capability);
+      if (!auth) auth = findMsalV2Token(cid, 'outlook.office.com', capability);
     }
   }
 
-  // 5. Fallback: scan for any MSAL v1 entry
+  // 7. Fallback: scan for any MSAL v1 entry
   if (!auth) {
     const entry = findLocalStorageEntry(key => key.startsWith('msal.token.keys.'));
     if (entry) {
       const cid = entry.key.replace('msal.token.keys.', '');
-      auth = findMsalV1Token(cid);
+      auth = findMsalV1Token(cid, capability);
     }
   }
 
-  if (auth) setAuthCache('outlook', auth);
+  if (auth) setAuthCache(cacheKey, auth);
   return auth;
 };
 
-export const isAuthenticated = (): boolean => getAuth() !== null;
+export const isAuthenticated = (): boolean => getAuth('mail') !== null;
 
 export const waitForAuth = (): Promise<boolean> =>
   waitUntil(() => isAuthenticated(), { interval: 500, timeout: 5000 }).then(
@@ -181,6 +242,26 @@ const normalizeKeys = (obj: unknown): unknown => {
     // Skip OData metadata keys like @odata.context
     const newKey = key.startsWith('@') ? key : toCamelCase(key);
     result[newKey] = normalizeKeys(value);
+  }
+  return result;
+};
+
+const toPascalCase = (str: string): string => str.charAt(0).toUpperCase() + str.slice(1);
+
+/**
+ * Recursively convert object keys to PascalCase.
+ * The Outlook REST API deserializes request bodies case-sensitively and requires
+ * PascalCase property names for both entities (Subject, Start/DateTime) and OData
+ * action parameters (Schedules, Comment). Graph uses camelCase. Request bodies are
+ * authored in camelCase and transformed here when the request targets the REST base;
+ * GET query options ($filter, $orderby) are case-insensitive on REST and unaffected.
+ */
+const pascalCaseKeys = (obj: unknown): unknown => {
+  if (obj === null || obj === undefined || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(pascalCaseKeys);
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    result[toPascalCase(key)] = pascalCaseKeys(value);
   }
   return result;
 };
@@ -222,7 +303,8 @@ const sendRequest = async <T>(
 
   if (options.body) {
     headers['Content-Type'] = 'application/json';
-    init.body = JSON.stringify(options.body);
+    const body = isOutlookApi ? pascalCaseKeys(options.body) : options.body;
+    init.body = JSON.stringify(body);
   }
 
   let response: Response;
@@ -283,8 +365,10 @@ const sendRequest = async <T>(
 };
 
 /**
- * Make an authenticated request to Microsoft mail APIs.
- * Automatically uses whichever API the current token supports (Graph or Outlook REST).
+ * Make an authenticated request to a Microsoft 365 API for the given capability.
+ * Mail requests default to the `mail` capability; calendar tools pass `calendar`
+ * so they resolve a calendar-scoped token instead of inheriting a mail-only one.
+ * Automatically uses whichever API the resolved token supports (Graph or Outlook REST).
  * On 401/403, clears the cached token, re-acquires from MSAL localStorage, and retries once.
  */
 export const api = async <T>(
@@ -295,21 +379,23 @@ export const api = async <T>(
     query?: Record<string, string | number | boolean | undefined>;
     headers?: Record<string, string>;
   } = {},
+  capability: Capability = 'mail',
 ): Promise<T> => {
-  let auth = getAuth();
+  const cacheKey = AUTH_CACHE_KEY[capability];
+  let auth = getAuth(capability);
   if (!auth) throw ToolError.auth('Not authenticated — please sign in to Microsoft 365.');
 
   const result = await sendRequest<T>(auth, endpoint, options);
   if (result !== null) return result;
 
   // 401/403 — clear stale cache, re-acquire token from MSAL, and retry once
-  clearAuthCache('outlook');
-  auth = getAuth();
+  clearAuthCache(cacheKey);
+  auth = getAuth(capability);
   if (!auth) throw ToolError.auth('Authentication expired — please refresh the Outlook page.');
 
   const retry = await sendRequest<T>(auth, endpoint, options);
   if (retry !== null) return retry;
 
-  clearAuthCache('outlook');
+  clearAuthCache(cacheKey);
   throw ToolError.auth('Authentication expired — please refresh the Outlook page.');
 };

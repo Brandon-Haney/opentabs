@@ -69,11 +69,13 @@ export const createEvent = defineTool({
       body.isReminderOn = true;
     }
 
-    const endpoint = params.calendar_id ? `/me/calendars/${params.calendar_id}/events` : '/me/events';
+    const endpoint = params.calendar_id
+      ? `/me/calendars/${encodeURIComponent(params.calendar_id)}/events`
+      : '/me/events';
     const created = await api<RawEvent>(
       endpoint,
       { method: 'POST', body, query: { $select: EVENT_DETAIL_FIELDS } },
-      'calendar',
+      'calendar-write',
     );
     return { event: mapEventDetail(created) };
   },

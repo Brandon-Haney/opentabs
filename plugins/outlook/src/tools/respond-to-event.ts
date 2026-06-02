@@ -28,7 +28,7 @@ export const respondToEvent = defineTool({
   handle: async params => {
     const action = RESPONSE_ACTION[params.response];
     await api(
-      `/me/events/${params.event_id}/${action}`,
+      `/me/events/${encodeURIComponent(params.event_id)}/${action}`,
       {
         method: 'POST',
         body: {
@@ -36,7 +36,7 @@ export const respondToEvent = defineTool({
           sendResponse: params.send_response ?? true,
         },
       },
-      'calendar',
+      'calendar-write',
     );
     return { success: true };
   },

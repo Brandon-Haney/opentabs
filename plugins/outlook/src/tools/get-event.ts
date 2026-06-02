@@ -23,7 +23,7 @@ export const getEvent = defineTool({
   }),
   handle: async params => {
     const data = await api<RawEvent>(
-      `/me/events/${params.event_id}`,
+      `/me/events/${encodeURIComponent(params.event_id)}`,
       {
         query: { $select: EVENT_DETAIL_FIELDS },
         headers: params.time_zone ? { Prefer: `outlook.timezone="${params.time_zone}"` } : undefined,

@@ -27,21 +27,25 @@ interface OutlookAuth {
  * A token capability. Mail and calendar require different Microsoft Graph scopes,
  * and a token granted for one is not guaranteed to carry the other — enterprise
  * tenants commonly issue a narrowly-scoped Graph token (User.Read only) alongside
- * a broad Outlook REST token. Each capability is resolved against its own scope set
- * and cached independently so calendar calls never inherit a mail-only token.
+ * a broad Outlook REST token. Calendar read and write are kept separate so mutating
+ * tools never bind to a read-only calendar token (which would 403 at request time and
+ * surface as a misleading "authentication expired"). Each capability resolves against
+ * its own scope set and caches independently.
  */
-type Capability = 'mail' | 'calendar';
+type Capability = 'mail' | 'calendar' | 'calendar-write';
 
 /** Scopes that satisfy each capability. A usable token must include at least one. */
 const CAPABILITY_SCOPES: Record<Capability, string[]> = {
   mail: ['mail.read', 'mail.readwrite', 'mail.send'],
   calendar: ['calendars.read', 'calendars.readwrite'],
+  'calendar-write': ['calendars.readwrite'],
 };
 
-/** Per-capability auth cache key, keeping mail and calendar tokens separate. */
+/** Per-capability auth cache key, keeping each token bucket separate. */
 const AUTH_CACHE_KEY: Record<Capability, string> = {
   mail: 'outlook',
   calendar: 'outlook-calendar',
+  'calendar-write': 'outlook-calendar-write',
 };
 
 /**
@@ -359,6 +363,11 @@ const sendRequest = async <T>(
     }
     throw ToolError.internal(errorMsg);
   }
+
+  // Successful actions (cancel, RSVP, sendMail) often return 202/205 or a 200 with
+  // an empty body and no JSON. Only parse when the response actually carries JSON.
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) return {} as T;
 
   const json = await response.json();
   return (isOutlookApi ? normalizeKeys(json) : json) as T;

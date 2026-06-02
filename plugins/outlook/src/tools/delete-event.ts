@@ -24,15 +24,16 @@ export const deleteEvent = defineTool({
     cancelled: z.boolean().describe('True if a cancellation notice was sent to attendees, false for a silent delete'),
   }),
   handle: async params => {
+    const eventId = encodeURIComponent(params.event_id);
     if (params.cancellation_message !== undefined) {
       await api(
-        `/me/events/${params.event_id}/cancel`,
+        `/me/events/${eventId}/cancel`,
         { method: 'POST', body: { comment: params.cancellation_message } },
-        'calendar',
+        'calendar-write',
       );
       return { success: true, cancelled: true };
     }
-    await api(`/me/events/${params.event_id}`, { method: 'DELETE' }, 'calendar');
+    await api(`/me/events/${eventId}`, { method: 'DELETE' }, 'calendar-write');
     return { success: true, cancelled: false };
   },
 });

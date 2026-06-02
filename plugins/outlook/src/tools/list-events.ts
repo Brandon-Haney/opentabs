@@ -31,7 +31,9 @@ export const listEvents = defineTool({
     total_count: z.number().optional().describe('Total count if available'),
   }),
   handle: async params => {
-    const endpoint = params.calendar_id ? `/me/calendars/${params.calendar_id}/events` : '/me/events';
+    const endpoint = params.calendar_id
+      ? `/me/calendars/${encodeURIComponent(params.calendar_id)}/events`
+      : '/me/events';
     const data = await api<{ value: RawEvent[]; '@odata.count'?: number }>(
       endpoint,
       {

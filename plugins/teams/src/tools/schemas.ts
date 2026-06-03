@@ -162,3 +162,64 @@ export const mapMessage = (m: RawMessage): Message => ({
   files: parseFiles(m.properties?.files),
   reactions: parseReactions(m),
 });
+
+// ---------------------------------------------------------------------------
+// Message search result schema (Substrate Search API)
+// ---------------------------------------------------------------------------
+
+/**
+ * `$select`-equivalent extension fields requested for each message hit. These
+ * surface the Teams-specific properties (thread type, sender identity) that
+ * are not part of the base Substrate message schema.
+ */
+export const SEARCH_MESSAGE_EXTENSION_FIELDS = [
+  'Extension_SkypeSpaces_ConversationPost_Extension_ThreadType_String',
+  'Extension_SkypeSpaces_ConversationPost_Extension_FromSkypeInternalId_String',
+  'Extension_SkypeSpaces_ConversationPost_Extension_SkypeGroupId_String',
+];
+
+export const messageSearchResultSchema = z.object({
+  id: z.string().describe('Message ID'),
+  conversation_id: z
+    .string()
+    .describe('Thread ID of the chat/channel the message belongs to — pass to read_messages to read the conversation'),
+  thread_type: z.string().describe('Thread type (e.g., "chat", "meeting", "topic" for a channel)'),
+  from: z.string().describe('Sender display name'),
+  from_address: z.string().describe('Sender email address'),
+  subject: z.string().describe('Message subject (empty for chat messages)'),
+  summary: z.string().describe('Hit-highlighted snippet of the matching message (may contain HTML)'),
+  sent_time: z.string().describe('When the message was sent (ISO 8601)'),
+  has_attachments: z.boolean().describe('Whether the message has file attachments'),
+});
+
+export type MessageSearchResult = z.infer<typeof messageSearchResultSchema>;
+
+interface RawSearchResult {
+  Id?: string;
+  HitHighlightedSummary?: string;
+  Source?: {
+    ClientThreadId?: string;
+    Subject?: string;
+    Preview?: string;
+    DateTimeSent?: string;
+    HasAttachments?: boolean;
+    From?: { EmailAddress?: { Name?: string; Address?: string } };
+    Extensions?: { SkypeSpaces_ConversationPost_Extension_ThreadType?: string };
+  };
+}
+
+export const mapSearchResult = (r: RawSearchResult): MessageSearchResult => {
+  const source = r.Source ?? {};
+  const email = source.From?.EmailAddress ?? {};
+  return {
+    id: r.Id ?? '',
+    conversation_id: source.ClientThreadId ?? '',
+    thread_type: source.Extensions?.SkypeSpaces_ConversationPost_Extension_ThreadType ?? '',
+    from: email.Name ?? '',
+    from_address: email.Address ?? '',
+    subject: source.Subject ?? '',
+    summary: r.HitHighlightedSummary ?? source.Preview ?? '',
+    sent_time: source.DateTimeSent ?? '',
+    has_attachments: source.HasAttachments ?? false,
+  };
+};

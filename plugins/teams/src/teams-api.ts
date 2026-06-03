@@ -459,6 +459,84 @@ export const threadApi = async <T>(
 };
 
 // ---------------------------------------------------------------------------
+// Substrate Search API
+// ---------------------------------------------------------------------------
+
+const SUBSTRATE_SEARCH_URL = 'https://substrate.office.com/searchservice/api/v2/query';
+
+/**
+ * Read the Substrate Search access token captured by the pre-script.
+ * Unlike the Skype token, this one is used directly as a `Bearer` against
+ * the Substrate Search API — no authz exchange.
+ */
+const getSubstrateToken = (): string | null => {
+  const captured = readPreScriptValue<CapturedToken>('substrateToken');
+  if (!captured || typeof captured.secret !== 'string' || captured.secret.length === 0) {
+    return null;
+  }
+  if (typeof captured.expiresOn !== 'number' || captured.expiresOn <= Date.now() / 1000) {
+    return null;
+  }
+  return captured.secret;
+};
+
+/**
+ * Build Substrate routing headers from the token's own claims. Substrate
+ * fans a query out across mailboxes/regions and uses `X-AnchorMailbox` /
+ * `X-RoutingParameter-SessionKey` to land the request on the user's mailbox.
+ * The `puid`, `oid`, and `tid` claims in the access token are the
+ * authoritative source for those values.
+ */
+const buildSubstrateRoutingHeaders = (token: string): Record<string, string> => {
+  const claims = decodeJwtPayload(token);
+  const tid = String(claims.tid ?? '');
+  const puid = String(claims.puid ?? '');
+  const oid = String(claims.oid ?? '');
+  const headers: Record<string, string> = {};
+  if (puid && tid) headers['X-AnchorMailbox'] = `PUID:${puid}@${tid}`;
+  if (oid && tid) headers['X-RoutingParameter-SessionKey'] = `OID:${oid}@${tid}`;
+  return headers;
+};
+
+/**
+ * Query the Microsoft Substrate Search API. Powers Teams' universal search
+ * across messages, files, people, and chats. Authenticated with the raw
+ * Substrate access token as a `Bearer`.
+ */
+export const substrateSearch = async <T>(body: Record<string, unknown>): Promise<T> => {
+  const token = getSubstrateToken();
+  if (!token) {
+    throw ToolError.auth(
+      'Not authenticated for search — no Substrate Search token captured. Reload the Teams tab so the pre-script can intercept it. Search requires enterprise Teams (teams.microsoft.com).',
+    );
+  }
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+    ...buildSubstrateRoutingHeaders(token),
+  };
+
+  let response: Response;
+  try {
+    response = await fetch(SUBSTRATE_SEARCH_URL, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      credentials: 'include',
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      throw ToolError.timeout('Teams search timed out');
+    }
+    throw ToolError.internal(`Network error calling Teams search: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  return handleApiResponse<T>(response, 'POST', '/searchservice/api/v2/query');
+};
+
+// ---------------------------------------------------------------------------
 // Shared response handling
 // ---------------------------------------------------------------------------
 

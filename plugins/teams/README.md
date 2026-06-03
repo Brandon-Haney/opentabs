@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-teams
 1. Open [teams.live.com](https://teams.live.com/v2/) in Chrome and log in
 2. Open the OpenTabs side panel — the Microsoft Teams plugin should appear as **ready**
 
-## Tools (11)
+## Tools (12)
 
 ### Chats (4)
 
@@ -30,12 +30,13 @@ npm install -g @opentabs-dev/opentabs-plugin-teams
 | `create_chat` | Create a new chat conversation | Write |
 | `set_channel_topic` | Set a chat topic | Write |
 
-### Messages (4)
+### Messages (5)
 
 | Tool | Description | Type |
 |---|---|---|
 | `send_message` | Send a message to a chat | Write |
 | `read_messages` | Read messages from a chat | Read |
+| `search_messages` | Search all chats and channels for messages (enterprise only) | Read |
 | `edit_message` | Edit a chat message | Write |
 | `delete_message` | Delete a chat message | Write |
 

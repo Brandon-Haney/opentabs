@@ -21,10 +21,17 @@ import { definePreScript } from '@opentabs-dev/plugin-sdk/pre-script';
  * Adapter reads via `getPreScriptValue` keys:
  *   - `consumerToken`     → { secret, expiresOn } for `teams.live.com`
  *   - `enterpriseToken`   → { secret, expiresOn } for `teams.microsoft.com`
+ *   - `substrateToken`    → { secret, expiresOn } for the Substrate Search API
  *   - `signInName`        → preferred_username / upn / email from the ID token
+ *
+ * The Substrate token (`aud=https://substrate.office.com`) powers the
+ * universal search bar. It is a raw access token used directly as a
+ * `Bearer` against `substrate.office.com/searchservice` — no authz
+ * exchange — so the adapter only needs the captured secret.
  */
 definePreScript(({ set, log }) => {
   const SKYPE_HOST_PATTERN = /spaces\.skype\.com/i;
+  const SUBSTRATE_HOST_PATTERN = /substrate\.office\.com/i;
 
   type CapturedToken = { secret: string; expiresOn: number };
 
@@ -67,16 +74,28 @@ definePreScript(({ set, log }) => {
 
     if (credentialType === 'accesstoken') {
       const target = String(entry.target ?? '');
-      if (!SKYPE_HOST_PATTERN.test(target)) return;
+      const isSkype = SKYPE_HOST_PATTERN.test(target);
+      const isSubstrate = SUBSTRATE_HOST_PATTERN.test(target);
+      if (!isSkype && !isSubstrate) return;
 
       const expiresOn = Number.parseInt(String(entry.expiresOn ?? '0'), 10);
       if (!Number.isFinite(expiresOn) || expiresOn <= Date.now() / 1000) return;
 
       const captured: CapturedToken = { secret, expiresOn };
-      // Route by current page hostname so the slot we write matches the
-      // adapter's detectEnvironment() (which also keys off hostname).
-      // Routing on the cached value's `target` host could disagree with
-      // detectEnvironment if MSAL ever caches a token for the other audience.
+
+      if (isSubstrate) {
+        // The Substrate Search token serves both consumer and enterprise via
+        // the same audience, so it is keyed by purpose rather than hostname.
+        set('substrateToken', captured);
+        log.debug('[teams] captured substrateToken');
+        return;
+      }
+
+      // Route the Skype token by current page hostname so the slot we write
+      // matches the adapter's detectEnvironment() (which also keys off
+      // hostname). Routing on the cached value's `target` host could disagree
+      // with detectEnvironment if MSAL ever caches a token for the other
+      // audience.
       const slot = window.location.hostname === 'teams.live.com' ? 'consumerToken' : 'enterpriseToken';
       set(slot, captured);
       log.debug(`[teams] captured ${slot}`);

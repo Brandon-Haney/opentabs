@@ -10,6 +10,7 @@ import { getCurrentUser } from './tools/get-current-user.js';
 import { listConversations } from './tools/list-conversations.js';
 import { readMessages } from './tools/read-messages.js';
 import { removeMember } from './tools/remove-member.js';
+import { searchMessages } from './tools/search-messages.js';
 import { sendMessage } from './tools/send-message.js';
 import { setChannelTopic } from './tools/set-channel-topic.js';
 
@@ -28,6 +29,7 @@ class TeamsPlugin extends OpenTabsPlugin {
     // Messages
     sendMessage,
     readMessages,
+    searchMessages,
     editMessage,
     deleteMessage,
     // Members

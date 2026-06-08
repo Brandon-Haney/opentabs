@@ -6,7 +6,7 @@ export const createDraft = defineTool({
   name: 'create_draft',
   displayName: 'Create Draft',
   description:
-    'Create a draft email message in the Drafts folder. The user can review and send it manually from Outlook.',
+    'Create a draft for a brand-new, standalone email in the Drafts folder. The user can review and send it manually from Outlook. This does NOT thread onto an existing conversation — to draft a reply that quotes the original thread, use reply_to_message with draft set to true; to draft a forward, use forward_message with draft set to true.',
   summary: 'Create a draft email',
   icon: 'file-edit',
   group: 'Messages',

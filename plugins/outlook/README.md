@@ -63,7 +63,7 @@ npm install -g @opentabs-dev/opentabs-plugin-outlook
 | `create_event` | Create an event or meeting | Write |
 | `update_event` | Update an event | Write |
 | `delete_event` | Delete or cancel an event | Write |
-| `respond_to_event` | Accept, decline, or tentatively accept an invite | Write |
+| `respond_to_event` | Accept, decline, or tentatively accept an invitation | Write |
 
 ## How It Works
 

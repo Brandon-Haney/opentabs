@@ -199,6 +199,13 @@ export const buildDateTime = (dateTime: string, timeZone?: string) => ({
   timeZone: timeZone ?? 'UTC',
 });
 
+/** Attendee shape accepted by create_event / update_event input. */
+export const attendeeInputSchema = z.object({
+  address: z.string().describe('Attendee email address'),
+  name: z.string().optional().describe('Attendee display name'),
+  type: z.enum(['required', 'optional', 'resource']).optional().describe('Attendance type (default: required)'),
+});
+
 export interface AttendeeInput {
   address: string;
   name?: string;

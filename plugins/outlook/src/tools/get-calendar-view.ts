@@ -12,13 +12,13 @@ export const getCalendarView = defineTool({
   icon: 'calendar-clock',
   group: 'Calendar',
   input: z.object({
-    start: z
-      .string()
+    start: z.iso
+      .datetime({ offset: true, local: true })
       .describe(
         'Range start as ISO 8601. Include a UTC offset to anchor the zone (e.g. "2026-06-02T00:00:00-04:00"); without an offset it is treated as UTC.',
       ),
-    end: z
-      .string()
+    end: z.iso
+      .datetime({ offset: true, local: true })
       .describe(
         'Range end as ISO 8601. Include a UTC offset to anchor the zone (e.g. "2026-06-09T00:00:00-04:00"); without an offset it is treated as UTC.',
       ),

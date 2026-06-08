@@ -4,17 +4,12 @@ import { api } from '../outlook-api.js';
 import {
   EVENT_DETAIL_FIELDS,
   type RawEvent,
+  attendeeInputSchema,
   buildAttendees,
   buildDateTime,
   eventDetailSchema,
   mapEventDetail,
 } from './calendar-schemas.js';
-
-const attendeeInputSchema = z.object({
-  address: z.string().describe('Attendee email address'),
-  name: z.string().optional().describe('Attendee display name'),
-  type: z.enum(['required', 'optional', 'resource']).optional().describe('Attendance type (default: required)'),
-});
 
 export const createEvent = defineTool({
   name: 'create_event',
@@ -26,8 +21,12 @@ export const createEvent = defineTool({
   group: 'Calendar',
   input: z.object({
     subject: z.string().describe('Event subject/title'),
-    start: z.string().describe('Start as ISO 8601 (e.g. "2026-06-02T13:00:00")'),
-    end: z.string().describe('End as ISO 8601 (e.g. "2026-06-02T14:00:00")'),
+    start: z.iso
+      .datetime({ offset: false, local: true })
+      .describe('Start as ISO 8601 without an offset (e.g. "2026-06-02T13:00:00"); the zone is set by time_zone.'),
+    end: z.iso
+      .datetime({ offset: false, local: true })
+      .describe('End as ISO 8601 without an offset (e.g. "2026-06-02T14:00:00"); the zone is set by time_zone.'),
     time_zone: z
       .string()
       .optional()

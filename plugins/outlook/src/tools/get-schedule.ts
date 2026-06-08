@@ -13,8 +13,14 @@ export const getSchedule = defineTool({
   group: 'Calendar',
   input: z.object({
     schedules: z.array(z.string()).min(1).describe('Email addresses of the people (or rooms) to look up'),
-    start: z.string().describe('Window start as ISO 8601 (e.g. "2026-06-02T08:00:00")'),
-    end: z.string().describe('Window end as ISO 8601 (e.g. "2026-06-02T18:00:00")'),
+    start: z.iso
+      .datetime({ offset: false, local: true })
+      .describe(
+        'Window start as ISO 8601 without an offset (e.g. "2026-06-02T08:00:00"); the zone is set by time_zone.',
+      ),
+    end: z.iso
+      .datetime({ offset: false, local: true })
+      .describe('Window end as ISO 8601 without an offset (e.g. "2026-06-02T18:00:00"); the zone is set by time_zone.'),
     time_zone: z
       .string()
       .optional()

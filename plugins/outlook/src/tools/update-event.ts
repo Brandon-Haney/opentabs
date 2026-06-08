@@ -24,30 +24,29 @@ export const updateEvent = defineTool({
   summary: 'Update a calendar event',
   icon: 'pencil',
   group: 'Calendar',
-  input: z
-    .object({
-      event_id: z.string().describe('The event ID to update'),
-      subject: z.string().optional().describe('New subject/title'),
-      start: z.string().optional().describe('New start as ISO 8601. Provide together with end.'),
-      end: z.string().optional().describe('New end as ISO 8601. Provide together with start.'),
-      time_zone: z
-        .string()
-        .optional()
-        .describe('Time zone for start/end (e.g. "Eastern Standard Time"). Defaults to UTC.'),
-      body: z.string().optional().describe('New event body/description'),
-      body_type: z.enum(['text', 'html']).optional().describe('Body content type (default: text)'),
-      location: z.string().optional().describe('New location display name'),
-      attendees: z.array(attendeeInputSchema).optional().describe('Replace the attendee list'),
-      is_all_day: z.boolean().optional().describe('Mark as all-day. When true, start/end must be at midnight.'),
-      is_online_meeting: z.boolean().optional().describe('Toggle an online (Teams) meeting'),
-      importance: z.enum(['low', 'normal', 'high']).optional().describe('Importance level'),
-      show_as: z
-        .enum(['free', 'tentative', 'busy', 'oof', 'workingElsewhere'])
-        .optional()
-        .describe('Free/busy status to show'),
-      reminder_minutes_before_start: z.number().int().min(0).optional().describe('Reminder lead time in minutes'),
-      categories: z.array(z.string()).optional().describe('Set categories/labels'),
-    }),
+  input: z.object({
+    event_id: z.string().describe('The event ID to update'),
+    subject: z.string().optional().describe('New subject/title'),
+    start: z.string().optional().describe('New start as ISO 8601. Provide together with end.'),
+    end: z.string().optional().describe('New end as ISO 8601. Provide together with start.'),
+    time_zone: z
+      .string()
+      .optional()
+      .describe('Time zone for start/end (e.g. "Eastern Standard Time"). Defaults to UTC.'),
+    body: z.string().optional().describe('New event body/description'),
+    body_type: z.enum(['text', 'html']).optional().describe('Body content type (default: text)'),
+    location: z.string().optional().describe('New location display name'),
+    attendees: z.array(attendeeInputSchema).optional().describe('Replace the attendee list'),
+    is_all_day: z.boolean().optional().describe('Mark as all-day. When true, start/end must be at midnight.'),
+    is_online_meeting: z.boolean().optional().describe('Toggle an online (Teams) meeting'),
+    importance: z.enum(['low', 'normal', 'high']).optional().describe('Importance level'),
+    show_as: z
+      .enum(['free', 'tentative', 'busy', 'oof', 'workingElsewhere'])
+      .optional()
+      .describe('Free/busy status to show'),
+    reminder_minutes_before_start: z.number().int().min(0).optional().describe('Reminder lead time in minutes'),
+    categories: z.array(z.string()).optional().describe('Set categories/labels'),
+  }),
   output: z.object({
     event: eventDetailSchema.describe('The updated event'),
   }),

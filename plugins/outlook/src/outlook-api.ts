@@ -86,8 +86,8 @@ const findMsalV2Token = (clientId: string, scopeMatch: string, capability: Capab
       const matches = target.toLowerCase().includes(scopeMatch) || key.toLowerCase().includes(scopeMatch);
       if (!matches) continue;
 
-      const expiresOn = Number.parseInt(parsed.expiresOn, 10);
-      if (expiresOn && expiresOn * 1000 < Date.now()) continue;
+      const expiresOn = Number(parsed.expiresOn);
+      if (!Number.isInteger(expiresOn) || expiresOn <= 0 || expiresOn * 1000 < Date.now()) continue;
 
       if (!hasCapabilityScope(target, capability)) continue;
 
@@ -122,8 +122,8 @@ const findMsalV3Token = (scopeMatch: string, capability: Capability): OutlookAut
       const parsed = JSON.parse(raw);
       if (!parsed.secret) return false;
 
-      const expiresOn = Number.parseInt(parsed.expiresOn, 10);
-      if (expiresOn && expiresOn * 1000 < Date.now()) return false;
+      const expiresOn = Number(parsed.expiresOn);
+      if (!Number.isInteger(expiresOn) || expiresOn <= 0 || expiresOn * 1000 < Date.now()) return false;
 
       return hasCapabilityScope(parsed.target ?? '', capability);
     } catch {
@@ -164,8 +164,8 @@ const findMsalV1Token = (clientId: string, capability: Capability): OutlookAuth 
     try {
       const parsed = JSON.parse(raw);
       if (!parsed.secret) continue;
-      const expiresOn = Number.parseInt(parsed.expiresOn, 10);
-      if (expiresOn && expiresOn * 1000 < Date.now()) continue;
+      const expiresOn = Number(parsed.expiresOn);
+      if (!Number.isInteger(expiresOn) || expiresOn <= 0 || expiresOn * 1000 < Date.now()) continue;
       if (!hasCapabilityScope(parsed.target ?? '', capability)) continue;
       return { token: parsed.secret, apiBase: GRAPH_API_BASE };
     } catch {

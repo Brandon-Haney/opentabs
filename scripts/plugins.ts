@@ -64,7 +64,15 @@ const changedArgs = process.argv.filter(a => a === '--changed' || a.startsWith('
 const changedArg = changedArgs.find(a => a.includes('=')) ?? changedArgs[0];
 if (changedArg) {
   const baseRef = changedArg.includes('=') ? changedArg.slice('--changed='.length) : 'origin/main';
-  const diff = spawnSync('git', ['diff', '--name-only', `${baseRef}...HEAD`], {
+
+  // Prefer diffing from the merge-base (three-dot semantics) so unrelated
+  // commits already on the base branch aren't counted. Under a shallow CI
+  // checkout the merge-base may be absent, so fall back to a two-dot diff
+  // (files in HEAD relative to the base ref) which needs no common ancestor.
+  const mergeBase = spawnSync('git', ['merge-base', baseRef, 'HEAD'], { cwd: repoRoot, encoding: 'utf-8' });
+  const diffBase = mergeBase.status === 0 ? mergeBase.stdout.trim() : baseRef;
+
+  const diff = spawnSync('git', ['diff', '--name-only', diffBase, 'HEAD'], {
     cwd: repoRoot,
     encoding: 'utf-8',
   });

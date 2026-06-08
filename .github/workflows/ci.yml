@@ -127,7 +127,7 @@ jobs:
       - name: Build plugins
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch origin "${{ github.base_ref }}" --depth=1
+            git fetch --no-tags origin "${{ github.base_ref }}"
             npm run build:plugins:changed -- "--changed=origin/${{ github.base_ref }}"
           else
             npm run build:plugins

@@ -59,7 +59,14 @@ const upsertPreScript = async (meta: PluginMeta): Promise<void> => {
         runAt: 'document_start',
         world: 'MAIN',
         persistAcrossSessions: true,
-        allFrames: false,
+        // Register in all matching same-origin frames. SharePoint's WAC/Owl
+        // framework uses same-origin sub-frames for MSAL silent renewal, and
+        // pre-scripts that only run in the top window miss the refreshed
+        // tokens. Cross-origin frames (e.g. the WOPI Excel canvas) are
+        // unaffected — Chrome only injects into frames whose URL matches
+        // `meta.urlPatterns`. All shipped pre-scripts use a `Symbol.for(...)`
+        // marker so a second injection into the same realm is a no-op.
+        allFrames: true,
       },
     ]);
   } catch (err) {

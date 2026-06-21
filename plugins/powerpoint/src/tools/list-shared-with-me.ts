@@ -17,9 +17,12 @@ export const listSharedWithMe = defineTool({
     items: z.array(driveItemSchema).describe('Shared files and folders'),
   }),
   handle: async params => {
+    const limit = params.top ?? 10;
+    // Graph ignores $top on /me/drive/sharedWithMe (it returns the full set), so
+    // enforce the limit client-side to keep the response bounded.
     const data = await api<GraphCollection<RawDriveItem>>('/me/drive/sharedWithMe', {
-      query: { $top: params.top ?? 10 },
+      query: { $top: limit },
     });
-    return { items: (data.value ?? []).map(mapDriveItem) };
+    return { items: (data.value ?? []).slice(0, limit).map(mapDriveItem) };
   },
 });

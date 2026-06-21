@@ -348,6 +348,15 @@ export const getNotesForSlide = (entries: Map<string, Uint8Array>, slideFile: st
 
 // --- Download/Upload helpers ---
 
+/**
+ * Guidance for HTTP 423 from Graph `/content`. The file is held by a WOPI
+ * co-authoring lock — almost always because it is open in the PowerPoint web
+ * editor in this very browser. Graph cannot overwrite a locked file, so the
+ * only path is to close the editor (or wait for the lock to lapse) and retry.
+ */
+const FILE_LOCKED_MESSAGE =
+  'The presentation is locked because it is open in the PowerPoint web editor (or another co-authoring session), so Microsoft Graph cannot save changes to it. Close the editor tab — or wait ~30–60 seconds after closing for the lock to release — then retry. Any pending session edits are preserved.';
+
 interface ItemMetadata {
   eTag?: string;
   '@microsoft.graph.downloadUrl'?: string;
@@ -422,6 +431,7 @@ export const uploadPptx = async (itemId: string, entries: Map<string, Uint8Array
     body: blob,
     signal: AbortSignal.timeout(60_000),
   });
+  if (resp.status === 423) throw ToolError.validation(FILE_LOCKED_MESSAGE);
   if (!resp.ok) {
     const errorBody = (await resp.text().catch(() => '')).substring(0, 512);
     throw ToolError.internal(`Failed to upload PPTX: ${resp.status} — ${errorBody}`);
@@ -541,6 +551,11 @@ export const commitPresentation = async (itemId: string): Promise<CommitPresenta
         `or commit individual changes without a session.`,
     );
   }
+  if (resp.status === 423) {
+    // Leave the session in place — its dirty edits are preserved so the caller
+    // can close the editor (releasing the lock) and call commit again.
+    throw ToolError.validation(FILE_LOCKED_MESSAGE);
+  }
   if (!resp.ok) {
     const errorBody = (await resp.text().catch(() => '')).substring(0, 512);
     // Leave the session in place so the caller can retry or discard.
@@ -587,89 +602,123 @@ export const listPresentationSessions = (): ListedSession[] => {
   }));
 };
 
-/** Replace all text runs in a slide XML with new text content. */
+const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+
+const childElementsByName = (parent: Element, localName: string): Element[] => {
+  const out: Element[] = [];
+  for (const n of parent.childNodes) if (isElement(n) && n.localName === localName) out.push(n);
+  return out;
+};
+
+/**
+ * Replace the text of a slide's first/primary text box with `newText`,
+ * one paragraph per `\n`-separated line. The first existing paragraph's
+ * `pPr` and the first run's `rPr` are reused as formatting templates so the
+ * replacement keeps the original styling. Other text boxes on the slide are
+ * left untouched — to edit a specific shape, use `update_shape`.
+ */
 export const replaceSlideText = (slideXml: string, newText: string): string => {
   const doc = parseXml(slideXml);
-  const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_ELEMENT);
 
-  // Find the first text body with content
-  let firstBody: Element | null = null;
+  // Find the first text body that actually has a paragraph.
+  const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_ELEMENT);
+  let txBody: Element | null = null;
   let node = walker.nextNode();
   while (node) {
-    if (isElement(node) && getLocalName(node) === 'txBody') {
-      const paragraphs = Array.from(node.childNodes).filter(n => isElement(n) && n.localName === 'p');
-      if (paragraphs.length > 0 && !firstBody) {
-        firstBody = node;
-      }
+    if (isElement(node) && getLocalName(node) === 'txBody' && childElementsByName(node, 'p').length > 0) {
+      txBody = node;
+      break;
     }
     node = walker.nextNode();
   }
+  if (!txBody) return serializeXml(doc);
 
-  if (firstBody) {
-    const paragraphs = Array.from(firstBody.childNodes).filter(
-      (n): n is Element => isElement(n) && n.localName === 'p',
-    );
-    const lines = newText.split('\n');
-    for (let i = 0; i < paragraphs.length; i++) {
-      const p = paragraphs[i];
-      if (!p) continue;
-      const runs = Array.from(p.childNodes).filter((n): n is Element => isElement(n) && n.localName === 'r');
-      if (runs.length > 0 && i < lines.length) {
-        const firstRun = runs[0];
-        if (!firstRun) continue;
-        const tElements = Array.from(firstRun.childNodes).filter(
-          (n): n is Element => isElement(n) && n.localName === 't',
-        );
-        const firstT = tElements[0];
-        if (firstT) {
-          firstT.textContent = lines[i] ?? '';
-        }
-        for (let j = 1; j < runs.length; j++) {
-          const run = runs[j];
-          if (run) p.removeChild(run);
-        }
-      }
+  // Preserve formatting templates from the first paragraph / first run.
+  let preservedPPr: Element | null = null;
+  let preservedRPr: Element | null = null;
+  const firstP = childElementsByName(txBody, 'p')[0];
+  if (firstP) {
+    const pPr = childElementsByName(firstP, 'pPr')[0];
+    if (pPr) preservedPPr = pPr.cloneNode(true) as Element;
+    const firstR = childElementsByName(firstP, 'r')[0];
+    if (firstR) {
+      const rPr = childElementsByName(firstR, 'rPr')[0];
+      if (rPr) preservedRPr = rPr.cloneNode(true) as Element;
     }
+  }
+
+  for (const p of childElementsByName(txBody, 'p')) txBody.removeChild(p);
+
+  const lines = newText.length > 0 ? newText.split('\n') : [''];
+  for (const line of lines) {
+    const p = doc.createElementNS(A_NS, 'a:p');
+    if (preservedPPr) p.appendChild(preservedPPr.cloneNode(true));
+    const r = doc.createElementNS(A_NS, 'a:r');
+    if (preservedRPr) r.appendChild(preservedRPr.cloneNode(true));
+    const t = doc.createElementNS(A_NS, 'a:t');
+    t.textContent = line;
+    r.appendChild(t);
+    p.appendChild(r);
+    txBody.appendChild(p);
   }
 
   return serializeXml(doc);
 };
 
-/** Replace speaker notes text in a notes XML. */
+/**
+ * Replace speaker notes text in a notes XML, one paragraph per `\n`-separated
+ * line. Rebuilds the notes body's paragraphs (preserving the first paragraph's
+ * `pPr`/`rPr` as templates), creating run/text nodes when the body is empty —
+ * so it works on both authored and freshly-created notes parts.
+ */
 export const replaceNotesText = (notesXml: string, newText: string): string => {
   const doc = parseXml(notesXml);
   const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_ELEMENT);
 
+  // Prefer the body-placeholder txBody; fall back to the first txBody.
   let notesBody: Element | null = null;
+  let firstTxBody: Element | null = null;
   let node = walker.nextNode();
   while (node) {
     if (isElement(node) && getLocalName(node) === 'txBody') {
-      const hasType = node.parentElement?.querySelector('[type]');
-      if (!hasType || hasType.getAttribute('type')?.includes('body')) {
+      if (!firstTxBody) firstTxBody = node;
+      const ph = node.parentElement?.querySelector('[type]');
+      if (ph?.getAttribute('type')?.includes('body')) {
         notesBody = node;
+        break;
       }
     }
     node = walker.nextNode();
   }
+  notesBody = notesBody ?? firstTxBody;
+  if (!notesBody) return serializeXml(doc);
 
-  if (notesBody) {
-    const paragraphs = Array.from(notesBody.childNodes).filter(
-      (n): n is Element => isElement(n) && n.localName === 'p',
-    );
-    const firstP = paragraphs[0];
-    if (firstP) {
-      const runs = Array.from(firstP.childNodes).filter((n): n is Element => isElement(n) && n.localName === 'r');
-      const firstRun = runs[0];
-      if (firstRun) {
-        const tElements = Array.from(firstRun.childNodes).filter(
-          (n): n is Element => isElement(n) && n.localName === 't',
-        );
-        const firstT = tElements[0];
-        if (firstT) {
-          firstT.textContent = newText;
-        }
-      }
+  let preservedPPr: Element | null = null;
+  let preservedRPr: Element | null = null;
+  const firstP = childElementsByName(notesBody, 'p')[0];
+  if (firstP) {
+    const pPr = childElementsByName(firstP, 'pPr')[0];
+    if (pPr) preservedPPr = pPr.cloneNode(true) as Element;
+    const firstR = childElementsByName(firstP, 'r')[0];
+    if (firstR) {
+      const rPr = childElementsByName(firstR, 'rPr')[0];
+      if (rPr) preservedRPr = rPr.cloneNode(true) as Element;
     }
+  }
+
+  for (const p of childElementsByName(notesBody, 'p')) notesBody.removeChild(p);
+
+  const lines = newText.length > 0 ? newText.split('\n') : [''];
+  for (const line of lines) {
+    const p = doc.createElementNS(A_NS, 'a:p');
+    if (preservedPPr) p.appendChild(preservedPPr.cloneNode(true));
+    const r = doc.createElementNS(A_NS, 'a:r');
+    if (preservedRPr) r.appendChild(preservedRPr.cloneNode(true));
+    const t = doc.createElementNS(A_NS, 'a:t');
+    t.textContent = line;
+    r.appendChild(t);
+    p.appendChild(r);
+    notesBody.appendChild(p);
   }
 
   return serializeXml(doc);

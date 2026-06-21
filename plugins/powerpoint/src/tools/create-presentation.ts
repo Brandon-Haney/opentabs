@@ -1,15 +1,24 @@
 import { defineTool, parseRetryAfterMs, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
+import { BLANK_PPTX_BASE64 } from '../blank-pptx.js';
 import { GRAPH_BASE, requireAuth } from '../powerpoint-api.js';
 import { driveItemSchema, mapDriveItem, type RawDriveItem } from './schemas.js';
 
 const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
+/** Decode the embedded blank-PPTX template into a fresh ArrayBuffer for upload. */
+const blankPptxBuffer = (): ArrayBuffer => {
+  const binary = atob(BLANK_PPTX_BASE64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+};
+
 export const createPresentation = defineTool({
   name: 'create_presentation',
   displayName: 'Create Presentation',
   description:
-    'Create a new empty PowerPoint presentation (.pptx) in OneDrive. Specify a name and optional parent folder. Returns the created file details.',
+    'Create a new blank PowerPoint presentation (.pptx) with one empty slide in OneDrive. Specify a name and optional parent folder. Returns the created file details. The result is a valid, immediately editable presentation.',
   summary: 'Create a new blank presentation',
   icon: 'file-plus',
   group: 'Presentations',
@@ -37,7 +46,7 @@ export const createPresentation = defineTool({
           Authorization: `Bearer ${token}`,
           'Content-Type': PPTX_MIME,
         },
-        body: new Blob([], { type: PPTX_MIME }),
+        body: new Blob([blankPptxBuffer()], { type: PPTX_MIME }),
         signal: AbortSignal.timeout(30_000),
       });
     } catch (err: unknown) {

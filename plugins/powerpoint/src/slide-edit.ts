@@ -16,7 +16,7 @@
  */
 
 import { ToolError } from '@opentabs-dev/plugin-sdk';
-import { getSlideList, TEXT_DECODER, TEXT_ENCODER } from './pptx-utils.js';
+import { getNotesForSlide, getSlideList, TEXT_DECODER, TEXT_ENCODER } from './pptx-utils.js';
 
 // --- Units ---
 
@@ -865,17 +865,153 @@ const getMaxSlideIndex = (entries: Map<string, Uint8Array>): number => {
   return max;
 };
 
-/** Remove notesSlide relationships from a cloned slide's rels — the new slide starts without notes. */
-const stripNotesRelationships = (relsDoc: Document): void => {
+const NOTES_SLIDE_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml';
+const NOTES_MASTER_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster';
+const NOTES_SLIDE_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide';
+const SLIDE_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide';
+
+/** Highest `ppt/notesSlides/notesSlideN.xml` index in the archive (0 if none). */
+const getMaxNotesSlideIndex = (entries: Map<string, Uint8Array>): number => {
+  let max = 0;
+  for (const key of entries.keys()) {
+    const m = key.match(/^ppt\/notesSlides\/notesSlide(\d+)\.xml$/);
+    if (m) {
+      const n = Number.parseInt(m[1] ?? '0', 10);
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+  }
+  return max;
+};
+
+/** Filename of the deck's notes master (e.g. "notesMaster1.xml"), or null if none exists. */
+const findNotesMasterName = (entries: Map<string, Uint8Array>): string | null => {
+  for (const key of entries.keys()) {
+    const m = key.match(/^ppt\/notesMasters\/(notesMaster\d+\.xml)$/);
+    if (m?.[1]) return m[1];
+  }
+  return null;
+};
+
+/** Retarget (or, if no replacement, remove) a cloned slide's notesSlide relationship. */
+const retargetNotesRelationship = (relsDoc: Document, newNotesBaseName: string | null): void => {
   const relsRoot = relsDoc.documentElement;
   if (!relsRoot) return;
   const toRemove: Element[] = [];
   for (const child of childElements(relsRoot)) {
-    if (child.localName === 'Relationship' && (child.getAttribute('Type') ?? '').includes('/notesSlide')) {
-      toRemove.push(child);
-    }
+    if (child.localName !== 'Relationship' || !(child.getAttribute('Type') ?? '').includes('/notesSlide')) continue;
+    if (newNotesBaseName) child.setAttribute('Target', `../notesSlides/${newNotesBaseName}.xml`);
+    else toRemove.push(child);
   }
   for (const el of toRemove) relsRoot.removeChild(el);
+};
+
+/** Minimal notesSlide XML with an empty body placeholder for `replaceNotesText` to fill. */
+const buildEmptyNotesSlideXml = (): string =>
+  `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+  `<p:notes xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}">` +
+  `<p:cSld><p:spTree>` +
+  `<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>` +
+  `<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>` +
+  `<p:sp><p:nvSpPr><p:cNvPr id="2" name="Notes Placeholder 1"/>` +
+  `<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>` +
+  `<p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" dirty="0"/><a:t></a:t></a:r></a:p></p:txBody>` +
+  `</p:sp></p:spTree></p:cSld></p:notes>`;
+
+/** notesSlide rels referencing the notes master and back to the owning slide. */
+const buildNotesSlideRels = (notesMasterName: string, slideBaseName: string): string =>
+  `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+  `<Relationships xmlns="${PKG_REL_NS}">` +
+  `<Relationship Id="rId1" Type="${NOTES_MASTER_REL_TYPE}" Target="../notesMasters/${notesMasterName}"/>` +
+  `<Relationship Id="rId2" Type="${SLIDE_REL_TYPE}" Target="../slides/${slideBaseName}.xml"/>` +
+  `</Relationships>`;
+
+/** Add a slide → notesSlide relationship to a slide's rels file, creating the rels file if absent. */
+const addSlideNotesRelationship = (
+  entries: Map<string, Uint8Array>,
+  slideBaseName: string,
+  notesBaseName: string,
+): void => {
+  const relsPath = `ppt/slides/_rels/${slideBaseName}.xml.rels`;
+  const relsData = entries.get(relsPath);
+  const relsDoc = relsData
+    ? parseXml(TEXT_DECODER.decode(relsData))
+    : parseXml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${PKG_REL_NS}"/>`);
+  const root = relsDoc.documentElement;
+  if (!root) throw ToolError.internal(`Malformed slide rels: ${relsPath}`);
+  const rel = relsDoc.createElementNS(PKG_REL_NS, 'Relationship');
+  rel.setAttribute('Id', nextRelId(relsDoc));
+  rel.setAttribute('Type', NOTES_SLIDE_REL_TYPE);
+  rel.setAttribute('Target', `../notesSlides/${notesBaseName}.xml`);
+  root.appendChild(rel);
+  entries.set(relsPath, TEXT_ENCODER.encode(serializeXml(relsDoc)));
+};
+
+/**
+ * Return the notes-slide path for a slide, creating an empty notes part if the
+ * slide has none. Requires the deck to have a notes master (every deck authored
+ * in PowerPoint does); throws an actionable error if one is missing.
+ */
+export const ensureNotesSlide = (entries: Map<string, Uint8Array>, slideFile: string): string => {
+  const existing = getNotesForSlide(entries, slideFile);
+  if (existing) return existing;
+
+  const notesMasterName = findNotesMasterName(entries);
+  if (!notesMasterName) {
+    throw ToolError.validation(
+      'This presentation has no notes master, so speaker notes cannot be created. Open the deck in PowerPoint, add a note to any slide once to initialize the notes master, then retry.',
+    );
+  }
+
+  const slideBaseName = slideFile.split('/').pop()?.replace('.xml', '') ?? '';
+  const newBaseName = `notesSlide${getMaxNotesSlideIndex(entries) + 1}`;
+  const newNotesPath = `ppt/notesSlides/${newBaseName}.xml`;
+  const newNotesRelsPath = `ppt/notesSlides/_rels/${newBaseName}.xml.rels`;
+
+  entries.set(newNotesPath, TEXT_ENCODER.encode(buildEmptyNotesSlideXml()));
+  entries.set(newNotesRelsPath, TEXT_ENCODER.encode(buildNotesSlideRels(notesMasterName, slideBaseName)));
+  addContentTypeOverride(entries, `/${newNotesPath}`, NOTES_SLIDE_CONTENT_TYPE);
+  addSlideNotesRelationship(entries, slideBaseName, newBaseName);
+
+  return newNotesPath;
+};
+
+/**
+ * Copy a source slide's notes part for a freshly cloned slide. Writes a new
+ * notesSlide (byte-copy, so text carries over), retargets its slide back-ref to
+ * the clone, registers the content type, and returns the new notes base name so
+ * the clone's rels can point at it. Returns null if the source has no notes.
+ */
+const copyNotesForClone = (
+  entries: Map<string, Uint8Array>,
+  sourceFile: string,
+  cloneBaseName: string,
+): string | null => {
+  const sourceNotesPath = getNotesForSlide(entries, sourceFile);
+  if (!sourceNotesPath) return null;
+  const sourceNotesData = entries.get(sourceNotesPath);
+  if (!sourceNotesData) return null;
+
+  const newBaseName = `notesSlide${getMaxNotesSlideIndex(entries) + 1}`;
+  const newNotesPath = `ppt/notesSlides/${newBaseName}.xml`;
+  entries.set(newNotesPath, new Uint8Array(sourceNotesData));
+
+  const sourceNotesBase = sourceNotesPath.split('/').pop()?.replace('.xml', '') ?? '';
+  const sourceNotesRels = entries.get(`ppt/notesSlides/_rels/${sourceNotesBase}.xml.rels`);
+  if (sourceNotesRels) {
+    const ndoc = parseXml(TEXT_DECODER.decode(sourceNotesRels));
+    const root = ndoc.documentElement;
+    if (root) {
+      for (const child of childElements(root)) {
+        if (child.localName === 'Relationship' && (child.getAttribute('Type') ?? '').endsWith('/slide')) {
+          child.setAttribute('Target', `../slides/${cloneBaseName}.xml`);
+        }
+      }
+    }
+    entries.set(`ppt/notesSlides/_rels/${newBaseName}.xml.rels`, TEXT_ENCODER.encode(serializeXml(ndoc)));
+  }
+
+  addContentTypeOverride(entries, `/${newNotesPath}`, NOTES_SLIDE_CONTENT_TYPE);
+  return newBaseName;
 };
 
 export interface DuplicateSlideResult {
@@ -886,8 +1022,9 @@ export interface DuplicateSlideResult {
 /**
  * Duplicate an existing slide. Copies the slide XML and rels, updates
  * `[Content_Types].xml`, `ppt/_rels/presentation.xml.rels`, and the
- * `<p:sldIdLst>` in `ppt/presentation.xml`. Notes slide relationships are
- * dropped from the clone so both slides don't point at the same notes.
+ * `<p:sldIdLst>` in `ppt/presentation.xml`. If the source slide has speaker
+ * notes, the clone gets its own independent copy of them (not a shared
+ * reference) so editing one slide's notes never affects the other.
  */
 export const duplicateSlide = (
   entries: Map<string, Uint8Array>,
@@ -915,11 +1052,14 @@ export const duplicateSlide = (
   // 2. Copy the slide XML bytes as-is.
   entries.set(newSlideFile, new Uint8Array(sourceSlideData));
 
-  // 3. Copy the rels file, stripping notesSlide relationships.
+  // 3. Copy the source's notes slide (if any) so the clone gets its own
+  //    independent notes, then copy the slide rels and point the notesSlide
+  //    relationship at the copy (or drop it if the source had no notes).
+  const clonedNotesBase = copyNotesForClone(entries, sourceFile, newBaseName);
   const sourceRelsData = entries.get(sourceRelsPath);
   if (sourceRelsData) {
     const relsDoc = parseXml(TEXT_DECODER.decode(sourceRelsData));
-    stripNotesRelationships(relsDoc);
+    retargetNotesRelationship(relsDoc, clonedNotesBase);
     entries.set(newRelsPath, TEXT_ENCODER.encode(serializeXml(relsDoc)));
   }
 

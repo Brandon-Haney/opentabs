@@ -7,9 +7,10 @@ export const duplicateSlide = defineTool({
   name: 'duplicate_slide',
   displayName: 'Duplicate Slide',
   description:
-    'Clone an existing slide. Copies the slide XML, its relationships (except speaker notes), and registers the ' +
-    'new slide in the presentation index. Use this to template new slides from existing ones. ' +
-    'By default the clone is appended to the end of the deck — pass `insert_at` (1-indexed) to place it at a specific position.',
+    'Clone an existing slide. Copies the slide XML and its relationships (including an independent copy of any ' +
+    'speaker notes) and registers the new slide in the presentation index. Use this to template new slides from ' +
+    'existing ones. By default the clone is appended to the end of the deck — pass `insert_at` (1-indexed) to place ' +
+    'it at a specific position.',
   summary: 'Clone an existing slide in place',
   icon: 'copy-plus',
   group: 'Slides',

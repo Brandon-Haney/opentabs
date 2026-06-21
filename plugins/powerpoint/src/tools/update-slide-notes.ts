@@ -1,20 +1,13 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import {
-  downloadPptx,
-  getNotesForSlide,
-  getSlideList,
-  replaceNotesText,
-  TEXT_DECODER,
-  TEXT_ENCODER,
-  uploadPptx,
-} from '../pptx-utils.js';
+import { downloadPptx, getSlideList, replaceNotesText, TEXT_DECODER, TEXT_ENCODER, uploadPptx } from '../pptx-utils.js';
+import { ensureNotesSlide } from '../slide-edit.js';
 
 export const updateSlideNotes = defineTool({
   name: 'update_slide_notes',
   displayName: 'Update Slide Notes',
   description:
-    'Update the speaker notes for a specific slide. Downloads the PPTX, modifies the notes XML, and re-uploads. The slide must already have a notes file.',
+    'Set the speaker notes for a specific slide. Downloads the PPTX, writes the notes XML, and re-uploads. If the slide has no notes yet, an empty notes part is created automatically. Use \\n for line breaks.',
   summary: 'Modify speaker notes on a slide',
   icon: 'notebook-pen',
   group: 'Slides',
@@ -36,13 +29,10 @@ export const updateSlideNotes = defineTool({
 
     const file = slideFiles[params.slide_number - 1];
     if (!file) throw ToolError.notFound(`Slide ${params.slide_number} not found`);
-    const notesFile = getNotesForSlide(entries, file);
 
-    if (!notesFile) {
-      throw ToolError.notFound(
-        `Slide ${params.slide_number} has no speaker notes file — add notes in PowerPoint first, then use this tool to update them`,
-      );
-    }
+    // Create an empty notes part if the slide has none, so notes can be added
+    // to any slide — not just ones that already have a notes file.
+    const notesFile = ensureNotesSlide(entries, file);
 
     const notesData = entries.get(notesFile);
     if (!notesData) throw ToolError.internal(`Notes file not found in archive: ${notesFile}`);

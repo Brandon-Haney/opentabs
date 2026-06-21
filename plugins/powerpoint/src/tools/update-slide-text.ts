@@ -6,8 +6,9 @@ export const updateSlideText = defineTool({
   name: 'update_slide_text',
   displayName: 'Update Slide Text',
   description:
-    'Update the text content of a specific slide. Downloads the PPTX, modifies the slide XML, and re-uploads. Use newline characters to separate lines within a text box.',
-  summary: 'Modify text on a slide',
+    "Replace the text of a slide's first (primary/title) text box, one paragraph per line. Use \\n to separate lines. " +
+    'For precise control over a specific shape — including non-title text boxes — use `update_shape` with a shape id from `get_slide_layout` instead.',
+  summary: 'Replace text in a slide’s primary text box',
   icon: 'pencil',
   group: 'Slides',
   input: z.object({

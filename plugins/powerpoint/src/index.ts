@@ -34,6 +34,7 @@ import { listSharedWithMe } from './tools/list-shared-with-me.js';
 import { listVersions } from './tools/list-versions.js';
 import { moveItem } from './tools/move-item.js';
 import { openPresentationTool } from './tools/open-presentation.js';
+import { reauthenticate } from './tools/reauthenticate.js';
 import { renameItem } from './tools/rename-item.js';
 import { searchFiles } from './tools/search-files.js';
 import { updateShape } from './tools/update-shape.js';
@@ -49,6 +50,7 @@ class PowerPointPlugin extends OpenTabsPlugin {
   readonly tools: ToolDefinition[] = [
     // Account
     getCurrentUser,
+    reauthenticate,
     getDrive,
     // Files
     listChildren,

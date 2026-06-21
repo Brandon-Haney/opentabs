@@ -27,6 +27,21 @@ export const isSharePoint = (): boolean => {
 };
 
 /**
+ * True when the current tab is a SharePoint/OneDrive-hosted PowerPoint
+ * presentation (`*.sharepoint.com/:p:/...`). These are the pages where MSAL's
+ * localStorage cache is encrypted, so a stale captured token can only be
+ * recovered by clearing MSAL state and reloading.
+ */
+export const isSharePointPresentation = (): boolean => {
+  try {
+    const url = new URL(getCurrentUrl());
+    return url.hostname.toLowerCase().endsWith('.sharepoint.com') && url.pathname.includes('/:p:/');
+  } catch {
+    return false;
+  }
+};
+
+/**
  * Whether the current tab is a PowerPoint document.
  * Accepts the dedicated PowerPoint cloud app, SharePoint PowerPoint viewer URLs (`/:p:/`),
  * and any URL referencing a `.ppt`/`.pptx`/`.pptm`/`.ppsx` file.
@@ -214,6 +229,19 @@ export const getCurrentItemId = (): string | null => {
 };
 
 /**
+ * Trailing guidance appended to AUTH_ERROR messages on SharePoint/OneDrive
+ * presentations. MSAL's encrypted cache means we can't recover in-place — the
+ * only reliable path is to clear MSAL state and reload, which the
+ * `powerpoint_reauthenticate` tool does.
+ */
+const SP_REAUTH_HINT = 'Call `powerpoint_reauthenticate` to recover.';
+
+/** Throw an AUTH_ERROR, appending the reauth hint on SharePoint presentations. */
+const authError = (msg: string): never => {
+  throw ToolError.auth(isSharePointPresentation() ? `${msg} ${SP_REAUTH_HINT}` : msg);
+};
+
+/**
  * Return the current auth context, throwing an actionable error if unavailable.
  * The Graph token comes from the pre-script capture (SharePoint) or the
  * standalone app's plaintext MSAL cache; the drive id from the URL, the WOPI
@@ -221,7 +249,7 @@ export const getCurrentItemId = (): string | null => {
  */
 export const requireAuth = async (): Promise<PowerPointAuth> => {
   const token = getToken();
-  if (!token) throw ToolError.auth('Not authenticated — please log in to Microsoft 365.');
+  if (!token) return authError('Not authenticated — please log in to Microsoft 365.');
   const driveId = await resolveDriveId(token);
   if (!driveId) {
     throw ToolError.validation('Could not determine the current drive. Open a presentation in the browser first.');
@@ -283,7 +311,7 @@ export const api = async <T>(
       throw ToolError.rateLimited(`Rate limited: ${endpoint} — ${errorBody}`, retryMs);
     }
     if (response.status === 401 || response.status === 403) {
-      throw ToolError.auth(`Auth error (${response.status}): ${errorBody}`);
+      authError(`Auth error (${response.status}): ${errorBody}`);
     }
     if (response.status === 404) throw ToolError.notFound(`Not found: ${endpoint} — ${errorBody}`);
     if (response.status === 400 || response.status === 409)

@@ -7,7 +7,7 @@ export const createProject = defineTool({
   name: 'create_project',
   displayName: 'Create Project',
   description:
-    'Create a new project inside an existing folder or project. A project is a folder that also tracks a project status, owners, and dates. Returns the new project id and permalink. Use create_task to add tasks to it, or create_folder for a plain folder.',
+    'Create a new project inside an existing folder or project. A project is a folder that also tracks a project status, owners, and dates. IMPORTANT: creating a project can trigger account automations that notify other users or teams, so confirm with the user before creating one and first check it does not already exist (use search_tasks or list_folder_contents). Returns the new project id and permalink. Use create_task to add tasks to it, or create_folder for a plain folder.',
   summary: 'Create a project inside another folder or project',
   icon: 'folder-kanban',
   group: 'Folders',

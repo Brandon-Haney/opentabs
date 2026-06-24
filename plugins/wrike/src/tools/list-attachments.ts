@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { getAccountId, rpc } from '../wrike-api.js';
+import { attachmentUrl, getAccountId, rpc } from '../wrike-api.js';
 
 // Raw attachment entry from get_attachments_for_task_view. The file name lives
 // at the top level (`title`); size, author, timestamp, and the download
@@ -40,6 +40,9 @@ const attachmentSchema = z.object({
   version_count: z.number().int().describe('Number of active versions of this file'),
   permalink: z.string().describe('Permalink token identifying the file version'),
   preview_url: z.string().describe('Thumbnail URL (loads with the active Wrike session), or empty if none'),
+  download_url: z
+    .string()
+    .describe('URL that downloads the file; open it in the browser, where the Wrike session applies'),
 });
 
 const fullName = (author: { firstName?: string; lastName?: string } | undefined): string =>
@@ -66,6 +69,7 @@ const mapAttachment = (raw: RawAttachment, accountId: string | null): z.infer<ty
     version_count: typeof raw.activeVersionsCount === 'number' ? raw.activeVersionsCount : 0,
     permalink: typeof version?.permalink === 'string' ? version.permalink : '',
     preview_url: previewUrl,
+    download_url: id ? attachmentUrl(id) : '',
   };
 };
 

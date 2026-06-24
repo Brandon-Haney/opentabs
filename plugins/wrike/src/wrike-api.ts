@@ -100,6 +100,112 @@ export const saveContainer = (
   return rpc<ContainerSaveResult>('task_save', { data });
 };
 
+// --- File upload ---
+
+interface UploadSettings {
+  storageAddress?: string;
+  maxFileSizeInGb?: number;
+}
+
+export interface UploadResult {
+  id?: number | string;
+  title?: string;
+}
+
+/** Decodes a base64 string (with or without a `data:` URI prefix) to raw bytes. */
+const decodeBase64 = (base64: string): Uint8Array<ArrayBuffer> => {
+  const comma = base64.indexOf(',');
+  const clean = base64.startsWith('data:') && comma !== -1 ? base64.slice(comma + 1) : base64;
+  const binary = atob(clean);
+  const buffer = new ArrayBuffer(binary.length);
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+};
+
+/**
+ * Uploads a file and attaches it to a task. Wrike uploads go to a separate
+ * storage host (returned by `get_file_upload_settings`) as a raw
+ * `application/octet-stream` body; the file name, size, and target task id are
+ * carried in headers. The `X-Task-Id` header links the upload to the task in a
+ * single request — there is no separate "attach" call.
+ */
+export const uploadAttachment = async (
+  taskId: number,
+  fileName: string,
+  base64Content: string,
+): Promise<UploadResult> => {
+  const accountId = getAccountId();
+  if (!accountId) throw ToolError.auth('Not authenticated — please log in to Wrike.');
+
+  const bytes = decodeBase64(base64Content);
+  const settings = await rpc<UploadSettings>('get_file_upload_settings', {});
+  const storageAddress = settings.storageAddress;
+  if (!storageAddress) throw ToolError.internal('Wrike did not return an upload storage address.');
+
+  const maxBytes = (settings.maxFileSizeInGb ?? 10) * 1_000_000_000;
+  if (bytes.byteLength > maxBytes) {
+    throw ToolError.validation(`File exceeds Wrike's maximum upload size of ${settings.maxFileSizeInGb} GB.`);
+  }
+
+  const url = `${storageAddress}/ui/xhrfileupload2?accountId=${encodeURIComponent(accountId)}`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'X-File-Name': fileName,
+        'X-File-Size': String(bytes.byteLength),
+        'X-Task-Id': String(taskId),
+        'X-Requested-With': 'XMLHttpRequest',
+        'wrike-client-id': CLIENT_ID,
+        'x-w-account': accountId,
+      },
+      body: new Blob([bytes]),
+      credentials: 'include',
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch (err: unknown) {
+    if (err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      throw ToolError.timeout('File upload timed out');
+    }
+    throw new ToolError(`Upload network error: ${err instanceof Error ? err.message : String(err)}`, 'network_error', {
+      category: 'internal',
+      retryable: true,
+    });
+  }
+
+  if (!response.ok) {
+    const errorBody = (await response.text().catch(() => '')).substring(0, 512);
+    if (response.status === 417 || response.status === 401 || response.status === 403) {
+      throw ToolError.auth(`Wrike session expired — please reload the page. (${response.status}) ${errorBody}`);
+    }
+    throw ToolError.internal(`Wrike upload failed (${response.status}): ${errorBody}`);
+  }
+
+  const text = await response.text();
+  try {
+    const envelope = JSON.parse(text) as { data?: { uploadedAttach?: UploadResult } };
+    return envelope.data?.uploadedAttach ?? {};
+  } catch {
+    return {};
+  }
+};
+
+// --- File download ---
+
+/**
+ * Permanent download URL for an attachment, keyed by account id and file id.
+ * Wrike serves file bytes from `files.wrike.com`, a separate origin that does
+ * not permit credentialed cross-origin reads — so the URL is meant to be opened
+ * in the browser (where the session applies), not fetched from the adapter.
+ */
+export const attachmentUrl = (attachmentId: string): string => {
+  const accountId = getAccountId();
+  return accountId ? `https://files.wrike.com/${accountId}/${attachmentId}` : '';
+};
+
 const request = async <T>(endpoint: string, contentType: string, body: string): Promise<T> => {
   const accountId = getAccountId();
   if (!accountId) throw ToolError.auth('Not authenticated — please log in to Wrike.');

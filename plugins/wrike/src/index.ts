@@ -11,6 +11,8 @@ import { listRootFolders } from './tools/list-root-folders.js';
 import { listFolderContents } from './tools/list-folder-contents.js';
 import { createFolder } from './tools/create-folder.js';
 import { createProject } from './tools/create-project.js';
+import { listRecycleBin } from './tools/list-recycle-bin.js';
+import { restoreFromRecycleBin } from './tools/restore-from-recycle-bin.js';
 
 // Tasks
 import { getTask } from './tools/get-task.js';
@@ -46,6 +48,8 @@ class WrikePlugin extends OpenTabsPlugin {
     listFolderContents,
     createFolder,
     createProject,
+    listRecycleBin,
+    restoreFromRecycleBin,
 
     // Tasks
     getTask,

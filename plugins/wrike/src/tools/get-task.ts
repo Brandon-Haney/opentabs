@@ -76,7 +76,12 @@ export const getTask = defineTool({
         entityId: Number(id),
         visibilities: ['top', 'visible', 'hidden'],
       }),
-      rpc<LiveEditorResponse>('le_get_initial_data', { taskId: Number(id), isStatic: false }).catch(() => ({
+      // `isStatic: true` asks the live editor for a server-rendered HTML
+      // snapshot of the description. In live mode (`isStatic: false`) the
+      // response omits the content entirely (`description: null`) because the
+      // editor streams it over a separate doc-editor WebSocket — so a read tool
+      // must request the static render to get the description text.
+      rpc<LiveEditorResponse>('le_get_initial_data', { taskId: Number(id), isStatic: true }).catch(() => ({
         description: null,
       })),
     ]);

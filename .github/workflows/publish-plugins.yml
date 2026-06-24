@@ -15,8 +15,12 @@ concurrency:
 
 jobs:
   publish:
-    # Skip commits made by this workflow (version bumps) to prevent loops
-    if: "!startsWith(github.event.head_commit.message, 'chore: auto-publish plugin')"
+    # Only publish from the upstream repo: the release-bot credentials
+    # (RELEASE_APP_CLIENT_ID / RELEASE_APP_PRIVATE_KEY / NPM_TOKEN) exist only
+    # there, and forks do not publish to npm — so skip the job on forks to avoid
+    # a guaranteed token-generation failure. Also skip this workflow's own
+    # version-bump commits to prevent loops.
+    if: "github.repository == 'opentabs-dev/opentabs' && !startsWith(github.event.head_commit.message, 'chore: auto-publish plugin')"
     runs-on: ubuntu-latest
     permissions:
       contents: write

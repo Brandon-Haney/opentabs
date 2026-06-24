@@ -71,6 +71,35 @@ export const editTaskProperty = <T>(
     visibleComponents,
   });
 
+export interface ContainerSaveResult {
+  id?: number | string;
+  title?: string;
+}
+
+/**
+ * Creates a folder or project inside a parent folder/project. Wrike models both
+ * as the same entity distinguished by the `project` system field, so they share
+ * one save path. The new container is shared with the current user so it is
+ * visible to them; one created inside a shared parent otherwise inherits its
+ * sharing.
+ */
+export const saveContainer = (
+  title: string,
+  parentFolderId: number,
+  options: { project: boolean },
+): Promise<ContainerSaveResult> => {
+  const data: Record<string, unknown> = {
+    accountId: getAccountId(),
+    title,
+    parentFoldersAdd: [parentFolderId],
+    systemFieldsAdd: { project: options.project, isSpace: false, pinnedView: 'tableV2' },
+    createFolder: true,
+  };
+  const currentUserId = getCurrentUserId();
+  if (currentUserId) data.sharedsAdd = [currentUserId];
+  return rpc<ContainerSaveResult>('task_save', { data });
+};
+
 const request = async <T>(endpoint: string, contentType: string, body: string): Promise<T> => {
   const accountId = getAccountId();
   if (!accountId) throw ToolError.auth('Not authenticated — please log in to Wrike.');

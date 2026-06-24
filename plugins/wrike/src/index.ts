@@ -10,6 +10,7 @@ import { listContacts } from './tools/list-contacts.js';
 import { listRootFolders } from './tools/list-root-folders.js';
 import { listFolderContents } from './tools/list-folder-contents.js';
 import { createFolder } from './tools/create-folder.js';
+import { createProject } from './tools/create-project.js';
 
 // Tasks
 import { getTask } from './tools/get-task.js';
@@ -42,6 +43,7 @@ class WrikePlugin extends OpenTabsPlugin {
     listRootFolders,
     listFolderContents,
     createFolder,
+    createProject,
 
     // Tasks
     getTask,

@@ -23,6 +23,8 @@ import { listTaskStatuses } from './tools/list-task-statuses.js';
 import { setTaskStatus } from './tools/set-task-status.js';
 import { assignTask } from './tools/assign-task.js';
 import { setTaskDates } from './tools/set-task-dates.js';
+import { listCustomFields } from './tools/list-custom-fields.js';
+import { setCustomField } from './tools/set-custom-field.js';
 
 // Comments
 import { listTaskComments } from './tools/list-task-comments.js';
@@ -56,6 +58,8 @@ class WrikePlugin extends OpenTabsPlugin {
     setTaskStatus,
     assignTask,
     setTaskDates,
+    listCustomFields,
+    setCustomField,
 
     // Comments
     listTaskComments,

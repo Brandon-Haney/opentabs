@@ -9,12 +9,14 @@ import { listContacts } from './tools/list-contacts.js';
 // Folders & navigation
 import { listRootFolders } from './tools/list-root-folders.js';
 import { listFolderContents } from './tools/list-folder-contents.js';
+import { createFolder } from './tools/create-folder.js';
 
 // Tasks
 import { getTask } from './tools/get-task.js';
 import { searchTasks } from './tools/search-tasks.js';
 import { createTask } from './tools/create-task.js';
 import { renameTask } from './tools/rename-task.js';
+import { moveTask } from './tools/move-task.js';
 import { deleteTask } from './tools/delete-task.js';
 import { listTaskStatuses } from './tools/list-task-statuses.js';
 import { setTaskStatus } from './tools/set-task-status.js';
@@ -39,12 +41,14 @@ class WrikePlugin extends OpenTabsPlugin {
     // Folders & navigation
     listRootFolders,
     listFolderContents,
+    createFolder,
 
     // Tasks
     getTask,
     searchTasks,
     createTask,
     renameTask,
+    moveTask,
     deleteTask,
     listTaskStatuses,
     setTaskStatus,

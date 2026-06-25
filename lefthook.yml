@@ -1,23 +1,9 @@
 pre-commit:
   commands:
     reject-ralph-state:
-      run: |
-        if git diff --cached --name-only | grep -qE '\.ralph/(prd\.json|progress\.txt)$'; then
-          echo 'ERROR: Ralph state files must not be committed:'
-          git diff --cached --name-only | grep -E '\.ralph/(prd\.json|progress\.txt)$'
-          echo ''
-          echo 'Run: git rm --cached <file> to untrack them.'
-          exit 1
-        fi
+      run: sh scripts/hooks/reject-ralph-state.sh
     auto-stage-lockfiles:
-      run: |
-        for pkg in $(git diff --cached --name-only | grep 'package\.json$'); do
-          dir=$(dirname "$pkg")
-          lockfile="$dir/package-lock.json"
-          if [ -f "$lockfile" ] && git diff --name-only -- "$lockfile" | grep -q .; then
-            git add "$lockfile"
-          fi
-        done
+      run: sh scripts/hooks/auto-stage-lockfiles.sh
     biome-check-ts:
       glob: "*.{ts,tsx}"
       run: npx biome check --write --no-errors-on-unmatched {staged_files}

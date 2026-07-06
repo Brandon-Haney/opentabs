@@ -457,17 +457,16 @@ const buildOwsHeaders = (token: string, extra?: Record<string, string>): Record<
 };
 
 /**
- * Encode an OWS query string. Unlike `URLSearchParams` (which encodes spaces as `+`
- * and commas as `%2C`), OWS expects literal commas in `settingname` lists and `%20`
- * for spaces in signature display names — so encode each value with
- * `encodeURIComponent` and restore commas.
+ * Encode an OWS query string with `encodeURIComponent` per value, yielding `%20` for
+ * spaces (in signature display names) and `%2C` for commas (the `settingname` list
+ * delimiter) — both of which the OWS gateway accepts. `URLSearchParams` is avoided
+ * because it encodes spaces as `+`, which OWS does not decode back to a space.
  */
 const encodeOwsQuery = (query: Record<string, string | number | boolean | undefined>): string => {
   const parts: string[] = [];
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined) continue;
-    const encoded = encodeURIComponent(String(value)).replace(/%2C/g, ',');
-    parts.push(`${encodeURIComponent(key)}=${encoded}`);
+    parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
   }
   return parts.join('&');
 };

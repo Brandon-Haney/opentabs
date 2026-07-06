@@ -13,10 +13,17 @@ export const discardPresentationTool = defineTool({
   group: 'Sessions',
   input: z.object({
     item_id: z.string().describe('Item ID of the PowerPoint file'),
+    drive_id: z
+      .string()
+      .optional()
+      .describe(
+        'Drive the session was opened on. Defaults to the current tab. Pass the drive_id from open_presentation ' +
+          'or list_presentation_sessions to discard a session opened on a different deck/drive than the tab now shows.',
+      ),
   }),
   output: z.object({
     item_id: z.string(),
     discarded: z.boolean().describe('True if a session was actually dropped, false if none was open'),
   }),
-  handle: params => Promise.resolve(discardPresentation(params.item_id)),
+  handle: params => Promise.resolve(discardPresentation(params.item_id, params.drive_id)),
 });

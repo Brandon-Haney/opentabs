@@ -19,8 +19,8 @@ const LS_TOKEN_KEY = '__opentabs_powerpoint_graph_token';
  * which the pre-script catches. SSO cookies stay intact, so the
  * re-acquisition is silent (no sign-in UI).
  *
- * Caller protocol: when `powerpoint_*` tools return an `AUTH_ERROR` whose
- * message ends with "Call `powerpoint_reauthenticate` to recover", invoke
+ * Caller protocol: when `powerpoint__*` tools return an `AUTH_ERROR` whose
+ * message ends with "Call `powerpoint__reauthenticate` to recover", invoke
  * this tool, wait for the tab to reload (~5 seconds), then retry the
  * original operation.
  */

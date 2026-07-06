@@ -7,11 +7,14 @@ import { changeUserName } from './tools/change-user-name.js';
 import { cloneApp } from './tools/clone-app.js';
 import { createApp } from './tools/create-app.js';
 import { createFolder } from './tools/create-folder.js';
+import { createAppFromToolscriptArchive } from './tools/create-app-from-toolscript-archive.js';
 import { createResource } from './tools/create-resource.js';
 import { createResourceFolder } from './tools/create-resource-folder.js';
 import { deleteApp } from './tools/delete-app.js';
 import { deleteFolder } from './tools/delete-folder.js';
 import { deleteResourceFolder } from './tools/delete-resource-folder.js';
+import { exportToolscriptArchive } from './tools/export-toolscript-archive.js';
+import { forceEditorSaveTool } from './tools/force-editor-save.js';
 import { getApp } from './tools/get-app.js';
 import { getAppDocs } from './tools/get-app-docs.js';
 import { getAppState } from './tools/get-app-state.js';
@@ -47,6 +50,7 @@ import { renameFolder } from './tools/rename-folder.js';
 import { runGrpc } from './tools/run-grpc.js';
 import { runQuery } from './tools/run-query.js';
 import { savePage } from './tools/save-page.js';
+import { updateAppFromToolscriptArchive } from './tools/update-app-from-toolscript-archive.js';
 
 class RetoolPlugin extends OpenTabsPlugin {
   readonly name = 'retool';
@@ -83,6 +87,10 @@ class RetoolPlugin extends OpenTabsPlugin {
     listPageSaves,
     listComponents,
     createApp,
+    exportToolscriptArchive,
+    createAppFromToolscriptArchive,
+    updateAppFromToolscriptArchive,
+    forceEditorSaveTool,
     cloneApp,
     savePage,
     addComponent,

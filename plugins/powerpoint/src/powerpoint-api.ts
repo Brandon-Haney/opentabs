@@ -232,9 +232,9 @@ export const getCurrentItemId = (): string | null => {
  * Trailing guidance appended to AUTH_ERROR messages on SharePoint/OneDrive
  * presentations. MSAL's encrypted cache means we can't recover in-place — the
  * only reliable path is to clear MSAL state and reload, which the
- * `powerpoint_reauthenticate` tool does.
+ * `powerpoint__reauthenticate` tool does.
  */
-const SP_REAUTH_HINT = 'Call `powerpoint_reauthenticate` to recover.';
+const SP_REAUTH_HINT = 'Call `powerpoint__reauthenticate` to recover.';
 
 /** Throw an AUTH_ERROR, appending the reauth hint on SharePoint presentations. */
 const authError = (msg: string): never => {

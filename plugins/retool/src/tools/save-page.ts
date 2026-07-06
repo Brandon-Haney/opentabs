@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../retool-api.js';
+import { getCurrentSourceControlBranchName } from '../toolscript.js';
 
 export const savePage = defineTool({
   name: 'save_page',
@@ -17,14 +18,22 @@ export const savePage = defineTool({
       .string()
       .optional()
       .describe('Optional commit message describing the change (shown in edit history)'),
+    branch_name: z
+      .string()
+      .optional()
+      .describe(
+        'Optional source-control branch name to save into. Defaults to the branch in the targeted editor URL, if present.',
+      ),
   }),
   output: z.object({
     save_id: z.number().describe('ID of the new save record'),
     success: z.boolean().describe('Whether the save was successful'),
   }),
   handle: async params => {
+    const branchName = params.branch_name ?? getCurrentSourceControlBranchName() ?? undefined;
     const getResp = await api<{ page: { id: number; multiplayerSessionId: string | null } }>(
       `/api/pages/uuids/${params.page_uuid}`,
+      { query: { branchName } },
     );
     const currentSaveId = getResp.page.id;
     const multiplayerSessionId = getResp.page.multiplayerSessionId;
@@ -33,7 +42,7 @@ export const savePage = defineTool({
       method: 'POST',
       body: {
         appState: params.app_state,
-        branchName: null,
+        branchName: branchName ?? null,
         changesRecordV2: { changes: [], numUntrackedActionsTriggered: 1, isCopilotMode: false },
         saveValidationInfo: { multiplayerSessionId, pageSaveId: currentSaveId },
         isCopilotGenerated: false,

@@ -15,6 +15,13 @@ export const commitPresentationTool = defineTool({
   group: 'Sessions',
   input: z.object({
     item_id: z.string().describe('Item ID of the PowerPoint file'),
+    drive_id: z
+      .string()
+      .optional()
+      .describe(
+        'Drive the session was opened on. Defaults to the current tab. Pass the drive_id from open_presentation ' +
+          'or list_presentation_sessions to commit a session opened on a different deck/drive than the tab now shows.',
+      ),
   }),
   output: z.object({
     item_id: z.string(),
@@ -22,5 +29,5 @@ export const commitPresentationTool = defineTool({
     was_dirty: z.boolean().describe('Whether any edits were actually uploaded (false = no-op commit)'),
     committed: z.boolean(),
   }),
-  handle: params => commitPresentation(params.item_id),
+  handle: params => commitPresentation(params.item_id, params.drive_id),
 });

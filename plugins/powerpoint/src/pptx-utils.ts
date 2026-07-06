@@ -442,6 +442,7 @@ export const uploadPptx = async (itemId: string, entries: Map<string, Uint8Array
 
 export interface OpenPresentationResult {
   item_id: string;
+  drive_id: string;
   etag: string;
   slides: number;
   opened_at: number;
@@ -491,6 +492,7 @@ export const openPresentation = async (itemId: string): Promise<OpenPresentation
 
   return {
     item_id: itemId,
+    drive_id: driveId,
     etag,
     slides: getSlideList(entries).length,
     opened_at: now,
@@ -514,10 +516,13 @@ export interface CommitPresentationResult {
  * If the session is clean (nothing mutated), skips the upload and just
  * clears the session.
  */
-export const commitPresentation = async (itemId: string): Promise<CommitPresentationResult> => {
-  const { token, driveId } = await requireAuth();
+export const commitPresentation = async (itemId: string, driveId?: string): Promise<CommitPresentationResult> => {
+  const { token, driveId: currentDriveId } = await requireAuth();
 
-  const session = touchSession(driveId, itemId);
+  // Look the session up under the explicit drive when given (e.g. from
+  // list_presentation_sessions after the tab navigated to another deck),
+  // otherwise the current tab's drive.
+  const session = touchSession(driveId ?? currentDriveId, itemId);
   if (!session) {
     throw ToolError.notFound(
       `No open session for item ${itemId}. Call open_presentation first, or the previous session expired after 10 minutes of inactivity.`,
@@ -527,12 +532,14 @@ export const commitPresentation = async (itemId: string): Promise<CommitPresenta
   const slides = getSlideList(session.entries).length;
 
   if (!session.dirty) {
-    deleteSession(driveId, itemId);
+    deleteSession(session.driveId, session.itemId);
     return { item_id: itemId, slides, was_dirty: false, committed: true };
   }
 
+  // Commit against the session's own drive/item — the file lives there
+  // regardless of which deck the tab currently shows.
   const blob = await writeZip(session.entries);
-  const url = `${GRAPH_BASE}/drives/${driveId}/items/${itemId}/content`;
+  const url = `${GRAPH_BASE}/drives/${session.driveId}/items/${session.itemId}/content`;
   const resp = await fetch(url, {
     method: 'PUT',
     headers: {
@@ -562,7 +569,7 @@ export const commitPresentation = async (itemId: string): Promise<CommitPresenta
     throw ToolError.internal(`Failed to commit session: ${resp.status} — ${errorBody}`);
   }
 
-  deleteSession(driveId, itemId);
+  deleteSession(session.driveId, session.itemId);
   return { item_id: itemId, slides, was_dirty: true, committed: true };
 };
 
@@ -572,9 +579,9 @@ export interface DiscardPresentationResult {
 }
 
 /** Drop a session without uploading. Idempotent — returns discarded=false if nothing was open. */
-export const discardPresentation = async (itemId: string): Promise<DiscardPresentationResult> => {
-  const { driveId } = await requireAuth();
-  const discarded = deleteSession(driveId, itemId);
+export const discardPresentation = async (itemId: string, driveId?: string): Promise<DiscardPresentationResult> => {
+  const { driveId: currentDriveId } = await requireAuth();
+  const discarded = deleteSession(driveId ?? currentDriveId, itemId);
   return { item_id: itemId, discarded };
 };
 
@@ -620,17 +627,24 @@ const childElementsByName = (parent: Element, localName: string): Element[] => {
 export const replaceSlideText = (slideXml: string, newText: string): string => {
   const doc = parseXml(slideXml);
 
-  // Find the first text body that actually has a paragraph.
+  // Prefer the first text body that already has a paragraph (an authored text
+  // box); fall back to the first text body on the slide so empty placeholders
+  // (a blank title or body) can still be populated.
   const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_ELEMENT);
   let txBody: Element | null = null;
+  let firstTxBody: Element | null = null;
   let node = walker.nextNode();
   while (node) {
-    if (isElement(node) && getLocalName(node) === 'txBody' && childElementsByName(node, 'p').length > 0) {
-      txBody = node;
-      break;
+    if (isElement(node) && getLocalName(node) === 'txBody') {
+      if (!firstTxBody) firstTxBody = node;
+      if (childElementsByName(node, 'p').length > 0) {
+        txBody = node;
+        break;
+      }
     }
     node = walker.nextNode();
   }
+  txBody = txBody ?? firstTxBody;
   if (!txBody) return serializeXml(doc);
 
   // Preserve formatting templates from the first paragraph / first run.

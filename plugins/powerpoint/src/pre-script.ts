@@ -27,6 +27,12 @@ interface CapturedGraphToken {
 }
 
 const GRAPH_HOSTNAME = 'graph.microsoft.com';
+/**
+ * Well-known Microsoft Graph resource app id. Legacy v1 token-endpoint
+ * responses may name the audience by this id instead of the
+ * `https://graph.microsoft.com` URI.
+ */
+const GRAPH_RESOURCE_APP_ID = '00000003-0000-0000-c000-000000000000';
 const TOKEN_ENDPOINT_HOSTNAME = 'login.microsoftonline.com';
 /**
  * AAD token endpoint paths. Matches both:
@@ -105,12 +111,27 @@ definePreScript(({ set, log }) => {
   const scopeGrantsGraph = (scope: string): boolean =>
     scope.split(/\s+/).some(s => parseUrl(s)?.hostname.toLowerCase() === GRAPH_HOSTNAME);
 
+  /**
+   * Whether a v1 `resource` claim names Microsoft Graph. Legacy `/oauth2/token`
+   * responses omit `scope` and identify the audience with a single `resource`
+   * value — either the `https://graph.microsoft.com` URI or the Graph app id.
+   */
+  const resourceGrantsGraph = (resource: string): boolean => {
+    const host = parseUrl(resource)?.hostname.toLowerCase();
+    return host ? host === GRAPH_HOSTNAME : resource === GRAPH_RESOURCE_APP_ID;
+  };
+
   /** Parse an AAD token-endpoint JSON response and stash any Graph-scoped token. */
   const captureFromTokenResponse = (body: unknown): void => {
     if (!body || typeof body !== 'object') return;
-    const data = body as { access_token?: string; scope?: string; expires_in?: number };
-    if (typeof data.access_token !== 'string' || typeof data.scope !== 'string') return;
-    if (!scopeGrantsGraph(data.scope)) return;
+    const data = body as { access_token?: string; scope?: string; resource?: string; expires_in?: number };
+    if (typeof data.access_token !== 'string') return;
+    // v2 responses carry a space-separated `scope`; legacy v1 (`/oauth2/token`)
+    // responses omit it and name the audience in `resource` instead.
+    const grantsGraph =
+      (typeof data.scope === 'string' && scopeGrantsGraph(data.scope)) ||
+      (typeof data.resource === 'string' && resourceGrantsGraph(data.resource));
+    if (!grantsGraph) return;
     const ttl = typeof data.expires_in === 'number' && data.expires_in > 0 ? data.expires_in : 3600;
     const exp = Math.floor(Date.now() / 1000) + ttl;
     stash(data.access_token, exp);

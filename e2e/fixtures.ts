@@ -220,7 +220,7 @@ interface OpentabsConfig {
 
 /**
  * Read tool names from the e2e-test plugin's dist/tools.json.
- * Returns prefixed tool names (e.g., 'e2e-test_echo') matching the format
+ * Returns prefixed tool names (e.g., 'e2e-test__echo') matching the format
  * used in config.json's `tools` map. The sdkVersion field is patched once
  * in global-setup.ts before workers spawn.
  */
@@ -229,7 +229,7 @@ const readPluginToolNames = (): string[] => {
   const raw: unknown = JSON.parse(fs.readFileSync(toolsPath, 'utf-8'));
   // Support both legacy array format and current { tools: [...] } format
   const tools = (Array.isArray(raw) ? raw : (raw as { tools: unknown[] }).tools) as Array<{ name: string }>;
-  return tools.map(t => `e2e-test_${t.name}`);
+  return tools.map(t => `e2e-test__${t.name}`);
 };
 
 /**
@@ -874,7 +874,7 @@ const createExtensionCopy = (
     // Patch the default server port in the offscreen document so it
     // connects to this test's port. The bundled code has:
     //   var DEFAULT_SERVER_PORT = 9515;
-    //   var buildWsUrl = (port) => `ws://localhost:${port}/ws`;
+    //   var buildWsUrl = (port) => `ws://127.0.0.1:${port}/ws`;
     //   var DEFAULT_MCP_SERVER_URL = buildWsUrl(DEFAULT_SERVER_PORT);
     // Replacing the port constant makes buildWsUrl produce the test URL.
     const offscreenPath = path.join(extensionDir, 'dist/offscreen/index.js');

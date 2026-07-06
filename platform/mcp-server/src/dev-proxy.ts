@@ -32,12 +32,28 @@ const DIST_DIR = resolve(import.meta.dirname);
 const PROXY_PORT = Number(process.env.PORT ?? DEFAULT_PORT);
 const DEBOUNCE_MS = 300;
 const READY_TIMEOUT_MS = 5000;
+/** Respawn backoff after a worker crash, and the window/threshold for the
+ *  crash-loop circuit breaker. A worker that crashes faster than it can reach
+ *  'ready' (e.g. a config error thrown at import time) would otherwise respawn
+ *  forever; after too many crashes inside the window we stop and surface it. */
+const CRASH_RESPAWN_DELAY_MS = 1000;
+const CRASH_LOOP_WINDOW_MS = 10_000;
+const CRASH_LOOP_MAX = 5;
 
 let workerPort: number | null = null;
 let worker: ChildProcess | null = null;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 const pending: Array<() => void> = [];
 let workerStartCount = 0;
+
+/** Set true when the proxy deliberately tears down the worker (reload or proxy
+ *  shutdown), so the 'exit' handler can distinguish an intentional kill from a
+ *  crash and only auto-respawn on the latter. */
+let intentionalWorkerKill = false;
+
+/** Timestamps of recent crash-respawns, used by the circuit breaker to detect
+ *  a worker that cannot stay up (startup error). */
+let recentCrashTimes: number[] = [];
 
 /** Runtime override for skipPermissions, set via IPC when the user clicks
  *  'Restore approvals'. null = no override (pass through from parent env). */
@@ -205,6 +221,7 @@ const cleanupSession = (proxySessionId: string): void => {
  */
 const startWorker = (): void => {
   if (worker) {
+    intentionalWorkerKill = true;
     worker.kill('SIGTERM');
     worker = null;
     workerPort = null;
@@ -249,11 +266,35 @@ const startWorker = (): void => {
   });
 
   child.on('exit', code => {
-    if (worker === child) {
-      worker = null;
-      workerPort = null;
-      console.log(`[proxy] Worker exited (code ${code ?? 'null'})`);
+    if (worker !== child) return;
+    worker = null;
+    workerPort = null;
+    console.log(`[proxy] Worker exited (code ${code ?? 'null'})`);
+
+    // An intentional teardown (reload or proxy shutdown) handles its own
+    // respawn. An unexpected exit is a worker crash — respawn so the dev
+    // server self-heals instead of leaving the proxy serving 503s.
+    if (intentionalWorkerKill) {
+      intentionalWorkerKill = false;
+      return;
     }
+
+    const now = Date.now();
+    recentCrashTimes = recentCrashTimes.filter(t => now - t < CRASH_LOOP_WINDOW_MS);
+    recentCrashTimes.push(now);
+    if (recentCrashTimes.length >= CRASH_LOOP_MAX) {
+      console.error(
+        `[proxy] Worker crashed ${recentCrashTimes.length.toString()} times in ` +
+          `${(CRASH_LOOP_WINDOW_MS / 1000).toString()}s — not respawning. ` +
+          'Fix the startup error and restart the dev server.',
+      );
+      return;
+    }
+
+    console.log(`[proxy] Worker crashed — respawning in ${CRASH_RESPAWN_DELAY_MS.toString()}ms`);
+    setTimeout(() => {
+      if (worker === null) startWorker();
+    }, CRASH_RESPAWN_DELAY_MS);
   });
 };
 
@@ -829,10 +870,12 @@ watch(DIST_DIR, { recursive: true }, (_event, filename) => {
 
 // Graceful shutdown: kill the worker when the proxy exits.
 process.on('SIGTERM', () => {
+  intentionalWorkerKill = true;
   worker?.kill('SIGTERM');
   process.exit(0);
 });
 process.on('SIGINT', () => {
+  intentionalWorkerKill = true;
   worker?.kill('SIGTERM');
   process.exit(0);
 });

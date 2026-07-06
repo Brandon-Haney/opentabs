@@ -1,6 +1,8 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../retool-api.js';
+import { jsonValueSchema } from './json-value-schema.js';
+import type { JsonValue } from './json-value-schema.js';
 
 export const runGrpc = defineTool({
   name: 'run_grpc',
@@ -13,15 +15,13 @@ export const runGrpc = defineTool({
   input: z.object({
     resource_name: z
       .string()
-      .describe(
-        'Resource display name (e.g., "brex.proto.billing_lifecycle.servicing.v1.services.PaymentPlanService") or internal UUID',
-      ),
+      .describe('Resource display name (e.g., "example.proto.service.v1.ExampleService") or internal UUID'),
     method_name: z.string().describe('gRPC method name (e.g., "ListPlanGroups", "SimulatePlan")'),
     body: z.string().describe('JSON request body for the gRPC method'),
     metadata: z.record(z.string(), z.string()).optional().describe('Optional gRPC metadata headers'),
   }),
   output: z.object({
-    data: z.unknown().describe('gRPC response data'),
+    data: jsonValueSchema.nullable().describe('gRPC response data'),
     error: z.string().nullable().describe('Error message if call failed'),
   }),
   handle: async params => {
@@ -35,7 +35,7 @@ export const runGrpc = defineTool({
 
     const serviceName = resource.displayName;
 
-    const result = await api<Record<string, unknown>>('/api/playground/query', {
+    const result = await api<JsonValue>('/api/playground/query', {
       method: 'POST',
       body: {
         resourceName: resource.name,

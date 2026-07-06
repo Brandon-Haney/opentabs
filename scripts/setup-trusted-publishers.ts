@@ -1,8 +1,10 @@
 /**
- * Configure npm trusted publishers for all plugin packages.
+ * Configure npm trusted publishers for OpenTabs packages.
  *
- * Sets up OIDC trusted publishing so the GitHub Actions workflow
- * (publish-plugins.yml) can publish plugins without an npm token.
+ * Sets up OIDC trusted publishing so the GitHub Actions publish workflows can
+ * publish to npm without a long-lived npm token. Supports two target sets:
+ *   - plugins  → registers every plugin package against publish-plugins.yml
+ *   - platform → registers the 7 platform packages against publish-platform.yml
  *
  * Requirements:
  *   - npm CLI authenticated (`npm whoami` must succeed)
@@ -11,11 +13,13 @@
  *     processes packages as fast as possible)
  *
  * Usage:
- *   npx tsx scripts/setup-trusted-publishers.ts --otp=123456
- *   npx tsx scripts/setup-trusted-publishers.ts --dry-run
+ *   npx tsx scripts/setup-trusted-publishers.ts --target=platform --otp=123456
+ *   npx tsx scripts/setup-trusted-publishers.ts --target=plugins --otp=123456
+ *   npx tsx scripts/setup-trusted-publishers.ts --target=platform --dry-run
  *
- * The --otp flag is required for the real run (skipped for --dry-run).
- * If the OTP expires mid-batch, the script prompts for a new one.
+ * --target defaults to 'plugins'. The --otp flag is required for the real run
+ * (skipped for --dry-run). If the OTP expires mid-batch, the script prompts for
+ * a new one.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -25,7 +29,24 @@ import { createInterface } from 'node:readline';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const REPO = 'opentabs-dev/opentabs';
-const WORKFLOW_FILE = 'publish-plugins.yml';
+
+/** Platform packages published by publish-platform.yml, in dependency order. */
+const PLATFORM_PACKAGE_DIRS = [
+  'shared',
+  'browser-extension',
+  'mcp-server',
+  'plugin-sdk',
+  'plugin-tools',
+  'cli',
+  'create-plugin',
+];
+
+interface Target {
+  /** The publish workflow file the trusted-publisher claim is bound to. */
+  workflowFile: string;
+  /** Resolve the npm package names this target covers. */
+  packageNames: () => string[];
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -63,6 +84,20 @@ const discoverPluginPackageNames = (): string[] => {
       return pkg.name ?? null;
     })
     .filter((name): name is string => name !== null);
+};
+
+/** Resolve the npm package names for the platform packages. */
+const discoverPlatformPackageNames = (): string[] =>
+  PLATFORM_PACKAGE_DIRS.map(dir => {
+    const pkgPath = resolve(ROOT, 'platform', dir, 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { name?: string };
+    if (!pkg.name) throw new Error(`platform/${dir}/package.json has no name`);
+    return pkg.name;
+  });
+
+const TARGETS: Record<string, Target> = {
+  plugins: { workflowFile: 'publish-plugins.yml', packageNames: discoverPluginPackageNames },
+  platform: { workflowFile: 'publish-platform.yml', packageNames: discoverPlatformPackageNames },
 };
 
 // ---------------------------------------------------------------------------
@@ -109,14 +144,19 @@ const getTrustedPublishers = async (packageName: string, token: string, otp: str
 };
 
 /** Add trusted publisher config for a package. */
-const addTrustedPublisher = async (packageName: string, token: string, otp: string): Promise<void> => {
+const addTrustedPublisher = async (
+  packageName: string,
+  workflowFile: string,
+  token: string,
+  otp: string,
+): Promise<void> => {
   const encoded = encodeURIComponent(packageName);
   const body: TrustConfig[] = [
     {
       type: 'github',
       claims: {
         repository: REPO,
-        workflow_ref: { file: WORKFLOW_FILE },
+        workflow_ref: { file: workflowFile },
       },
     },
   ];
@@ -148,14 +188,19 @@ const addTrustedPublisher = async (packageName: string, token: string, otp: stri
 const main = async (): Promise<void> => {
   const dryRun = process.argv.includes('--dry-run');
 
-  // Verify npm auth
-  console.log('Verifying npm authentication...');
-  const npmUser = capture(['npm', 'whoami']);
-  console.log(`  Authenticated as: ${npmUser}`);
+  // Select the target package set (defaults to plugins).
+  const targetArg = process.argv.find(a => a.startsWith('--target='));
+  const targetName = targetArg ? (targetArg.split('=')[1] ?? '') : 'plugins';
+  const target = TARGETS[targetName];
+  if (!target) {
+    console.error(`Unknown --target=${targetName}. Expected one of: ${Object.keys(TARGETS).join(', ')}`);
+    process.exit(1);
+  }
+  const { workflowFile } = target;
 
-  // Discover plugins
-  const packageNames = discoverPluginPackageNames();
-  console.log(`\nFound ${packageNames.length} plugin packages.\n`);
+  // Discover packages for the selected target
+  const packageNames = target.packageNames();
+  console.log(`Found ${packageNames.length} ${targetName} packages.\n`);
 
   if (dryRun) {
     console.log('Dry run — would configure trusted publishing for:');
@@ -164,9 +209,14 @@ const main = async (): Promise<void> => {
     }
     console.log(`\nTrusted publisher: GitHub Actions`);
     console.log(`  Repository: ${REPO}`);
-    console.log(`  Workflow:   ${WORKFLOW_FILE}`);
+    console.log(`  Workflow:   ${workflowFile}`);
     return;
   }
+
+  // Verify npm auth (real run only — dry runs work offline)
+  console.log('Verifying npm authentication...');
+  const npmUser = capture(['npm', 'whoami']);
+  console.log(`  Authenticated as: ${npmUser}`);
 
   const token = getNpmToken();
 
@@ -201,7 +251,7 @@ const main = async (): Promise<void> => {
         continue;
       }
 
-      await addTrustedPublisher(name, token, otp);
+      await addTrustedPublisher(name, workflowFile, token, otp);
       console.log(`  ✓ ${name} — configured`);
       configured++;
     } catch (err) {
@@ -217,7 +267,7 @@ const main = async (): Promise<void> => {
         }
         // Retry this package
         try {
-          await addTrustedPublisher(name, token, otp);
+          await addTrustedPublisher(name, workflowFile, token, otp);
           console.log(`  ✓ ${name} — configured (after OTP refresh)`);
           configured++;
         } catch (retryErr) {

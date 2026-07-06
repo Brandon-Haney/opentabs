@@ -27,7 +27,7 @@ Configure settings via `opentabs plugin configure retool` or the side panel.
 |---|---|---|---|
 | `instanceUrl` | url | No | The URL of your self-hosted Retool instance (e.g., https://retool.example.com). Leave empty to use retool.com. |
 
-## Tools (36)
+## Tools (50)
 
 ### Users (2)
 
@@ -44,28 +44,40 @@ Configure settings via `opentabs plugin configure retool` or the side panel.
 | `list_user_spaces` | List accessible user spaces | Read |
 | `list_experiments` | List active feature experiments | Read |
 
-### Apps (12)
+### Apps (22)
 
 | Tool | Description | Type |
 |---|---|---|
 | `list_apps` | List all Retool apps and folders | Read |
 | `get_app` | Get app details by UUID | Read |
+| `get_app_state` | Get serialized app state for modification | Read |
 | `lookup_app` | Look up app by URL path | Write |
 | `get_app_docs` | Get app documentation by UUID | Read |
 | `list_app_tags` | List version tags for an app | Read |
 | `list_page_names` | List all app names and UUIDs (lightweight) | Read |
 | `list_page_saves` | List edit history for an app | Read |
+| `list_components` | List all components in an app | Read |
 | `create_app` | Create a new Retool web app | Write |
+| `export_toolscript_archive` | Export a Retool app as a Toolscript ZIP | Write |
+| `create_app_from_toolscript_archive` | Create a Retool app from a Toolscript ZIP | Write |
+| `update_app_from_toolscript_archive` | Update a Retool app from a Toolscript ZIP | Write |
+| `force_editor_save` | Force-save the open Retool editor state | Write |
 | `clone_app` | Clone an existing app | Write |
+| `save_page` | Save app state to a Retool page | Write |
+| `add_component` | Add a UI widget to an app | Write |
+| `add_query` | Add a data query to an app | Write |
+| `delete_app` | Delete a Retool app | Write |
 | `create_folder` | Create a new app or workflow folder | Write |
 | `rename_folder` | Rename an app or workflow folder | Write |
 | `delete_folder` | Delete an empty folder | Write |
 
-### Resources (4)
+### Resources (6)
 
 | Tool | Description | Type |
 |---|---|---|
 | `list_resources` | List all configured data resources | Read |
+| `get_resource` | Get resource details by ID | Read |
+| `create_resource` | Create a new data source resource | Write |
 | `create_resource_folder` | Create a new resource folder | Write |
 | `delete_resource_folder` | Delete a resource folder | Write |
 | `move_resource_to_folder` | Move a resource to a folder | Write |
@@ -97,11 +109,13 @@ Configure settings via `opentabs plugin configure retool` or the side panel.
 | `list_branches` | List source control branches | Read |
 | `get_source_control_settings` | Get source control configuration | Read |
 
-### Queries (1)
+### Queries (3)
 
 | Tool | Description | Type |
 |---|---|---|
 | `list_playground_queries` | List saved playground queries | Read |
+| `run_query` | Run a SQL query against a resource | Write |
+| `run_grpc` | Run a gRPC method call | Write |
 
 ### Database (1)
 

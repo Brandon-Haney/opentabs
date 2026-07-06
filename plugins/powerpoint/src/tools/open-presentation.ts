@@ -19,6 +19,9 @@ export const openPresentationTool = defineTool({
   }),
   output: z.object({
     item_id: z.string(),
+    drive_id: z
+      .string()
+      .describe('Drive the session was opened on — pass to commit/discard_presentation if the tab navigates away'),
     etag: z.string().describe('ETag captured at open time — used as If-Match on commit'),
     slides: z.number().int().describe('Number of slides in the presentation'),
     opened_at: z.number().describe('Unix timestamp in milliseconds when the session was opened'),

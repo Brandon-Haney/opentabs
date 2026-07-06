@@ -16,11 +16,22 @@ import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import type { WsHandle } from '@opentabs-dev/shared';
 import type { RawData } from 'ws';
 import { WebSocketServer } from 'ws';
+import { MAX_MESSAGE_SIZE } from './extension-protocol.js';
 import type { ServerAdapter } from './http-routes.js';
 import { log } from './logger.js';
 
-/** Maximum HTTP request body size (10 MB, matching the WebSocket maxPayload) */
+/** Maximum HTTP request body size (10 MB) */
 const MAX_BODY_SIZE = 10 * 1024 * 1024;
+
+/**
+ * Hard protocol-layer backstop for inbound WebSocket frames. Set above the
+ * application-level MAX_MESSAGE_SIZE so a slightly-oversized message is dropped
+ * gracefully by handleExtensionMessage (which logs and returns) instead of
+ * being rejected by the ws receiver — a rejection emits a connection 'error'
+ * (status 1009) and closes the socket. Only a frame larger than this backstop
+ * trips the protocol layer.
+ */
+const MAX_WS_PAYLOAD = MAX_MESSAGE_SIZE * 2;
 
 /** Thrown by collectBody when the incoming body exceeds MAX_BODY_SIZE */
 class BodyTooLargeError extends Error {
@@ -77,6 +88,58 @@ const sendResponse = (webResponse: Response, res: ServerResponse): void => {
     }
   });
   res.on('close', () => nodeStream.destroy());
+};
+
+/**
+ * Reason phrases for the HTTP status codes a declined WebSocket upgrade can
+ * return. `Response.statusText` is empty when not set explicitly, so the status
+ * line is built from this table to keep the response standards-compliant and
+ * legible in packet captures.
+ */
+const HTTP_REASON_PHRASES: Record<number, string> = {
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Not Found',
+  500: 'Internal Server Error',
+};
+
+/**
+ * Write a Web Response to a raw upgrade socket as a complete HTTP/1.1 message,
+ * then close the socket.
+ *
+ * The 'upgrade' event hands us a raw Duplex, not a ServerResponse, so a route
+ * handler that declines the upgrade (e.g. returns 401 on a failed auth check)
+ * must have its response serialized onto the socket manually. Without this, the
+ * socket would be destroyed with no HTTP reply, and the client (the extension's
+ * offscreen WebSocket) would see an abrupt connection reset indistinguishable
+ * from "server unreachable" — masking auth failures behind a silent retry loop.
+ */
+const writeUpgradeRejection = async (webResponse: Response, socket: Duplex): Promise<void> => {
+  const statusText = webResponse.statusText || HTTP_REASON_PHRASES[webResponse.status] || 'Error';
+  const bodyText = await webResponse.text();
+  const bodyBuffer = Buffer.from(bodyText, 'utf-8');
+
+  const headerLines = [`HTTP/1.1 ${webResponse.status.toString()} ${statusText}`];
+  for (const [key, value] of webResponse.headers) {
+    // Content-Length is derived from the actual body below.
+    if (key.toLowerCase() !== 'content-length') headerLines.push(`${key}: ${value}`);
+  }
+  headerLines.push(`Content-Length: ${bodyBuffer.length.toString()}`);
+  headerLines.push('Connection: close');
+
+  // Guard the raw socket write: if the peer already vanished, the Duplex can
+  // emit an 'error' event. Without a listener Node treats it as unhandled and
+  // crashes the process, so attach one that simply destroys the socket. The
+  // synchronous try/catch covers writes that throw immediately (e.g. after the
+  // socket was already destroyed).
+  socket.on('error', () => socket.destroy());
+  try {
+    socket.write(`${headerLines.join('\r\n')}\r\n\r\n`);
+    socket.end(bodyBuffer);
+  } catch {
+    socket.destroy();
+  }
 };
 
 /** Wrap a ws WebSocket to match the WsHandle interface used by handlers */
@@ -219,13 +282,20 @@ const handleWsUpgradeEvent = (
 
     try {
       const webReq = toWebRequest(req, null);
-      await options.fetch(webReq, perRequestAdapter);
+      const webRes = await options.fetch(webReq, perRequestAdapter);
 
       const ctx = upgradeCtx;
       upgradeCtx = null;
 
       if (!ctx.requested) {
-        socket.destroy();
+        // The route handler declined the upgrade. If it returned a Response
+        // (e.g. 401 on failed WebSocket auth), write it to the socket so the
+        // client receives a real HTTP status instead of a bare socket reset.
+        if (webRes) {
+          await writeUpgradeRejection(webRes, socket);
+        } else {
+          socket.destroy();
+        }
         return;
       }
 
@@ -261,6 +331,17 @@ const handleWsUpgradeEvent = (
 
         ws.on('close', () => options.websocket.close(handle));
 
+        // A connection-level 'error' (e.g. an oversized frame exceeding
+        // maxPayload, which closes with status 1009, or any protocol error)
+        // is emitted on the socket itself. Without a listener, Node treats it
+        // as an unhandled 'error' event and crashes the entire process. Log it
+        // and terminate the connection; the 'close' event that follows runs the
+        // normal cleanup via options.websocket.close.
+        ws.on('error', (err: Error) => {
+          log.error('WebSocket connection error:', err);
+          ws.terminate();
+        });
+
         options.websocket.open(handle);
       });
     } catch (err) {
@@ -287,8 +368,7 @@ const createNodeServer = (options: NodeServerOptions): Promise<NodeServer> =>
   new Promise((resolveServer, rejectServer) => {
     const wss = new WebSocketServer({
       noServer: true,
-      /** Matches MAX_MESSAGE_SIZE in extension-protocol.ts and MAX_BODY_SIZE above */
-      maxPayload: MAX_BODY_SIZE,
+      maxPayload: MAX_WS_PAYLOAD,
     });
 
     // Per-request header map keyed by the IncomingMessage that triggered the

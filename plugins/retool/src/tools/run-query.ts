@@ -1,6 +1,8 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../retool-api.js';
+import { jsonValueSchema } from './json-value-schema.js';
+import type { JsonValue } from './json-value-schema.js';
 
 export const runQuery = defineTool({
   name: 'run_query',
@@ -17,7 +19,9 @@ export const runQuery = defineTool({
     query: z.string().describe('SQL query to execute'),
   }),
   output: z.object({
-    data: z.unknown().describe('Query results (column-oriented: { column1: [...values], column2: [...values] })'),
+    data: jsonValueSchema
+      .nullable()
+      .describe('Query results (column-oriented: { column1: [...values], column2: [...values] })'),
     error: z.string().nullable().describe('Error message if query failed'),
   }),
   handle: async params => {
@@ -29,7 +33,7 @@ export const runQuery = defineTool({
     );
     if (!resource) throw ToolError.notFound(`Resource "${params.resource_name}" not found`);
 
-    const result = await api<Record<string, unknown>>('/api/playground/query', {
+    const result = await api<JsonValue>('/api/playground/query', {
       method: 'POST',
       body: {
         resourceName: resource.name,

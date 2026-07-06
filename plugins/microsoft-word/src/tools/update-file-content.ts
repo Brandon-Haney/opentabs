@@ -1,6 +1,6 @@
-import { ToolError, clearAuthCache, defineTool } from '@opentabs-dev/plugin-sdk';
+import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { getGraphToken } from '../microsoft-word-api.js';
+import { AUTH_EXPIRED_MESSAGE, FILE_LOCKED_MESSAGE, authError, getGraphToken } from '../microsoft-word-api.js';
 import { type RawDriveItem, driveItemSchema, mapDriveItem } from './schemas.js';
 
 const GRAPH_API_BASE = 'https://graph.microsoft.com/v1.0';
@@ -44,8 +44,11 @@ export const updateFileContent = defineTool({
     }
 
     if (response.status === 401 || response.status === 403) {
-      clearAuthCache('microsoft-word');
-      throw ToolError.auth('Authentication expired — please refresh the page.');
+      authError(AUTH_EXPIRED_MESSAGE);
+    }
+
+    if (response.status === 423) {
+      throw ToolError.validation(FILE_LOCKED_MESSAGE);
     }
 
     if (response.status === 404) {

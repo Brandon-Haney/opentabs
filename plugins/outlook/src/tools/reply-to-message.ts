@@ -1,4 +1,4 @@
-import { defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { composeBody } from '../compose-defaults.js';
 import { api } from '../outlook-api.js';
@@ -40,6 +40,8 @@ export const replyToMessage = defineTool({
       `/me/messages/${params.message_id}/${draftAction}`,
       { method: 'POST' },
     );
+    const draftId = draft.id;
+    if (!draftId) throw ToolError.internal('Reply draft was created without a message id.');
 
     const composed = await composeBody({
       body: params.body,
@@ -47,16 +49,28 @@ export const replyToMessage = defineTool({
       signature: params.include_signature === false ? 'none' : 'reply',
     });
     const quoted = draft.body?.content ?? '';
-    await api(`/me/messages/${draft.id}`, {
-      method: 'PATCH',
-      body: { body: { contentType: 'HTML', content: `${composed.content}${quoted}` } },
-    });
+    const applyBody = () =>
+      api(`/me/messages/${draftId}`, {
+        method: 'PATCH',
+        body: { body: { contentType: 'HTML', content: `${composed.content}${quoted}` } },
+      });
 
     if (params.draft) {
-      return { success: true, draft_id: draft.id ?? '', web_link: draft.webLink ?? '' };
+      await applyBody();
+      return { success: true, draft_id: draftId, web_link: draft.webLink ?? '' };
     }
 
-    await api(`/me/messages/${draft.id}/send`, { method: 'POST' });
+    // Immediate reply. If composing the body fails the message never sent, so delete
+    // the created draft rather than leave an orphan. A failure of the send itself is
+    // ambiguous (the message may already be on its way), so the draft is left in place
+    // rather than risk deleting a message that was actually sent.
+    try {
+      await applyBody();
+    } catch (err) {
+      await api(`/me/messages/${draftId}`, { method: 'DELETE' }).catch(() => {});
+      throw err;
+    }
+    await api(`/me/messages/${draftId}/send`, { method: 'POST' });
     return { success: true };
   },
 });

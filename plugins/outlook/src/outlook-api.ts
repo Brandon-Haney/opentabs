@@ -560,6 +560,9 @@ export const owsRequest = async <T>(endpoint: string, options: OwsRequestOptions
       setAuthCache(OWS_AUTH_CACHE_KEY, auth);
       return outcome.data;
     }
+    // A 404 means this token authenticated (the gateway resolved its mailbox) and the
+    // setting is simply absent — a valid winner to cache, so a genuinely-missing
+    // signature does not re-cascade through every token on each subsequent call.
     if (outcome.kind === 'notFound') {
       setAuthCache(OWS_AUTH_CACHE_KEY, auth);
       return undefined;

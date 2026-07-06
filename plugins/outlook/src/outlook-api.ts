@@ -402,9 +402,12 @@ export const api = async <T>(
 
 // OWS gateway lives on the OWA page's own origin — a third base distinct from Graph
 // and Outlook REST. It serves the client-side compose settings (roaming signatures,
-// startup data) that Graph's mailboxSettings does not expose. Requests are
-// same-origin, so `owsRequest` fetches relative paths against this base.
-const OWS_API_BASE = 'https://outlook.cloud.microsoft';
+// startup data) that Graph's mailboxSettings does not expose. The adapter runs on
+// whichever OWA host matched (outlook.cloud.microsoft, outlook.office.com, or
+// outlook.office365.com), so resolve against the current origin to stay same-origin
+// rather than hardcoding one host. Read lazily (not at module scope) because the
+// plugin module is also loaded in Node at build time, where `window` is undefined.
+const owsBaseUrl = (): string => window.location.origin;
 const OWS_AUTH_CACHE_KEY = 'outlook-ows';
 
 /** MSAL access-token claims OWS routing headers are derived from. */
@@ -491,14 +494,15 @@ const sendOwsRequest = async <T>(
   options: OwsRequestOptions,
 ): Promise<OwsOutcome<T>> => {
   const qs = options.query ? encodeOwsQuery(options.query) : '';
-  const url = qs ? `${OWS_API_BASE}${endpoint}?${qs}` : `${OWS_API_BASE}${endpoint}`;
+  const base = owsBaseUrl();
+  const url = qs ? `${base}${endpoint}?${qs}` : `${base}${endpoint}`;
 
   let response: Response;
   try {
     response = await fetch(url, {
       method: options.method ?? 'GET',
       headers: buildOwsHeaders(token, options.headers),
-      credentials: 'omit',
+      credentials: 'same-origin',
       signal: AbortSignal.timeout(30_000),
     });
   } catch (err) {

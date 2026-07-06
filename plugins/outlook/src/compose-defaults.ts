@@ -16,6 +16,9 @@ const DEFAULT_FONT_FAMILY = 'Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Cal
 const DEFAULT_FONT_SIZE_PT = 12;
 const DEFAULT_FONT_COLOR = '#000000';
 
+/** 3- or 6-digit hex color, so a server value can't break out of the style attribute. */
+const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?$/;
+
 /**
  * OWA's rich-text compose font-size enum → point size — the classic Outlook/Word
  * font-size scale (1–7). `3 ⇒ 12 pt` is confirmed against the live compose surface;
@@ -117,10 +120,9 @@ const readFont = async (): Promise<Pick<ComposeDefaults, 'fontFamily' | 'fontSiz
 
   const sizeEnum = options?.ComposeFontSize;
   const fontSizePt = (typeof sizeEnum === 'number' && FONT_SIZE_PT_BY_ENUM[sizeEnum]) || DEFAULT_FONT_SIZE_PT;
+  const composeFontColor = options?.ComposeFontColor?.trim();
   const fontColor =
-    typeof options?.ComposeFontColor === 'string' && options.ComposeFontColor.trim().length > 0
-      ? options.ComposeFontColor
-      : DEFAULT_FONT_COLOR;
+    composeFontColor && HEX_COLOR_PATTERN.test(composeFontColor) ? composeFontColor : DEFAULT_FONT_COLOR;
   const fontFlags = typeof options?.ComposeFontFlags === 'number' ? options.ComposeFontFlags : 0;
 
   return { fontFamily: DEFAULT_FONT_FAMILY, fontSizePt, fontColor, fontFlags };

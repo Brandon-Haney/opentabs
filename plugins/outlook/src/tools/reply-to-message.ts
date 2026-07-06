@@ -43,33 +43,35 @@ export const replyToMessage = defineTool({
     const draftId = draft.id;
     if (!draftId) throw ToolError.internal('Reply draft was created without a message id.');
 
-    const composed = await composeBody({
-      body: params.body,
-      bodyType: params.body_type === 'html' ? 'html' : 'text',
-      signature: params.include_signature === false ? 'none' : 'reply',
-    });
     const quoted = draft.body?.content ?? '';
-    const applyBody = () =>
-      api(`/me/messages/${draftId}`, {
+    const applyBody = async () => {
+      const composed = await composeBody({
+        body: params.body,
+        bodyType: params.body_type === 'html' ? 'html' : 'text',
+        signature: params.include_signature === false ? 'none' : 'reply',
+      });
+      await api(`/me/messages/${draftId}`, {
         method: 'PATCH',
         body: { body: { contentType: 'HTML', content: `${composed.content}${quoted}` } },
       });
+    };
 
-    if (params.draft) {
-      await applyBody();
-      return { success: true, draft_id: draftId, web_link: draft.webLink ?? '' };
-    }
-
-    // Immediate reply. If composing the body fails the message never sent, so delete
-    // the created draft rather than leave an orphan. A failure of the send itself is
-    // ambiguous (the message may already be on its way), so the draft is left in place
-    // rather than risk deleting a message that was actually sent.
+    // Compose the reply onto the created draft. Any failure here means nothing was
+    // sent, so delete the draft rather than leave an orphan — for both draft mode and
+    // immediate send.
     try {
       await applyBody();
     } catch (err) {
       await api(`/me/messages/${draftId}`, { method: 'DELETE' }).catch(() => {});
       throw err;
     }
+
+    if (params.draft) {
+      return { success: true, draft_id: draftId, web_link: draft.webLink ?? '' };
+    }
+
+    // A failure of the send itself is ambiguous (the message may already be on its
+    // way), so the draft is left in place rather than risk deleting a sent message.
     await api(`/me/messages/${draftId}/send`, { method: 'POST' });
     return { success: true };
   },

@@ -1,6 +1,6 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { composeBody } from '../compose-defaults.js';
+import { composeToolBody } from '../compose-defaults.js';
 import { api } from '../outlook-api.js';
 
 export const forwardMessage = defineTool({
@@ -40,11 +40,10 @@ export const forwardMessage = defineTool({
 
     const quoted = draft.body?.content ?? '';
     const applyBody = async () => {
-      const composed = await composeBody({
-        body: params.comment ?? '',
-        bodyType: 'text',
-        signature: params.include_signature === false ? 'none' : 'reply',
-      });
+      const composed = await composeToolBody(
+        { body: params.comment ?? '', include_signature: params.include_signature },
+        'reply',
+      );
       await api(`/me/messages/${draftId}`, {
         method: 'PATCH',
         body: { body: { contentType: 'HTML', content: `${composed.content}${quoted}` } },

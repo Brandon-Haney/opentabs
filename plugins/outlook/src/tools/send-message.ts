@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { composeBody } from '../compose-defaults.js';
+import { composeToolBody } from '../compose-defaults.js';
 import { api } from '../outlook-api.js';
 
 export const sendMessage = defineTool({
@@ -28,11 +28,7 @@ export const sendMessage = defineTool({
   handle: async params => {
     const toRecipients = (addrs: string[]) => addrs.map(addr => ({ emailAddress: { address: addr } }));
 
-    const body = await composeBody({
-      body: params.body,
-      bodyType: params.body_type === 'html' ? 'html' : 'text',
-      signature: params.include_signature === false ? 'none' : 'new',
-    });
+    const body = await composeToolBody(params, 'new');
 
     await api('/me/sendMail', {
       method: 'POST',

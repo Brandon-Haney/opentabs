@@ -128,7 +128,12 @@ const readFont = async (): Promise<Pick<ComposeDefaults, 'fontFamily' | 'fontSiz
   return { fontFamily: DEFAULT_FONT_FAMILY, fontSizePt, fontColor, fontFlags };
 };
 
-/** Resolve (and cache) the user's compose defaults. Throws only if unauthenticated. */
+/**
+ * Resolve (and cache) the user's compose defaults. The font lookup degrades to
+ * defaults on failure, but the signature-name lookup propagates whatever `owsRequest`
+ * throws (auth, rate-limit, non-OK, or network), so callers that must not fail — like
+ * `composeBody` — guard the call.
+ */
 const getComposeDefaults = async (): Promise<ComposeDefaults> => {
   if (cachedDefaults) return cachedDefaults;
   const [names, font] = await Promise.all([readSignatureNames(), readFont()]);
@@ -219,3 +224,18 @@ export const composeBody = async (input: {
   const content = signatureHtml ? `${styledBody}<br>${signatureHtml}` : styledBody;
   return { contentType: 'HTML', content };
 };
+
+/**
+ * Convenience wrapper over `composeBody` for the message tools: maps a tool's
+ * `body_type` / `include_signature` inputs to compose options, applying the given
+ * signature kind unless the caller opted out with `include_signature: false`.
+ */
+export const composeToolBody = (
+  input: { body: string; body_type?: 'text' | 'html'; include_signature?: boolean },
+  signatureKind: Exclude<SignatureKind, 'none'>,
+): Promise<ComposedBody> =>
+  composeBody({
+    body: input.body,
+    bodyType: input.body_type === 'html' ? 'html' : 'text',
+    signature: input.include_signature === false ? 'none' : signatureKind,
+  });

@@ -1,4 +1,4 @@
-import { defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { attachToDraft, attachmentInputSchema } from '../attachments.js';
 import { composeToolBody } from '../compose-defaults.js';
@@ -50,7 +50,18 @@ export const createDraft = defineTool({
       },
     });
 
-    await attachToDraft(data.id, params.attachments);
+    if (params.attachments?.length) {
+      const draftId = data.id;
+      if (!draftId) throw ToolError.internal('Draft was created without a message id.');
+      try {
+        await attachToDraft(draftId, params.attachments);
+      } catch (err) {
+        // Keep create_draft atomic: a partial attach failure deletes the draft rather
+        // than leave an orphan the caller never gets an id for.
+        await api(`/me/messages/${draftId}`, { method: 'DELETE' }).catch(() => {});
+        throw err;
+      }
+    }
 
     return {
       draft_id: data.id ?? '',

@@ -760,6 +760,9 @@ export const attachLargeFileToMessage = async (messageId: string, file: LargeFil
   const total = file.bytes.byteLength;
 
   const session = await cascadeAuth<{ uploadUrl?: string }>(AUTH_CACHE_KEY.mail, async auth => {
+    // createUploadSession exists only on Graph (Outlook REST v2.0 is decommissioned),
+    // so skip any Outlook REST candidate rather than let it throw and abort the cascade.
+    if (auth.apiBase !== GRAPH_API_BASE) return { done: false };
     const body = { AttachmentItem: { attachmentType: 'file', name: file.name, size: total, contentType } };
     const r = await sendRequest<{ uploadUrl?: string }>(
       auth,

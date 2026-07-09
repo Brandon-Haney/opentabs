@@ -1,5 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
+import { attachToDraft, attachmentInputSchema } from '../attachments.js';
 import { composeToolBody } from '../compose-defaults.js';
 import { api } from '../outlook-api.js';
 
@@ -23,6 +24,7 @@ export const createDraft = defineTool({
       .boolean()
       .optional()
       .describe("Append the user's Outlook signature to the draft (default: true)"),
+    attachments: z.array(attachmentInputSchema).optional().describe('Files to attach to the draft'),
   }),
   output: z.object({
     draft_id: z.string().describe('The created draft message ID'),
@@ -47,6 +49,9 @@ export const createDraft = defineTool({
         importance: params.importance,
       },
     });
+
+    await attachToDraft(data.id, params.attachments);
+
     return {
       draft_id: data.id ?? '',
       web_link: data.webLink ?? '',

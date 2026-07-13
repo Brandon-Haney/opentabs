@@ -4,13 +4,14 @@ import { describe, expect, test, vi } from 'vitest';
 // Chrome API stubs — network-capture.ts registers listeners at module level
 // ---------------------------------------------------------------------------
 
-let capturedOnEventListener: ((source: { tabId?: number }, method: string, params?: object) => void) | undefined;
+type EventSource = { tabId?: number; sessionId?: string };
+let capturedOnEventListener: ((source: EventSource, method: string, params?: object) => void) | undefined;
 let capturedOnDetachListener: ((source: { tabId?: number }, reason: string) => void) | undefined;
 
 (globalThis as Record<string, unknown>).chrome = {
   debugger: {
     onEvent: {
-      addListener: vi.fn((cb: (source: { tabId?: number }, method: string, params?: object) => void) => {
+      addListener: vi.fn((cb: (source: EventSource, method: string, params?: object) => void) => {
         capturedOnEventListener = cb;
       }),
     },
@@ -543,6 +544,110 @@ describe('concurrent startCapture guard', () => {
     expect(result1.status).toBe('rejected');
     expect(result2.status).toBe('rejected');
     expect(isCapturing(tabId)).toBe(false);
+  });
+});
+
+describe('auto-attach child sessions (OOPIF frames and workers)', () => {
+  test('Target.attachedToTarget enables Network and recurses auto-attach on the child session', async () => {
+    const tabId = 8001;
+    await startCapture(tabId);
+
+    const chromeMock = (globalThis as Record<string, unknown>).chrome as {
+      debugger: { sendCommand: ReturnType<typeof vi.fn> };
+    };
+    chromeMock.debugger.sendCommand.mockClear();
+
+    capturedOnEventListener?.({ tabId }, 'Target.attachedToTarget', {
+      sessionId: 'child-1',
+      targetInfo: { type: 'iframe', url: 'https://usc-excel.officeapps.live.com/x/_layouts/xlviewerinternal.aspx' },
+    });
+
+    const calls = chromeMock.debugger.sendCommand.mock.calls as Array<[{ sessionId?: string }, string]>;
+    expect(calls.some(c => c[0].sessionId === 'child-1' && c[1] === 'Network.enable')).toBe(true);
+    expect(calls.some(c => c[0].sessionId === 'child-1' && c[1] === 'Target.setAutoAttach')).toBe(true);
+
+    stopCapture(tabId);
+  });
+
+  test('ignores Target.attachedToTarget without a sessionId', async () => {
+    const tabId = 8005;
+    await startCapture(tabId);
+    expect(() => capturedOnEventListener?.({ tabId }, 'Target.attachedToTarget', { targetInfo: {} })).not.toThrow();
+    stopCapture(tabId);
+  });
+
+  test('captures child-session requests without colliding with a root requestId of the same value', async () => {
+    const tabId = 8002;
+    await startCapture(tabId);
+
+    // Root and child both use requestId 'r1', interleaved so both are pending at
+    // once. Without session-namespaced keys the child would overwrite the root's
+    // pending entry and one of the two requests would be lost or mislabeled.
+    capturedOnEventListener?.({ tabId }, 'Network.requestWillBeSent', {
+      requestId: 'r1',
+      request: { url: 'https://top.example/root', method: 'GET', headers: {} },
+    });
+    capturedOnEventListener?.({ tabId, sessionId: 'child-1' }, 'Network.requestWillBeSent', {
+      requestId: 'r1',
+      request: { url: 'https://usc-excel.officeapps.live.com/ewa', method: 'POST', headers: {} },
+    });
+    capturedOnEventListener?.({ tabId }, 'Network.responseReceived', {
+      requestId: 'r1',
+      response: { url: 'https://top.example/root', status: 200, statusText: 'OK', headers: {}, mimeType: 'text/plain' },
+    });
+    capturedOnEventListener?.({ tabId, sessionId: 'child-1' }, 'Network.responseReceived', {
+      requestId: 'r1',
+      response: {
+        url: 'https://usc-excel.officeapps.live.com/ewa',
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        mimeType: 'application/json',
+      },
+    });
+
+    const urls = getRequests(tabId, false)
+      .map(r => r.url)
+      .sort();
+    expect(urls).toEqual(['https://top.example/root', 'https://usc-excel.officeapps.live.com/ewa']);
+
+    stopCapture(tabId);
+  });
+
+  test('fetches a child-session response body from that child session', async () => {
+    const tabId = 8003;
+    await startCapture(tabId);
+
+    const chromeMock = (globalThis as Record<string, unknown>).chrome as {
+      debugger: { sendCommand: ReturnType<typeof vi.fn> };
+    };
+
+    let capturedTarget: { tabId?: number; sessionId?: string } | undefined;
+    chromeMock.debugger.sendCommand.mockImplementationOnce(
+      (target: { tabId?: number; sessionId?: string }, _method: unknown, _params: unknown, _cb?: unknown) => {
+        capturedTarget = target;
+      },
+    );
+
+    capturedOnEventListener?.({ tabId, sessionId: 'child-1' }, 'Network.requestWillBeSent', {
+      requestId: 'rc',
+      request: { url: 'https://usc-excel.officeapps.live.com/ewa', method: 'POST', headers: {} },
+    });
+    capturedOnEventListener?.({ tabId, sessionId: 'child-1' }, 'Network.responseReceived', {
+      requestId: 'rc',
+      response: {
+        url: 'https://usc-excel.officeapps.live.com/ewa',
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        mimeType: 'application/json',
+      },
+    });
+    capturedOnEventListener?.({ tabId, sessionId: 'child-1' }, 'Network.loadingFinished', { requestId: 'rc' });
+
+    expect(capturedTarget).toEqual({ tabId, sessionId: 'child-1' });
+
+    stopCapture(tabId);
   });
 });
 

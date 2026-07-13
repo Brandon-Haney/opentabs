@@ -7,6 +7,7 @@ import { addTableRow } from './tools/add-table-row.js';
 import { addWorksheet } from './tools/add-worksheet.js';
 import { calculateWorkbook } from './tools/calculate-workbook.js';
 import { clearRange } from './tools/clear-range.js';
+import { convertTableToRange } from './tools/convert-table-to-range.js';
 import { createChart } from './tools/create-chart.js';
 import { createTable } from './tools/create-table.js';
 import { deleteChart } from './tools/delete-chart.js';
@@ -15,6 +16,8 @@ import { deleteTable } from './tools/delete-table.js';
 import { deleteTableRow } from './tools/delete-table-row.js';
 import { deleteWorksheet } from './tools/delete-worksheet.js';
 import { evaluateFormula } from './tools/evaluate-formula.js';
+import { formatRange } from './tools/format-range.js';
+import { getChartImage } from './tools/get-chart-image.js';
 import { getCurrentUser } from './tools/get-current-user.js';
 import { getRange } from './tools/get-range.js';
 import { getTableColumns } from './tools/get-table-columns.js';
@@ -22,13 +25,22 @@ import { getTableRows } from './tools/get-table-rows.js';
 import { getUsedRange } from './tools/get-used-range.js';
 import { getWorkbookInfo } from './tools/get-workbook-info.js';
 import { insertRange } from './tools/insert-range.js';
+import { insertTable } from './tools/insert-table.js';
 import { listCharts } from './tools/list-charts.js';
 import { listNamedItems } from './tools/list-named-items.js';
 import { listTables } from './tools/list-tables.js';
 import { listWorksheets } from './tools/list-worksheets.js';
+import { mergeCells } from './tools/merge-cells.js';
+import { protectWorksheet } from './tools/protect-worksheet.js';
 import { reauthenticate } from './tools/reauthenticate.js';
+import { setBorders } from './tools/set-borders.js';
+import { setDimensions } from './tools/set-dimensions.js';
 import { sortRange } from './tools/sort-range.js';
+import { unmergeCells } from './tools/unmerge-cells.js';
+import { unprotectWorksheet } from './tools/unprotect-worksheet.js';
+import { updateChart } from './tools/update-chart.js';
 import { updateRange } from './tools/update-range.js';
+import { updateTable } from './tools/update-table.js';
 import { updateWorksheet } from './tools/update-worksheet.js';
 
 class ExcelOnlinePlugin extends OpenTabsPlugin {
@@ -52,6 +64,8 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     addWorksheet,
     updateWorksheet,
     deleteWorksheet,
+    protectWorksheet,
+    unprotectWorksheet,
     // Ranges
     getRange,
     getUsedRange,
@@ -60,9 +74,18 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     insertRange,
     deleteRange,
     sortRange,
+    // Formatting
+    formatRange,
+    setDimensions,
+    setBorders,
+    mergeCells,
+    unmergeCells,
     // Tables
     listTables,
     createTable,
+    insertTable,
+    updateTable,
+    convertTableToRange,
     deleteTable,
     getTableRows,
     getTableColumns,
@@ -72,6 +95,8 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     // Charts
     listCharts,
     createChart,
+    updateChart,
+    getChartImage,
     deleteChart,
   ];
 

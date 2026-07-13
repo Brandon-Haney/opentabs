@@ -263,6 +263,10 @@ export const api = async <T>(
 
 // --- Workbook API helper ---
 
+/** Workbook-relative resource path for a range within a worksheet (both URL-encoded). */
+export const rangePath = (worksheet: string, address: string): string =>
+  `/worksheets('${encodeURIComponent(worksheet)}')/range(address='${encodeURIComponent(address)}')`;
+
 export const workbookApi = async <T>(
   path: string,
   options: {

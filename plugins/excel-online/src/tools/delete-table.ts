@@ -6,7 +6,7 @@ export const deleteTable = defineTool({
   name: 'delete_table',
   displayName: 'Delete Table',
   description:
-    'Delete a table by name or ID. This removes the table object but keeps the data in the cells. Use convert_table_to_range instead if you want to explicitly convert first.',
+    'Delete a table by name or ID, removing both the table object and its data from the cells. To keep the data as a plain range, use convert_table_to_range instead.',
   summary: 'Delete a table',
   icon: 'trash-2',
   group: 'Tables',

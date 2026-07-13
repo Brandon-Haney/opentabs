@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { rangePath, workbookApi } from '../excel-api.js';
 import type { RawRange } from './schemas.js';
 import { rangeSchema, mapRange } from './schemas.js';
 
@@ -19,10 +19,10 @@ export const insertRange = defineTool({
   }),
   output: z.object({ range: rangeSchema }),
   handle: async params => {
-    const data = await workbookApi<RawRange>(
-      `/worksheets('${encodeURIComponent(params.worksheet)}')/range(address='${encodeURIComponent(params.address)}')/insert`,
-      { method: 'POST', body: { shift: params.shift } },
-    );
+    const data = await workbookApi<RawRange>(`${rangePath(params.worksheet, params.address)}/insert`, {
+      method: 'POST',
+      body: { shift: params.shift },
+    });
     return { range: mapRange(data) };
   },
 });

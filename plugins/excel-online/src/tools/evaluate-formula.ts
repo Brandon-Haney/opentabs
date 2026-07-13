@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { rangePath, workbookApi } from '../excel-api.js';
 
 export const evaluateFormula = defineTool({
   name: 'evaluate_formula',
@@ -21,11 +21,10 @@ export const evaluateFormula = defineTool({
   handle: async params => {
     // Write formula to a far-off temp cell, read the result, then clear it.
     // This is the most reliable approach with the Graph API.
-    const tempCell = 'ZZ9999';
-    const ws = encodeURIComponent(params.worksheet);
+    const tempCell = rangePath(params.worksheet, 'ZZ9999');
 
     // Write formula
-    await workbookApi(`/worksheets('${ws}')/range(address='${tempCell}')`, {
+    await workbookApi(tempCell, {
       method: 'PATCH',
       body: { formulas: [[params.formula]] },
     });
@@ -36,9 +35,9 @@ export const evaluateFormula = defineTool({
       result = await workbookApi<{
         values?: unknown[][];
         text?: string[][];
-      }>(`/worksheets('${ws}')/range(address='${tempCell}')`);
+      }>(tempCell);
     } finally {
-      await workbookApi(`/worksheets('${ws}')/range(address='${tempCell}')/clear`, {
+      await workbookApi(`${tempCell}/clear`, {
         method: 'POST',
         body: { applyTo: 'All' },
       }).catch(() => {});

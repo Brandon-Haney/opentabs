@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { rangePath, workbookApi } from '../excel-api.js';
 
 export const deleteRange = defineTool({
   name: 'delete_range',
@@ -19,10 +19,10 @@ export const deleteRange = defineTool({
     success: z.boolean().describe('Whether the operation succeeded'),
   }),
   handle: async params => {
-    await workbookApi(
-      `/worksheets('${encodeURIComponent(params.worksheet)}')/range(address='${encodeURIComponent(params.address)}')/delete`,
-      { method: 'POST', body: { shift: params.shift } },
-    );
+    await workbookApi(`${rangePath(params.worksheet, params.address)}/delete`, {
+      method: 'POST',
+      body: { shift: params.shift },
+    });
     return { success: true };
   },
 });

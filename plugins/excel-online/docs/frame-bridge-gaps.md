@@ -35,10 +35,36 @@ Office Web Apps frame is a cross-origin child target, so it is only recorded if 
 to the frame on its next load; an already-loaded frame is missed). With that, apply one
 rule per period in the New Rule dialog and read `TimePeriodType` from each request.
 
-## 3. Data validation — walled at the ownership layer (not a decode gap)
+## 3. AutoFilter on a plain range — absent from Graph, needs the frame bridge
 
-`add_data_validation` was built and its payload shape is correct (it reaches the
-semantic layer), but `CreateOrEditDataValidation` returns
+`filter_table` / `clear_table_filters` cover filtering **tables** (the Graph
+`tables/{id}/columns/{col}/filter` endpoints, v1.0). Filtering a plain,
+non-table range — the dropdown arrows a user gets from Data → Filter
+(Ctrl+Shift+L) on unstructured data — is **not exposed by Graph at all**: the
+`workbookWorksheet` resource has no `autoFilter` relationship in v1.0, and the
+drive-item `worksheets/{id}/autoFilter/apply` path 404s on both v1.0 and beta.
+
+Reaching plain-range AutoFilter would mean driving Excel Online's internal
+`EwaInternalWebService` through the frame bridge, the same route the
+conditional-formatting tools use. The method name and options are undecoded.
+
+**To resolve:** capture a live "Filter" toggle and a column filter apply on a
+non-table range (refresh the page after enabling network capture so the
+cross-origin Office frame is recorded), then decode the method and option shape
+the way the CF `Command` catalog was decoded.
+
+## 4. Data validation — blocked on both routes
+
+Data validation is unreachable by either backend:
+
+- **Graph** does not expose it. In v1.0 the `workbookRange` resource has no
+  `dataValidation` relationship (only `format`, `sort`, `worksheet`), so there
+  is no REST path to set a validation rule on a range.
+- **Frame bridge** reaches the semantic layer but is walled at the ownership
+  layer (below).
+
+`add_data_validation` was built for the bridge and its payload shape is correct
+(it reaches the semantic layer), but `CreateOrEditDataValidation` returns
 `DataValidationEditStateChangedError` under out-of-band replay across three verified
 approaches (raw donor, prep + state-merge, and a `ViewportStateChange` selection
 patch). Unlike conditional formatting, the data-validation dialog's edit-state is

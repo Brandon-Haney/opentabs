@@ -10,6 +10,7 @@ import { addTableRow } from './tools/add-table-row.js';
 import { addWorksheet } from './tools/add-worksheet.js';
 import { applyCellStyle } from './tools/apply-cell-style.js';
 import { calculateWorkbook } from './tools/calculate-workbook.js';
+import { clearDataValidation } from './tools/clear-data-validation.js';
 import { clearRange } from './tools/clear-range.js';
 import { clearTableFilters } from './tools/clear-table-filters.js';
 import { convertTableToRange } from './tools/convert-table-to-range.js';
@@ -134,6 +135,7 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     addConditionalFormat,
     applyCellStyle,
     addDataValidation,
+    clearDataValidation,
   ];
 
   async isReady(): Promise<boolean> {

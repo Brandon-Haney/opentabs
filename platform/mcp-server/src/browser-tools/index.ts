@@ -34,8 +34,10 @@ import { extensionGetLogs } from './extension-get-logs.js';
 import { extensionGetSidePanel } from './extension-get-side-panel.js';
 import { extensionGetState } from './extension-get-state.js';
 import { failRequest } from './fail-request.js';
+import { fetchInFrame } from './fetch-in-frame.js';
 import { focusTab } from './focus-tab.js';
 import { forcePseudoState } from './force-pseudo-state.js';
+import { frameBridgeRpc } from './frame-bridge-rpc.js';
 import { fulfillRequest } from './fulfill-request.js';
 import { getConsoleLogs } from './get-console-logs.js';
 import { getCookies } from './get-cookies.js';
@@ -100,6 +102,8 @@ const browserTools: BrowserToolDefinition[] = [
   updateTabGroup,
   listTabsInGroup,
   executeScript,
+  fetchInFrame,
+  frameBridgeRpc,
   screenshotTab,
   getTabContent,
   getPageHtml,

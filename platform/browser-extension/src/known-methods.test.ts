@@ -28,6 +28,8 @@ vi.mock('./tool-dispatch.js', () => ({
 
 vi.mock('./browser-commands/index.js', () => ({
   handleBrowserListTabs: vi.fn(asyncNoop),
+  handleBrowserFetchInFrame: vi.fn(asyncNoop),
+  handleBrowserFrameBridgeRpc: vi.fn(asyncNoop),
   handleBrowserOpenTab: vi.fn(asyncNoop),
   handleBrowserCloseTab: vi.fn(asyncNoop),
   handleBrowserNavigateTab: vi.fn(asyncNoop),

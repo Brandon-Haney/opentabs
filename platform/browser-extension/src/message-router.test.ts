@@ -351,6 +351,8 @@ vi.mock('./tab-state.js', () => ({
 
 vi.mock('./browser-commands/index.js', () => ({
   handleBrowserListTabs: mockHandleBrowserListTabs,
+  handleBrowserFetchInFrame: vi.fn(),
+  handleBrowserFrameBridgeRpc: vi.fn(),
   handleBrowserOpenTab: mockHandleBrowserOpenTab,
   handleBrowserCloseTab: mockHandleBrowserCloseTab,
   handleBrowserNavigateTab: mockHandleBrowserNavigateTab,

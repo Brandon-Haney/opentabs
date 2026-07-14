@@ -36,6 +36,8 @@ export {
   handleExtensionGetSidePanel,
   handleExtensionGetState,
 } from './extension-commands.js';
+export { handleBrowserFetchInFrame } from './fetch-in-frame.js';
+export { handleBrowserFrameBridgeRpc } from './frame-bridge-rpc.js';
 export { handleBrowserGetVisits, handleBrowserSearchHistory } from './history-commands.js';
 export {
   handleBrowserClickElement,

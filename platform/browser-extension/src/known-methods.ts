@@ -43,6 +43,8 @@ export const DISPATCH_METHODS = [
   'browser.getConsoleLogs',
   'browser.clearConsoleLogs',
   'browser.executeScript',
+  'browser.fetchInFrame',
+  'browser.frameBridgeRpc',
   'browser.listResources',
   'browser.getResourceContent',
   'browser.pressKey',

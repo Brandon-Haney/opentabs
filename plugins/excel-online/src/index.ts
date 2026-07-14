@@ -41,6 +41,7 @@ import { reauthenticate } from './tools/reauthenticate.js';
 import { setBorders } from './tools/set-borders.js';
 import { setDimensions } from './tools/set-dimensions.js';
 import { setHyperlink } from './tools/set-hyperlink.js';
+import { setNumberFormat } from './tools/set-number-format.js';
 import { setPrintArea } from './tools/set-print-area.js';
 import { sortRange } from './tools/sort-range.js';
 import { unmergeCells } from './tools/unmerge-cells.js';
@@ -83,6 +84,7 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     sortRange,
     // Formatting
     formatRange,
+    setNumberFormat,
     setDimensions,
     setBorders,
     mergeCells,

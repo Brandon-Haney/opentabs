@@ -119,7 +119,7 @@ export const handleBrowserFrameBridgeRpc = async (
       await sleep(HARVEST_POLL_MS);
       donor = getLatestRawRequest(tabId, harvestUrlIncludes, 'context');
     }
-    if (!donor || !donor.requestHeaders || !donor.requestBody) {
+    if (!donor?.requestHeaders || !donor.requestBody) {
       sendValidationError(
         id,
         `No donor request matching "${harvestUrlIncludes}" with a session context was captured within ${HARVEST_TIMEOUT_MS}ms. Is the app tab open and active?`,

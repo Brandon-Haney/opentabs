@@ -12,28 +12,14 @@ is documented separately and applies here too.
 
 ## 1. Conditional formatting — New Rule "Cell Value" operators
 
-`add_conditional_format` covers every operator reachable from Excel's quick menus
-(greater/less/between/equal, text contains, duplicates, top/bottom, above/below
-average) plus all data-bar, color-scale, and icon-set style presets. It does **not**
-yet cover the four operators that only exist in the **New Rule → "Format only cells
-that contain" → Cell Value** dropdown:
-
-- Greater than or equal to (≥)
-- Less than or equal to (≤)
-- Not between
-- Not equal to
-
-These are not in the client's quick-menu command map (`Ha.cMd`), so their wire
-`Command` codes are unknown. The unused codes in the observed 1–65 range are
-`14, 60, 61, 63, 64` — likely candidates, but unconfirmed. The RuleEditor pane
-component that owns this dropdown was not locatable among the conditional-formatting
-chunks (there is no CF-specific dialog/editor chunk; the pane renders through a
-shared React task-pane chunk).
-
-**To resolve:** either (a) a single capture round — open New Rule, pick each of the
-four operators, apply, and read the `Command` from the `AddConditionalFormattingRule`
-request; or (b) locate the React task-pane chunk that defines
-`ConditionalFormatting.RuleEditor.CellValueDropdown` and read its option→command map.
+`add_conditional_format` covers every conditional-formatting operator: the quick-menu
+rules (greater/less/between/equal, text contains, duplicates, top/bottom, above/below
+average), all data-bar, color-scale, and icon-set style presets, and the four **New
+Rule → "Format only cells that contain" → Cell Value** operators that are absent from
+the quick menus — `greater_than_or_equal` (Command 68), `less_than_or_equal` (69),
+`not_between` (70), and `not_equal` (71). Those four are not in the client's quick-menu
+command map (`Ha.cMd`); their codes were captured from live New-Rule requests (they use
+`Command` 68–71, not the low unused slots one might guess). No open operator gap remains.
 
 ## 2. Conditional formatting — `date_occurring` time periods
 
@@ -43,7 +29,11 @@ this week / next week / last month / this month / next month) is undecoded — i
 in the same unreachable RuleEditor pane chunk. The request field name (`TimePeriodType`)
 is confirmed; only the integer values are missing.
 
-**To resolve:** capture one `date_occurring` rule per period, or decode the pane chunk.
+**To resolve:** capture one `date_occurring` rule per period. Network capture of the
+Office Web Apps frame is a cross-origin child target, so it is only recorded if the
+**page is refreshed after enabling capture** (the debugger's `setAutoAttach` attaches
+to the frame on its next load; an already-loaded frame is missed). With that, apply one
+rule per period in the New Rule dialog and read `TimePeriodType` from each request.
 
 ## 3. Data validation — walled at the ownership layer (not a decode gap)
 

@@ -21,6 +21,10 @@ const RULES = {
   less_than: { command: 2, kind: 'compare' },
   equal_to: { command: 4, kind: 'compare' },
   between: { command: 3, kind: 'range' },
+  greater_than_or_equal: { command: 68, kind: 'compare' },
+  less_than_or_equal: { command: 69, kind: 'compare' },
+  not_between: { command: 70, kind: 'range' },
+  not_equal: { command: 71, kind: 'compare' },
   text_contains: { command: 5, kind: 'text' },
   duplicate_values: { command: 7, kind: 'flag' },
   no_blanks: { command: 65, kind: 'plain' },
@@ -198,13 +202,13 @@ export const addConditionalFormat = defineTool({
   displayName: 'Add Conditional Format',
   description:
     'Add a conditional-formatting rule to a range. Highlight comparisons (greater_than, less_than, ' +
-    'equal_to, between, text_contains) and top/bottom rules (top_items, top_percent, bottom_items, ' +
-    'bottom_percent, above_average, below_average) take a preset "format" fill; duplicate_values and ' +
-    'no_blanks highlight matching cells; and the visual styles data_bar, color_scale, and icon_set take ' +
-    'a "style" selecting the exact built-in variant. Provide "value" for single-value comparisons and ' +
-    'text_contains, "value" and "value2" for between, "count" for top/bottom, and "unique" for ' +
-    "duplicate_values. Not available through the standard workbook API — driven through Excel's internal " +
-    'service via the frame bridge.',
+    'equal_to, greater_than_or_equal, less_than_or_equal, not_equal, between, not_between, text_contains) ' +
+    'and top/bottom rules (top_items, top_percent, bottom_items, bottom_percent, above_average, ' +
+    'below_average) take a preset "format" fill; duplicate_values and no_blanks highlight matching cells; ' +
+    'and the visual styles data_bar, color_scale, and icon_set take a "style" selecting the exact built-in ' +
+    'variant. Provide "value" for single-value comparisons and text_contains, "value" and "value2" for ' +
+    'between/not_between, "count" for top/bottom, and "unique" for duplicate_values. Not available through ' +
+    "the standard workbook API — driven through Excel's internal service via the frame bridge.",
   summary: 'Add a conditional-formatting rule',
   icon: 'palette',
   group: 'Formatting',
@@ -218,9 +222,13 @@ export const addConditionalFormat = defineTool({
       .union([z.string(), z.number()])
       .optional()
       .describe(
-        'Comparison value (greater_than/less_than/equal_to, lower bound for between); or the search text for text_contains',
+        'Comparison value (greater_than/less_than/equal_to/greater_than_or_equal/less_than_or_equal/not_equal, ' +
+          'lower bound for between/not_between); or the search text for text_contains',
       ),
-    value2: z.union([z.string(), z.number()]).optional().describe('Upper value — required for the "between" rule'),
+    value2: z
+      .union([z.string(), z.number()])
+      .optional()
+      .describe('Upper value — required for the "between" and "not_between" rules'),
     count: z
       .number()
       .int()
@@ -262,7 +270,7 @@ export const addConditionalFormat = defineTool({
         throw ToolError.validation(`Rule "${params.rule}" requires "value".`);
       }
       if (def.kind === 'range' && (value === undefined || value2 === undefined)) {
-        throw ToolError.validation('The "between" rule requires both "value" (lower) and "value2" (upper).');
+        throw ToolError.validation(`The "${params.rule}" rule requires both "value" (lower) and "value2" (upper).`);
       }
       if (def.kind === 'count' && params.count === undefined) {
         throw ToolError.validation(`Rule "${params.rule}" requires "count".`);

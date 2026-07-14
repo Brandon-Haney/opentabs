@@ -9,7 +9,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { platformExec } from '@opentabs-dev/shared';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const proxyPath = resolve(ROOT, 'platform', 'mcp-server', 'dist', 'dev-proxy.js');
@@ -20,7 +19,7 @@ if (!existsSync(proxyPath)) {
   process.exit(1);
 }
 
-const proc = spawn(platformExec('node'), [proxyPath], {
+const proc = spawn(process.execPath, [proxyPath], {
   stdio: ['inherit', 'inherit', 'inherit'],
 });
 

@@ -1,6 +1,8 @@
 import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import { isAuthenticated, isSharePointWorkbook, waitForAuth } from './excel-api.js';
+import { addComment } from './tools/add-comment.js';
+import { addConditionalFormat } from './tools/add-conditional-format.js';
 import { addNamedItem } from './tools/add-named-item.js';
 import { addTableColumn } from './tools/add-table-column.js';
 import { addTableRow } from './tools/add-table-row.js';
@@ -16,7 +18,9 @@ import { deleteTable } from './tools/delete-table.js';
 import { deleteTableRow } from './tools/delete-table-row.js';
 import { deleteWorksheet } from './tools/delete-worksheet.js';
 import { evaluateFormula } from './tools/evaluate-formula.js';
+import { formatRangeAdvanced } from './tools/format-range-advanced.js';
 import { formatRange } from './tools/format-range.js';
+import { freezePanes } from './tools/freeze-panes.js';
 import { getChartImage } from './tools/get-chart-image.js';
 import { getCurrentUser } from './tools/get-current-user.js';
 import { getRange } from './tools/get-range.js';
@@ -24,6 +28,7 @@ import { getTableColumns } from './tools/get-table-columns.js';
 import { getTableRows } from './tools/get-table-rows.js';
 import { getUsedRange } from './tools/get-used-range.js';
 import { getWorkbookInfo } from './tools/get-workbook-info.js';
+import { insertPageBreak } from './tools/insert-page-break.js';
 import { insertRange } from './tools/insert-range.js';
 import { insertTable } from './tools/insert-table.js';
 import { listCharts } from './tools/list-charts.js';
@@ -35,6 +40,8 @@ import { protectWorksheet } from './tools/protect-worksheet.js';
 import { reauthenticate } from './tools/reauthenticate.js';
 import { setBorders } from './tools/set-borders.js';
 import { setDimensions } from './tools/set-dimensions.js';
+import { setHyperlink } from './tools/set-hyperlink.js';
+import { setPrintArea } from './tools/set-print-area.js';
 import { sortRange } from './tools/sort-range.js';
 import { unmergeCells } from './tools/unmerge-cells.js';
 import { unprotectWorksheet } from './tools/unprotect-worksheet.js';
@@ -98,6 +105,15 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     updateChart,
     getChartImage,
     deleteChart,
+    // Advanced — driven through Excel's internal service (frame bridge), for
+    // features the Microsoft Graph workbook API does not expose.
+    freezePanes,
+    formatRangeAdvanced,
+    setPrintArea,
+    insertPageBreak,
+    setHyperlink,
+    addComment,
+    addConditionalFormat,
   ];
 
   async isReady(): Promise<boolean> {

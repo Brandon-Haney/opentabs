@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 1. Open [excel.cloud.microsoft](https://excel.cloud.microsoft/) in Chrome and log in
 2. Open the OpenTabs side panel — the Excel Online plugin should appear as **ready**
 
-## Tools (41)
+## Tools (48)
 
 ### Account (2)
 
@@ -61,7 +61,7 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 | `delete_range` | Delete cells and shift remaining data | Write |
 | `sort_range` | Sort data in a range by columns | Write |
 
-### Formatting (5)
+### Formatting (8)
 
 | Tool | Description | Type |
 |---|---|---|
@@ -70,6 +70,9 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 | `set_borders` | Apply or remove borders on a range | Write |
 | `merge_cells` | Merge a range into one cell | Write |
 | `unmerge_cells` | Split merged cells back apart | Write |
+| `format_range_advanced` | Strikethrough, text rotation, and indent | Write |
+| `set_hyperlink` | Add or remove a native cell hyperlink | Write |
+| `add_conditional_format` | Add a conditional-formatting rule | Write |
 
 ### Tables (11)
 
@@ -96,6 +99,25 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 | `update_chart` | Change a chart title, position, or size | Write |
 | `get_chart_image` | Render a chart to a base64 PNG | Read |
 | `delete_chart` | Delete a chart | Write |
+
+### View (1)
+
+| Tool | Description | Type |
+|---|---|---|
+| `freeze_panes` | Freeze or unfreeze rows and columns | Write |
+
+### Layout (2)
+
+| Tool | Description | Type |
+|---|---|---|
+| `set_print_area` | Set or extend the worksheet print area | Write |
+| `insert_page_break` | Insert a manual page break at a cell | Write |
+
+### Review (1)
+
+| Tool | Description | Type |
+|---|---|---|
+| `add_comment` | Add a threaded comment or reply | Write |
 
 ## How It Works
 

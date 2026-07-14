@@ -3,27 +3,176 @@ import { definePreScript } from '@opentabs-dev/plugin-sdk/pre-script';
 /**
  * Pre-script for the Excel Online plugin.
  *
- * Runs at document_start in MAIN world, strictly before any page script.
+ * Runs at document_start in MAIN world, strictly before any page script, in two
+ * frame contexts (see `preScriptFrameMatches` in package.json):
  *
- * On SharePoint/OneDrive-hosted workbooks (`*.sharepoint.com/:x:/...`) the
- * page never calls the Microsoft Graph workbook API itself — it edits through
- * the cross-origin WOPI canvas — and MSAL stores its token cache encrypted, so
- * there is no plaintext Graph token to read from `localStorage`. What the page
- * does do on load is mint per-resource access tokens by POSTing to the AAD
- * token endpoint (`login.microsoftonline.com/<tenant>/oauth2/v2.0/token`) via
- * `fetch`. Each response is a plaintext JSON body containing `access_token`,
- * `scope`, and `expires_in`.
+ * 1. The plugin's own tabs (`excel.cloud.microsoft`, `*.sharepoint.com/:x:/...`)
+ *    — captures the Microsoft Graph access token the adapter uses. On
+ *    SharePoint/OneDrive-hosted workbooks the page never calls Graph itself (it
+ *    edits through the cross-origin WOPI canvas) and MSAL stores its token cache
+ *    encrypted, so there is no plaintext Graph token in `localStorage`. What the
+ *    page does do on load is mint per-resource access tokens by POSTing to the
+ *    AAD token endpoint (`login.microsoftonline.com/<tenant>/oauth2/v2.0/token`).
+ *    This pre-script wraps `fetch`/`XHR`, reads the Graph-scoped token out of
+ *    those responses, and stashes it for the adapter via `getPreScriptValue`.
  *
- * This pre-script wraps `window.fetch` and inspects those token-endpoint
- * responses. When a response grants Microsoft Graph scopes, it stashes the
- * access token and its expiry for the adapter to read via `getPreScriptValue`.
- * Capturing the minted token is format-agnostic: it works regardless of how
- * MSAL keys or encrypts its cache.
- *
- * As a secondary path it also captures a `Bearer` token from any outbound
- * request to `graph.microsoft.com`, covering pages (e.g. the standalone
- * `excel.cloud.microsoft` app) that call Graph directly.
+ * 2. The Office Web Apps document frame (`*.officeapps.live.com/...`) — installs
+ *    an interceptor that stashes the freshest `EwaInternalWebService` request
+ *    (URL, headers, body carrying the live coauth `context`) into a frame global
+ *    the platform's frame-bridge engine reads. Hooking here at document_start is
+ *    essential: the Office bundle caches native `XMLHttpRequest`/`fetch`
+ *    references at load, so a later hook would see nothing.
  */
+
+// ---------------------------------------------------------------------------
+// EwaInternalWebService donor interceptor (Office Web Apps frame)
+// ---------------------------------------------------------------------------
+
+/** Frame global the frame-bridge engine reads the freshest donor request from. */
+const EWA_DONOR_GLOBAL = '__otbEwaDonor';
+/** Substring identifying the internal RPC endpoint whose requests we harvest. */
+const EWA_URL_MARKER = 'EwaInternalWebService.json/';
+/** Markers making the EWA interceptor idempotent under re-injection. */
+const EWA_FETCH_MARKER = Symbol.for('opentabs.excel-online.ewa.fetch.patched');
+const EWA_XHR_MARKER = Symbol.for('opentabs.excel-online.ewa.xhr.patched');
+
+/** A captured EWA request, matching the shape the frame-bridge engine expects. */
+interface EwaDonor {
+  url: string;
+  requestHeaders: Record<string, string>;
+  requestBody: string;
+  ts: number;
+}
+
+/** True when this frame is the Office Web Apps document frame that hosts the RPC. */
+const isOfficeAppsFrame = (): boolean => {
+  try {
+    return location.hostname.toLowerCase().endsWith('officeapps.live.com');
+  } catch {
+    return false;
+  }
+};
+
+/** Normalize any `HeadersInit`/object header form into a plain name→value map. */
+const headersToRecord = (headers: unknown): Record<string, string> => {
+  const record: Record<string, string> = {};
+  if (!headers) return record;
+  if (headers instanceof Headers) {
+    headers.forEach((value, name) => {
+      record[name] = value;
+    });
+    return record;
+  }
+  if (Array.isArray(headers)) {
+    for (const entry of headers as string[][]) {
+      if (typeof entry[0] === 'string' && typeof entry[1] === 'string') record[entry[0]] = entry[1];
+    }
+    return record;
+  }
+  if (typeof headers === 'object') {
+    for (const [name, value] of Object.entries(headers as Record<string, unknown>)) {
+      if (typeof value === 'string') record[name] = value;
+    }
+  }
+  return record;
+};
+
+/**
+ * Install the EWA donor interceptor in the Office Web Apps frame. Hooks XHR
+ * (the transport the Office bundle uses for these calls) and `fetch` for safety,
+ * and stashes the freshest request whose URL hits the RPC marker and whose body
+ * carries a session `context`. Defensive throughout — never throws into page code.
+ */
+const installEwaDonorInterceptor = (log: {
+  info(message: string, ...args: unknown[]): void;
+  debug(message: string, ...args: unknown[]): void;
+}): void => {
+  const g = globalThis as {
+    fetch: typeof fetch & { [EWA_FETCH_MARKER]?: true };
+    XMLHttpRequest: typeof XMLHttpRequest;
+    [EWA_DONOR_GLOBAL]?: EwaDonor;
+  };
+
+  const stash = (url: string, requestHeaders: Record<string, string>, requestBody: string): void => {
+    try {
+      if (!url.includes(EWA_URL_MARKER)) return;
+      if (!requestBody.includes('"context"')) return;
+      g[EWA_DONOR_GLOBAL] = { url, requestHeaders, requestBody, ts: Date.now() };
+    } catch {
+      /* never throw into page code */
+    }
+  };
+
+  // --- fetch hook (safety net; the Office bundle primarily uses XHR) ---
+  if (!g.fetch[EWA_FETCH_MARKER]) {
+    const origFetch = g.fetch;
+    const patchedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      try {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+        if (url.includes(EWA_URL_MARKER) && init?.method?.toUpperCase() === 'POST') {
+          const headers = {
+            ...(input instanceof Request ? headersToRecord(input.headers) : {}),
+            ...headersToRecord(init?.headers),
+          };
+          const body = typeof init?.body === 'string' ? init.body : '';
+          stash(url, headers, body);
+        }
+      } catch {
+        /* fall through to the real fetch */
+      }
+      return origFetch(input, init);
+    };
+    (patchedFetch as typeof patchedFetch & { [EWA_FETCH_MARKER]: true })[EWA_FETCH_MARKER] = true;
+    g.fetch = patchedFetch as typeof fetch & { [EWA_FETCH_MARKER]?: true };
+  }
+
+  // --- XHR hook (primary path) ---
+  const Xhr = g.XMLHttpRequest as typeof XMLHttpRequest & { [EWA_XHR_MARKER]?: true };
+  if (!(Xhr as unknown as { [k: symbol]: unknown })[EWA_XHR_MARKER]) {
+    const origOpen = Xhr.prototype.open;
+    const origSetRequestHeader = Xhr.prototype.setRequestHeader;
+    const origSend = Xhr.prototype.send;
+
+    const STATE = Symbol('opentabs.excel-online.ewa.xhr.state');
+    interface EwaXhrState {
+      url: string;
+      headers: Record<string, string>;
+    }
+    type XhrWithState = XMLHttpRequest & { [STATE]?: EwaXhrState };
+
+    type XhrOpenRest = [async?: boolean, username?: string | null, password?: string | null];
+    Xhr.prototype.open = function patchedOpen(
+      this: XhrWithState,
+      method: string,
+      url: string | URL,
+      ...rest: XhrOpenRest
+    ) {
+      this[STATE] = { url: typeof url === 'string' ? url : url.href, headers: {} };
+      const forward = origOpen as (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) => void;
+      return forward.call(this, method, url, ...rest);
+    } as typeof Xhr.prototype.open;
+
+    Xhr.prototype.setRequestHeader = function patchedSetRequestHeader(this: XhrWithState, name: string, value: string) {
+      const state = this[STATE];
+      if (state) state.headers[name] = value;
+      return origSetRequestHeader.call(this, name, value);
+    };
+
+    Xhr.prototype.send = function patchedSend(this: XhrWithState, body?: Document | XMLHttpRequestBodyInit | null) {
+      const state = this[STATE];
+      if (state) stash(state.url, state.headers, typeof body === 'string' ? body : '');
+      return origSend.call(this, body ?? null);
+    };
+
+    (Xhr as unknown as { [k: symbol]: unknown })[EWA_XHR_MARKER] = true;
+  }
+
+  log.info('[excel-online] EwaInternalWebService donor interceptor installed');
+};
+
+// ---------------------------------------------------------------------------
+// Microsoft Graph token capture (plugin host frames)
+// ---------------------------------------------------------------------------
 
 interface CapturedGraphToken {
   token: string;
@@ -68,6 +217,14 @@ const isTokenEndpointUrl = (url: string): boolean => {
 };
 
 definePreScript(({ set, log }) => {
+  // In the Office Web Apps document frame the page is not the plugin's own
+  // origin — there is no Graph token to capture. Install the RPC donor
+  // interceptor instead and return.
+  if (isOfficeAppsFrame()) {
+    installEwaDonorInterceptor(log);
+    return;
+  }
+
   const g = globalThis as {
     fetch: typeof fetch & { [FETCH_PATCHED_MARKER]?: true };
     XMLHttpRequest: typeof XMLHttpRequest & { [XHR_PATCHED_MARKER]?: true };

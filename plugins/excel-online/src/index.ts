@@ -20,6 +20,7 @@ import { deleteTable } from './tools/delete-table.js';
 import { deleteTableRow } from './tools/delete-table-row.js';
 import { deleteWorksheet } from './tools/delete-worksheet.js';
 import { evaluateFormula } from './tools/evaluate-formula.js';
+import { filterRangeColumn } from './tools/filter-range-column.js';
 import { filterTable } from './tools/filter-table.js';
 import { formatRangeAdvanced } from './tools/format-range-advanced.js';
 import { formatRange } from './tools/format-range.js';
@@ -48,6 +49,7 @@ import { setHyperlink } from './tools/set-hyperlink.js';
 import { setNumberFormat } from './tools/set-number-format.js';
 import { setPrintArea } from './tools/set-print-area.js';
 import { sortRange } from './tools/sort-range.js';
+import { toggleRangeAutofilter } from './tools/toggle-range-autofilter.js';
 import { unmergeCells } from './tools/unmerge-cells.js';
 import { unprotectWorksheet } from './tools/unprotect-worksheet.js';
 import { updateChart } from './tools/update-chart.js';
@@ -86,6 +88,8 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     insertRange,
     deleteRange,
     sortRange,
+    toggleRangeAutofilter,
+    filterRangeColumn,
     // Formatting
     formatRange,
     setNumberFormat,

@@ -9,6 +9,7 @@ import { addTableRow } from './tools/add-table-row.js';
 import { addWorksheet } from './tools/add-worksheet.js';
 import { calculateWorkbook } from './tools/calculate-workbook.js';
 import { clearRange } from './tools/clear-range.js';
+import { clearTableFilters } from './tools/clear-table-filters.js';
 import { convertTableToRange } from './tools/convert-table-to-range.js';
 import { createChart } from './tools/create-chart.js';
 import { createTable } from './tools/create-table.js';
@@ -18,6 +19,7 @@ import { deleteTable } from './tools/delete-table.js';
 import { deleteTableRow } from './tools/delete-table-row.js';
 import { deleteWorksheet } from './tools/delete-worksheet.js';
 import { evaluateFormula } from './tools/evaluate-formula.js';
+import { filterTable } from './tools/filter-table.js';
 import { formatRangeAdvanced } from './tools/format-range-advanced.js';
 import { formatRange } from './tools/format-range.js';
 import { freezePanes } from './tools/freeze-panes.js';
@@ -101,6 +103,8 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     addTableRow,
     deleteTableRow,
     addTableColumn,
+    filterTable,
+    clearTableFilters,
     // Charts
     listCharts,
     createChart,

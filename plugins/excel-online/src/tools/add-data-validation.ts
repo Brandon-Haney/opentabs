@@ -14,6 +14,7 @@ const RULE_TYPES = {
   decimal: 'decimal',
   date: 'date',
   text_length: 'textLength',
+  custom: 'custom',
 } as const;
 
 type RuleTypeKey = keyof typeof RULE_TYPES;
@@ -47,9 +48,10 @@ export const addDataValidation = defineTool({
     'Add a data-validation rule to a range. Use type "list" with "values" to create an in-cell dropdown of allowed ' +
     'choices. Use "whole_number", "decimal", "date", or "text_length" with an "operator" (between, not_between, ' +
     'equal, not_equal, greater_than, less_than, greater_or_equal, less_or_equal) and "value" (plus "value2" for ' +
-    'between/not_between) to constrain entries. Optionally set "input_message" (prompt shown when the cell is ' +
-    'selected) and "error_message" (alert shown on an invalid entry). Not available through the standard workbook ' +
-    "API — driven through Excel's internal service via the frame bridge.",
+    'between/not_between) to constrain entries. Use type "custom" with "value" set to a formula (e.g. ' +
+    '"=ISNUMBER(A2)") that must evaluate TRUE for the entry to be allowed. Optionally set "input_message" (prompt ' +
+    'shown when the cell is selected) and "error_message" (alert shown on an invalid entry). Not available through ' +
+    "the standard workbook API — driven through Excel's internal service via the frame bridge.",
   summary: 'Add a data-validation rule to a range',
   icon: 'circle-check',
   group: 'Formatting',
@@ -58,7 +60,7 @@ export const addDataValidation = defineTool({
     address: z.string().describe('Range to validate in A1 notation (e.g., "F2:F100")'),
     type: z
       .enum(Object.keys(RULE_TYPES) as [RuleTypeKey, ...RuleTypeKey[]])
-      .describe('Validation kind: list (dropdown), whole_number, decimal, date, or text_length'),
+      .describe('Validation kind: list (dropdown), whole_number, decimal, date, text_length, or custom (formula)'),
     values: z
       .array(z.union([z.string(), z.number()]))
       .optional()
@@ -66,11 +68,14 @@ export const addDataValidation = defineTool({
     operator: z
       .enum(Object.keys(OPERATORS) as [OperatorKey, ...OperatorKey[]])
       .optional()
-      .describe('Comparison for non-list types (required unless type is "list")'),
+      .describe('Comparison operator (required for whole_number, decimal, date, and text_length types)'),
     value: z
       .union([z.string(), z.number()])
       .optional()
-      .describe('Boundary value for the operator (the lower bound for between/not_between)'),
+      .describe(
+        'Boundary value for the operator (the lower bound for between/not_between); for a "custom" rule, the ' +
+          'formula that must evaluate TRUE (e.g. "=ISNUMBER(A2)")',
+      ),
     value2: z.union([z.string(), z.number()]).optional().describe('Upper bound — required for between and not_between'),
     input_message: z.string().optional().describe('Prompt shown when a validated cell is selected'),
     error_message: z.string().optional().describe('Alert shown when an invalid value is entered'),
@@ -79,6 +84,7 @@ export const addDataValidation = defineTool({
   output: bridgeOutputSchema,
   handle: async params => {
     const isList = params.type === 'list';
+    const isCustom = params.type === 'custom';
     let conditionType = 'between';
     let lowerBoundary = '';
     let upperBoundary = '';
@@ -88,6 +94,11 @@ export const addDataValidation = defineTool({
         throw ToolError.validation('A "list" validation requires "values" (the allowed choices).');
       }
       lowerBoundary = params.values.map(String).join(',');
+    } else if (isCustom) {
+      if (params.value === undefined) {
+        throw ToolError.validation('A "custom" validation requires "value" set to the formula (e.g. "=ISNUMBER(A2)").');
+      }
+      lowerBoundary = String(params.value);
     } else {
       if (params.operator === undefined) {
         throw ToolError.validation(`A "${params.type}" validation requires an "operator".`);

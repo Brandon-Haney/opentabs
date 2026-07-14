@@ -36,6 +36,7 @@ import { getTableColumns } from './tools/get-table-columns.js';
 import { getTableRows } from './tools/get-table-rows.js';
 import { getUsedRange } from './tools/get-used-range.js';
 import { getWorkbookInfo } from './tools/get-workbook-info.js';
+import { groupRowsColumns } from './tools/group-rows-columns.js';
 import { hideRowsColumns } from './tools/hide-rows-columns.js';
 import { insertPageBreak } from './tools/insert-page-break.js';
 import { insertRange } from './tools/insert-range.js';
@@ -47,12 +48,14 @@ import { listWorksheets } from './tools/list-worksheets.js';
 import { mergeCells } from './tools/merge-cells.js';
 import { protectWorksheet } from './tools/protect-worksheet.js';
 import { reauthenticate } from './tools/reauthenticate.js';
+import { removeDuplicates } from './tools/remove-duplicates.js';
 import { setBorders } from './tools/set-borders.js';
 import { setDimensions } from './tools/set-dimensions.js';
 import { setHyperlink } from './tools/set-hyperlink.js';
 import { setNumberFormat } from './tools/set-number-format.js';
 import { setPrintArea } from './tools/set-print-area.js';
 import { sortRange } from './tools/sort-range.js';
+import { textToColumns } from './tools/text-to-columns.js';
 import { toggleRangeAutofilter } from './tools/toggle-range-autofilter.js';
 import { unmergeCells } from './tools/unmerge-cells.js';
 import { unprotectWorksheet } from './tools/unprotect-worksheet.js';
@@ -92,6 +95,8 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     insertRange,
     deleteRange,
     sortRange,
+    removeDuplicates,
+    textToColumns,
     toggleRangeAutofilter,
     filterRangeColumn,
     filterRangeCustom,
@@ -101,6 +106,7 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     setNumberFormat,
     setDimensions,
     hideRowsColumns,
+    groupRowsColumns,
     setBorders,
     mergeCells,
     unmergeCells,

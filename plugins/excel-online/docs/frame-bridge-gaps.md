@@ -55,13 +55,24 @@ It is now handled through the frame bridge:
   AnchorType:0, ChartId:null, AnchorValue1:-1, AnchorValue2:-1}, checkedItems:
   ["i"+value, …], avoidDecodingItems:true }` (values kept; text and numeric
   verified). No `contextPatch` needed.
+- `filter_range_custom` → EWA `SetCustomFilter`, options `{ parameters:{
+  ActiveCompareType, ColumnName:"", Value1, Value2, Location:{SheetName,
+  NamedObjectName:null, FirstRow:1, FirstColumn:<1-based abs col>, LastRow:1,
+  LastColumn:<same>}, FieldId:"0", FilterType:"Sheet", ValueTypeText:true, … } }`.
+  The column is identified by `Location.FirstColumn` alone (`ColumnName:""`
+  works). `ActiveCompareType` is even for a positive operator, odd for its
+  negation: equals 0 / not_equal 1, begins_with 2, ends_with 4, contains 6 /
+  does_not_contain 7, greater_than 8 / greater_or_equal 9, less_than 10 /
+  less_or_equal 11, between 12 / not_between 13. Verified live: 0, 6, 8, 9, 10,
+  11, 12. (begins_with/ends_with 2/4 are not yet exposed — not ±1 of a verified
+  code.)
+- `filter_range_top` → EWA `SetTop10Filter`, options `{ parameters:{ Count:"<N>",
+  Top:<bool>, Type:<1=items|2=percent>, Location:{… FirstColumn:<1-based abs>},
+  FieldId:"0", FilterType:"Sheet", MaxCount:500, Title:"", … } }`.
 
-**Remaining follow-up (decoded, not yet built):** custom comparison filters
-(`SetCustomFilter`, options `{ parameters:{ ActiveCompareType, ColumnName,
-Value1, Value2, Location, FieldId, FilterType, … } }` — `ActiveCompareType` 8 =
-greater-than; the full compare enum needs one capture) and top/bottom-N
-(`SetTop10Filter`, `{ parameters }`). Clearing a single column's item filter is
-`ApplyItemFilter` with `items:null`.
+Clearing a single column's item filter is `ApplyItemFilter` with `items:null`.
+The EWA `NumRowsFiltered` in the response is the number of rows **kept**, not
+hidden.
 
 ## 4. Data validation — blocked on both routes
 

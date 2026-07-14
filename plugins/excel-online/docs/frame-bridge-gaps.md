@@ -74,24 +74,30 @@ Clearing a single column's item filter is `ApplyItemFilter` with `items:null`.
 The EWA `NumRowsFiltered` in the response is the number of rows **kept**, not
 hidden.
 
-## 4. Data validation — blocked on both routes
+## 4. Data validation — solved via the frame bridge
 
-Data validation is unreachable by either backend:
+Graph does not expose data validation (the `workbookRange` resource has no
+`dataValidation` relationship in v1.0 **or** beta), but it is reachable through
+the frame bridge. `add_data_validation` → EWA `CreateOrEditDataValidation`,
+options `{ selectedRanges, ruleOptions:{ Command:0, RuleType, ConditionType,
+IsIgnoreBlank, IsInCellDropDown, LowerBoundary, UpperBoundary, IsAlertBlocking,
+IsShowErrorAlert, IsShowInputMessage, AlertTitle, AlertMessage, InputTitle,
+InputMessage, ShouldIgnoreFormulaError } }` with a `ViewportStateChange` context
+patch (no prep needed).
 
-- **Graph** does not expose it. In v1.0 the `workbookRange` resource has no
-  `dataValidation` relationship (only `format`, `sort`, `worksheet`), so there
-  is no REST path to set a validation rule on a range.
-- **Frame bridge** reaches the semantic layer but is walled at the ownership
-  layer (below).
+- `RuleType` is sent by name from the client's `DataValidationRuleType` enum:
+  `anyValue` (clears validation), `wholeNumber`, `decimal`, `list`, `date`,
+  `time`, `textLength`, `custom`. A `list` sets `IsInCellDropDown:true` and puts
+  the comma-joined choices (or a range/formula) in `LowerBoundary`.
+- `ConditionType` uses the OOXML operator names: `between`/`notBetween` (both
+  boundaries) and `equal`/`notEqual`/`greaterThan`/`lessThan`/`greaterThanOrEqual`/
+  `lessThanOrEqual` (LowerBoundary only). Verified live: `list`+`between`,
+  `wholeNumber`+`between`, `wholeNumber`+`greaterThan`.
 
-`add_data_validation` was built for the bridge and its payload shape is correct
-(it reaches the semantic layer), but `CreateOrEditDataValidation` returns
-`DataValidationEditStateChangedError` under out-of-band replay across three verified
-approaches (raw donor, prep + state-merge, and a `ViewportStateChange` selection
-patch). Unlike conditional formatting, the data-validation dialog's edit-state is
-owned by the live Office client; an out-of-band commit is treated as a competing
-participant ("another user has made changes"). This is a runtime ownership barrier,
-**not** a payload or protocol decode problem, so bundle research will not unblock it.
-The tool was removed rather than shipped broken. Reaching data validation would
-require driving the actual DV dialog in the page (owning its edit-state), not the
-direct-replay bridge.
+**Correction to the earlier "walled" conclusion.** The
+`DataValidationEditStateChangedError` ("another user has made changes") is **not**
+an ownership barrier — it is donor **staleness**: the commit is rejected when the
+reused donor's revision is behind the server (the same revision-staleness that
+surfaces as `InternalError`/500 on the other bridge writes). On a fresh donor the
+commit replays cleanly; the prior attempts failed because the donor had gone stale
+after intervening writes/refreshes. Clearing a rule is `RuleType:"anyValue"`.

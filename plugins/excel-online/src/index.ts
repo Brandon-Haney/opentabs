@@ -30,6 +30,7 @@ import { getTableColumns } from './tools/get-table-columns.js';
 import { getTableRows } from './tools/get-table-rows.js';
 import { getUsedRange } from './tools/get-used-range.js';
 import { getWorkbookInfo } from './tools/get-workbook-info.js';
+import { hideRowsColumns } from './tools/hide-rows-columns.js';
 import { insertPageBreak } from './tools/insert-page-break.js';
 import { insertRange } from './tools/insert-range.js';
 import { insertTable } from './tools/insert-table.js';
@@ -88,6 +89,7 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     formatRange,
     setNumberFormat,
     setDimensions,
+    hideRowsColumns,
     setBorders,
     mergeCells,
     unmergeCells,

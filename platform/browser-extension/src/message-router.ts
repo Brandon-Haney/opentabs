@@ -186,6 +186,7 @@ interface ValidatedPluginPayload {
   iconDarkInactiveSvg?: string;
   preScriptFile?: string;
   preScriptHash?: string;
+  preScriptFrameMatches: string[];
   tools: WireToolDef[];
 }
 
@@ -239,6 +240,7 @@ const toPluginMeta = (p: ValidatedPluginPayload): PluginMeta => ({
   iconDarkInactiveSvg: p.iconDarkInactiveSvg,
   preScriptFile: p.preScriptFile,
   preScriptHash: p.preScriptHash,
+  preScriptFrameMatches: p.preScriptFrameMatches.length > 0 ? p.preScriptFrameMatches : undefined,
   tools: p.tools,
 });
 
@@ -310,6 +312,9 @@ const validatePluginPayload = (raw: unknown): ValidatedPluginPayload | null => {
   const excludePatterns = Array.isArray(obj.excludePatterns)
     ? (obj.excludePatterns as unknown[]).filter((p): p is string => typeof p === 'string')
     : [];
+  const preScriptFrameMatches = Array.isArray(obj.preScriptFrameMatches)
+    ? (obj.preScriptFrameMatches as unknown[]).filter((p): p is string => typeof p === 'string')
+    : [];
   const homepage = typeof obj.homepage === 'string' && obj.homepage.length > 0 ? obj.homepage : undefined;
 
   const tools = Array.isArray(obj.tools)
@@ -364,6 +369,7 @@ const validatePluginPayload = (raw: unknown): ValidatedPluginPayload | null => {
     iconDarkInactiveSvg: typeof obj.iconDarkInactiveSvg === 'string' ? obj.iconDarkInactiveSvg : undefined,
     preScriptFile: typeof obj.preScriptFile === 'string' ? obj.preScriptFile : undefined,
     preScriptHash: typeof obj.preScriptHash === 'string' ? obj.preScriptHash : undefined,
+    preScriptFrameMatches,
     tools,
   };
 };

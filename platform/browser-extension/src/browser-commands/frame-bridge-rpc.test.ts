@@ -1,14 +1,12 @@
 import { describe, expect, test } from 'vitest';
 
-// Stub the Chrome APIs that network-capture.ts (a transitive import) registers
-// listeners on at module load, then dynamically import the module under test so
-// the stub is in place first.
+// Minimal Chrome stub so any transitive module access at import time resolves,
+// then dynamically import the module under test so the stub is in place first.
 (globalThis as Record<string, unknown>).chrome = {
-  debugger: { onEvent: { addListener: () => {} }, onDetach: { addListener: () => {} } },
   tabs: { onRemoved: { addListener: () => {} } },
 };
 
-const { buildReplayHeaders, deriveTargetUrl } = await import('./frame-bridge-rpc.js');
+const { buildReplayHeaders, deriveTargetUrl, mergeContextFromResponse } = await import('./frame-bridge-rpc.js');
 
 describe('deriveTargetUrl', () => {
   test('replaces the method segment and preserves the query string', () => {
@@ -62,5 +60,62 @@ describe('buildReplayHeaders', () => {
 
   test('leaves headers untouched when there is no correlation id', () => {
     expect(buildReplayHeaders({ 'X-AccessToken': 'jwt' })).toEqual({ 'X-AccessToken': 'jwt' });
+  });
+});
+
+describe('mergeContextFromResponse', () => {
+  const baseContext = () => ({
+    SessionId: 'old-session',
+    TransientEditSessionToken: 'old-token',
+    WorkbookMetadataParameter: { WorkbookMetadataState: { MetadataVersion: 3, ServerEventVersion: 0 } },
+    CollaborationParameter: { CollaborationState: { UserListVersion: 2, CollabStateId: 4 } },
+    ClientRevisions: { Min: 4, Max: 4, MaxFromBlockCache: 4 },
+    MergeCount: { Current: 1, Pending: 1 },
+    ClientRequestId: 'unchanged',
+  });
+
+  const freshResponse = {
+    SessionId: 'new-session',
+    TransientEditSessionToken: 'new-token',
+    StateId: 9,
+    WorkbookMetadataResult: { WorkbookMetadataState: { MetadataVersion: 7 } },
+    CollaborationResult: { CollaborationState: { UserListVersion: 5, CollabStateId: 9 } },
+    MergeCount: { Current: 2, Pending: 2 },
+  };
+
+  test('overwrites live edit-state fields from the response', () => {
+    const ctx = baseContext();
+    mergeContextFromResponse(ctx, freshResponse);
+    expect(ctx.SessionId).toBe('new-session');
+    expect(ctx.TransientEditSessionToken).toBe('new-token');
+    expect(ctx.WorkbookMetadataParameter.WorkbookMetadataState.MetadataVersion).toBe(7);
+    expect(ctx.CollaborationParameter.CollaborationState.UserListVersion).toBe(5);
+    expect(ctx.CollaborationParameter.CollaborationState.CollabStateId).toBe(9);
+    expect(ctx.ClientRevisions).toEqual({ Min: 9, Max: 9, MaxFromBlockCache: 9 });
+    expect(ctx.MergeCount).toEqual({ Current: 2, Pending: 2 });
+  });
+
+  test('preserves fields the response does not provide', () => {
+    const ctx = baseContext();
+    mergeContextFromResponse(ctx, { SessionId: 'only-session' });
+    expect(ctx.SessionId).toBe('only-session');
+    // Untouched:
+    expect(ctx.TransientEditSessionToken).toBe('old-token');
+    expect(ctx.WorkbookMetadataParameter.WorkbookMetadataState.MetadataVersion).toBe(3);
+    expect(ctx.CollaborationParameter.CollaborationState.CollabStateId).toBe(4);
+    expect(ctx.ClientRevisions).toEqual({ Min: 4, Max: 4, MaxFromBlockCache: 4 });
+    expect(ctx.ClientRequestId).toBe('unchanged');
+  });
+
+  test('does not create nested shapes that are absent from the context', () => {
+    const ctx: Record<string, unknown> = { SessionId: 'x' };
+    mergeContextFromResponse(ctx, freshResponse);
+    // No CollaborationParameter/WorkbookMetadataParameter existed → not fabricated.
+    expect(ctx.CollaborationParameter).toBeUndefined();
+    expect(ctx.WorkbookMetadataParameter).toBeUndefined();
+    expect(ctx.ClientRevisions).toBeUndefined();
+    // Top-level string fields still applied.
+    expect(ctx.SessionId).toBe('new-session');
+    expect(ctx.TransientEditSessionToken).toBe('new-token');
   });
 });

@@ -8,11 +8,13 @@ import type { PluginMeta } from './extension-messages.js';
 
 const mockUnregisterContentScripts = vi.fn<(filter: { ids: string[] }) => Promise<void>>();
 const mockRegisterContentScripts = vi.fn<(scripts: unknown[]) => Promise<void>>();
+const mockGetRegisteredContentScripts = vi.fn<() => Promise<{ id: string }[]>>();
 
 (globalThis as Record<string, unknown>).chrome = {
   scripting: {
     unregisterContentScripts: mockUnregisterContentScripts,
     registerContentScripts: mockRegisterContentScripts,
+    getRegisteredContentScripts: mockGetRegisteredContentScripts,
   },
 };
 
@@ -38,8 +40,9 @@ const baseMeta = (): PluginMeta => ({
 
 describe('upsertPreScript', () => {
   beforeEach(() => {
-    // Unregister throws to simulate no existing registration — upsertPreScript catches this.
-    mockUnregisterContentScripts.mockRejectedValue(new Error('not registered'));
+    // No pre-existing registrations by default, so unregisterIfPresent is a no-op.
+    mockGetRegisteredContentScripts.mockResolvedValue([]);
+    mockUnregisterContentScripts.mockResolvedValue(undefined);
     mockRegisterContentScripts.mockResolvedValue(undefined);
   });
 
@@ -55,6 +58,68 @@ describe('upsertPreScript', () => {
       expect(mockRegisterContentScripts).toHaveBeenCalledWith(
         expect.arrayContaining([expect.objectContaining({ js: ['adapters/prescript-test-prescript-a1b2c3d4.js'] })]),
       );
+    });
+
+    test('registers a single content script when no preScriptFrameMatches are declared', async () => {
+      const meta = { ...baseMeta(), preScriptFile: 'adapters/prescript-test-prescript-a1b2c3d4.js' };
+      await upsertPreScript(meta);
+      const registered = mockRegisterContentScripts.mock.calls[0]?.[0] as { id: string }[];
+      expect(registered).toHaveLength(1);
+      expect(registered[0]?.id).toBe('opentabs-pre-prescript-test');
+    });
+  });
+
+  describe('preScriptFrameMatches', () => {
+    test('registers a second content script on the embedded-frame patterns', async () => {
+      const meta = {
+        ...baseMeta(),
+        preScriptFile: 'adapters/prescript-test-prescript-a1b2c3d4.js',
+        preScriptFrameMatches: ['*://*.officeapps.live.com/*'],
+      };
+      await upsertPreScript(meta);
+
+      const registered = mockRegisterContentScripts.mock.calls[0]?.[0] as {
+        id: string;
+        matches: string[];
+        allFrames?: boolean;
+        world?: string;
+        runAt?: string;
+        js?: string[];
+      }[];
+      expect(registered).toHaveLength(2);
+
+      const frame = registered.find(r => r.id === 'opentabs-pre-prescript-test__frames');
+      expect(frame).toBeDefined();
+      expect(frame?.matches).toEqual(['*://*.officeapps.live.com/*']);
+      expect(frame?.allFrames).toBe(true);
+      expect(frame?.world).toBe('MAIN');
+      expect(frame?.runAt).toBe('document_start');
+      // Both registrations point at the same pre-script file.
+      expect(frame?.js).toEqual(['adapters/prescript-test-prescript-a1b2c3d4.js']);
+    });
+
+    test('ignores an empty preScriptFrameMatches array (single registration)', async () => {
+      const meta = {
+        ...baseMeta(),
+        preScriptFile: 'adapters/prescript-test-prescript-a1b2c3d4.js',
+        preScriptFrameMatches: [],
+      };
+      await upsertPreScript(meta);
+      const registered = mockRegisterContentScripts.mock.calls[0]?.[0] as { id: string }[];
+      expect(registered).toHaveLength(1);
+    });
+
+    test('unregisters only the ids that already exist before re-registering', async () => {
+      mockGetRegisteredContentScripts.mockResolvedValue([{ id: 'opentabs-pre-prescript-test' }]);
+      const meta = {
+        ...baseMeta(),
+        preScriptFile: 'adapters/prescript-test-prescript-a1b2c3d4.js',
+        preScriptFrameMatches: ['*://*.officeapps.live.com/*'],
+      };
+      await upsertPreScript(meta);
+      // Only the pre-existing main id is unregistered; the not-yet-registered
+      // frames id is excluded so the call does not reject atomically.
+      expect(mockUnregisterContentScripts).toHaveBeenCalledWith({ ids: ['opentabs-pre-prescript-test'] });
     });
   });
 

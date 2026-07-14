@@ -68,6 +68,8 @@ interface LoadedPlugin {
   readonly preScript: string | undefined;
   /** SHA-256 hex hash of the pre-script IIFE content (from manifest) */
   readonly preScriptHash: string | undefined;
+  /** Additional embedded-frame match patterns the pre-script runs in (from package.json) */
+  readonly preScriptFrameMatches: string[] | undefined;
 }
 
 /**
@@ -447,6 +449,7 @@ const loadPlugin = async (dir: string, source: PluginSource): Promise<Result<Loa
     configSchema,
     preScript,
     preScriptHash,
+    preScriptFrameMatches: pkg.opentabs.preScriptFrameMatches,
   });
 };
 

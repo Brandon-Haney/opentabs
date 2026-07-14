@@ -1,4 +1,9 @@
 import { toErrorMessage } from '@opentabs-dev/shared';
+import {
+  type FrameBridgeRpcParams,
+  FrameBridgeValidationError,
+  runFrameBridgeRpc,
+} from './browser-commands/frame-bridge-rpc.js';
 import { requireStringParam } from './browser-commands/helpers.js';
 import { MAX_INPUT_SIZE, MAX_SCRIPT_TIMEOUT_MS, SCRIPT_TIMEOUT_MS } from './constants.js';
 import type { DispatchResult } from './dispatch-helpers.js';
@@ -318,6 +323,90 @@ const executeToolOnTab = async (
 };
 
 /**
+ * A `__bridge` directive an adapter tool handler may return instead of a plain
+ * result. It instructs the extension to run the frame-bridge RPC engine on the
+ * same tab the tool dispatched to — the mechanism by which a plugin drives a
+ * coauth-context RPC API in a cross-origin embedded frame without any CDP or
+ * network code in the adapter itself. Plugin-agnostic: any plugin can emit it.
+ */
+interface BridgeDirective {
+  method: string;
+  frameUrlIncludes: string;
+  harvestUrlIncludes: string;
+  options?: Record<string, unknown>;
+  donorGlobal?: string;
+  prepMethod?: string;
+  prepOptions?: Record<string, unknown>;
+  contextPatch?: Record<string, unknown>;
+}
+
+/**
+ * Extract a well-formed `__bridge` directive from an adapter output, or null
+ * when the output is a plain result. Validates each field's type — the output
+ * originates from a reviewed adapter, but the engine makes an authenticated
+ * request from it, so it is validated defensively before use.
+ */
+const extractBridgeDirective = (output: unknown): BridgeDirective | null => {
+  if (!output || typeof output !== 'object') return null;
+  const bridge = (output as Record<string, unknown>).__bridge;
+  if (!bridge || typeof bridge !== 'object') return null;
+  const b = bridge as Record<string, unknown>;
+  if (
+    typeof b.method !== 'string' ||
+    typeof b.frameUrlIncludes !== 'string' ||
+    typeof b.harvestUrlIncludes !== 'string'
+  ) {
+    return null;
+  }
+  const options =
+    b.options && typeof b.options === 'object' && !Array.isArray(b.options)
+      ? (b.options as Record<string, unknown>)
+      : undefined;
+  const prepOptions =
+    b.prepOptions && typeof b.prepOptions === 'object' && !Array.isArray(b.prepOptions)
+      ? (b.prepOptions as Record<string, unknown>)
+      : undefined;
+  const contextPatch =
+    b.contextPatch && typeof b.contextPatch === 'object' && !Array.isArray(b.contextPatch)
+      ? (b.contextPatch as Record<string, unknown>)
+      : undefined;
+  return {
+    method: b.method,
+    frameUrlIncludes: b.frameUrlIncludes,
+    harvestUrlIncludes: b.harvestUrlIncludes,
+    ...(options ? { options } : {}),
+    ...(typeof b.donorGlobal === 'string' && b.donorGlobal.length > 0 ? { donorGlobal: b.donorGlobal } : {}),
+    ...(typeof b.prepMethod === 'string' && b.prepMethod.length > 0 ? { prepMethod: b.prepMethod } : {}),
+    ...(prepOptions ? { prepOptions } : {}),
+    ...(contextPatch ? { contextPatch } : {}),
+  };
+};
+
+/**
+ * When a tool result carries a `__bridge` directive, run the frame-bridge RPC
+ * engine on the resolved tab and replace the output with the parsed engine
+ * result. Otherwise return the result unchanged. This runs where the dispatch
+ * tab id is already known, so the follow-up bridge call targets the same tab —
+ * no second round-trip to resolve it.
+ */
+const resolveBridgeDirective = async (result: DispatchResult, tabId: number): Promise<DispatchResult> => {
+  if (result.type !== 'success') return result;
+  const directive = extractBridgeDirective(result.output);
+  if (!directive) return result;
+
+  const params: FrameBridgeRpcParams = { tabId, ...directive };
+  try {
+    const bridgeResult = await runFrameBridgeRpc(params);
+    return { type: 'success', output: bridgeResult };
+  } catch (err) {
+    if (err instanceof FrameBridgeValidationError) {
+      return { type: 'error', code: JSONRPC_INVALID_PARAMS, message: err.message };
+    }
+    return { type: 'error', code: JSONRPC_INTERNAL_ERROR, message: `Frame bridge failed: ${toErrorMessage(err)}` };
+  }
+};
+
+/**
  * Handle tool.dispatch request from MCP server.
  * Finds matching tabs, checks adapter readiness (with fallback to other
  * matching tabs when the best-ranked tab is not ready), executes the tool,
@@ -383,7 +472,10 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
     await injectToolInvocationLog(tid, pluginName, toolName, link);
     await injectProgressListener(tid, dispatchId);
     try {
-      return await executeToolOnTab(tid, pluginName, toolName, input, dispatchId);
+      const result = await executeToolOnTab(tid, pluginName, toolName, input, dispatchId);
+      // A tool may return a `__bridge` directive to drive an embedded-frame RPC
+      // on this same tab; resolve it here where the tab id is known.
+      return await resolveBridgeDirective(result, tid);
     } finally {
       removeProgressListener(tid, dispatchId);
     }
@@ -409,4 +501,4 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
   }
 };
 
-export { getPluginLink, handleToolDispatch, notifyDispatchProgress };
+export { extractBridgeDirective, getPluginLink, handleToolDispatch, notifyDispatchProgress };

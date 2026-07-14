@@ -69,7 +69,7 @@ const notifyDispatchProgress = (dispatchId: string): void => {
   if (cb) cb();
 };
 
-const { handleToolDispatch } = await import('./tool-dispatch.js');
+const { handleToolDispatch, extractBridgeDirective } = await import('./tool-dispatch.js');
 const { invalidatePluginCache } = await import('./plugin-storage.js');
 
 /** Helper to build a minimal PluginMeta for tests */
@@ -141,6 +141,91 @@ describe('getPluginLink', () => {
   test('returns npm URL for plugin without sourcePath', () => {
     const plugin = makePlugin({ sourcePath: undefined });
     expect(getPluginLink(plugin)).toBe('https://npmjs.com/package/opentabs-plugin-test-plugin');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractBridgeDirective
+//
+// Guarded with `if (!extractBridgeDirective) return;` because another test file
+// may replace ./tool-dispatch.js with a module mock (see the note above).
+// ---------------------------------------------------------------------------
+
+describe('extractBridgeDirective', () => {
+  test('extracts a well-formed directive with options', () => {
+    if (!extractBridgeDirective) return;
+    expect(
+      extractBridgeDirective({
+        __bridge: {
+          method: 'FreezeOrUnfreezePanes',
+          frameUrlIncludes: 'xlviewerinternal.aspx',
+          harvestUrlIncludes: 'EwaInternalWebService.json/',
+          options: { freezeSettings: { Freeze: true } },
+        },
+      }),
+    ).toEqual({
+      method: 'FreezeOrUnfreezePanes',
+      frameUrlIncludes: 'xlviewerinternal.aspx',
+      harvestUrlIncludes: 'EwaInternalWebService.json/',
+      options: { freezeSettings: { Freeze: true } },
+    });
+  });
+
+  test('carries donorGlobal when present', () => {
+    if (!extractBridgeDirective) return;
+    const directive = extractBridgeDirective({
+      __bridge: { method: 'M', frameUrlIncludes: 'f', harvestUrlIncludes: 'h', donorGlobal: '__custom' },
+    });
+    expect(directive?.donorGlobal).toBe('__custom');
+  });
+
+  test('carries prepMethod and prepOptions for stateful methods', () => {
+    if (!extractBridgeDirective) return;
+    const directive = extractBridgeDirective({
+      __bridge: {
+        method: 'CreateOrEditDataValidation',
+        frameUrlIncludes: 'f',
+        harvestUrlIncludes: 'h',
+        prepMethod: 'GetDataValidationSettings',
+        prepOptions: { selectedRanges: { SheetName: 'Sheet1' } },
+      },
+    });
+    expect(directive?.prepMethod).toBe('GetDataValidationSettings');
+    expect(directive?.prepOptions).toEqual({ selectedRanges: { SheetName: 'Sheet1' } });
+  });
+
+  test('ignores a non-object prepOptions but keeps prepMethod', () => {
+    if (!extractBridgeDirective) return;
+    const directive = extractBridgeDirective({
+      __bridge: { method: 'M', frameUrlIncludes: 'f', harvestUrlIncludes: 'h', prepMethod: 'G', prepOptions: 'nope' },
+    });
+    expect(directive?.prepMethod).toBe('G');
+    expect(directive?.prepOptions).toBeUndefined();
+  });
+
+  test('omits options when not a plain object', () => {
+    if (!extractBridgeDirective) return;
+    const directive = extractBridgeDirective({
+      __bridge: { method: 'M', frameUrlIncludes: 'f', harvestUrlIncludes: 'h', options: [1, 2] },
+    });
+    expect(directive).not.toBeNull();
+    expect(directive?.options).toBeUndefined();
+  });
+
+  test('returns null for a plain (non-bridge) result', () => {
+    if (!extractBridgeDirective) return;
+    expect(extractBridgeDirective({ frozen: true })).toBeNull();
+    expect(extractBridgeDirective({ __bridge: null })).toBeNull();
+    expect(extractBridgeDirective(null)).toBeNull();
+    expect(extractBridgeDirective('freeze')).toBeNull();
+  });
+
+  test('returns null when required directive fields are missing or mistyped', () => {
+    if (!extractBridgeDirective) return;
+    expect(extractBridgeDirective({ __bridge: { method: 'M', frameUrlIncludes: 'f' } })).toBeNull();
+    expect(
+      extractBridgeDirective({ __bridge: { method: 1, frameUrlIncludes: 'f', harvestUrlIncludes: 'h' } }),
+    ).toBeNull();
   });
 });
 

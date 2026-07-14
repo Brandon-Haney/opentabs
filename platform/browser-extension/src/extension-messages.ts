@@ -272,5 +272,7 @@ export interface PluginMeta {
   iconDarkInactiveSvg?: string;
   preScriptFile?: string;
   preScriptHash?: string;
+  /** Additional embedded-frame match patterns the pre-script is registered on */
+  preScriptFrameMatches?: string[];
   tools: WireToolDef[];
 }

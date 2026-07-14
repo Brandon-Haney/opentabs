@@ -127,6 +127,8 @@ export interface RegisteredPlugin {
   preScript?: string;
   /** SHA-256 hex hash of the pre-script IIFE content (from manifest) */
   preScriptHash?: string;
+  /** Additional embedded-frame match patterns the pre-script runs in (from package.json) */
+  preScriptFrameMatches?: string[];
   /** Config schema defining user-configurable settings for this plugin */
   configSchema?: ConfigSchema;
   /** Instance name → Chrome match pattern mapping for multi-instance url settings */

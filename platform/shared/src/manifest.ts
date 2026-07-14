@@ -43,6 +43,15 @@ interface PluginOpentabsField {
    * bundles it separately and emits `dist/pre-script.iife.js`.
    */
   readonly preScript?: string;
+  /**
+   * Optional Chrome match patterns for additional embedded frames the pre-script
+   * should run in, beyond the plugin's own `urlPatterns`. Used when a plugin must
+   * observe or patch runtime state inside a cross-origin child frame (e.g. an
+   * embedded editor canvas) whose origin differs from the plugin's tab-match
+   * origin. The same pre-script IIFE is registered on these patterns with
+   * `allFrames: true`. Requires `preScript` to be declared.
+   */
+  readonly preScriptFrameMatches?: string[];
 }
 
 /** A plugin's package.json with the required `opentabs` field */
@@ -234,6 +243,27 @@ const parsePluginPackageJson = (json: unknown, sourcePath: string): Result<Plugi
     parsedPreScript = preScript;
   }
 
+  // Parse preScriptFrameMatches (optional) — additional embedded-frame match
+  // patterns for the pre-script. Only meaningful when preScript is declared.
+  const preScriptFrameMatches = ot.preScriptFrameMatches;
+  let parsedPreScriptFrameMatches: string[] | undefined;
+  if (preScriptFrameMatches !== undefined) {
+    if (!Array.isArray(preScriptFrameMatches)) {
+      return err(`Invalid package.json at ${sourcePath}: "opentabs.preScriptFrameMatches" must be an array of strings`);
+    }
+    for (let i = 0; i < preScriptFrameMatches.length; i++) {
+      if (typeof preScriptFrameMatches[i] !== 'string') {
+        return err(`Invalid package.json at ${sourcePath}: "opentabs.preScriptFrameMatches[${i}]" must be a string`);
+      }
+    }
+    if (preScriptFrameMatches.length > 0 && parsedPreScript === undefined) {
+      return err(
+        `Invalid package.json at ${sourcePath}: "opentabs.preScriptFrameMatches" requires "opentabs.preScript" to be declared`,
+      );
+    }
+    parsedPreScriptFrameMatches = preScriptFrameMatches as string[];
+  }
+
   return ok({
     name,
     version,
@@ -246,6 +276,9 @@ const parsePluginPackageJson = (json: unknown, sourcePath: string): Result<Plugi
       ...(parsedHomepage ? { homepage: parsedHomepage } : {}),
       ...(parsedConfigSchema ? { configSchema: parsedConfigSchema } : {}),
       ...(parsedPreScript ? { preScript: parsedPreScript } : {}),
+      ...(parsedPreScriptFrameMatches && parsedPreScriptFrameMatches.length > 0
+        ? { preScriptFrameMatches: parsedPreScriptFrameMatches }
+        : {}),
     },
   });
 };

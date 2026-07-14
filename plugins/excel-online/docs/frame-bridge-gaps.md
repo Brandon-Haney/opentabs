@@ -94,10 +94,19 @@ patch (no prep needed).
   `lessThanOrEqual` (LowerBoundary only). Verified live: `list`+`between`,
   `wholeNumber`+`between`, `wholeNumber`+`greaterThan`.
 
+`clear_data_validation` removes a rule → the same method with **`Command:1`** (the
+dedicated clear op) and `RuleType:"anyValue"`, preceded by a `GetDataValidationSettings`
+prep to establish the existing rule's edit-state. `Command:0` is create/edit; using
+it to overwrite an existing rule is rejected by the edit-state guard — that command
+off-by-one, decoded from a captured add-then-remove, is what made clearing look
+impossible.
+
 **Correction to the earlier "walled" conclusion.** The
 `DataValidationEditStateChangedError` ("another user has made changes") is **not**
 an ownership barrier — it is donor **staleness**: the commit is rejected when the
-reused donor's revision is behind the server (the same revision-staleness that
-surfaces as `InternalError`/500 on the other bridge writes). On a fresh donor the
-commit replays cleanly; the prior attempts failed because the donor had gone stale
-after intervening writes/refreshes. Clearing a rule is `RuleType:"anyValue"`.
+reused donor's revision is behind the server. Data-validation commits are the most
+revision-strict of the bridge writes (each success advances the revision, so the
+donor must re-sync via the page's next poll before the following DV write; this is
+worse in OCS co-authoring mode). On a current-revision donor both add and clear
+replay cleanly; the prior "walled" attempts failed on stale donors and the wrong
+clear command.

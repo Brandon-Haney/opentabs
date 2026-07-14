@@ -5,16 +5,17 @@ import { bridgeOutputSchema, ewaBridge, selectedRanges, viewportSelection } from
 /**
  * Built-in named cell styles mapped to the `styleIndex` the EWA
  * `ApplyNamedCellStyle` method expects. The indices are Excel Online's own
- * (not the ECMA-376 builtinId), read straight from a live `GetNamedCellStylesEx`
- * response (`d.Result[].StyleIndex`) and cross-checked against captured
- * `ApplyNamedCellStyle` requests. Keys are friendly names; the themed accents
- * follow `accent{n}` / `accent{n}_{20|40|60}` for the tint variants.
+ * (not the ECMA-376 builtinId) and were confirmed from captured
+ * `ApplyNamedCellStyle` requests plus the resulting cell formatting.
+ * Keys are friendly names; the themed accents follow `accent{n}` /
+ * `accent{n}_{20|40|60}` for the tint variants.
  *
- * The five "Number Format" gallery styles (Comma, Comma [0], Currency,
- * Currency [0], Percent) are intentionally omitted: applying them through
- * `ApplyNamedCellStyle` does not set the style's number format cleanly, and
- * `set_number_format` already covers currency/percent/comma formatting through
- * the workbook API, so there is nothing to gain by routing them here.
+ * The apply index equals the `GetNamedCellStylesEx` catalog `StyleIndex` for
+ * every style EXCEPT the five "Number Format" styles (Comma, Comma [0],
+ * Currency, Currency [0], Percent): those apply at catalog index + 1 (Comma is
+ * catalog 30 but applies as 31, ... Percent catalog 34 applies as 35). The
+ * apply indices below are the verified values — a captured click of each style
+ * produced exactly its number format.
  */
 const STYLES = {
   // Good, Bad and Neutral
@@ -65,6 +66,12 @@ const STYLES = {
   accent6_20: 73,
   accent6_40: 74,
   accent6_60: 75,
+  // Number Format (apply index is catalog index + 1 — see note above)
+  comma: 31,
+  comma_0: 32,
+  currency: 33,
+  currency_0: 34,
+  percent: 35,
 } as const;
 
 type StyleName = keyof typeof STYLES;
@@ -77,10 +84,11 @@ export const applyCellStyle = defineTool({
   description:
     "Apply a built-in named cell style to a range — Excel's one-click Cell Styles gallery (Normal, Good/Bad/Neutral, " +
     'Titles and Headings like title/heading_1..heading_4/total, the data styles input/output/calculation/check_cell/' +
-    'note/warning_text/explanatory_text/linked_cell/hyperlink/followed_hyperlink, and the themed accents accent1..' +
-    'accent6 with 20/40/60% tints as accent1_20/accent1_40/accent1_60). A named style sets font, fill, and borders ' +
-    'together and stays linked to the theme. For number formatting (currency, percent, comma) use set_number_format. ' +
-    "Not available through the standard workbook API — driven through Excel's internal service via the frame bridge.",
+    'note/warning_text/explanatory_text/linked_cell/hyperlink/followed_hyperlink, the themed accents accent1..accent6 ' +
+    'with 20/40/60% tints as accent1_20/accent1_40/accent1_60, and the number styles comma/comma_0/currency/' +
+    'currency_0/percent). A named style sets font, fill, borders, and/or number format together and stays linked to ' +
+    "the theme. Not available through the standard workbook API — driven through Excel's internal service via the " +
+    'frame bridge.',
   summary: 'Apply a built-in named cell style',
   icon: 'palette',
   group: 'Formatting',
@@ -89,7 +97,7 @@ export const applyCellStyle = defineTool({
     address: z.string().describe('Range address in A1 notation to style (e.g., "A1:E1")'),
     style: z
       .enum(STYLE_NAMES)
-      .describe('Built-in cell style name (e.g., "good", "heading_1", "total", "accent1", "accent1_20")'),
+      .describe('Built-in cell style name (e.g., "good", "heading_1", "total", "accent1_20", "currency")'),
   }),
   output: bridgeOutputSchema,
   handle: async params =>

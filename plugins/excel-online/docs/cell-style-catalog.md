@@ -13,6 +13,14 @@ against captured `ApplyNamedCellStyle` requests. The read method
 (op 216) applies a style. Style names are localized server-side, so the catalog
 is only available at runtime from the server, not from the client bundle.
 
+**Apply index vs. catalog index.** For every style except the five Number
+Format styles, the `styleIndex` sent to `ApplyNamedCellStyle` equals the
+catalog `StyleIndex`. The five Number Format styles apply at **catalog index +
+1** — a captured click of each sent one higher than its catalog value and
+produced exactly its number format (Comma catalog 30 → apply 31, Comma [0]
+31 → 32, Currency 32 → 33, Currency [0] 33 → 34, Percent 34 → 35). `apply_cell_style`
+stores the verified apply indices.
+
 ## Full catalog (49 built-in styles)
 
 | StyleIndex | StyleName | Category |
@@ -47,12 +55,20 @@ is only available at runtime from the server, not from the client bundle.
 Themed accents, in `styleIndex` order: Accent1 52, 20% 53, 40% 54, 60% 55;
 Accent2 56–59; Accent3 60–63; Accent4 64–67; Accent5 68–71; Accent6 72–75.
 
-## Number-format styles are not exposed
+## Number-format styles (apply at catalog index + 1)
 
-The five **Number Format** styles (indices 30–34) are decoded here for the
-record but are **not** exposed by `apply_cell_style`. Applying one through
-`ApplyNamedCellStyle` does not set the style's number format cleanly — a live
-test of `Currency` (32) left a `Comma [0]` number format instead of the
-currency format. Since `set_number_format` already applies currency, percent,
-and comma formats reliably through the workbook API, there is nothing to gain
-by routing them through the bridge, so they are omitted.
+The five **Number Format** styles are exposed by `apply_cell_style` at their
+verified apply indices, which are one higher than their catalog `StyleIndex`:
+
+| Style | Catalog StyleIndex | Apply styleIndex | Resulting number format |
+| --- | --- | --- | --- |
+| Comma | 30 | 31 | `_(* #,##0.00_);…` |
+| Comma [0] | 31 | 32 | `_(* #,##0_);…` |
+| Currency | 32 | 33 | `_($* #,##0.00_);…` |
+| Currency [0] | 33 | 34 | `_($* #,##0_);…` |
+| Percent | 34 | 35 | `0%` |
+
+An earlier attempt used the catalog index directly (`Currency` = 32) and got a
+`Comma [0]` format, which is exactly what apply index 32 produces — the source
+of the off-by-one. `set_number_format` remains the tool for setting a direct
+number format that is not a named style.

@@ -35,23 +35,33 @@ Office Web Apps frame is a cross-origin child target, so it is only recorded if 
 to the frame on its next load; an already-loaded frame is missed). With that, apply one
 rule per period in the New Rule dialog and read `TimePeriodType` from each request.
 
-## 3. AutoFilter on a plain range — absent from Graph, needs the frame bridge
+## 3. AutoFilter on a plain range — solved via the frame bridge
 
-`filter_table` / `clear_table_filters` cover filtering **tables** (the Graph
-`tables/{id}/columns/{col}/filter` endpoints, v1.0). Filtering a plain,
-non-table range — the dropdown arrows a user gets from Data → Filter
-(Ctrl+Shift+L) on unstructured data — is **not exposed by Graph at all**: the
-`workbookWorksheet` resource has no `autoFilter` relationship in v1.0, and the
-drive-item `worksheets/{id}/autoFilter/apply` path 404s on both v1.0 and beta.
+Plain-range AutoFilter (the dropdown arrows from Data → Filter on unstructured
+data) is **not exposed by Graph at all**: the `workbookWorksheet` resource has
+no `autoFilter` relationship in v1.0, and the drive-item
+`worksheets/{id}/autoFilter/apply` path 404s on both v1.0 and beta. (`filter_table`
+/ `clear_table_filters` cover **table** filtering via the Graph
+`tables/{id}/columns/{col}/filter` endpoints.)
 
-Reaching plain-range AutoFilter would mean driving Excel Online's internal
-`EwaInternalWebService` through the frame bridge, the same route the
-conditional-formatting tools use. The method name and options are undecoded.
+It is now handled through the frame bridge:
 
-**To resolve:** capture a live "Filter" toggle and a column filter apply on a
-non-table range (refresh the page after enabling network capture so the
-cross-origin Office frame is recorded), then decode the method and option shape
-the way the CF `Command` catalog was decoded.
+- `toggle_range_autofilter` → EWA `ToggleAutoFilter`, options `{ filterRange:
+  {SheetName, NamedObjectName:"", FirstRow, LastRow, FirstColumn, LastColumn} }`
+  (0-based). Toggles the sheet AutoFilter on/off.
+- `filter_range_column` → EWA `ApplyFilterV2`, options `{ parameters: {Location:
+  {SheetName, NamedObjectName:"", FirstRow:0, FirstColumn:<1-based abs col>},
+  FieldId:"<0-based field in range>", DataSourceIndex:-1, FilterType:"Sheet",
+  AnchorType:0, ChartId:null, AnchorValue1:-1, AnchorValue2:-1}, checkedItems:
+  ["i"+value, …], avoidDecodingItems:true }` (values kept; text and numeric
+  verified). No `contextPatch` needed.
+
+**Remaining follow-up (decoded, not yet built):** custom comparison filters
+(`SetCustomFilter`, options `{ parameters:{ ActiveCompareType, ColumnName,
+Value1, Value2, Location, FieldId, FilterType, … } }` — `ActiveCompareType` 8 =
+greater-than; the full compare enum needs one capture) and top/bottom-N
+(`SetTop10Filter`, `{ parameters }`). Clearing a single column's item filter is
+`ApplyItemFilter` with `items:null`.
 
 ## 4. Data validation — blocked on both routes
 

@@ -21,6 +21,8 @@ import { deleteTableRow } from './tools/delete-table-row.js';
 import { deleteWorksheet } from './tools/delete-worksheet.js';
 import { evaluateFormula } from './tools/evaluate-formula.js';
 import { filterRangeColumn } from './tools/filter-range-column.js';
+import { filterRangeCustom } from './tools/filter-range-custom.js';
+import { filterRangeTop } from './tools/filter-range-top.js';
 import { filterTable } from './tools/filter-table.js';
 import { formatRangeAdvanced } from './tools/format-range-advanced.js';
 import { formatRange } from './tools/format-range.js';
@@ -90,6 +92,8 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     sortRange,
     toggleRangeAutofilter,
     filterRangeColumn,
+    filterRangeCustom,
+    filterRangeTop,
     // Formatting
     formatRange,
     setNumberFormat,

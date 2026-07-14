@@ -3,6 +3,7 @@ import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import { isAuthenticated, isSharePointWorkbook, waitForAuth } from './excel-api.js';
 import { addComment } from './tools/add-comment.js';
 import { addConditionalFormat } from './tools/add-conditional-format.js';
+import { addDataValidation } from './tools/add-data-validation.js';
 import { addNamedItem } from './tools/add-named-item.js';
 import { addTableColumn } from './tools/add-table-column.js';
 import { addTableRow } from './tools/add-table-row.js';
@@ -132,6 +133,7 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     addComment,
     addConditionalFormat,
     applyCellStyle,
+    addDataValidation,
   ];
 
   async isReady(): Promise<boolean> {

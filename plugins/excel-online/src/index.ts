@@ -7,6 +7,7 @@ import { addNamedItem } from './tools/add-named-item.js';
 import { addTableColumn } from './tools/add-table-column.js';
 import { addTableRow } from './tools/add-table-row.js';
 import { addWorksheet } from './tools/add-worksheet.js';
+import { applyCellStyle } from './tools/apply-cell-style.js';
 import { calculateWorkbook } from './tools/calculate-workbook.js';
 import { clearRange } from './tools/clear-range.js';
 import { clearTableFilters } from './tools/clear-table-filters.js';
@@ -122,6 +123,7 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     setHyperlink,
     addComment,
     addConditionalFormat,
+    applyCellStyle,
   ];
 
   async isReady(): Promise<boolean> {

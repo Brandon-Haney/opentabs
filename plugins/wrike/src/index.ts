@@ -11,6 +11,7 @@ import { listRootFolders } from './tools/list-root-folders.js';
 import { listFolderContents } from './tools/list-folder-contents.js';
 import { createFolder } from './tools/create-folder.js';
 import { createProject } from './tools/create-project.js';
+import { reorderItem } from './tools/reorder-item.js';
 import { listRecycleBin } from './tools/list-recycle-bin.js';
 import { restoreFromRecycleBin } from './tools/restore-from-recycle-bin.js';
 
@@ -27,6 +28,7 @@ import { assignTask } from './tools/assign-task.js';
 import { setTaskDates } from './tools/set-task-dates.js';
 import { listCustomFields } from './tools/list-custom-fields.js';
 import { setCustomField } from './tools/set-custom-field.js';
+import { setDescription } from './tools/set-description.js';
 import { listAttachments } from './tools/list-attachments.js';
 import { uploadAttachment } from './tools/upload-attachment.js';
 
@@ -50,6 +52,7 @@ class WrikePlugin extends OpenTabsPlugin {
     listFolderContents,
     createFolder,
     createProject,
+    reorderItem,
     listRecycleBin,
     restoreFromRecycleBin,
 
@@ -66,6 +69,7 @@ class WrikePlugin extends OpenTabsPlugin {
     setTaskDates,
     listCustomFields,
     setCustomField,
+    setDescription,
     listAttachments,
     uploadAttachment,
 

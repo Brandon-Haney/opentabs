@@ -1,7 +1,7 @@
 {
   "name": "@opentabs-dev/opentabs-plugin-retool",
   "description": "OpenTabs plugin for Retool",
-  "version": "0.0.88",
+  "version": "0.0.89",
   "publishConfig": {
     "access": "public"
   },

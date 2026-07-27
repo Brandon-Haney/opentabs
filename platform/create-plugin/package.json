@@ -12,7 +12,7 @@
     "scaffolding",
     "opentabs-plugin"
   ],
-  "version": "0.0.114",
+  "version": "0.0.115",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -36,7 +36,7 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@opentabs-dev/cli": "^0.0.114",
+    "@opentabs-dev/cli": "^0.0.115",
     "commander": "^15.0.0",
     "picocolors": "^1.1.1"
   }

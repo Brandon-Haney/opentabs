@@ -1,5 +1,16 @@
 import { z } from 'zod';
 
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+
+const jsonPrimitiveSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
+const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([jsonPrimitiveSchema, z.array(jsonValueSchema), z.record(z.string(), jsonValueSchema)]),
+);
+
+export const monitorOptionsSchema = z.record(z.string(), jsonValueSchema);
+
 // --- Monitors ---
 
 export const monitorSchema = z.object({
@@ -11,6 +22,9 @@ export const monitorSchema = z.object({
   tags: z.array(z.string()).describe('Monitor tags'),
   overall_state: z.string().describe('Current state (OK, Alert, Warn, No Data)'),
   priority: z.number().nullable().describe('Monitor priority (1-5, null if unset)'),
+  options: monitorOptionsSchema.describe(
+    'Monitor evaluation and notification options, including thresholds and no-data behavior',
+  ),
   created: z.string().describe('Creation timestamp'),
   modified: z.string().describe('Last modification timestamp'),
   creator: z.object({
@@ -28,6 +42,7 @@ interface RawMonitor {
   tags?: string[];
   overall_state?: string;
   priority?: number | null;
+  options?: Record<string, JsonValue>;
   created?: string;
   modified?: string;
   creator?: { name?: string | null; handle?: string };
@@ -42,6 +57,7 @@ export const mapMonitor = (m: RawMonitor) => ({
   tags: m.tags ?? [],
   overall_state: m.overall_state ?? 'Unknown',
   priority: m.priority ?? null,
+  options: m.options ?? {},
   created: m.created ?? '',
   modified: m.modified ?? '',
   creator: {
@@ -513,6 +529,68 @@ export const mapMetricMetadata = (m: RawMetricMetadata) => ({
   unit: m.unit ?? '',
   per_unit: m.per_unit ?? '',
   integration: m.integration ?? '',
+});
+
+export const metricTagConfigurationSchema = z.object({
+  id: z.string().describe('Configured metric name'),
+  type: z.string().describe('Datadog resource type (manage_tags)'),
+  metric_type: z.string().describe('Metric type (count, gauge, rate, or distribution)'),
+  tags: z.array(z.string()).describe('Indexed tag keys, or excluded tag keys when exclusion mode is enabled'),
+  exclude_tags_mode: z
+    .boolean()
+    .describe('Whether the listed tags are excluded instead of being the only indexed tags'),
+  include_percentiles: z
+    .boolean()
+    .nullable()
+    .describe('Whether percentile aggregations are enabled for a distribution metric; null for other metric types'),
+  aggregations: z
+    .array(
+      z.object({
+        space: z.string().describe('Spatial aggregation method'),
+        time: z.string().describe('Temporal aggregation method'),
+      }),
+    )
+    .describe('Configured aggregation methods; retained by Datadog for existing configurations'),
+  created_at: z.string().describe('Configuration creation timestamp'),
+  modified_at: z.string().describe('Configuration modification timestamp'),
+});
+
+interface RawMetricTagConfigurationAggregation {
+  space?: string;
+  time?: string;
+}
+
+export interface RawMetricTagConfiguration {
+  id?: string;
+  type?: string;
+  attributes?: {
+    metric_type?: string;
+    tags?: string[];
+    exclude_tags_mode?: boolean;
+    include_percentiles?: boolean;
+    aggregations?: RawMetricTagConfigurationAggregation[];
+    created_at?: string;
+    modified_at?: string;
+  };
+}
+
+export interface MetricTagConfigurationResponse {
+  data?: RawMetricTagConfiguration;
+}
+
+export const mapMetricTagConfiguration = (configuration: RawMetricTagConfiguration) => ({
+  id: configuration.id ?? '',
+  type: configuration.type ?? '',
+  metric_type: configuration.attributes?.metric_type ?? '',
+  tags: configuration.attributes?.tags ?? [],
+  exclude_tags_mode: configuration.attributes?.exclude_tags_mode ?? false,
+  include_percentiles: configuration.attributes?.include_percentiles ?? null,
+  aggregations: (configuration.attributes?.aggregations ?? []).map(aggregation => ({
+    space: aggregation.space ?? '',
+    time: aggregation.time ?? '',
+  })),
+  created_at: configuration.attributes?.created_at ?? '',
+  modified_at: configuration.attributes?.modified_at ?? '',
 });
 
 // --- User ---

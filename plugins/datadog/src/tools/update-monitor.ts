@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { apiPut } from '../datadog-api.js';
+import { monitorOptionsSchema } from './schemas.js';
 
 export const updateMonitor = defineTool({
   name: 'update_monitor',
@@ -15,7 +16,15 @@ export const updateMonitor = defineTool({
     query: z.string().optional().describe('New monitor query'),
     message: z.string().optional().describe('New notification message'),
     tags: z.array(z.string()).optional().describe('New tags for the monitor'),
-    options: z.unknown().optional().describe('New monitor options'),
+    options: monitorOptionsSchema.optional().describe('New monitor options'),
+    priority: z
+      .number()
+      .int()
+      .min(1)
+      .max(5)
+      .nullable()
+      .optional()
+      .describe('New monitor priority from 1 (highest) to 5 (lowest), or null to clear it'),
   }),
   output: z.object({
     id: z.number().describe('Updated monitor ID'),
@@ -29,6 +38,7 @@ export const updateMonitor = defineTool({
     if (params.message !== undefined) body.message = params.message;
     if (params.tags !== undefined) body.tags = params.tags;
     if (params.options !== undefined) body.options = params.options;
+    if (params.priority !== undefined) body.priority = params.priority;
 
     const data = await apiPut<Record<string, unknown>>(`/api/v1/monitor/${params.monitor_id}`, body);
     return {

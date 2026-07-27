@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-datadog
 1. Open [datadoghq.com](https://app.datadoghq.com) in Chrome and log in
 2. Open the OpenTabs side panel — the Datadog plugin should appear as **ready**
 
-## Tools (71)
+## Tools (75)
 
 ### Monitors (13)
 
@@ -75,7 +75,7 @@ npm install -g @opentabs-dev/opentabs-plugin-datadog
 | `aggregate_spans` | Aggregate APM span data with grouping | Write |
 | `get_service_dependencies` | Get service dependency map | Read |
 
-### Metrics (5)
+### Metrics (9)
 
 | Tool | Description | Type |
 |---|---|---|
@@ -84,6 +84,10 @@ npm install -g @opentabs-dev/opentabs-plugin-datadog
 | `get_metric_metadata` | Get metric description, type, and unit info | Read |
 | `query_timeseries` | Run advanced timeseries queries with formulas | Read |
 | `list_metric_tags` | List tags for a metric | Read |
+| `get_metric_tag_configuration` | Get metric tag configuration | Read |
+| `create_metric_tag_configuration` | Create metric tag configuration | Write |
+| `update_metric_tag_configuration` | Update metric tag configuration | Write |
+| `delete_metric_tag_configuration` | Delete metric tag configuration | Write |
 
 ### Infrastructure (6)
 

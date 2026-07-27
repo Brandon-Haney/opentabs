@@ -47,6 +47,10 @@ import { listMetrics } from './tools/list-metrics.js';
 import { getMetricMetadata } from './tools/get-metric-metadata.js';
 import { queryTimeseries } from './tools/query-timeseries.js';
 import { listMetricTags } from './tools/list-metric-tags.js';
+import { getMetricTagConfiguration } from './tools/get-metric-tag-configuration.js';
+import { createMetricTagConfiguration } from './tools/create-metric-tag-configuration.js';
+import { updateMetricTagConfiguration } from './tools/update-metric-tag-configuration.js';
+import { deleteMetricTagConfiguration } from './tools/delete-metric-tag-configuration.js';
 
 // Infrastructure
 import { listHosts } from './tools/list-hosts.js';
@@ -116,7 +120,7 @@ class DatadogPlugin extends OpenTabsPlugin {
   override readonly homepage = 'https://app.datadoghq.com';
 
   readonly tools: ToolDefinition[] = [
-    // Monitors (12)
+    // Monitors (13)
     listMonitors,
     getMonitor,
     searchMonitors,
@@ -150,12 +154,16 @@ class DatadogPlugin extends OpenTabsPlugin {
     getTrace,
     aggregateSpans,
     getServiceDependencies,
-    // Metrics (5)
+    // Metrics (9)
     queryMetrics,
     listMetrics,
     getMetricMetadata,
     queryTimeseries,
     listMetricTags,
+    getMetricTagConfiguration,
+    createMetricTagConfiguration,
+    updateMetricTagConfiguration,
+    deleteMetricTagConfiguration,
     // Infrastructure (6)
     listHosts,
     muteHost,

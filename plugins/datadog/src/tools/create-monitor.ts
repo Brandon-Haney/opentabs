@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { apiPost } from '../datadog-api.js';
+import { monitorOptionsSchema } from './schemas.js';
 
 export const createMonitor = defineTool({
   name: 'create_monitor',
@@ -20,7 +21,15 @@ export const createMonitor = defineTool({
     query: z.string().describe('Monitor query string'),
     message: z.string().optional().describe('Notification message (supports @mentions and markdown)'),
     tags: z.array(z.string()).optional().describe('Tags to associate with the monitor'),
-    options: z.unknown().optional().describe('Monitor options (thresholds, notify_no_data, etc.)'),
+    options: monitorOptionsSchema.optional().describe('Monitor options (thresholds, notify_no_data, etc.)'),
+    priority: z
+      .number()
+      .int()
+      .min(1)
+      .max(5)
+      .nullable()
+      .optional()
+      .describe('Monitor priority from 1 (highest) to 5 (lowest), or null to leave unset'),
   }),
   output: z.object({
     id: z.number().describe('Created monitor ID'),
@@ -33,9 +42,10 @@ export const createMonitor = defineTool({
       type: params.type,
       query: params.query,
     };
-    if (params.message) body.message = params.message;
-    if (params.tags) body.tags = params.tags;
-    if (params.options) body.options = params.options;
+    if (params.message !== undefined) body.message = params.message;
+    if (params.tags !== undefined) body.tags = params.tags;
+    if (params.options !== undefined) body.options = params.options;
+    if (params.priority !== undefined) body.priority = params.priority;
 
     const data = await apiPost<Record<string, unknown>>('/api/v1/monitor', body);
     return {

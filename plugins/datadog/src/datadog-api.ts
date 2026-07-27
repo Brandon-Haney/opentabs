@@ -1,4 +1,11 @@
-import { ToolError, buildQueryString, fetchJSON, fetchText, waitUntil } from '@opentabs-dev/plugin-sdk';
+import {
+  ToolError,
+  buildQueryString,
+  fetchJSON,
+  fetchText,
+  getLocalStorage,
+  waitUntil,
+} from '@opentabs-dev/plugin-sdk';
 
 // --- Auth ---
 //
@@ -17,7 +24,7 @@ interface DatadogAuth {
 
 const getCsrfToken = (): string | null => {
   try {
-    const raw = localStorage.getItem('dd-csrf-token');
+    const raw = getLocalStorage('dd-csrf-token');
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { token?: string };
     return parsed.token ?? null;
@@ -50,6 +57,34 @@ const requireAuth = (): DatadogAuth => {
 
 // --- API Callers ---
 
+type WriteMethod = 'POST' | 'PUT' | 'PATCH';
+
+const apiWrite = async <T>(
+  method: WriteMethod,
+  endpoint: string,
+  body: unknown,
+  query?: Record<string, string | number | boolean | undefined>,
+): Promise<T> => {
+  const auth = requireAuth();
+  const qs = query ? buildQueryString(query) : '';
+  const url = qs ? `${endpoint}?${qs}` : endpoint;
+
+  const bodyWithToken =
+    typeof body === 'object' && body !== null && !Array.isArray(body)
+      ? { ...body, _authentication_token: auth.csrfToken }
+      : body;
+
+  return fetchJSON<T>(url, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'x-csrf-token': auth.csrfToken,
+      'x-dd-csrf-token': auth.csrfToken,
+    },
+    body: JSON.stringify(bodyWithToken),
+  }) as Promise<T>;
+};
+
 /**
  * Make a GET request to Datadog API. Session cookies provide auth automatically.
  */
@@ -70,48 +105,17 @@ export const apiPost = async <T>(
   endpoint: string,
   body: unknown,
   query?: Record<string, string | number | boolean | undefined>,
-): Promise<T> => {
-  const auth = requireAuth();
-  const qs = query ? buildQueryString(query) : '';
-  const url = qs ? `${endpoint}?${qs}` : endpoint;
-
-  const bodyWithToken =
-    typeof body === 'object' && body !== null && !Array.isArray(body)
-      ? { ...body, _authentication_token: auth.csrfToken }
-      : body;
-
-  return fetchJSON<T>(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-csrf-token': auth.csrfToken,
-      'x-dd-csrf-token': auth.csrfToken,
-    },
-    body: JSON.stringify(bodyWithToken),
-  }) as Promise<T>;
-};
+): Promise<T> => apiWrite('POST', endpoint, body, query);
 
 /**
  * Make a PUT request to Datadog API with CSRF token.
  */
-export const apiPut = async <T>(endpoint: string, body: unknown): Promise<T> => {
-  const auth = requireAuth();
+export const apiPut = async <T>(endpoint: string, body: unknown): Promise<T> => apiWrite('PUT', endpoint, body);
 
-  const bodyWithToken =
-    typeof body === 'object' && body !== null && !Array.isArray(body)
-      ? { ...body, _authentication_token: auth.csrfToken }
-      : body;
-
-  return fetchJSON<T>(endpoint, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-csrf-token': auth.csrfToken,
-      'x-dd-csrf-token': auth.csrfToken,
-    },
-    body: JSON.stringify(bodyWithToken),
-  }) as Promise<T>;
-};
+/**
+ * Make a PATCH request to Datadog API with CSRF token.
+ */
+export const apiPatch = async <T>(endpoint: string, body: unknown): Promise<T> => apiWrite('PATCH', endpoint, body);
 
 /**
  * Make a DELETE request to Datadog API with CSRF token.

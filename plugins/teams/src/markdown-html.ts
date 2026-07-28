@@ -27,6 +27,20 @@
 // off the palette are dropped rather than emitted, so a message never carries a
 // colour Teams would not render.
 
+/**
+ * Shared tool-description blurb documenting the Markdown and inline-HTML
+ * formatting `markdownToTeamsHtml` accepts. Kept in one place so send_message
+ * and edit_message stay in sync with each other and with the converter.
+ */
+export const MARKDOWN_FORMATTING_HELP =
+  'The text is written in Markdown and rendered natively in Teams: **bold**, *italic*, ~~strikethrough~~, `code`, ' +
+  '```fenced code blocks```, [links](https://example.com), bulleted lists ("- item"), numbered lists ("1. item"), ' +
+  'headings ("# Title"), block quotes ("> quote"), horizontal rules ("---"), and GFM pipe tables. For formatting ' +
+  'Markdown cannot express, inline HTML is allowed: underline (<u>text</u>), text colour ' +
+  '(<span style="color:NAME">text</span>), highlight (<span style="background-color:NAME">text</span>), and font ' +
+  'size (<span style="font-size:large|medium|small">text</span>). Colour NAME is one of the Teams swatches: red, ' +
+  'orange, gold, lime, green, teal, blue, magenta. Blank lines separate paragraphs; single newlines become line breaks.';
+
 /** Text-colour swatch name -> exact hex Teams stores. */
 const TEXT_COLORS: Record<string, string> = {
   red: '#B6424C',
@@ -78,15 +92,21 @@ const escapeHtml = (text: string): string => text.replace(/&/g, '&amp;').replace
 /** HTML-escape a value for a double-quoted attribute. */
 const escapeAttribute = (value: string): string => escapeHtml(value).replace(/"/g, '&quot;');
 
+/** Allow only link schemes Teams renders; anything else (e.g. `javascript:`) is dropped. */
+const safeHref = (url: string): string | null => {
+  const trimmed = url.trim();
+  return /^(https?:|mailto:)/i.test(trimmed) ? trimmed : null;
+};
+
 /**
  * Resolve a CSS colour value against a palette: a swatch name or the exact
  * palette hex resolves to that hex; `inherit` passes through; anything else is
- * rejected (returns null) so off-palette colours are never emitted.
+ * rejected (returns null) so off-palette colours are never emitted. Only own
+ * properties count, so keys like `constructor` don't resolve through the prototype.
  */
 const resolveColor = (value: string, palette: Record<string, string>): string | null => {
   if (value === 'inherit') return 'inherit';
-  const named = palette[value];
-  if (named) return named;
+  if (Object.hasOwn(palette, value)) return palette[value] ?? null;
   const match = Object.values(palette).find(hex => hex.toLowerCase() === value);
   return match ?? null;
 };
@@ -119,7 +139,7 @@ const translateStyle = (style: string): string => {
         hasBackground = true;
       }
     } else if (property === 'font-size') {
-      const size = FONT_SIZES[value];
+      const size = Object.hasOwn(FONT_SIZES, value) ? FONT_SIZES[value] : undefined;
       if (size) declarations.push(`font-size:${size}`);
     }
   }
@@ -155,8 +175,8 @@ const matchInlineTag = (line: string, i: number): { html: string; length: number
 
   const anchor = /^<a\s+([^>]*?)>/i.exec(rest);
   if (anchor) {
-    const href = /href\s*=\s*"([^"]*)"/i.exec(anchor[1] ?? '')?.[1] ?? '';
-    if (/^(https?:|mailto:)/i.test(href)) {
+    const href = safeHref(/href\s*=\s*"([^"]*)"/i.exec(anchor[1] ?? '')?.[1] ?? '');
+    if (href !== null) {
       const url = escapeAttribute(href);
       return { html: `<a href="${url}" title="${url}">`, length: anchor[0].length };
     }
@@ -181,11 +201,23 @@ interface Segment {
   raw?: string;
 }
 
+/** Whether `char` is a word character (letter, digit, or underscore). */
+const isWordChar = (char: string | undefined): boolean => char !== undefined && /\w/.test(char);
+
+/**
+ * Whether a `_`/`__` run at `line[i]` is an emphasis delimiter. Following GFM's
+ * intraword rule, `_` inside a word (word characters on both sides) is literal,
+ * so `snake_case` and `a_b_c` are not italicised; `*`/`**` have no such restriction.
+ */
+const isUnderscoreDelimiter = (line: string, i: number, length: number): boolean =>
+  !(isWordChar(line[i - 1]) && isWordChar(line[i + length]));
+
 /**
  * Parse a single line into inline segments. `**`/`__` toggle bold, `*`/`_`
  * italic, `~~` strikethrough; a backtick span is literal (no inner parsing);
  * `[label](url)` links the label; whitelisted HTML tags pass through sanitised.
- * Unmatched delimiters are left as literal text. The input must not contain newlines.
+ * A delimiter with no matching close stays active, applying its mark to the rest
+ * of the line. The input must not contain newlines.
  */
 const parseInline = (line: string): Segment[] => {
   const segments: Segment[] = [];
@@ -230,17 +262,17 @@ const parseInline = (line: string): Segment[] => {
       if (close > i) {
         const urlEnd = line.indexOf(')', close + 2);
         if (urlEnd > close) {
-          const url = line.slice(close + 2, urlEnd);
+          const url = safeHref(line.slice(close + 2, urlEnd));
           flush();
           for (const segment of parseInline(line.slice(i + 1, close))) {
-            segments.push({ ...segment, href: url });
+            segments.push(url === null ? segment : { ...segment, href: url });
           }
           i = urlEnd + 1;
           continue;
         }
       }
     }
-    if (two === '**' || two === '__') {
+    if (two === '**' || (two === '__' && isUnderscoreDelimiter(line, i, 2))) {
       flush();
       toggle('bold');
       i += 2;
@@ -252,7 +284,7 @@ const parseInline = (line: string): Segment[] => {
       i += 2;
       continue;
     }
-    if (ch === '*' || ch === '_') {
+    if (ch === '*' || (ch === '_' && isUnderscoreDelimiter(line, i, 1))) {
       flush();
       toggle('italic');
       i += 1;

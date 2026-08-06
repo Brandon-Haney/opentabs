@@ -48,7 +48,7 @@ export const getPivotFilterMembers = defineTool({
     'Always call this before set_pivot_filter, and never reuse ids across filters or sessions: they are assigned per filter tree, so the same month is id 15 on one pivot and id 3 on another. Guessing selects the wrong member with no error. ' +
     'Returns `response` as a flat list of {name, id, state, is_leaf}, including the selectable "All" row. Match on name; state 0 marks what is selected now. ' +
     'Reads the live session, so it reflects unsaved filter changes. ' +
-    'A PftTokenMissing error means the workbook has not been allowed to query its external data this session: the user must open a PivotTable filter in Excel and answer Yes to the "Query and Refresh Data" prompt. Ask them — that consent cannot be sent from here, and retrying will not help.',
+    'A PftTokenMissing error means the workbook has not been allowed to query its external data this session. Ask the user to open any PivotTable filter in Excel and answer Yes to the "Query and Refresh Data" prompt, then retry. No tool can grant this and retrying alone will not clear it.',
   summary: "List a page filter's members and their ids",
   icon: 'list-filter',
   group: 'Data Model',

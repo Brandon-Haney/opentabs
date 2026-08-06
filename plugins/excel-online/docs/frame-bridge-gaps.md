@@ -352,14 +352,23 @@ POST SetParameters
   confirmationChoice: true      // the user pressed Yes
 ```
 
-Once that lands, both filter methods work for the rest of the session. It is session-wide
-rather than per-pivot, and any reload — including the plugin's own reauthenticate path —
-discards it.
+Once the user answers, every pivot operation works for the rest of the session — the gate
+covers `ApplyPivot` as well as the filter methods, so field placement is blocked by it
+too. It is session-wide rather than per-pivot, and any reload — including the plugin's own
+reauthenticate path — discards it.
 
-**Deliberately not automated.** Replaying `SetParameters` would mean answering a security
-prompt about whether an external data source is trustworthy on the user's behalf, from
-code, silently. The tools surface the state and tell the caller to ask instead. This is a
-policy choice, not a technical limitation: the call itself replays fine.
+**Replaying `SetParameters` does not grant it.** Tested directly, with the captured
+arguments byte-for-byte and with `setParametersAtOpen` both true and false: the call
+answers `Errors: []`, bumps the workbook revision, and changes nothing — the filter
+methods stay blocked. It is the *answer* to a prompt the client raises, not a grant that
+can be issued on its own, and nothing in the captured stream shows the server raising a
+pending confirmation for it to satisfy. A tool built on it was written, tested, and
+removed rather than shipped, because it reported success while silently doing nothing.
+
+So this is a genuine boundary, not a policy choice: the consent has to come from the user
+in Excel's own UI. Which is arguably the right outcome — the prompt asks whether an
+external data source is trustworthy — but it is worth recording that it was tested rather
+than assumed.
 
 Things that look like the cause and are not, each tested directly — worth recording so the
 next reader does not spend the time again:

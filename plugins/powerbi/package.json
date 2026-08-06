@@ -1,0 +1,68 @@
+{
+  "name": "@opentabs-dev/opentabs-plugin-powerbi",
+  "description": "OpenTabs plugin for Microsoft Power BI",
+  "publishConfig": {
+    "access": "public"
+  },
+  "version": "0.0.90",
+  "type": "module",
+  "main": "dist/adapter.iife.js",
+  "keywords": [
+    "opentabs-plugin",
+    "opentabs",
+    "mcp",
+    "modelcontextprotocol",
+    "chrome-extension",
+    "ai-agent",
+    "browser-automation"
+  ],
+  "opentabs": {
+    "displayName": "Power BI",
+    "description": "OpenTabs plugin for Microsoft Power BI",
+    "urlPatterns": [
+      "*://app.powerbi.com/*"
+    ],
+    "homepage": "https://app.powerbi.com/",
+    "iconSvg": "<svg viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\"> <rect x=\"15.5\" y=\"2\" width=\"6\" height=\"20\" rx=\"1.2\" fill=\"#E8B009\"/> <rect x=\"9\" y=\"6.5\" width=\"6\" height=\"15.5\" rx=\"1.2\" fill=\"#F2C811\"/> <rect x=\"2.5\" y=\"11\" width=\"6\" height=\"11\" rx=\"1.2\" fill=\"#FADE6A\"/> </svg>",
+    "iconDarkSvg": "<svg viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\"> <rect x=\"15.5\" y=\"2\" width=\"6\" height=\"20\" rx=\"1.2\" fill=\"#E8B009\"/> <rect x=\"9\" y=\"6.5\" width=\"6\" height=\"15.5\" rx=\"1.2\" fill=\"#F2C811\"/> <rect x=\"2.5\" y=\"11\" width=\"6\" height=\"11\" rx=\"1.2\" fill=\"#FADE6A\"/> </svg>"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && opentabs-plugin build",
+    "dev": "tsc --watch --preserveWatchOutput & opentabs-plugin build --watch",
+    "type-check": "tsc --noEmit",
+    "lint": "biome lint src/",
+    "lint:fix": "biome lint --fix src/",
+    "format:check": "biome format src/",
+    "format": "biome format --write src/",
+    "check": "npm run build && npm run type-check && npm run lint && npm run format:check"
+  },
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  },
+  "dependencies": {
+    "@opentabs-dev/plugin-sdk": "^0.0.114"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.6",
+    "@opentabs-dev/plugin-tools": "^0.0.114",
+    "jiti": "^2.6.1",
+    "typescript": "^6.0.3",
+    "zod": "^4.3.6"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opentabs-dev/opentabs.git",
+    "directory": "plugins/powerbi"
+  }
+}

@@ -31,6 +31,7 @@ import { formatRange } from './tools/format-range.js';
 import { freezePanes } from './tools/freeze-panes.js';
 import { getChartImage } from './tools/get-chart-image.js';
 import { getCurrentUser } from './tools/get-current-user.js';
+import { getPivotFieldLayout } from './tools/get-pivot-field-layout.js';
 import { getRange } from './tools/get-range.js';
 import { getTableColumns } from './tools/get-table-columns.js';
 import { getTableRows } from './tools/get-table-rows.js';
@@ -131,6 +132,7 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     // workbook API exposes no PivotTable, connection, or pivot-cache surface.
     inspectDataModel,
     listPivotTables,
+    getPivotFieldLayout,
     refreshPivot,
     // Charts
     listCharts,

@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 1. Open [excel.cloud.microsoft](https://excel.cloud.microsoft/) in Chrome and log in
 2. Open the OpenTabs side panel — the Excel Online plugin should appear as **ready**
 
-## Tools (48)
+## Tools (66)
 
 ### Account (2)
 
@@ -49,7 +49,7 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 | `protect_worksheet` | Lock a worksheet against editing | Write |
 | `unprotect_worksheet` | Unlock a protected worksheet | Write |
 
-### Ranges (7)
+### Ranges (13)
 
 | Tool | Description | Type |
 |---|---|---|
@@ -60,25 +60,37 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 | `insert_range` | Insert cells and shift existing data | Write |
 | `delete_range` | Delete cells and shift remaining data | Write |
 | `sort_range` | Sort data in a range by columns | Write |
+| `remove_duplicates` | Remove duplicate rows from a range | Write |
+| `text_to_columns` | Split delimited text into columns | Write |
+| `toggle_range_autofilter` | Add or remove AutoFilter dropdowns on a range | Write |
+| `filter_range_column` | Filter a column of a range AutoFilter by values | Write |
+| `filter_range_custom` | Filter a range column by a comparison | Write |
+| `filter_range_top` | Filter a range column to its top/bottom N | Write |
 
-### Formatting (8)
+### Formatting (14)
 
 | Tool | Description | Type |
 |---|---|---|
 | `format_range` | Apply fill, font, and alignment formatting | Write |
+| `set_number_format` | Set how cell values are displayed | Write |
 | `set_dimensions` | Set column widths, row heights, or autofit | Write |
+| `hide_rows_columns` | Hide or unhide rows and columns | Write |
+| `group_rows_columns` | Group or ungroup rows or columns | Write |
 | `set_borders` | Apply or remove borders on a range | Write |
 | `merge_cells` | Merge a range into one cell | Write |
 | `unmerge_cells` | Split merged cells back apart | Write |
 | `format_range_advanced` | Strikethrough, text rotation, and indent | Write |
 | `set_hyperlink` | Add or remove a native cell hyperlink | Write |
 | `add_conditional_format` | Add a conditional-formatting rule | Write |
+| `apply_cell_style` | Apply a built-in named cell style | Write |
+| `add_data_validation` | Add a data-validation rule to a range | Write |
+| `clear_data_validation` | Remove data validation from a range | Write |
 
-### Tables (11)
+### Tables (13)
 
 | Tool | Description | Type |
 |---|---|---|
-| `list_tables` | List all tables in the workbook | Read |
+| `list_tables` | List Excel Tables, and flag whether PivotTables exist | Read |
 | `create_table` | Create a table from a data range | Write |
 | `insert_table` | Write data and create a styled table in one call | Write |
 | `update_table` | Change table style and display options | Write |
@@ -89,6 +101,17 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 | `add_table_row` | Add rows to a table | Write |
 | `delete_table_row` | Delete a row from a table by index | Write |
 | `add_table_column` | Add a column to a table | Write |
+| `filter_table` | Filter a table by a column | Write |
+| `clear_table_filters` | Clear filters on a table | Write |
+
+### Data Model (4)
+
+| Tool | Description | Type |
+|---|---|---|
+| `inspect_data_model` | Inspect connections, PivotTables, and all available cube measures | Write |
+| `list_pivot_tables` | List PivotTables with their zones and pinned filters | Read |
+| `get_pivot_field_layout` | Read a PivotTable's live field layout and ids | Read |
+| `refresh_pivot` | Refresh a workbook data connection | Write |
 
 ### Charts (5)
 

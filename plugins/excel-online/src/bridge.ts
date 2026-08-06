@@ -33,8 +33,66 @@ export const bridgeOutputSchema = z.object({
     .describe('Parsed EwaResult.Errors — an empty array means the operation was applied successfully.'),
 });
 
+/**
+ * Output shape for bridge calls whose payload is the point.
+ *
+ * A write only needs to report that it applied, so {@link bridgeOutputSchema}
+ * suffices; a read has to hand back what the service returned. The body is
+ * declared as an open object rather than a modelled one because `EwaResult`
+ * carries a large, method-specific `Result` whose shape differs per call — each
+ * reading tool documents the fields worth looking at in its own description.
+ */
+export const bridgeReadOutputSchema = bridgeOutputSchema.extend({
+  response: z.record(z.string(), z.unknown()).describe('The raw EwaResult returned by the service.'),
+});
+
 /** Frame global the pre-script stashes the freshest per-session AAD token into. */
 export const AAD_TOKEN_GLOBAL = '__otbEwaAadToken';
+
+/**
+ * Context keys a GET method on this service carries.
+ *
+ * GET requests put the context in the query string, and a harvested donor
+ * context varies by call site — a `Refresh` donor carries an ~88 KB flight blob
+ * that no GET needs and that would overflow a practical URL. This is the exact
+ * key set observed on live GET traffic; every one also exists in a POST context,
+ * so the donor always supplies them.
+ */
+export const EWA_GET_CONTEXT_KEYS = [
+  'WorkbookMetadataParameter',
+  'ClientRequestId',
+  'InstantaneousType',
+  'MakeInstantaneousChange',
+  'SessionId',
+  'TransientEditSessionToken',
+  'PermissionFlags',
+  'Configurations',
+  'CompleteResponseTimeout',
+  'IsWindowHidden',
+  'IsWindowVisible',
+  'CollaborationParameter',
+  'MachineCluster',
+  'AjaxOptions',
+  'ReturnSheetProcessedData',
+  'HasAnyNonOcsCoauthor',
+  'MergeCount',
+  'ClientRevisions',
+];
+
+/**
+ * The cell reference shape the pivot methods take: a single cell inside the
+ * PivotTable, zero-based, unlike the one-based coordinates the filter methods
+ * use elsewhere in this service.
+ */
+export const pivotCellRef = (worksheet: string, address: string): Record<string, unknown> => {
+  const bounds = parseBoundedRange(address);
+  return {
+    SheetName: worksheet,
+    NamedObjectName: '',
+    FirstRow: bounds.startRow,
+    FirstColumn: bounds.startCol,
+  };
+};
 
 /** The directive shape an adapter tool returns to invoke the frame-bridge engine. */
 interface BridgeDirective {
@@ -73,6 +131,10 @@ export interface EwaBridgeExtra {
    * frame, so a credential named here never crosses into the adapter.
    */
   optionsFromFrameGlobals?: Record<string, string>;
+  /** HTTP verb for the call; defaults to POST. Reads on this service are GETs. */
+  httpMethod?: 'GET' | 'POST';
+  /** Restrict the reused context to these keys — required for GET, where it travels in the URL. */
+  contextKeys?: string[];
 }
 
 /**
@@ -101,10 +163,24 @@ export const ewaBridge = (
         : {}),
       ...(extra?.contextPatch ? { contextPatch: extra.contextPatch } : {}),
       ...(extra?.optionsFromFrameGlobals ? { optionsFromFrameGlobals: extra.optionsFromFrameGlobals } : {}),
+      ...(extra?.httpMethod ? { httpMethod: extra.httpMethod } : {}),
+      ...(extra?.contextKeys ? { contextKeys: extra.contextKeys } : {}),
     },
   };
   return directive as unknown as z.infer<typeof bridgeOutputSchema>;
 };
+
+/**
+ * {@link ewaBridge} for a reading method, typed to include the service's
+ * response body. The engine returns the same object either way — this only
+ * widens the declared type for tools whose output is the payload.
+ */
+export const ewaBridgeRead = (
+  method: string,
+  options: Record<string, unknown>,
+  extra?: EwaBridgeExtra,
+): z.infer<typeof bridgeReadOutputSchema> =>
+  ewaBridge(method, options, extra) as unknown as z.infer<typeof bridgeReadOutputSchema>;
 
 /** A zero-based inclusive cell rectangle in the shape EwaInternalWebService expects. */
 export interface EwaRange {

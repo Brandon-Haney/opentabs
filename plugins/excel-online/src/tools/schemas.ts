@@ -375,6 +375,15 @@ export const connectionSchema = z.object({
   raw: z.string().describe('The full, unmodified connection string'),
 });
 
+/**
+ * Shared description for the field id, which appears on measures, hierarchies
+ * and filters alike because all three are `cacheHierarchy` entries in one list.
+ */
+const FIELD_INDEX_DESCRIPTION =
+  'Numeric id of the field within its pivot cache. This is the id every PivotTable write operation ' +
+  'addresses the field by, and it is the same number the live field layout reports as PivotCacheIndex. ' +
+  'Unlike a caption it is unambiguous, so prefer it when targeting a field.';
+
 export const pivotFilterSchema = z.object({
   caption: z.string().describe('Display name of the filter field (e.g., "Invoice Month")'),
   selected_member: z
@@ -382,6 +391,7 @@ export const pivotFilterSchema = z.object({
     .describe(
       'Unique name of the member the filter is currently pinned to (e.g., "[Calendar Table].[Invoice Month].&[JUL - 2026]"). Empty when the filter is on All or a multi-selection. A hardcoded member goes stale silently as time moves on.',
     ),
+  field_index: z.number().int().describe(`${FIELD_INDEX_DESCRIPTION} -1 when the PivotTable is not cube-backed.`),
 });
 
 export const pivotTableSchema = z.object({
@@ -401,6 +411,7 @@ export const pivotTableSchema = z.object({
 export const availableMeasureSchema = z.object({
   unique_name: z.string().describe('MDX unique name (e.g., "[Measures].[CMTD Sales]"), as GETPIVOTDATA expects it'),
   caption: z.string().describe('Display name (e.g., "CMTD Sales")'),
+  field_index: z.number().int().describe(FIELD_INDEX_DESCRIPTION),
   cache_id: z.string().describe('ID of the pivot cache that exposes this measure'),
   display_folder: z.string().describe('Folder the model groups the measure under, empty when ungrouped'),
   measure_group: z.string().describe('Measure group the measure belongs to, empty when unset'),
@@ -414,6 +425,7 @@ export const availableMeasureSchema = z.object({
 export const availableHierarchySchema = z.object({
   unique_name: z.string().describe('MDX unique name (e.g., "[Calendar Table].[Invoice Month]")'),
   caption: z.string().describe('Display name (e.g., "Invoice Month")'),
+  field_index: z.number().int().describe(FIELD_INDEX_DESCRIPTION),
   cache_id: z.string().describe('ID of the pivot cache that exposes this hierarchy'),
   dimension: z.string().describe('Unique name of the owning dimension (e.g., "[Calendar Table]")'),
   display_folder: z.string().describe('Folder the model groups the hierarchy under, empty when ungrouped'),

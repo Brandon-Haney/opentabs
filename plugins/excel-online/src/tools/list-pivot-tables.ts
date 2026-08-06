@@ -41,7 +41,11 @@ export const listPivotTables = defineTool({
         connection_name: table.connectionName,
         rows: table.rows,
         columns: table.columns,
-        filters: table.filters.map(filter => ({ caption: filter.caption, selected_member: filter.selectedMember })),
+        filters: table.filters.map(filter => ({
+          caption: filter.caption,
+          selected_member: filter.selectedMember,
+          field_index: filter.fieldIndex,
+        })),
         values: table.values,
       })),
     };

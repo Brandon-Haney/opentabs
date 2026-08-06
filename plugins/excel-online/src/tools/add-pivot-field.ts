@@ -37,7 +37,7 @@ export const addPivotField = defineTool({
   description:
     'Place a measure or hierarchy into a PivotTable zone (rows, columns, filters, or values). ' +
     'This is how a field the model exposes but the pivot does not yet show becomes readable by GETPIVOTDATA — inspect_data_model lists those as is_laid_out false. ' +
-    'Pass field_index from inspect_data_model (the measure or hierarchy index) or from get_pivot_field_layout (PivotCacheIndex); both report the same number. ' +
+    'Pass field_index from inspect_data_model, which reports it for every field the model exposes — including ones no pivot shows yet, which get_pivot_field_layout cannot list. ' +
     'field_list_version and field_well_version must be the current values from get_pivot_field_layout — they change after every modification, so read them immediately before calling. ' +
     'Adding to rows or columns is REFUSED when a GETPIVOTDATA formula reads this pivot: such formulas carry no field arguments and resolve to the grand total, so re-shaping silently changes what they return. Values and filters are always allowed — neither affects the grand total. ' +
     'Prefer a new pivot on its own sheet over re-shaping one a scorecard depends on.',
@@ -50,7 +50,9 @@ export const addPivotField = defineTool({
     field_index: z
       .number()
       .int()
-      .describe('Index of the measure or hierarchy to place, from inspect_data_model or get_pivot_field_layout'),
+      .describe(
+        'Numeric id of the measure or hierarchy to place, as field_index from inspect_data_model (or, for a field already placed, PivotCacheIndex from get_pivot_field_layout)',
+      ),
     zone: z
       .enum(['rows', 'columns', 'filters', 'values', 'default'])
       .describe('Zone to place the field into. "default" lets Excel choose, which sends a measure to Values.'),

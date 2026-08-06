@@ -1,3 +1,4 @@
+import { parseBoundedRange } from './a1.js';
 import type { OoxmlPackage } from './ooxml.js';
 
 /**
@@ -189,7 +190,20 @@ export const readConnections = async (pkg: OoxmlPackage): Promise<WorkbookConnec
 
 // --- pivot caches ---
 
-export interface CacheMeasure {
+/**
+ * Position of a `cacheHierarchy` element in its cache, in document order.
+ *
+ * This is the id every pivot write operation addresses a field by — the service
+ * calls it `PivotCacheIndex` in a field-layout response and `FieldId` in a
+ * filter request. Measures and hierarchies share one numbering because they
+ * share one element list, so the index cannot be recovered from either array's
+ * own position and has to be recorded while reading.
+ */
+export interface CacheHierarchyIndex {
+  index: number;
+}
+
+export interface CacheMeasure extends CacheHierarchyIndex {
   uniqueName: string;
   caption: string;
   displayFolder: string;
@@ -197,7 +211,7 @@ export interface CacheMeasure {
   isLaidOut: boolean;
 }
 
-export interface CacheHierarchy {
+export interface CacheHierarchy extends CacheHierarchyIndex {
   uniqueName: string;
   caption: string;
   dimension: string;
@@ -248,7 +262,12 @@ const readPivotCache = async (
   const measures: CacheMeasure[] = [];
   const hierarchies: CacheHierarchy[] = [];
 
+  // Enumerated with an explicit counter because the index is the field id the
+  // write operations take, and measures and hierarchies are split into separate
+  // arrays as they are read.
+  let index = -1;
   for (const element of doc.getElementsByTagName('cacheHierarchy')) {
+    index += 1;
     const uniqueName = element.getAttribute('uniqueName') ?? '';
     const caption = element.getAttribute('caption') ?? '';
     const displayFolder = element.getAttribute('displayFolder') ?? '';
@@ -257,6 +276,7 @@ const readPivotCache = async (
       // A measure's cacheField carries the hierarchy's own unique name verbatim,
       // so set membership is an exact test for "already in the pivot".
       measures.push({
+        index,
         uniqueName,
         caption,
         displayFolder,
@@ -274,6 +294,7 @@ const readPivotCache = async (
       Number.parseInt(usage.getAttribute('x') ?? '-1', 10),
     );
     hierarchies.push({
+      index,
       uniqueName,
       caption,
       dimension: element.getAttribute('dimensionUniqueName') ?? '',
@@ -336,6 +357,12 @@ export interface PivotFilter {
   caption: string;
   /** Unique name of the member the filter is pinned to, empty when unpinned or multi-select. */
   selectedMember: string;
+  /**
+   * The filter field's `cacheHierarchy` index, from `pageField/@hier`, which is
+   * the id a filter write addresses it by. -1 when the pivot is not cube-backed,
+   * where `@hier` does not name a hierarchy.
+   */
+  fieldIndex: number;
 }
 
 export interface PivotTableModel {
@@ -459,6 +486,7 @@ export const readPivotTables = async (pkg: OoxmlPackage, caches: PivotCacheModel
     const filters: PivotFilter[] = [...doc.getElementsByTagName('pageField')].map(field => ({
       caption: captionOfCacheField(cacheFields, Number.parseInt(field.getAttribute('fld') ?? '-1', 10)),
       selectedMember: field.getAttribute('name') ?? '',
+      fieldIndex: Number.parseInt(field.getAttribute('hier') ?? '-1', 10),
     }));
 
     const values = [...doc.getElementsByTagName('dataField')].map(
@@ -481,6 +509,46 @@ export const readPivotTables = async (pkg: OoxmlPackage, caches: PivotCacheModel
     });
   }
   return tables;
+};
+
+/**
+ * Locate the PivotTable on `worksheet`, by name when several share the sheet.
+ *
+ * Returns null rather than throwing so a caller can phrase the failure in its
+ * own terms — the useful error names the pivots that do exist.
+ */
+export const findPivotTable = (tables: PivotTableModel[], worksheet: string, name?: string): PivotTableModel | null => {
+  const onSheet = tables.filter(table => table.worksheet === worksheet);
+  if (name !== undefined) return onSheet.find(table => table.name === name) ?? null;
+  return onSheet.length === 1 ? (onSheet[0] ?? null) : null;
+};
+
+/**
+ * The cell the filter operations address a PivotTable's page-filter block by.
+ *
+ * Page filters stack in the rows directly above the pivot body, separated from
+ * it by one blank row, and share its left edge — so the block's top-left sits
+ * `filterCount + 1` rows above the anchor. The service wants that cell
+ * **one-based**, unlike the zero-based coordinates the field-layout methods
+ * take. Verified against live traffic: a pivot anchored at A4 with two page
+ * filters is addressed as row 1, column 1.
+ *
+ * Returns null when the pivot has no page filters, or when the arithmetic falls
+ * off the top of the sheet — both mean there is no block to address, and a
+ * fabricated cell would be rejected as an out-of-sync request rather than an
+ * obviously bad argument.
+ */
+export const pageFilterAnchor = (table: PivotTableModel): { row: number; column: number } | null => {
+  if (table.filters.length === 0) return null;
+  const bounds = parseBoundedRange(table.anchor);
+
+  // Converted to one-based first, so the two adjustments stay legible: the
+  // blank separator row, then one row per page filter. Doing it in zero-based
+  // terms lets the -1 and the +1 cancel, which reads like a bug.
+  const anchorRow = bounds.startRow + 1;
+  const row = anchorRow - 1 - table.filters.length;
+  if (row < 1) return null;
+  return { row, column: bounds.startCol + 1 };
 };
 
 /** True when the package contains at least one PivotTable part. */

@@ -90,6 +90,33 @@ const frameBridgeRpc = defineBrowserTool({
         'Restrict the reused `context` to these keys. Exists for GET, where the context travels in the URL and ' +
           'a donor context may carry large fields no GET needs. Omit to send the context whole.',
       ),
+    projection: z
+      .object({
+        path: z
+          .string()
+          .describe(
+            'Dot path to the value to return, relative to the parsed response. A numeric segment indexes an ' +
+              'array (e.g. "Result.Items.0.Children").',
+          ),
+        fields: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe('Output key → source key. Omit to return matched values unchanged.'),
+        flattenChildren: z
+          .string()
+          .optional()
+          .describe(
+            "Name of the key holding a node's children. When set, matched nodes are walked depth-first and " +
+              'returned as one flat list rather than a tree.',
+          ),
+      })
+      .optional()
+      .describe(
+        'Select and reshape part of the response instead of returning the whole envelope. These services wrap ' +
+          'their payload in a large envelope and nest it as a tree with many fields per node, so an unprojected ' +
+          'read of a few thousand items ships roughly a megabyte of boilerplate. Resolves to null when the path ' +
+          'does not match, which is the normal case for an errored response.',
+      ),
   }),
   handler: async (args, state) =>
     dispatchToExtension(state, 'browser.frameBridgeRpc', {
@@ -105,6 +132,7 @@ const frameBridgeRpc = defineBrowserTool({
       ...(args.optionsFromFrameGlobals ? { optionsFromFrameGlobals: args.optionsFromFrameGlobals } : {}),
       ...(args.httpMethod ? { httpMethod: args.httpMethod } : {}),
       ...(args.contextKeys ? { contextKeys: args.contextKeys } : {}),
+      ...(args.projection ? { projection: args.projection } : {}),
     }),
 });
 

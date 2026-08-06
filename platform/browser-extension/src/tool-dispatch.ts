@@ -1,6 +1,7 @@
 import { toErrorMessage } from '@opentabs-dev/shared';
 import {
   asStringMap,
+  type BridgeProjection,
   type FrameBridgeRpcParams,
   FrameBridgeValidationError,
   runFrameBridgeRpc,
@@ -350,7 +351,29 @@ interface BridgeDirective {
   httpMethod?: 'GET' | 'POST';
   /** Restrict the reused context to these keys — needed for GET, where it travels in the URL. */
   contextKeys?: string[];
+  /** Select and reshape part of the response instead of returning the whole envelope. */
+  projection?: BridgeProjection;
 }
+
+/**
+ * Narrow an untrusted value to a {@link BridgeProjection}. A projection only
+ * selects and renames parts of a response, so a malformed one cannot widen what
+ * the request does — but a bad `path` would silently return null, so the shape
+ * is checked rather than coerced.
+ */
+const asBridgeProjection = (value: unknown): BridgeProjection | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const p = value as Record<string, unknown>;
+  if (typeof p.path !== 'string' || p.path.length === 0) return undefined;
+  const fields = asStringMap(p.fields);
+  return {
+    path: p.path,
+    ...(fields ? { fields } : {}),
+    ...(typeof p.flattenChildren === 'string' && p.flattenChildren.length > 0
+      ? { flattenChildren: p.flattenChildren }
+      : {}),
+  };
+};
 
 /**
  * Extract a well-formed `__bridge` directive from an adapter output, or null
@@ -383,6 +406,7 @@ const extractBridgeDirective = (output: unknown): BridgeDirective | null => {
       ? (b.contextPatch as Record<string, unknown>)
       : undefined;
   const optionsFromFrameGlobals = asStringMap(b.optionsFromFrameGlobals);
+  const projection = asBridgeProjection(b.projection);
   return {
     method: b.method,
     frameUrlIncludes: b.frameUrlIncludes,
@@ -397,6 +421,7 @@ const extractBridgeDirective = (output: unknown): BridgeDirective | null => {
     ...(Array.isArray(b.contextKeys)
       ? { contextKeys: b.contextKeys.filter((k): k is string => typeof k === 'string') }
       : {}),
+    ...(projection ? { projection } : {}),
   };
 };
 

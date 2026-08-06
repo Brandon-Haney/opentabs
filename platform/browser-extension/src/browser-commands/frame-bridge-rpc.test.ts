@@ -6,7 +6,7 @@ import { describe, expect, test } from 'vitest';
   tabs: { onRemoved: { addListener: () => {} } },
 };
 
-const { buildQueryUrl, buildReplayHeaders, deriveTargetUrl, mergeContextFromResponse } = await import(
+const { applyProjection, buildQueryUrl, buildReplayHeaders, deriveTargetUrl, mergeContextFromResponse } = await import(
   './frame-bridge-rpc.js'
 );
 
@@ -155,5 +155,76 @@ describe('buildQueryUrl', () => {
   test('skips undefined values rather than sending the string "undefined"', () => {
     const url = new URL(buildQueryUrl(base, { fieldId: '6', missing: undefined }));
     expect(url.searchParams.has('missing')).toBe(false);
+  });
+});
+
+describe('applyProjection', () => {
+  const response = {
+    Result: {
+      Items: [
+        {
+          DisplayString: 'All',
+          Id: 1,
+          State: 2,
+          LeafItem: false,
+          Noise: 'x',
+          Children: [
+            { DisplayString: 'JUL - 2026', Id: 15, State: 0, LeafItem: true, Noise: 'x', Children: [] },
+            { DisplayString: 'AUG - 2026', Id: 16, State: 1, LeafItem: true, Noise: 'x', Children: [] },
+          ],
+        },
+      ],
+    },
+  };
+
+  test('flattens a tree into one list, keeping the selectable parent', () => {
+    expect(
+      applyProjection(response, {
+        path: 'Result.Items',
+        fields: { name: 'DisplayString', id: 'Id', state: 'State' },
+        flattenChildren: 'Children',
+      }),
+    ).toEqual([
+      { name: 'All', id: 1, state: 2 },
+      { name: 'JUL - 2026', id: 15, state: 0 },
+      { name: 'AUG - 2026', id: 16, state: 1 },
+    ]);
+  });
+
+  test('drops unlisted fields', () => {
+    const [first] = applyProjection(response, {
+      path: 'Result.Items',
+      fields: { name: 'DisplayString' },
+      flattenChildren: 'Children',
+    }) as Array<Record<string, unknown>>;
+    expect(Object.keys(first as object)).toEqual(['name']);
+  });
+
+  test('indexes arrays on a numeric path segment', () => {
+    expect(applyProjection(response, { path: 'Result.Items.0.Children.1.DisplayString' })).toBe('AUG - 2026');
+  });
+
+  test('returns matched values unchanged when no fields are given', () => {
+    const items = applyProjection(response, { path: 'Result.Items.0.Children' }) as unknown[];
+    expect(items).toHaveLength(2);
+    expect((items[0] as Record<string, unknown>).Noise).toBe('x');
+  });
+
+  test('returns null when the path does not resolve, as on an errored response', () => {
+    expect(
+      applyProjection(
+        { Result: null, Errors: [{ MessageIdName: 'PftTokenMissing' }] },
+        {
+          path: 'Result.PivotFilterItemsList.PivotFilterItems',
+          flattenChildren: 'PivotFilterItems',
+        },
+      ),
+    ).toBeNull();
+  });
+
+  test('maps a missing source key to undefined rather than failing', () => {
+    expect(
+      applyProjection(response, { path: 'Result.Items.0', fields: { name: 'DisplayString', gone: 'NoSuchKey' } }),
+    ).toEqual({ name: 'All', gone: undefined });
   });
 });

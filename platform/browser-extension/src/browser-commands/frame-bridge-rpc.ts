@@ -185,6 +185,12 @@ export interface FrameBridgeRpcParams {
    * URL length. Omit to send the context whole.
    */
   contextKeys?: string[];
+  /**
+   * Reshape the response before returning it (see {@link BridgeProjection}).
+   * Applies to the final call only — a prep call's response is consumed
+   * internally to refresh the context and never reaches the caller.
+   */
+  projection?: BridgeProjection;
 }
 
 /** Error thrown by {@link runFrameBridgeRpc} when no valid donor is available. */
@@ -308,6 +314,97 @@ export const buildQueryUrl = (targetUrl: string, payload: Record<string, unknown
     url.searchParams.set(name, JSON.stringify(value) ?? '');
   }
   return url.href;
+};
+
+/**
+ * Reshape a reading method's response before it reaches the caller.
+ *
+ * These services answer with a large envelope wrapping the payload, and the
+ * payload itself is often a lazily-nested tree carrying far more per node than
+ * a caller wants. A tool cannot trim it: the adapter returns a directive and the
+ * engine performs the call, so the handler never sees the response. Without
+ * this, a read of a few thousand items ships roughly a megabyte of mostly
+ * boilerplate to whoever called the tool.
+ */
+export interface BridgeProjection {
+  /**
+   * Dot path to the value to return, relative to the parsed response. A numeric
+   * segment indexes an array (`Result.Items.0.Children`).
+   */
+  path: string;
+  /**
+   * Output key → source key. Omit to return matched values unchanged.
+   * Keys absent from a node come back undefined rather than failing, since the
+   * service decides the payload and a partial node is more useful than none.
+   */
+  fields?: Record<string, string>;
+  /**
+   * Name of the key holding a node's children. When set, the matched nodes are
+   * walked depth-first and returned as one flat list rather than a tree — which
+   * is what a caller choosing among them actually wants, and keeps a parent that
+   * is itself selectable (an "All" row) in the result.
+   */
+  flattenChildren?: string;
+}
+
+/** Depth cap for {@link applyProjection}; far beyond any real hierarchy. */
+const MAX_FLATTEN_DEPTH = 32;
+
+/** Walk a dot path, indexing arrays on numeric segments. Undefined if any step is missing. */
+const resolvePath = (root: unknown, path: string): unknown => {
+  let current = root;
+  for (const segment of path.split('.')) {
+    if (current === null || current === undefined) return undefined;
+    if (Array.isArray(current)) {
+      const index = Number(segment);
+      if (!Number.isInteger(index)) return undefined;
+      current = current[index];
+      continue;
+    }
+    if (typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+};
+
+/** Apply a projection's field map to one node. Non-objects pass through unchanged. */
+const pickFields = (node: unknown, fields?: Record<string, string>): unknown => {
+  if (!fields || !node || typeof node !== 'object' || Array.isArray(node)) return node;
+  const source = node as Record<string, unknown>;
+  const picked: Record<string, unknown> = {};
+  for (const [outputKey, sourceKey] of Object.entries(fields)) picked[outputKey] = source[sourceKey];
+  return picked;
+};
+
+/** Depth-first flatten of `nodes` over `childKey`, projecting each node as it is visited. */
+const flattenNodes = (nodes: unknown[], projection: BridgeProjection, output: unknown[], depth: number): void => {
+  if (depth > MAX_FLATTEN_DEPTH) return;
+  for (const node of nodes) {
+    output.push(pickFields(node, projection.fields));
+    const children =
+      node && typeof node === 'object'
+        ? (node as Record<string, unknown>)[projection.flattenChildren as string]
+        : undefined;
+    if (Array.isArray(children)) flattenNodes(children, projection, output, depth + 1);
+  }
+};
+
+/**
+ * Select and reshape part of a response per {@link BridgeProjection}. Returns
+ * null when the path does not resolve — which is the normal case for an errored
+ * response, whose payload is absent and whose `errors` already say why.
+ */
+export const applyProjection = (response: unknown, projection: BridgeProjection): unknown => {
+  const selected = resolvePath(response, projection.path);
+  if (selected === undefined) return null;
+  if (projection.flattenChildren && Array.isArray(selected)) {
+    const flattened: unknown[] = [];
+    flattenNodes(selected, projection, flattened, 0);
+    return flattened;
+  }
+  return Array.isArray(selected)
+    ? selected.map(node => pickFields(node, projection.fields))
+    : pickFields(selected, projection.fields);
 };
 
 /**
@@ -451,7 +548,8 @@ export const runFrameBridgeRpc = async (params: FrameBridgeRpcParams): Promise<F
     params.httpMethod,
     params.contextKeys,
   );
-  return result;
+  if (!params.projection) return result;
+  return { ...result, response: applyProjection(result.response, params.projection) };
 };
 
 /**
@@ -494,6 +592,20 @@ export const handleBrowserFrameBridgeRpc = async (
     const contextKeys = Array.isArray(params.contextKeys)
       ? params.contextKeys.filter((k): k is string => typeof k === 'string')
       : undefined;
+    const rawProjection =
+      params.projection && typeof params.projection === 'object' && !Array.isArray(params.projection)
+        ? (params.projection as Record<string, unknown>)
+        : undefined;
+    const projection =
+      rawProjection && typeof rawProjection.path === 'string' && rawProjection.path.length > 0
+        ? ({
+            path: rawProjection.path,
+            ...(asStringMap(rawProjection.fields) ? { fields: asStringMap(rawProjection.fields) } : {}),
+            ...(typeof rawProjection.flattenChildren === 'string' && rawProjection.flattenChildren.length > 0
+              ? { flattenChildren: rawProjection.flattenChildren }
+              : {}),
+          } satisfies BridgeProjection)
+        : undefined;
 
     const result = await runFrameBridgeRpc({
       tabId,
@@ -508,6 +620,7 @@ export const handleBrowserFrameBridgeRpc = async (
       optionsFromFrameGlobals,
       httpMethod,
       contextKeys,
+      projection,
     });
     sendSuccessResult(id, result);
   } catch (err) {

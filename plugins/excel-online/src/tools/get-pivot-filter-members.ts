@@ -1,7 +1,36 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { EWA_GET_CONTEXT_KEYS, bridgeReadOutputSchema, ewaBridgeRead } from '../bridge.js';
+import { EWA_GET_CONTEXT_KEYS, type BridgeProjection, bridgeOutputSchema, ewaBridgeRead } from '../bridge.js';
 import { FILTER_DATA_SOURCE_INDEX, resolvePivotFilterTarget } from './pivot-filter-target.js';
+
+/**
+ * Return the members as a flat `[{ name, id, state }]` list.
+ *
+ * The service answers with a large envelope around a tree whose nodes each
+ * carry nine fields, three of which matter — roughly 200 bytes per member. A
+ * date filter is a few kilobytes either way, but a store or product dimension
+ * runs to thousands of members, where the unprojected response is megabytes of
+ * boilerplate and would exhaust a caller's context before it found what it
+ * wanted.
+ *
+ * Flattened rather than nested because the "All" row is itself selectable, so a
+ * caller wanting "everything" needs its id alongside the individual members.
+ */
+const MEMBER_PROJECTION: BridgeProjection = {
+  path: 'Result.PivotFilterItemsList.PivotFilterItems',
+  fields: { name: 'DisplayString', id: 'Id', state: 'State', is_leaf: 'LeafItem' },
+  flattenChildren: 'PivotFilterItems',
+};
+
+const memberSchema = z.object({
+  name: z.string().describe('Display text of the member, e.g. "JUL - 2026" or "All"'),
+  id: z
+    .number()
+    .int()
+    .describe('Id to pass to set_pivot_filter. Valid only for this filter, and only until it changes.'),
+  state: z.number().int().describe('0 selected, 1 not selected, 2 partially selected (an "All" row above a mixed set)'),
+  is_leaf: z.boolean().describe('False for a grouping row such as "All" or a level above the leaves'),
+});
 
 /**
  * Read the members of a PivotTable page filter, with the id each one is set by.
@@ -17,7 +46,7 @@ export const getPivotFilterMembers = defineTool({
   description:
     'List the members of a PivotTable page filter — every value the filter can be set to, each with the numeric id set_pivot_filter takes, and which are currently selected. ' +
     'Always call this before set_pivot_filter, and never reuse ids across filters or sessions: they are assigned per filter tree, so the same month is id 15 on one pivot and id 3 on another. Guessing selects the wrong member with no error. ' +
-    'Members arrive under `response.Result.PivotFilterItemsList.PivotFilterItems` — an "All" root whose own PivotFilterItems holds the members, each with DisplayString, Id and State (0 selected, 1 not, 2 partial). ' +
+    'Returns `response` as a flat list of {name, id, state, is_leaf}, including the selectable "All" row. Match on name; state 0 marks what is selected now. ' +
     'Reads the live session, so it reflects unsaved filter changes. ' +
     'A PftTokenMissing error means the workbook has not been allowed to query its external data this session: the user must open a PivotTable filter in Excel and answer Yes to the "Query and Refresh Data" prompt. Ask them — that consent cannot be sent from here, and retrying will not help.',
   summary: "List a page filter's members and their ids",
@@ -32,10 +61,15 @@ export const getPivotFilterMembers = defineTool({
       ),
     pivot_name: z.string().optional().describe('PivotTable name. Only needed when the worksheet hosts more than one.'),
   }),
-  output: bridgeReadOutputSchema,
+  output: bridgeOutputSchema.extend({
+    response: z
+      .array(memberSchema)
+      .nullable()
+      .describe('Every member of the filter, flattened. Null when the call failed — see `errors`.'),
+  }),
   handle: async params => {
     const target = await resolvePivotFilterTarget(params.worksheet, params.field, params.pivot_name);
-    return ewaBridgeRead(
+    return ewaBridgeRead<z.infer<typeof memberSchema>[] | null>(
       'GetPivotFilterData',
       {
         cell: target.cell,
@@ -45,7 +79,7 @@ export const getPivotFilterMembers = defineTool({
         parentId: -1,
         needConnect: true,
       },
-      { httpMethod: 'GET', contextKeys: EWA_GET_CONTEXT_KEYS },
+      { httpMethod: 'GET', contextKeys: EWA_GET_CONTEXT_KEYS, projection: MEMBER_PROJECTION },
     );
   },
 });

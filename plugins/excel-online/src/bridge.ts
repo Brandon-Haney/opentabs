@@ -181,7 +181,26 @@ interface BridgeDirective {
     prepOptions?: Record<string, unknown>;
     contextPatch?: Record<string, unknown>;
     optionsFromFrameGlobals?: Record<string, string>;
+    projection?: BridgeProjection;
   };
+}
+
+/**
+ * Selects and reshapes part of a response before it reaches the agent.
+ *
+ * A tool cannot do this itself: the handler returns a directive and the platform
+ * performs the call, so the response never passes through the handler. The
+ * service wraps its payload in a large envelope and nests it as a tree with many
+ * fields per node, so an unprojected read of a large dimension ships megabytes
+ * of boilerplate to the caller.
+ */
+export interface BridgeProjection {
+  /** Dot path to the value to return; a numeric segment indexes an array. */
+  path: string;
+  /** Output key → source key. Omit to return matched values unchanged. */
+  fields?: Record<string, string>;
+  /** Key holding a node's children; set it to flatten the tree into one list. */
+  flattenChildren?: string;
 }
 
 /**
@@ -210,6 +229,8 @@ export interface EwaBridgeExtra {
   httpMethod?: 'GET' | 'POST';
   /** Restrict the reused context to these keys — required for GET, where it travels in the URL. */
   contextKeys?: string[];
+  /** Reshape the response before the agent sees it (see {@link BridgeProjection}). */
+  projection?: BridgeProjection;
 }
 
 /**
@@ -240,6 +261,7 @@ export const ewaBridge = (
       ...(extra?.optionsFromFrameGlobals ? { optionsFromFrameGlobals: extra.optionsFromFrameGlobals } : {}),
       ...(extra?.httpMethod ? { httpMethod: extra.httpMethod } : {}),
       ...(extra?.contextKeys ? { contextKeys: extra.contextKeys } : {}),
+      ...(extra?.projection ? { projection: extra.projection } : {}),
     },
   };
   return directive as unknown as z.infer<typeof bridgeOutputSchema>;
@@ -249,13 +271,17 @@ export const ewaBridge = (
  * {@link ewaBridge} for a reading method, typed to include the service's
  * response body. The engine returns the same object either way — this only
  * widens the declared type for tools whose output is the payload.
+ *
+ * Parameterised on the response shape so a tool that passes a `projection` can
+ * declare what the projection produces, rather than the raw envelope it
+ * replaces.
  */
-export const ewaBridgeRead = (
+export const ewaBridgeRead = <Response = Record<string, unknown>>(
   method: string,
   options: Record<string, unknown>,
   extra?: EwaBridgeExtra,
-): z.infer<typeof bridgeReadOutputSchema> =>
-  ewaBridge(method, options, extra) as unknown as z.infer<typeof bridgeReadOutputSchema>;
+): z.infer<typeof bridgeOutputSchema> & { response: Response } =>
+  ewaBridge(method, options, extra) as unknown as z.infer<typeof bridgeOutputSchema> & { response: Response };
 
 /** A zero-based inclusive cell rectangle in the shape EwaInternalWebService expects. */
 export interface EwaRange {

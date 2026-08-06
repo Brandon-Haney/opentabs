@@ -170,6 +170,21 @@ export interface FrameBridgeRpcParams {
    * tool result. Values already present in `options` are overwritten.
    */
   optionsFromFrameGlobals?: Record<string, string>;
+  /**
+   * HTTP verb for the replayed call. Defaults to POST.
+   *
+   * Some methods on these services are GETs that carry the whole request —
+   * context included — in the query string rather than a body. Reading state
+   * (field lists, filter members) is commonly the GET half of the API.
+   */
+  httpMethod?: 'GET' | 'POST';
+  /**
+   * Restrict the reused `context` to these keys. Applies to both verbs but
+   * exists for GET, where the context travels in the URL: a donor context can
+   * carry large fields that no GET needs and that would overflow a practical
+   * URL length. Omit to send the context whole.
+   */
+  contextKeys?: string[];
 }
 
 /** Error thrown by {@link runFrameBridgeRpc} when no valid donor is available. */
@@ -264,6 +279,33 @@ export const mergeContextFromResponse = (context: Record<string, unknown>, r: Re
   }
 };
 
+/** Narrow a context to `keys`, preserving only those actually present. */
+const pickContextKeys = (context: Record<string, unknown>, keys?: string[]): Record<string, unknown> => {
+  if (!keys || keys.length === 0) return context;
+  const picked: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (key in context) picked[key] = context[key];
+  }
+  return picked;
+};
+
+/**
+ * Encode `{ context, ...options }` as query parameters, replacing any query the
+ * donor URL already carried apart from parameters the service routes on (which
+ * are preserved from the donor, e.g. a cluster hint).
+ *
+ * Objects and arrays are JSON-encoded; scalars are sent as their plain string
+ * form — the shape these services use for their GET methods.
+ */
+const buildQueryUrl = (targetUrl: string, payload: Record<string, unknown>): string => {
+  const url = new URL(targetUrl);
+  for (const [name, value] of Object.entries(payload)) {
+    if (value === undefined) continue;
+    url.searchParams.set(name, typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value));
+  }
+  return url.href;
+};
+
 /**
  * Replay a single method inside the embedded frame using the reused `context`.
  * Refreshes `ClientRequestId` per call. Returns the parsed result plus the raw
@@ -277,12 +319,28 @@ const replayMethod = async (
   method: string,
   context: Record<string, unknown>,
   options: Record<string, unknown>,
+  httpMethod: 'GET' | 'POST' = 'POST',
+  contextKeys?: string[],
 ): Promise<{ result: FrameBridgeRpcResult; ewaResult?: Record<string, unknown> }> => {
   if ('ClientRequestId' in context) context.ClientRequestId = crypto.randomUUID();
   const headers = buildReplayHeaders(donor.requestHeaders);
   const targetUrl = deriveTargetUrl(donor.url, harvestUrlIncludes, method);
-  const body = JSON.stringify({ context, ...options });
-  const fr = await fetchInFrame(tabId, frameUrlIncludes, { url: targetUrl, method: 'POST', headers, body });
+  const sentContext = pickContextKeys(context, contextKeys);
+
+  const fr =
+    httpMethod === 'GET'
+      ? await fetchInFrame(tabId, frameUrlIncludes, {
+          url: buildQueryUrl(targetUrl, { context: sentContext, ...options }),
+          method: 'GET',
+          headers,
+        })
+      : await fetchInFrame(tabId, frameUrlIncludes, {
+          url: targetUrl,
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ context: sentContext, ...options }),
+        });
+
   const { response, errors, ewaResult } = parseEwaResult(fr.body);
   return { result: { frameId: fr.frameId, status: fr.status, ok: fr.ok, errors, response }, ewaResult };
 };
@@ -378,7 +436,17 @@ export const runFrameBridgeRpc = async (params: FrameBridgeRpcParams): Promise<F
   }
 
   // 4. Replay the commit.
-  const { result } = await replayMethod(tabId, frameUrlIncludes, harvestUrlIncludes, donor, method, context, options);
+  const { result } = await replayMethod(
+    tabId,
+    frameUrlIncludes,
+    harvestUrlIncludes,
+    donor,
+    method,
+    context,
+    options,
+    params.httpMethod,
+    params.contextKeys,
+  );
   return result;
 };
 
@@ -418,6 +486,10 @@ export const handleBrowserFrameBridgeRpc = async (
         ? (params.contextPatch as Record<string, unknown>)
         : undefined;
     const optionsFromFrameGlobals = asStringMap(params.optionsFromFrameGlobals);
+    const httpMethod = params.httpMethod === 'GET' ? 'GET' : undefined;
+    const contextKeys = Array.isArray(params.contextKeys)
+      ? params.contextKeys.filter((k): k is string => typeof k === 'string')
+      : undefined;
 
     const result = await runFrameBridgeRpc({
       tabId,
@@ -430,6 +502,8 @@ export const handleBrowserFrameBridgeRpc = async (
       prepOptions,
       contextPatch,
       optionsFromFrameGlobals,
+      httpMethod,
+      contextKeys,
     });
     sendSuccessResult(id, result);
   } catch (err) {

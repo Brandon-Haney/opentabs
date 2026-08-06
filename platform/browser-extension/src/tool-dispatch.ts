@@ -346,6 +346,10 @@ interface BridgeDirective {
    * host page or the adapter.
    */
   optionsFromFrameGlobals?: Record<string, string>;
+  /** HTTP verb for the replayed call; defaults to POST. */
+  httpMethod?: 'GET' | 'POST';
+  /** Restrict the reused context to these keys — needed for GET, where it travels in the URL. */
+  contextKeys?: string[];
 }
 
 /**
@@ -389,6 +393,10 @@ const extractBridgeDirective = (output: unknown): BridgeDirective | null => {
     ...(prepOptions ? { prepOptions } : {}),
     ...(contextPatch ? { contextPatch } : {}),
     ...(optionsFromFrameGlobals ? { optionsFromFrameGlobals } : {}),
+    ...(b.httpMethod === 'GET' ? { httpMethod: 'GET' as const } : {}),
+    ...(Array.isArray(b.contextKeys)
+      ? { contextKeys: b.contextKeys.filter((k): k is string => typeof k === 'string') }
+      : {}),
   };
 };
 

@@ -65,6 +65,31 @@ const frameBridgeRpc = defineBrowserTool({
         'Top-level fields to shallow-merge into the reused `context` before replaying (e.g. a ' +
           '`ViewportStateChange` selection a selection-scoped method needs but a poll donor lacks).',
       ),
+    optionsFromFrameGlobals: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe(
+        'Option values the embedded frame owns rather than the caller, as `{ optionName: frameGlobalName }`. ' +
+          'Each named global is read from the frame and merged into `options` before the replay. Use this for ' +
+          'values only the embedded app can mint — an Office `Refresh`, for example, requires a per-session AAD ' +
+          'token that exists solely inside the document frame. The value never crosses into the host page, the ' +
+          'adapter, or the tool result. A named global that is unset fails with a message identifying it.',
+      ),
+    httpMethod: z
+      .enum(['GET', 'POST'])
+      .optional()
+      .describe(
+        'HTTP verb for the replayed call (default POST). Some methods on these services are GETs that carry ' +
+          'the whole request, context included, in the query string — reading state (field lists, filter ' +
+          'members) is commonly the GET half of the API.',
+      ),
+    contextKeys: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Restrict the reused `context` to these keys. Exists for GET, where the context travels in the URL and ' +
+          'a donor context may carry large fields no GET needs. Omit to send the context whole.',
+      ),
   }),
   handler: async (args, state) =>
     dispatchToExtension(state, 'browser.frameBridgeRpc', {
@@ -77,6 +102,9 @@ const frameBridgeRpc = defineBrowserTool({
       ...(args.prepMethod ? { prepMethod: args.prepMethod } : {}),
       ...(args.prepOptions ? { prepOptions: args.prepOptions } : {}),
       ...(args.contextPatch ? { contextPatch: args.contextPatch } : {}),
+      ...(args.optionsFromFrameGlobals ? { optionsFromFrameGlobals: args.optionsFromFrameGlobals } : {}),
+      ...(args.httpMethod ? { httpMethod: args.httpMethod } : {}),
+      ...(args.contextKeys ? { contextKeys: args.contextKeys } : {}),
     }),
 });
 

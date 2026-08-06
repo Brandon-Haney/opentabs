@@ -260,9 +260,60 @@ pivotFieldApplyData: {
 
 `FieldListVersion` and `FieldWellVersion` increment on every operation (observed 1→3→6
 and 1→4→8) — they are optimistic-concurrency counters, so a caller must read the
-current values rather than assume. **`DestinationAxis` for Columns and Values is not
-yet observed**; only default (-1), Rows (1) and Filters (4) are confirmed. Do not guess
-the other two — capture them.
+current values rather than assume. `GetPivotFieldManagerData` returns both.
+
+**`DestinationAxis` is a bit-flag enum, now fully observed:**
+
+| Value | Zone |
+| --- | --- |
+| `1` | Rows |
+| `2` | Columns |
+| `4` | Filters (page) |
+| `8` | Values (data) |
+| `0` | Removed — paired with `SourceAxis` set to the zone it left, and a *negative* `ItemIndex` |
+| `-1` | Default placement (a measure dropped without a target lands in Values) |
+
+`ItemType` is `3` for a measure, `5` for a hierarchy/field, and `0` on a removal.
+
+**`GetPivotFieldManagerData`** (GET) is the key lookup — it returns the field well as
+`RowAxis` / `ColumnAxis` / `FilterAxis` / `DataAxis`, each entry carrying `Name` and
+`PivotCacheIndex`, plus the current `FieldListVersion` / `FieldWellVersion`:
+
+```
+cell={"SheetName","NamedObjectName","FirstRow","FirstColumn"}   // 0-based
+dataSourceIndex=<n>  optionalPivotAnchorParameter={"AnchorType":0}  type=1  version=<n>
+```
+
+**`PivotCacheIndex` is the `cacheHierarchy` index** — the same number
+`inspect_data_model` already parses out of the pivot cache, and the same number
+`ApplyFilter` wants as `FieldId`. Confirmed on live data: `CMTD Sales` →
+`PivotCacheIndex 307` matches the OOXML `hierarchy="307"`, and a filter field →
+`PivotCacheIndex 6` matches the `FieldId: "6"` a captured `ApplyFilter` sent. So field
+resolution does not need the lazily-grouped field list at all; the workbook package
+already carries the ids.
+
+**`GetPivotFilterData`** (GET) returns the member tree for one filter field, which is
+what turns a member *name* into the numeric id `ApplyFilter`'s `checkedItems` takes:
+
+```
+cell={…}  dataSourceIndex=<n>  optionalPivotAnchorParameter={"AnchorType":0,"ChartId":null,"AnchorValue1":-1,"AnchorValue2":-1}
+fieldId="<n>"        // JSON-quoted, i.e. the literal characters "6"
+parentId=-1  needConnect=true
+```
+
+Response: `Result.PivotFilterItemsList.PivotFilterItems` — a tree whose root is the
+"All" member (`Id: 1`) with the real members nested under its own `PivotFilterItems`,
+each `{ DisplayString, Id, State, LeafItem }`. `ApplyFilter` then takes
+`checkedItems: ["<Id>"]`. Verified end to end: switching a month filter and switching
+back produced `["16"]` then `["15"]`, matching the two members' ids exactly.
+
+**Open — `PftTokenMissing`.** Replaying `GetPivotFilterData` through the bridge returns
+HTTP 200 but an `EwaResult` error of `PftTokenMissing` ("Please refresh the page"),
+while `GetPivotFieldManagerData` replays cleanly over the same GET path. GET and POST
+carry byte-identical header *sets* (including the `x-key` token), so it is not a missing
+header. The prime suspect is `needConnect=true`, which asks the server to open a live
+connection to the external model — the one parameter that distinguishes it from the
+field-manager call. Try `needConnect=false` first.
 
 **Creating a PivotTable does not use a bespoke EWA method at all.** It goes through
 `ExecuteRichApiRequest`, which tunnels the Office.js object model over the same

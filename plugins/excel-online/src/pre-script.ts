@@ -30,6 +30,18 @@ import { definePreScript } from '@opentabs-dev/plugin-sdk/pre-script';
 
 /** Frame global the frame-bridge engine reads the freshest donor request from. */
 const EWA_DONOR_GLOBAL = '__otbEwaDonor';
+/**
+ * Frame global holding the freshest per-session AAD token seen on an EWA request.
+ *
+ * `Refresh` requires a `userAadToken` — the credential that lets the server
+ * re-query an external model on the user's behalf — and rejects the call without
+ * one. Excel mints it inside this frame and sends it on no other method, so it
+ * is harvested here and read back by the frame-bridge engine's
+ * `optionsFromFrameGlobals`. It stays in the frame throughout: it is never
+ * posted to the host page, never reaches the adapter, and never appears in a
+ * tool result.
+ */
+const EWA_AAD_TOKEN_GLOBAL = '__otbEwaAadToken';
 /** Substring identifying the internal RPC endpoint whose requests we harvest. */
 const EWA_URL_MARKER = 'EwaInternalWebService.json/';
 /** Markers making the EWA interceptor idempotent under re-injection. */
@@ -91,11 +103,31 @@ const installEwaDonorInterceptor = (log: {
     fetch: typeof fetch & { [EWA_FETCH_MARKER]?: true };
     XMLHttpRequest: typeof XMLHttpRequest;
     [EWA_DONOR_GLOBAL]?: EwaDonor;
+    [EWA_AAD_TOKEN_GLOBAL]?: string;
+  };
+
+  /**
+   * Harvest the per-session AAD token an EWA request carries, if it has one.
+   * Only a few methods include it, so this is kept separate from the donor: the
+   * donor is replaced by every qualifying request, whereas the token must
+   * survive until it expires or a fresher one arrives.
+   */
+  const stashAadToken = (requestBody: string): void => {
+    try {
+      if (!requestBody.includes('"userAadToken"')) return;
+      const parsed = JSON.parse(requestBody) as { userAadToken?: unknown };
+      if (typeof parsed.userAadToken === 'string' && parsed.userAadToken.length > 0) {
+        g[EWA_AAD_TOKEN_GLOBAL] = parsed.userAadToken;
+      }
+    } catch {
+      /* malformed body — nothing to harvest */
+    }
   };
 
   const stash = (url: string, requestHeaders: Record<string, string>, requestBody: string): void => {
     try {
       if (!url.includes(EWA_URL_MARKER)) return;
+      stashAadToken(requestBody);
       if (!requestBody.includes('"context"')) return;
       g[EWA_DONOR_GLOBAL] = { url, requestHeaders, requestBody, ts: Date.now() };
     } catch {

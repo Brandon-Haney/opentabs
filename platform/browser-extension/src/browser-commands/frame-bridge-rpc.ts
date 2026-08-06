@@ -94,32 +94,34 @@ const asCapturedDonor = (value: unknown): CapturedDonor | null => {
 };
 
 /**
- * Read the donor global from the child frame whose URL contains
- * `frameUrlIncludes`. Runs in the frame's MAIN world (same realm the pre-script
- * interceptor wrote into). Returns the donor, or null when the frame is not yet
- * present or has not captured a request.
+ * Read named globals out of the child frame whose URL contains
+ * `frameUrlIncludes`. Runs in the frame's MAIN world — the same realm the
+ * pre-script interceptor writes into. Returns a name→value map, or null when no
+ * matching frame is present.
+ *
+ * Every global is read in one probe so the donor and any values keyed to it come
+ * from a single snapshot of the frame rather than drifting between round trips.
  */
-const readDonorFromFrame = async (
+const readFrameGlobals = async (
   tabId: number,
   frameUrlIncludes: string,
-  donorGlobal: string,
-): Promise<CapturedDonor | null> => {
+  globalNames: string[],
+): Promise<Record<string, unknown> | null> => {
   const probe = await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
     world: 'MAIN',
-    func: (globalName: string) => ({
+    func: (names: string[]) => ({
       href: location.href,
-      donor: (globalThis as Record<string, unknown>)[globalName] ?? null,
+      values: Object.fromEntries(names.map(name => [name, (globalThis as Record<string, unknown>)[name] ?? null])),
     }),
-    args: [donorGlobal],
+    args: [globalNames],
   });
   const match = probe.find(frame => {
     const r = frame.result as { href?: string } | undefined;
     return typeof r?.href === 'string' && r.href.includes(frameUrlIncludes);
   });
   if (!match) return null;
-  const donor = (match.result as { donor?: unknown } | undefined)?.donor;
-  return asCapturedDonor(donor);
+  return (match.result as { values?: Record<string, unknown> } | undefined)?.values ?? {};
 };
 
 /** Parsed outcome of a frame-bridge RPC invocation. */
@@ -156,10 +158,35 @@ export interface FrameBridgeRpcParams {
    * requires but a poll-sourced donor context lacks. Shallow-merged.
    */
   contextPatch?: Record<string, unknown>;
+  /**
+   * Option fields whose values live in the frame rather than in the caller,
+   * given as `{ optionName: frameGlobalName }`. Each named global is read from
+   * the embedded frame and merged into `options` before the replay.
+   *
+   * This exists for values a method requires that only the embedded app can
+   * mint — an Office `Refresh`, for instance, requires a per-session AAD token
+   * that exists solely inside the document frame. Routing it this way keeps the
+   * credential in the frame: it never reaches the host page, the adapter, or a
+   * tool result. Values already present in `options` are overwritten.
+   */
+  optionsFromFrameGlobals?: Record<string, string>;
 }
 
 /** Error thrown by {@link runFrameBridgeRpc} when no valid donor is available. */
 export class FrameBridgeValidationError extends Error {}
+
+/**
+ * Narrow an untrusted value to a plain `Record<string, string>`, dropping any
+ * entry whose value is not a string. Returns undefined when nothing usable
+ * remains, so callers can treat "absent" and "empty" identically.
+ */
+export const asStringMap = (value: unknown): Record<string, string> | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>).filter(
+    (entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].length > 0,
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+};
 
 /** Parse an EwaResult response body into `{ response, errors, ewaResult }`. */
 const parseEwaResult = (
@@ -280,21 +307,44 @@ const replayMethod = async (
  */
 export const runFrameBridgeRpc = async (params: FrameBridgeRpcParams): Promise<FrameBridgeRpcResult> => {
   const { tabId, frameUrlIncludes, harvestUrlIncludes, method } = params;
-  const options = params.options ?? {};
+  // Copied, not aliased: frame-sourced values are merged in below and the
+  // caller's object must not be mutated.
+  const options = { ...(params.options ?? {}) };
   const donorGlobal = params.donorGlobal ?? DEFAULT_DONOR_GLOBAL;
 
-  // 1. Poll the frame global until the interceptor has captured a donor.
-  let donor = await readDonorFromFrame(tabId, frameUrlIncludes, donorGlobal);
+  // Read the donor and any frame-sourced option values from the same snapshot.
+  const fromFrameGlobals = params.optionsFromFrameGlobals ?? {};
+  const globalNames = [donorGlobal, ...Object.values(fromFrameGlobals)];
+
+  // 1. Poll the frame globals until the interceptor has captured a donor.
+  let frameValues = await readFrameGlobals(tabId, frameUrlIncludes, globalNames);
+  let donor = asCapturedDonor(frameValues?.[donorGlobal]);
   const deadline = Date.now() + HARVEST_TIMEOUT_MS;
   while (!donor && Date.now() < deadline) {
     await sleep(HARVEST_POLL_MS);
-    donor = await readDonorFromFrame(tabId, frameUrlIncludes, donorGlobal);
+    frameValues = await readFrameGlobals(tabId, frameUrlIncludes, globalNames);
+    donor = asCapturedDonor(frameValues?.[donorGlobal]);
   }
   if (!donor) {
     throw new FrameBridgeValidationError(
       `No donor request was captured in the frame matching "${frameUrlIncludes}" within ${HARVEST_TIMEOUT_MS}ms. ` +
         `Is the app tab open and active, and does its pre-script interceptor stash into "${donorGlobal}"?`,
     );
+  }
+
+  // Merge frame-sourced values into the options. A missing one is reported by
+  // name: the alternative is a request that the server rejects with an opaque
+  // error, which is far harder to act on.
+  for (const [optionName, globalName] of Object.entries(fromFrameGlobals)) {
+    const value = frameValues?.[globalName];
+    if (value === undefined || value === null) {
+      throw new FrameBridgeValidationError(
+        `The frame matching "${frameUrlIncludes}" has not set "${globalName}", which supplies the ` +
+          `"${optionName}" option for "${method}". This value is produced by the embedded app itself, so it ` +
+          `only becomes available once the app has performed the corresponding action at least once this session.`,
+      );
+    }
+    options[optionName] = value;
   }
 
   // 2. Reuse the donor's context.
@@ -367,6 +417,7 @@ export const handleBrowserFrameBridgeRpc = async (
       params.contextPatch && typeof params.contextPatch === 'object' && !Array.isArray(params.contextPatch)
         ? (params.contextPatch as Record<string, unknown>)
         : undefined;
+    const optionsFromFrameGlobals = asStringMap(params.optionsFromFrameGlobals);
 
     const result = await runFrameBridgeRpc({
       tabId,
@@ -378,6 +429,7 @@ export const handleBrowserFrameBridgeRpc = async (
       prepMethod,
       prepOptions,
       contextPatch,
+      optionsFromFrameGlobals,
     });
     sendSuccessResult(id, result);
   } catch (err) {

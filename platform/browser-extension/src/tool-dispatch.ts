@@ -1,5 +1,6 @@
 import { toErrorMessage } from '@opentabs-dev/shared';
 import {
+  asStringMap,
   type FrameBridgeRpcParams,
   FrameBridgeValidationError,
   runFrameBridgeRpc,
@@ -338,6 +339,13 @@ interface BridgeDirective {
   prepMethod?: string;
   prepOptions?: Record<string, unknown>;
   contextPatch?: Record<string, unknown>;
+  /**
+   * `{ optionName: frameGlobalName }` for option values the embedded frame owns
+   * rather than the adapter — a per-session credential the app mints, for
+   * instance. The engine reads them in the frame, so they never cross into the
+   * host page or the adapter.
+   */
+  optionsFromFrameGlobals?: Record<string, string>;
 }
 
 /**
@@ -370,6 +378,7 @@ const extractBridgeDirective = (output: unknown): BridgeDirective | null => {
     b.contextPatch && typeof b.contextPatch === 'object' && !Array.isArray(b.contextPatch)
       ? (b.contextPatch as Record<string, unknown>)
       : undefined;
+  const optionsFromFrameGlobals = asStringMap(b.optionsFromFrameGlobals);
   return {
     method: b.method,
     frameUrlIncludes: b.frameUrlIncludes,
@@ -379,6 +388,7 @@ const extractBridgeDirective = (output: unknown): BridgeDirective | null => {
     ...(typeof b.prepMethod === 'string' && b.prepMethod.length > 0 ? { prepMethod: b.prepMethod } : {}),
     ...(prepOptions ? { prepOptions } : {}),
     ...(contextPatch ? { contextPatch } : {}),
+    ...(optionsFromFrameGlobals ? { optionsFromFrameGlobals } : {}),
   };
 };
 

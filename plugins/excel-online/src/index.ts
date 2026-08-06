@@ -50,6 +50,7 @@ import { listWorksheets } from './tools/list-worksheets.js';
 import { mergeCells } from './tools/merge-cells.js';
 import { protectWorksheet } from './tools/protect-worksheet.js';
 import { reauthenticate } from './tools/reauthenticate.js';
+import { refreshPivot } from './tools/refresh-pivot.js';
 import { removeDuplicates } from './tools/remove-duplicates.js';
 import { setBorders } from './tools/set-borders.js';
 import { setDimensions } from './tools/set-dimensions.js';
@@ -130,6 +131,7 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     // workbook API exposes no PivotTable, connection, or pivot-cache surface.
     inspectDataModel,
     listPivotTables,
+    refreshPivot,
     // Charts
     listCharts,
     createChart,

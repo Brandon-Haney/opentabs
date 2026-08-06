@@ -33,6 +33,9 @@ export const bridgeOutputSchema = z.object({
     .describe('Parsed EwaResult.Errors — an empty array means the operation was applied successfully.'),
 });
 
+/** Frame global the pre-script stashes the freshest per-session AAD token into. */
+export const AAD_TOKEN_GLOBAL = '__otbEwaAadToken';
+
 /** The directive shape an adapter tool returns to invoke the frame-bridge engine. */
 interface BridgeDirective {
   __bridge: {
@@ -44,6 +47,7 @@ interface BridgeDirective {
     prepMethod?: string;
     prepOptions?: Record<string, unknown>;
     contextPatch?: Record<string, unknown>;
+    optionsFromFrameGlobals?: Record<string, string>;
   };
 }
 
@@ -63,6 +67,12 @@ export interface EwaBridgeExtra {
   prep?: EwaPrep;
   /** Top-level context fields to patch in before replaying (e.g. {@link viewportSelection}). */
   contextPatch?: Record<string, unknown>;
+  /**
+   * Option values sourced from frame globals rather than from the adapter, as
+   * `{ optionName: frameGlobalName }`. The engine reads them inside the Office
+   * frame, so a credential named here never crosses into the adapter.
+   */
+  optionsFromFrameGlobals?: Record<string, string>;
 }
 
 /**
@@ -90,6 +100,7 @@ export const ewaBridge = (
         ? { prepMethod: extra.prep.method, ...(extra.prep.options ? { prepOptions: extra.prep.options } : {}) }
         : {}),
       ...(extra?.contextPatch ? { contextPatch: extra.contextPatch } : {}),
+      ...(extra?.optionsFromFrameGlobals ? { optionsFromFrameGlobals: extra.optionsFromFrameGlobals } : {}),
     },
   };
   return directive as unknown as z.infer<typeof bridgeOutputSchema>;

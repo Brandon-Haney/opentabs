@@ -278,6 +278,164 @@ describe('Network.loadingFinished', () => {
   });
 });
 
+describe('deferred request-body fetch', () => {
+  /** Names of the CDP commands sendCommand was asked to run, in order. */
+  const commandsIssued = (mock: ReturnType<typeof vi.fn>): string[] => mock.mock.calls.map(call => call[1] as string);
+
+  test('fetches the request body when the protocol did not inline it', async () => {
+    const tabId = 2010;
+    await startCapture(tabId);
+
+    const chromeMock = (globalThis as Record<string, unknown>).chrome as {
+      debugger: { sendCommand: ReturnType<typeof vi.fn> };
+    };
+    chromeMock.debugger.sendCommand.mockClear();
+
+    // The post-data fetch is issued first, so it claims the first mock slot.
+    let capturedPostDataCallback: ((result: unknown) => void) | undefined;
+    chromeMock.debugger.sendCommand.mockImplementationOnce(
+      (_target: unknown, _method: unknown, _params: unknown, callback?: (result: unknown) => void) => {
+        capturedPostDataCallback = callback;
+      },
+    );
+
+    // A POST whose `postData` Chrome declined to inline — only `hasPostData` is set.
+    capturedOnEventListener?.({ tabId }, 'Network.requestWillBeSent', {
+      requestId: 'req-postdata-1',
+      request: { url: 'https://example.com/rpc', method: 'POST', headers: {}, hasPostData: true },
+    });
+    capturedOnEventListener?.({ tabId }, 'Network.responseReceived', {
+      requestId: 'req-postdata-1',
+      response: { url: 'https://example.com/rpc', status: 200, statusText: 'OK', headers: {}, mimeType: 'text/plain' },
+    });
+    capturedOnEventListener?.({ tabId }, 'Network.loadingFinished', { requestId: 'req-postdata-1' });
+
+    expect(commandsIssued(chromeMock.debugger.sendCommand)).toContain('Network.getRequestPostData');
+
+    capturedPostDataCallback?.({ postData: '{"method":"DoThing"}' });
+
+    const requests = getRequests(tabId, false);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toHaveProperty('requestBody', '{"method":"DoThing"}');
+
+    stopCapture(tabId);
+  });
+
+  test('does not refetch a body the protocol already inlined', async () => {
+    const tabId = 2011;
+    await startCapture(tabId);
+
+    const chromeMock = (globalThis as Record<string, unknown>).chrome as {
+      debugger: { sendCommand: ReturnType<typeof vi.fn> };
+    };
+    chromeMock.debugger.sendCommand.mockClear();
+
+    capturedOnEventListener?.({ tabId }, 'Network.requestWillBeSent', {
+      requestId: 'req-postdata-2',
+      request: { url: 'https://example.com/rpc', method: 'POST', headers: {}, postData: 'already-here' },
+    });
+    capturedOnEventListener?.({ tabId }, 'Network.responseReceived', {
+      requestId: 'req-postdata-2',
+      response: { url: 'https://example.com/rpc', status: 200, statusText: 'OK', headers: {}, mimeType: 'text/plain' },
+    });
+    capturedOnEventListener?.({ tabId }, 'Network.loadingFinished', { requestId: 'req-postdata-2' });
+
+    expect(commandsIssued(chromeMock.debugger.sendCommand)).not.toContain('Network.getRequestPostData');
+    expect(getRequests(tabId, false)[0]).toHaveProperty('requestBody', 'already-here');
+
+    stopCapture(tabId);
+  });
+
+  test('does not fetch a body for methods that do not carry one', async () => {
+    const tabId = 2012;
+    await startCapture(tabId);
+
+    const chromeMock = (globalThis as Record<string, unknown>).chrome as {
+      debugger: { sendCommand: ReturnType<typeof vi.fn> };
+    };
+    chromeMock.debugger.sendCommand.mockClear();
+
+    capturedOnEventListener?.({ tabId }, 'Network.requestWillBeSent', {
+      requestId: 'req-postdata-3',
+      request: { url: 'https://example.com/asset.js', method: 'GET', headers: {} },
+    });
+    capturedOnEventListener?.({ tabId }, 'Network.responseReceived', {
+      requestId: 'req-postdata-3',
+      response: {
+        url: 'https://example.com/asset.js',
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        mimeType: 'text/javascript',
+      },
+    });
+    capturedOnEventListener?.({ tabId }, 'Network.loadingFinished', { requestId: 'req-postdata-3' });
+
+    expect(commandsIssued(chromeMock.debugger.sendCommand)).not.toContain('Network.getRequestPostData');
+
+    stopCapture(tabId);
+  });
+
+  test('does not write a body to a request evicted from the buffer', async () => {
+    const tabId = 2013;
+    // maxRequests=1 so the second request evicts the first.
+    await startCapture(tabId, 1);
+
+    const chromeMock = (globalThis as Record<string, unknown>).chrome as {
+      debugger: { sendCommand: ReturnType<typeof vi.fn> };
+    };
+    chromeMock.debugger.sendCommand.mockClear();
+
+    let capturedPostDataCallback: ((result: unknown) => void) | undefined;
+    chromeMock.debugger.sendCommand.mockImplementationOnce(
+      (_target: unknown, _method: unknown, _params: unknown, callback?: (result: unknown) => void) => {
+        capturedPostDataCallback = callback;
+      },
+    );
+
+    capturedOnEventListener?.({ tabId }, 'Network.requestWillBeSent', {
+      requestId: 'req-postdata-evict-1',
+      request: { url: 'https://example.com/first', method: 'POST', headers: {}, hasPostData: true },
+    });
+    capturedOnEventListener?.({ tabId }, 'Network.responseReceived', {
+      requestId: 'req-postdata-evict-1',
+      response: {
+        url: 'https://example.com/first',
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        mimeType: 'text/plain',
+      },
+    });
+    capturedOnEventListener?.({ tabId }, 'Network.loadingFinished', { requestId: 'req-postdata-evict-1' });
+
+    // A second request pushes the first out of the buffer before the fetch resolves.
+    capturedOnEventListener?.({ tabId }, 'Network.requestWillBeSent', {
+      requestId: 'req-postdata-evict-2',
+      request: { url: 'https://example.com/second', method: 'GET', headers: {} },
+    });
+    capturedOnEventListener?.({ tabId }, 'Network.responseReceived', {
+      requestId: 'req-postdata-evict-2',
+      response: {
+        url: 'https://example.com/second',
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        mimeType: 'text/plain',
+      },
+    });
+
+    capturedPostDataCallback?.({ postData: 'body-for-evicted-request' });
+
+    const requests = getRequests(tabId, false);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toHaveProperty('url', 'https://example.com/second');
+    expect(requests.some(r => (r as { requestBody?: string }).requestBody === 'body-for-evicted-request')).toBe(false);
+
+    stopCapture(tabId);
+  });
+});
+
 describe('Network.webSocketClosed', () => {
   test('deletes the requestId entry from wsFramesByRequestId on close', async () => {
     const tabId = 3001;

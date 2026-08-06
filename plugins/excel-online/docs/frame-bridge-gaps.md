@@ -189,20 +189,28 @@ Existence can be probed without knowing the arguments: an unrouted method answer
 `RefreshAll`, `GetPivotTableInfo`, `SetPivotFilter`, `ApplyPivotFilter`,
 `RefreshSelectedConnection` and `PivotFieldDrop` all 401 — they do not exist.
 
-**Decoded — `ApplyFilter`** (pivot page filter):
+**Decoded — `ApplyFilter`** (pivot page filter), verified end to end 2026-08-06:
 
 ```
 parameters: {
-  Location: { SheetName, NamedObjectName: "None",
-              FirstRow: "1", FirstColumn: "1", LastRow: "1", LastColumn: "1" },
-  IsPivotFilter: "True",          // what separates this from a plain-range filter
-  FieldId: "6",                   // index of the pivot field
-  DataSourceIndex: "1",
-  HierarchyLevel: "1",
-  AnchorType: "0", ChartId: "None", AnchorValue1: "-1", AnchorValue2: "-1"
+  Location: { SheetName, NamedObjectName: null,
+              FirstRow: 1, FirstColumn: 1, LastRow: 1, LastColumn: 1 },
+  IsPivotFilter: true,            // what separates this from a plain-range filter
+  FieldId: "6",                   // cacheHierarchy index, as a JSON string
+  DataSourceIndex: 1,
+  HierarchyLevel: 1,
+  AnchorType: 0, ChartId: null, AnchorValue1: -1, AnchorValue2: -1
 }
-checkedItems: ["16"]              // member indices, not member names
+checkedItems: ["12","15","16"]    // member ids, not names; several selects several
 ```
+
+`Location` is **not** free-form: it addresses the page-filter block's top-left cell,
+**one-based**, and the service answers `RetryOutOfSync` for any other cell — sending the
+pivot's own anchor row fails. Page filters stack in the rows directly above the pivot
+body with one blank row between, sharing its left edge, so for a pivot anchored at `A4`
+with two page filters the block starts at `A1` → `FirstRow: 1, FirstColumn: 1`. Confirmed
+against the sheet itself: `A1`/`A2` hold the filter captions and `B1`/`B2` their values.
+`pageFilterAnchor` in `pivot-model.ts` derives it as `anchorRow - 1 - filterCount`.
 
 `GetPivotTableCellInfo` takes `activeCell: { SheetName, NamedObjectName: "", FirstRow,
 FirstColumn }`. Pivot coordinates here are **1-based**, matching the plain-range filter
@@ -303,17 +311,42 @@ parentId=-1  needConnect=true
 
 Response: `Result.PivotFilterItemsList.PivotFilterItems` — a tree whose root is the
 "All" member (`Id: 1`) with the real members nested under its own `PivotFilterItems`,
-each `{ DisplayString, Id, State, LeafItem }`. `ApplyFilter` then takes
-`checkedItems: ["<Id>"]`. Verified end to end: switching a month filter and switching
-back produced `["16"]` then `["15"]`, matching the two members' ids exactly.
+each `{ DisplayString, Id, State, LeafItem }`. `State` is `0` selected, `1` not selected,
+`2` partially selected. `ApplyFilter` then takes `checkedItems: ["<Id>"]`.
 
-**Open — `PftTokenMissing`.** Replaying `GetPivotFilterData` through the bridge returns
-HTTP 200 but an `EwaResult` error of `PftTokenMissing` ("Please refresh the page"),
-while `GetPivotFieldManagerData` replays cleanly over the same GET path. GET and POST
-carry byte-identical header *sets* (including the `x-key` token), so it is not a missing
-header. The prime suspect is `needConnect=true`, which asks the server to open a live
-connection to the external model — the one parameter that distinguishes it from the
-field-manager call. Try `needConnect=false` first.
+**Ids follow the model's ordering, not the displayed order**, so they cannot be inferred
+from position: on a live month filter `JUN - 2026` is 12, `JUL - 2026` is 15, `AUG - 2026`
+is 16 and `SEP - 2025` is 18. Anything that guesses an id selects the wrong member and
+reports success, which is why `set_pivot_filter` takes ids from
+`get_pivot_filter_members` rather than accepting a member name it would have to resolve
+itself — a tool gets one bridge call, so the lookup cannot be folded into the write.
+
+`parentId` must be `-1`; passing a member id to fetch a subtree answers
+`UnexpectedPivotError`.
+
+**Solved — `GetPivotFilterData` replays cleanly.** It was blocked for a while behind an
+error that read as a session problem and was not one. Three arguments were wrong at once,
+and because each alone still failed, testing them one at a time only ever produced the
+same generic `RetryOutOfSync` ("Please try again"):
+
+| Argument | Wrong | Right |
+| --- | --- | --- |
+| `dataSourceIndex` | `0` | `1` — external sources are one-based here, as with `Refresh` |
+| `cell` | the pivot anchor, zero-based | the page-filter block's top-left, **one-based** |
+| `fieldId` | `6` | `"6"` — JSON-encoded, quotes included |
+
+`needConnect` turned out to be irrelevant; both values behave identically. Two lessons
+worth keeping. First, **this service reports every bad argument as `RetryOutOfSync`**, so
+the error text carries no signal about which one is wrong and guessing is unbounded —
+capture the app making the real call and diff it. Second, a method that succeeds is not
+evidence the shared plumbing is right: `GetPivotFieldManagerData` passes only numbers and
+objects, so it never exercised the string-encoding path that was broken for everyone.
+
+**Every GET parameter on these services is JSON-encoded, strings included.** The app sends
+`currentSheetName="Sales PowerBI"` and `fieldId="6"` with the quote characters in the
+query string. `buildQueryUrl` used to use `String(value)` for scalars, which silently
+dropped the quotes from string arguments — numbers, booleans and null encode identically
+either way, which is why nothing noticed until the first method with a string parameter.
 
 **Creating a PivotTable does not use a bespoke EWA method at all.** It goes through
 `ExecuteRichApiRequest`, which tunnels the Office.js object model over the same

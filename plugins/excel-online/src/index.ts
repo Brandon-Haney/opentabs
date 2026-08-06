@@ -33,6 +33,7 @@ import { freezePanes } from './tools/freeze-panes.js';
 import { getChartImage } from './tools/get-chart-image.js';
 import { getCurrentUser } from './tools/get-current-user.js';
 import { getPivotFieldLayout } from './tools/get-pivot-field-layout.js';
+import { getPivotFilterMembers } from './tools/get-pivot-filter-members.js';
 import { getRange } from './tools/get-range.js';
 import { getTableColumns } from './tools/get-table-columns.js';
 import { getTableRows } from './tools/get-table-rows.js';
@@ -58,6 +59,7 @@ import { setBorders } from './tools/set-borders.js';
 import { setDimensions } from './tools/set-dimensions.js';
 import { setHyperlink } from './tools/set-hyperlink.js';
 import { setNumberFormat } from './tools/set-number-format.js';
+import { setPivotFilter } from './tools/set-pivot-filter.js';
 import { setPrintArea } from './tools/set-print-area.js';
 import { sortRange } from './tools/sort-range.js';
 import { textToColumns } from './tools/text-to-columns.js';
@@ -135,6 +137,8 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     listPivotTables,
     getPivotFieldLayout,
     addPivotField,
+    getPivotFilterMembers,
+    setPivotFilter,
     refreshPivot,
     // Charts
     listCharts,

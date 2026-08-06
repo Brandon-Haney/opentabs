@@ -1,0 +1,76 @@
+import { ToolError } from '@opentabs-dev/plugin-sdk';
+import { findPivotTable, pageFilterAnchor, readConnections, readPivotCaches, readPivotTables } from '../pivot-model.js';
+import { fetchWorkbookPackage } from '../workbook-package.js';
+
+/**
+ * Where a PivotTable's page-filter operations are addressed, and which field
+ * they act on.
+ *
+ * Both filter methods need the same two values and neither can be taken from
+ * the tool's own arguments: the page-filter block's one-based cell, and the
+ * field id. Deriving them from the workbook package rather than asking the
+ * caller keeps a number the caller cannot verify out of the interface, and lets
+ * a wrong field name fail with the list of real ones.
+ */
+export interface PivotFilterTarget {
+  cell: { SheetName: string; NamedObjectName: string; FirstRow: number; FirstColumn: number };
+  fieldId: string;
+}
+
+/**
+ * Data-source index the page-filter methods address an external model by.
+ *
+ * The external sources are one-based here, matching the `externalSourceIndex` a
+ * connection refresh takes. Zero is accepted by the field-layout methods and
+ * rejected by these, which is worth knowing because the rejection surfaces as a
+ * generic out-of-sync error rather than a bad-argument one.
+ */
+export const FILTER_DATA_SOURCE_INDEX = 1;
+
+/**
+ * Resolve the PivotTable on `worksheet` and the page filter identified by
+ * `field`, which may be a caption ("Invoice Month") or a numeric field id.
+ */
+export const resolvePivotFilterTarget = async (
+  worksheet: string,
+  field: string,
+  pivotName?: string,
+): Promise<PivotFilterTarget> => {
+  const pkg = await fetchWorkbookPackage();
+  const caches = await readPivotCaches(pkg, await readConnections(pkg));
+  const tables = await readPivotTables(pkg, caches);
+
+  const table = findPivotTable(tables, worksheet, pivotName);
+  if (!table) {
+    const onSheet = tables.filter(candidate => candidate.worksheet === worksheet).map(candidate => candidate.name);
+    throw ToolError.validation(
+      onSheet.length === 0
+        ? `No PivotTable on worksheet "${worksheet}". Worksheets with PivotTables: ${
+            [...new Set(tables.map(t => t.worksheet))].join(', ') || '(none in this workbook)'
+          }.`
+        : `Worksheet "${worksheet}" has ${onSheet.length} PivotTables (${onSheet.join(', ')}) — pass pivot_name to choose one.`,
+    );
+  }
+
+  const anchor = pageFilterAnchor(table);
+  if (!anchor) {
+    throw ToolError.validation(
+      `PivotTable "${table.name}" on "${worksheet}" has no page filters, so there is no filter to read or set. ` +
+        'Use add_pivot_field with zone "filters" to put a field into the Filters zone first.',
+    );
+  }
+
+  const match = table.filters.find(filter => filter.caption === field || String(filter.fieldIndex) === field.trim());
+  if (!match) {
+    throw ToolError.validation(
+      `PivotTable "${table.name}" has no page filter "${field}". Its page filters are: ${table.filters
+        .map(filter => `${filter.caption} (field_index ${filter.fieldIndex})`)
+        .join(', ')}.`,
+    );
+  }
+
+  return {
+    cell: { SheetName: worksheet, NamedObjectName: '', FirstRow: anchor.row, FirstColumn: anchor.column },
+    fieldId: String(match.fieldIndex),
+  };
+};

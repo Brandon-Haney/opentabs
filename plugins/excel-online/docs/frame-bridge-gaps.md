@@ -339,8 +339,40 @@ Two details worth keeping: `Initial Catalog` here is the **plain dataset GUID**,
 `sobe_wowvirtualserver-<guid>` form that `xl/connections.xml` records; and the envelope
 carries add-in identity (`SolutionId`, `CompliantSolutionId`, `InstanceId`,
 `MarketplaceType: sdxcatalog`, `AppPermission`, `RequestFlags`) because the capture came
-from the Power BI task-pane add-in. Whether a replay needs valid add-in identity, or
-whether any values work, is untested.
+from the Power BI task-pane add-in.
+
+**Replay verified 2026-08-06** — a PivotTable was created and a measure placed into it
+entirely through the bridge, reusing the add-in identity values verbatim. Four things
+had to be right, and each failed distinctly until it was:
+
+1. **`WorksheetCollection.getItem` does not exist** in this Excel version — it answers
+   `ApiNotFound`. Use `GetActiveWorksheet`, and select the target sheet through the
+   envelope's `ActiveCell` / `SheetMultiRange`, which is what the add-in does. Verified:
+   the call returned the intended sheet's id.
+2. **A destination whose sheet name contains a space must be quoted** (`'My Sheet'!A3`).
+   Unquoted answers `InvalidArgument`. Simpler still: avoid spaces.
+3. **The donor context can be stale relative to the workbook.** Creating the sheet
+   through Microsoft Graph and then immediately replaying against a donor harvested
+   earlier fails with `InvalidSheetName` — "the worksheet you requested does not exist" —
+   because the reused context predates the sheet. Reloading the tab re-syncs the frame
+   and the next donor carries a current revision. **Any tool that mixes a Graph
+   structural change with a bridge call has to account for this**; it is not specific to
+   pivots.
+4. Errors surface in two different places. A RichApi failure is nested in
+   `Result.ResponseBody[0].Error` as `{Code, Message, Location, ActionIndex,
+   HttpStatusCode}` while the outer `EwaResult.Errors` is *empty* and its status is 200;
+   an EWA-layer failure appears in `EwaResult.Errors` with `Result` null. A caller must
+   check both or it will read a failure as success.
+
+**Side effect to design around:** `DataConnections.Add` creates a connection every time,
+de-duplicating by appending a numeral (`SMPOSCompanyOwnedStoreSal1`) rather than reusing
+an existing connection of the same name. Repeated attempts therefore accumulate unused
+connections in the workbook. There is no way to undo this through either API here —
+`DataConnectionCollection.getCount`, and by extension item access and deletion, answers
+`ApiNotFound`, and Graph has no connection surface at all. Only the Excel UI (Data →
+Queries & Connections) can remove them. A `create_pivot_from_connection` tool must
+therefore either reuse an existing connection or warn plainly, because its failures are
+not free.
 
 **Capture procedure (this is the part that is easy to get wrong):** the debugger's
 `setAutoAttach` only attaches to child targets that load *after* capture is enabled, so

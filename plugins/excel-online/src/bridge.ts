@@ -94,6 +94,81 @@ export const pivotCellRef = (worksheet: string, address: string): Record<string,
   };
 };
 
+/**
+ * Identity the Office object-model endpoint expects on a `ProcessQuery` call.
+ *
+ * These are the values Excel's own Power BI task pane sends. The endpoint
+ * requires a caller identity and rejects the request without one; they carry no
+ * privilege of their own, since the request is already authorised by the
+ * session it replays inside.
+ */
+const RICH_API_CALLER = {
+  AppPermission: 135,
+  RequestFlags: 17,
+  InstanceId: '{55822971-FC63-4903-A409-046E4EE07D0C}.PowerBi.Url',
+  CompliantSolutionId: 'FA000000054',
+  SolutionId: 'FA000000054',
+  MarketplaceType: 'sdxcatalog',
+  SolutionVersion: '0.0.0.0',
+  StoreLocation: 'sdxcatalog',
+};
+
+/**
+ * Wrap an Office object-model batch in the envelope `ExecuteRichApiRequest`
+ * expects.
+ *
+ * `worksheet` and `cell` set the request's active selection, which is how the
+ * batch's `GetActiveWorksheet` resolves — this object model exposes no lookup of
+ * a worksheet by name, so the envelope is the only way to target one.
+ */
+export const richApiRequest = (
+  worksheet: string,
+  cell: string,
+  batch: Record<string, unknown>,
+): Record<string, unknown> => {
+  const bounds = parseBoundedRange(cell);
+  const selection = {
+    SheetName: worksheet,
+    NamedObjectName: '',
+    FirstRow: bounds.startRow,
+    LastRow: bounds.startRow,
+    FirstColumn: bounds.startCol,
+    LastColumn: bounds.startCol,
+  };
+  return {
+    request: {
+      HttpMethod: 'POST',
+      PathAndQuery: 'ProcessQuery',
+      RequestHeaders: [{ Name: 'SdkVersion', Value: 'officejs' }],
+      RequestBody: JSON.stringify(batch),
+      ...RICH_API_CALLER,
+      SheetMultiRange: { SheetName: worksheet, NamedObjectName: '', Ranges: [selection] },
+      ActiveCell: selection,
+      ActiveFloatingObjectId: null,
+      SelectionState: 2,
+      IsEventsEnabled: true,
+      RequestGuid: crypto.randomUUID(),
+    },
+  };
+};
+
+/**
+ * The same cell reference with explicit `Last*` bounds and a null object name —
+ * the shape the field-placement method expects, which differs from the read
+ * methods' by those three fields alone.
+ */
+export const pivotCellBounds = (worksheet: string, address: string): Record<string, unknown> => {
+  const bounds = parseBoundedRange(address);
+  return {
+    SheetName: worksheet,
+    NamedObjectName: null,
+    FirstRow: bounds.startRow,
+    FirstColumn: bounds.startCol,
+    LastRow: bounds.startRow,
+    LastColumn: bounds.startCol,
+  };
+};
+
 /** The directive shape an adapter tool returns to invoke the frame-bridge engine. */
 interface BridgeDirective {
   __bridge: {

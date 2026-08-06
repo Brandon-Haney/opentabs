@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 1. Open [excel.cloud.microsoft](https://excel.cloud.microsoft/) in Chrome and log in
 2. Open the OpenTabs side panel — the Excel Online plugin should appear as **ready**
 
-## Tools (66)
+## Tools (68)
 
 ### Account (2)
 
@@ -104,13 +104,15 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 | `filter_table` | Filter a table by a column | Write |
 | `clear_table_filters` | Clear filters on a table | Write |
 
-### Data Model (4)
+### Data Model (6)
 
 | Tool | Description | Type |
 |---|---|---|
 | `inspect_data_model` | Inspect connections, PivotTables, and all available cube measures | Write |
 | `list_pivot_tables` | List PivotTables with their zones and pinned filters | Read |
 | `get_pivot_field_layout` | Read a PivotTable's live field layout and ids | Read |
+| `create_pivot_from_connection` | Create an empty PivotTable over an existing connection | Write |
+| `add_pivot_field` | Place a measure or hierarchy into a PivotTable zone | Write |
 | `refresh_pivot` | Refresh a workbook data connection | Write |
 
 ### Charts (5)

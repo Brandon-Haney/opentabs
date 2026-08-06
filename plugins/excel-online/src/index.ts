@@ -8,6 +8,7 @@ import { addNamedItem } from './tools/add-named-item.js';
 import { addTableColumn } from './tools/add-table-column.js';
 import { addTableRow } from './tools/add-table-row.js';
 import { addWorksheet } from './tools/add-worksheet.js';
+import { addPivotField } from './tools/add-pivot-field.js';
 import { applyCellStyle } from './tools/apply-cell-style.js';
 import { calculateWorkbook } from './tools/calculate-workbook.js';
 import { clearDataValidation } from './tools/clear-data-validation.js';
@@ -133,6 +134,7 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     inspectDataModel,
     listPivotTables,
     getPivotFieldLayout,
+    addPivotField,
     refreshPivot,
     // Charts
     listCharts,

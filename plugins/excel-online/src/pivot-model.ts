@@ -149,6 +149,13 @@ export interface WorkbookConnection {
   isRemoteModel: boolean | null;
   /** Power BI semantic-model id, when the catalog encodes one. */
   datasetId: string;
+  /**
+   * The connection string's `Identity Provider` clause — authority, resource,
+   * and client id, comma-separated. A cube connection cannot authenticate
+   * without it, so anything rebuilding a connection string has to carry it over
+   * rather than reconstruct it.
+   */
+  identityProvider: string;
   raw: string;
 }
 
@@ -174,6 +181,7 @@ export const readConnections = async (pkg: OoxmlPackage): Promise<WorkbookConnec
       command: dbPr?.getAttribute('command') ?? '',
       isRemoteModel: resolveIsRemoteModel(dataSource),
       datasetId: catalog.match(GUID_PATTERN)?.[0] ?? '',
+      identityProvider: parts.get('identity provider') ?? '',
       raw,
     };
   });
@@ -354,22 +362,81 @@ const axisCaptions = (doc: Document, tagName: string, cacheFields: Element[]): s
     return captionOfCacheField(cacheFields, index);
   });
 
-/** Map each PivotTable part to the worksheet that hosts it, via the sheet relationships. */
-const readPivotTableWorksheets = async (pkg: OoxmlPackage): Promise<Map<string, string>> => {
+/** Worksheet name → its part path, in workbook order. */
+export const readSheetParts = async (pkg: OoxmlPackage): Promise<Map<string, string>> => {
   const workbook = await pkg.partXml('xl/workbook.xml');
-  const worksheetByPivotPart = new Map<string, string>();
-  if (!workbook) return worksheetByPivotPart;
+  const parts = new Map<string, string>();
+  if (!workbook) return parts;
 
   const sheetPartsById = await relationshipsById(pkg, 'xl/workbook.xml', 'worksheet');
   for (const sheet of workbook.getElementsByTagName('sheet')) {
-    const sheetPart = sheetPartsById.get(sheet.getAttributeNS(RELATIONSHIP_NS, 'id') ?? '');
-    if (!sheetPart) continue;
-    const name = sheet.getAttribute('name') ?? '';
+    const part = sheetPartsById.get(sheet.getAttributeNS(RELATIONSHIP_NS, 'id') ?? '');
+    if (part) parts.set(sheet.getAttribute('name') ?? '', part);
+  }
+  return parts;
+};
+
+/** Map each PivotTable part to the worksheet that hosts it, via the sheet relationships. */
+const readPivotTableWorksheets = async (pkg: OoxmlPackage): Promise<Map<string, string>> => {
+  const worksheetByPivotPart = new Map<string, string>();
+  for (const [name, sheetPart] of await readSheetParts(pkg)) {
     for (const pivotPart of await relationshipTargets(pkg, sheetPart, 'pivotTable')) {
       worksheetByPivotPart.set(pivotPart, name);
     }
   }
   return worksheetByPivotPart;
+};
+
+/** A formula that reads a PivotTable's values, and where it lives. */
+export interface GetPivotDataReference {
+  /** Worksheet holding the formula. */
+  worksheet: string;
+  /** Cell the formula sits in, in A1 notation. */
+  cell: string;
+  /** The formula itself. */
+  formula: string;
+}
+
+/**
+ * Find every `GETPIVOTDATA` formula in the workbook that reads the PivotTable on
+ * `pivotWorksheet`.
+ *
+ * This exists to make a specific hazard visible before it bites. A
+ * `GETPIVOTDATA` call carrying no field/item argument pairs resolves to the
+ * pivot's grand total, so adding a field to Rows or Columns silently changes
+ * what every such formula returns — no error, no recalculation warning, just
+ * different numbers on whatever reads them. Adding to Values or Filters does
+ * not have that effect.
+ *
+ * Matching is by the pivot's host sheet name, which is what a `GETPIVOTDATA`
+ * reference argument names. That can over-report when several pivots share a
+ * sheet — deliberately, since the failure mode of missing a reference is far
+ * worse than the failure mode of flagging one too many.
+ */
+export const findGetPivotDataReferences = async (
+  pkg: OoxmlPackage,
+  pivotWorksheet: string,
+): Promise<GetPivotDataReference[]> => {
+  const references: GetPivotDataReference[] = [];
+  // A reference may be written bare or quoted, and quoting is mandatory once the
+  // name contains a space: GETPIVOTDATA("m",Sheet!$A$4) vs ('My Sheet'!$A$4).
+  const sheetToken = pivotWorksheet.toLowerCase();
+
+  for (const [worksheet, part] of await readSheetParts(pkg)) {
+    const doc = await pkg.partXml(part);
+    if (!doc) continue;
+    for (const formulaElement of doc.getElementsByTagName('f')) {
+      const formula = formulaElement.textContent ?? '';
+      if (!formula.toUpperCase().includes('GETPIVOTDATA')) continue;
+      if (!formula.toLowerCase().includes(sheetToken)) continue;
+      references.push({
+        worksheet,
+        cell: formulaElement.parentElement?.getAttribute('r') ?? '',
+        formula,
+      });
+    }
+  }
+  return references;
 };
 
 /** Read every PivotTable in the workbook, resolved against its cache and host sheet. */

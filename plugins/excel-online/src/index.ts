@@ -41,8 +41,10 @@ import { hideRowsColumns } from './tools/hide-rows-columns.js';
 import { insertPageBreak } from './tools/insert-page-break.js';
 import { insertRange } from './tools/insert-range.js';
 import { insertTable } from './tools/insert-table.js';
+import { inspectDataModel } from './tools/inspect-data-model.js';
 import { listCharts } from './tools/list-charts.js';
 import { listNamedItems } from './tools/list-named-items.js';
+import { listPivotTables } from './tools/list-pivot-tables.js';
 import { listTables } from './tools/list-tables.js';
 import { listWorksheets } from './tools/list-worksheets.js';
 import { mergeCells } from './tools/merge-cells.js';
@@ -124,6 +126,10 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     addTableColumn,
     filterTable,
     clearTableFilters,
+    // Data model — read from the raw .xlsx package, because the Microsoft Graph
+    // workbook API exposes no PivotTable, connection, or pivot-cache surface.
+    inspectDataModel,
+    listPivotTables,
     // Charts
     listCharts,
     createChart,

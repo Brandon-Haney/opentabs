@@ -1,6 +1,6 @@
 import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { rangePath, workbookApi } from '../excel-api.js';
+import { type WorkbookBatchRequest, rangePath, workbookBatch } from '../excel-api.js';
 
 const COLUMN_SPAN_RE = /^[A-Za-z]{1,3}(:[A-Za-z]{1,3})?$/;
 const ROW_SPAN_RE = /^\d+(:\d+)?$/;
@@ -44,9 +44,9 @@ export const setDimensions = defineTool({
   }),
   output: z.object({
     success: z.boolean().describe('Whether the operation succeeded'),
-    requests_sent: z.number().int().describe('Number of API requests issued'),
+    operations_applied: z.number().int().describe('Number of individual width, height, or autofit operations applied'),
   }),
-  handle: async params => {
+  handle: async (params, context) => {
     const columns = params.columns ?? [];
     const rows = params.rows ?? [];
     if (columns.length === 0 && rows.length === 0 && !params.autofit_columns && !params.autofit_rows) {
@@ -63,35 +63,39 @@ export const setDimensions = defineTool({
       }
     }
 
-    let sent = 0;
-    for (const spec of columns) {
-      await workbookApi(`${rangePath(params.worksheet, toSpanAddress(spec.columns))}/format`, {
+    const requests: WorkbookBatchRequest[] = [
+      ...columns.map(spec => ({
         method: 'PATCH',
+        path: `${rangePath(params.worksheet, toSpanAddress(spec.columns))}/format`,
         body: { columnWidth: spec.width },
-      });
-      sent++;
-    }
-    for (const spec of rows) {
-      await workbookApi(`${rangePath(params.worksheet, toSpanAddress(spec.rows))}/format`, {
+      })),
+      ...rows.map(spec => ({
         method: 'PATCH',
+        path: `${rangePath(params.worksheet, toSpanAddress(spec.rows))}/format`,
         body: { rowHeight: spec.height },
-      });
-      sent++;
-    }
+      })),
+    ];
     if (params.autofit_columns) {
-      await workbookApi(`${rangePath(params.worksheet, params.autofit_columns)}/format/autofitColumns`, {
+      requests.push({
         method: 'POST',
+        path: `${rangePath(params.worksheet, params.autofit_columns)}/format/autofitColumns`,
         body: {},
       });
-      sent++;
     }
     if (params.autofit_rows) {
-      await workbookApi(`${rangePath(params.worksheet, params.autofit_rows)}/format/autofitRows`, {
+      requests.push({
         method: 'POST',
+        path: `${rangePath(params.worksheet, params.autofit_rows)}/format/autofitRows`,
         body: {},
       });
-      sent++;
     }
-    return { success: true, requests_sent: sent };
+
+    // Every operation goes through one batched round trip rather than one
+    // request each. Progress reports also extend the dispatch budget, which
+    // matters for inputs large enough to need several batches.
+    const applied = await workbookBatch(requests, (completed, total) =>
+      context?.reportProgress({ progress: completed, total, message: `Applied ${completed} of ${total} dimensions…` }),
+    );
+    return { success: true, operations_applied: applied };
   },
 });

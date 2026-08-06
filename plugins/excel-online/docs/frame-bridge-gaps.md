@@ -166,3 +166,133 @@ Verified live (split `"East-Alpha"` → `East` | `Alpha`).
 **Fill Series** (the classic Home → Fill → Series dialog) does **not** exist in Excel for
 the web — only Flash Fill (a separate ML-driven autocomplete, `CreateFlashFillAutoComplete`)
 is offered. There is no Series RPC to bridge, so it is intentionally not built.
+
+## 6. PivotTable operations — method names decoded, argument shapes partly open
+
+PivotTables are driven through `EwaInternalWebService` like everything else, but the
+method names do not follow the `<Verb><Noun>` shape the other operations use, so they
+are not guessable. Captured live (2026-08-06) while refreshing a cube-backed pivot and
+changing a page filter:
+
+| Method | Calls | Purpose |
+| --- | --- | --- |
+| `Refresh` | 15 | Refresh the pivot / its data connection. **Not** `RefreshPivotTable` or `RefreshAll`. |
+| `GetPivotFieldListData` | 5 | The field list — every field the model exposes |
+| `GetPivotFieldManagerData` | 4 | Field-manager (zone assignment) state |
+| `GetPivotFilterData` | 2 | Filter member list for a field |
+| `ApplyFilter` | 2 | Apply a pivot filter. Distinct from the plain-range `ApplyFilterV2`. |
+| `GetPivotTableCellInfo` | 1 | Pivot metadata at a cell |
+| `GetSensitivityLabelsForPowerBIDatasets` | 6 | Sensitivity labels, Power BI-backed pivots only |
+
+Existence can be probed without knowing the arguments: an unrouted method answers
+**401**, a real method with a bad body answers **500**. `RefreshPivotTable`,
+`RefreshAll`, `GetPivotTableInfo`, `SetPivotFilter`, `ApplyPivotFilter`,
+`RefreshSelectedConnection` and `PivotFieldDrop` all 401 — they do not exist.
+
+**Decoded — `ApplyFilter`** (pivot page filter):
+
+```
+parameters: {
+  Location: { SheetName, NamedObjectName: "None",
+              FirstRow: "1", FirstColumn: "1", LastRow: "1", LastColumn: "1" },
+  IsPivotFilter: "True",          // what separates this from a plain-range filter
+  FieldId: "6",                   // index of the pivot field
+  DataSourceIndex: "1",
+  HierarchyLevel: "1",
+  AnchorType: "0", ChartId: "None", AnchorValue1: "-1", AnchorValue2: "-1"
+}
+checkedItems: ["16"]              // member indices, not member names
+```
+
+`GetPivotTableCellInfo` takes `activeCell: { SheetName, NamedObjectName: "", FirstRow,
+FirstColumn }`. Pivot coordinates here are **1-based**, matching the plain-range filter
+methods.
+
+**`Refresh`** — decoded once the capture cap was raised (see the capture note below):
+
+```
+connectionName:      "<workbook connection name>"   // from xl/connections.xml
+externalSourceIndex: 1
+userAadToken:        "<JWE, ~3.2 KB>"               // REQUIRED — omitting it answers 500
+```
+
+`userAadToken` is an encrypted AAD token (`alg:dir`, `enc:A256CBC-HS512`, `xms_hd_iat`
+claim) that lets the server re-query the model on the user's behalf. It appears on
+`Refresh` and on no other method; `UpdateWacAADToken` is a GET that carries no token.
+It is minted inside the Office frame, which is the crux of the remaining work — the
+adapter runs in the SharePoint host frame and cannot read across that boundary. The
+intended fix is to let the frame-bridge engine (which already runs *inside* the frame
+and already reads `__otbEwaDonor`) pull named values from frame globals into the
+request body, paired with a pre-script that stashes the freshest token it observes.
+That keeps the credential in the frame — it never reaches the host page or the adapter.
+
+**`GetPivotFieldListData` / `GetPivotFieldManagerData` / `GetPivotFilterData` are GETs**,
+which is why they were recorded with no request body and why POSTing to them answers
+500. Everything travels in the query string:
+
+```
+context=<~900 char JSON>   cell={"SheetName","NamedObjectName","FirstRow","FirstColumn"}
+dataSourceIndex=1          optionalPivotAnchorParameter={"AnchorType":0}
+type=1  version=<n>  relatedGroup=-1  selectedTab=-1  waccluster=<cluster>
+```
+
+Note the GET `context` is ~900 characters, not the ~88 KB one a POST carries.
+`FieldListItems` comes back grouped and lazily expanded (11 top-level entries with 40
+`RelatedGroups`), so resolving a field name to the `ItemIndex` that `ApplyPivot` wants
+means walking `relatedGroup` ids.
+
+## 7. PivotTable field placement and creation — decoded
+
+**`ApplyPivot`** places a field into a zone. Captured once per zone:
+
+```
+cell:  { SheetName, NamedObjectName: null, FirstRow, FirstColumn, LastRow, LastColumn }  // 0-based
+dataSourceIndex: <n>
+optionalPivotAnchorParameter: { AnchorType: 0 }
+pivotFieldApplyData: {
+  FieldListType: 1, FieldListVersion: <n>, FieldWellVersion: <n>,
+  SourceAxis: 0, SourceAxisPosition: 0,
+  ItemType: <3 = measure | 5 = hierarchy/field>,
+  ItemIndex: <index into the expanded field list>,
+  DestinationAxis: <-1 = default | 1 = Rows | 4 = Filters>, DestinationAxisPosition: <n>
+}
+```
+
+`FieldListVersion` and `FieldWellVersion` increment on every operation (observed 1→3→6
+and 1→4→8) — they are optimistic-concurrency counters, so a caller must read the
+current values rather than assume. **`DestinationAxis` for Columns and Values is not
+yet observed**; only default (-1), Rows (1) and Filters (4) are confirmed. Do not guess
+the other two — capture them.
+
+**Creating a PivotTable does not use a bespoke EWA method at all.** It goes through
+`ExecuteRichApiRequest`, which tunnels the Office.js object model over the same
+endpoint as a `ProcessQuery` batch. That is a far better surface to build on than
+reverse-engineered RPCs, because it is the documented Excel JS API:
+
+```
+ObjectPaths:
+  1  root workbook
+  3  workbook.Worksheets
+  21 workbook.DataConnections
+  24 DataConnections.Add(<name>, "OLEDB;Provider=MSOLAP;…;Data Source=pbiazure://api.powerbi.com;
+                                  Initial Catalog=<datasetGuid>;…", "Model", "Cube")
+  27 Worksheets.GetActiveWorksheet()
+  30 <worksheet>.PivotTables
+  32 PivotTables.Add(<pivotName>, <ref to 24>, "<Sheet>!<Anchor>")
+     ReferencedObjectPathIds: [0, 24, 0]     // arg 1 is an object reference, not a literal
+Actions:
+  ShowPivotFieldList(true)
+```
+
+Two details worth keeping: `Initial Catalog` here is the **plain dataset GUID**, not the
+`sobe_wowvirtualserver-<guid>` form that `xl/connections.xml` records; and the envelope
+carries add-in identity (`SolutionId`, `CompliantSolutionId`, `InstanceId`,
+`MarketplaceType: sdxcatalog`, `AppPermission`, `RequestFlags`) because the capture came
+from the Power BI task-pane add-in. Whether a replay needs valid add-in identity, or
+whether any values work, is untested.
+
+**Capture procedure (this is the part that is easy to get wrong):** the debugger's
+`setAutoAttach` only attaches to child targets that load *after* capture is enabled, so
+the order must be `browser_enable_network_capture` → **reload the page** → interact.
+Enabling capture against an already-loaded Office frame records nothing and looks
+exactly like "there is no such traffic". Verified both ways in the same session.

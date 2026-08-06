@@ -337,3 +337,91 @@ export const workbookInfoSchema = z.object({
 export interface GraphListResponse<T> {
   value?: T[];
 }
+
+// --- Data model (PivotTables, caches, connections) ---
+//
+// These describe parts of the raw .xlsx package. Microsoft Graph exposes no
+// PivotTable, connection or pivot-cache surface at any version, so the tools
+// that produce them read the workbook file itself.
+
+export const connectionSchema = z.object({
+  id: z.string().describe('Connection ID within the workbook, joined to by a pivot cache'),
+  name: z
+    .string()
+    .describe(
+      'Connection name. This is the exact string CUBEVALUE and CUBEMEMBER take as their first argument (e.g., CUBEVALUE("MyConnection", "[Measures].[Sales]")).',
+    ),
+  description: z.string().describe('Connection description, empty when unset'),
+  type: z.string().describe('Connection type (e.g., "OLE DB", "ODBC", "Web query")'),
+  provider: z.string().describe('OLE DB provider from the connection string (e.g., "MSOLAP.8"), empty if absent'),
+  server: z
+    .string()
+    .describe(
+      'Data Source from the connection string. "pbiazure://api.powerbi.com" means a Power BI semantic model; "$Embedded$" means the workbook\'s own Data Model.',
+    ),
+  catalog: z.string().describe('Initial Catalog from the connection string, empty if absent'),
+  command: z.string().describe('Command the connection issues (e.g., "Model" for a cube connection), empty if absent'),
+  is_remote_model: z
+    .boolean()
+    .nullable()
+    .describe(
+      'True when the data lives outside this workbook, false when it comes from the workbook\'s own embedded Data Model, null when the connection string is ambiguous. Always check "raw" when null.',
+    ),
+  dataset_id: z
+    .string()
+    .describe(
+      'Power BI semantic-model (dataset) ID, extracted from an "Initial Catalog=sobe_wowvirtualserver-<guid>" catalog. Empty when the connection is not Power BI. Use this with the Power BI executeQueries API to run DAX against the same model.',
+    ),
+  raw: z.string().describe('The full, unmodified connection string'),
+});
+
+export const pivotFilterSchema = z.object({
+  caption: z.string().describe('Display name of the filter field (e.g., "Invoice Month")'),
+  selected_member: z
+    .string()
+    .describe(
+      'Unique name of the member the filter is currently pinned to (e.g., "[Calendar Table].[Invoice Month].&[JUL - 2026]"). Empty when the filter is on All or a multi-selection. A hardcoded member goes stale silently as time moves on.',
+    ),
+});
+
+export const pivotTableSchema = z.object({
+  name: z.string().describe('PivotTable name'),
+  worksheet: z.string().describe('Name of the worksheet hosting the PivotTable'),
+  anchor: z.string().describe('Range the PivotTable occupies, in A1 notation (e.g., "A4:V5")'),
+  cache_id: z.string().describe('ID of the pivot cache backing this PivotTable'),
+  connection_name: z.string().describe('Name of the workbook connection behind the cache, empty if unresolved'),
+  rows: z.array(z.string()).describe('Captions of the fields in the Rows zone'),
+  columns: z
+    .array(z.string())
+    .describe('Captions of the fields in the Columns zone. "Values" denotes the synthetic measures field.'),
+  filters: z.array(pivotFilterSchema).describe('Fields in the Filters zone with their pinned members'),
+  values: z.array(z.string()).describe('Captions of the measures in the Values zone'),
+});
+
+export const availableMeasureSchema = z.object({
+  unique_name: z.string().describe('MDX unique name (e.g., "[Measures].[CMTD Sales]"), as GETPIVOTDATA expects it'),
+  caption: z.string().describe('Display name (e.g., "CMTD Sales")'),
+  cache_id: z.string().describe('ID of the pivot cache that exposes this measure'),
+  display_folder: z.string().describe('Folder the model groups the measure under, empty when ungrouped'),
+  measure_group: z.string().describe('Measure group the measure belongs to, empty when unset'),
+  is_laid_out: z
+    .boolean()
+    .describe(
+      'True when the measure is already placed in a PivotTable. GETPIVOTDATA resolves only laid-out measures and returns #REF! for the rest, so a false value means the measure exists in the model but is not yet readable by formula.',
+    ),
+});
+
+export const availableHierarchySchema = z.object({
+  unique_name: z.string().describe('MDX unique name (e.g., "[Calendar Table].[Invoice Month]")'),
+  caption: z.string().describe('Display name (e.g., "Invoice Month")'),
+  cache_id: z.string().describe('ID of the pivot cache that exposes this hierarchy'),
+  dimension: z.string().describe('Unique name of the owning dimension (e.g., "[Calendar Table]")'),
+  display_folder: z.string().describe('Folder the model groups the hierarchy under, empty when ungrouped'),
+  level_count: z.number().int().describe('Number of levels the hierarchy declares'),
+  levels: z
+    .array(z.string())
+    .describe('Unique names of the levels materialised in the cache. Empty unless the hierarchy is laid out.'),
+  is_attribute: z.boolean().describe('True for a single-attribute hierarchy rather than a multi-level user hierarchy'),
+  is_time: z.boolean().describe('True when the model marks this as a time hierarchy'),
+  is_laid_out: z.boolean().describe('True when the hierarchy is already placed in a PivotTable'),
+});

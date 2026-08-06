@@ -294,14 +294,18 @@ const pickContextKeys = (context: Record<string, unknown>, keys?: string[]): Rec
  * donor URL already carried apart from parameters the service routes on (which
  * are preserved from the donor, e.g. a cluster hint).
  *
- * Objects and arrays are JSON-encoded; scalars are sent as their plain string
- * form — the shape these services use for their GET methods.
+ * Every value is JSON-encoded, including strings — these services deserialize
+ * each GET parameter as JSON, so a string argument travels with its quotes
+ * (`?currentSheetName="Sheet1"`, verified against live traffic). Numbers,
+ * booleans and null encode identically either way, so only string parameters
+ * are affected; sending one unquoted fails deserialization server-side and
+ * surfaces as an opaque error rather than a parameter complaint.
  */
-const buildQueryUrl = (targetUrl: string, payload: Record<string, unknown>): string => {
+export const buildQueryUrl = (targetUrl: string, payload: Record<string, unknown>): string => {
   const url = new URL(targetUrl);
   for (const [name, value] of Object.entries(payload)) {
     if (value === undefined) continue;
-    url.searchParams.set(name, typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value));
+    url.searchParams.set(name, JSON.stringify(value) ?? '');
   }
   return url.href;
 };

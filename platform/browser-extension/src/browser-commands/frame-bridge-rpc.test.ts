@@ -6,7 +6,9 @@ import { describe, expect, test } from 'vitest';
   tabs: { onRemoved: { addListener: () => {} } },
 };
 
-const { buildReplayHeaders, deriveTargetUrl, mergeContextFromResponse } = await import('./frame-bridge-rpc.js');
+const { buildQueryUrl, buildReplayHeaders, deriveTargetUrl, mergeContextFromResponse } = await import(
+  './frame-bridge-rpc.js'
+);
 
 describe('deriveTargetUrl', () => {
   test('replaces the method segment and preserves the query string', () => {
@@ -117,5 +119,41 @@ describe('mergeContextFromResponse', () => {
     // Top-level string fields still applied.
     expect(ctx.SessionId).toBe('new-session');
     expect(ctx.TransientEditSessionToken).toBe('new-token');
+  });
+});
+
+describe('buildQueryUrl', () => {
+  const base = 'https://host/x/_vti_bin/Svc.json/GetPivotFilterData?waccluster=PUS1';
+
+  test('JSON-encodes a string parameter, quotes included', () => {
+    // The service deserializes every GET parameter as JSON, so a string
+    // argument travels quoted. Sending it bare fails server-side.
+    const url = new URL(buildQueryUrl(base, { fieldId: '6', currentSheetName: 'Sales PowerBI' }));
+    expect(url.searchParams.get('fieldId')).toBe('"6"');
+    expect(url.searchParams.get('currentSheetName')).toBe('"Sales PowerBI"');
+  });
+
+  test('leaves numbers, booleans and null in their bare JSON form', () => {
+    const url = new URL(buildQueryUrl(base, { dataSourceIndex: 1, parentId: -1, needConnect: true, chartId: null }));
+    expect(url.searchParams.get('dataSourceIndex')).toBe('1');
+    expect(url.searchParams.get('parentId')).toBe('-1');
+    expect(url.searchParams.get('needConnect')).toBe('true');
+    expect(url.searchParams.get('chartId')).toBe('null');
+  });
+
+  test('JSON-encodes objects and arrays', () => {
+    const url = new URL(buildQueryUrl(base, { cell: { SheetName: 'S', FirstRow: 1 }, filterCriteria: ['0', '0'] }));
+    expect(url.searchParams.get('cell')).toBe('{"SheetName":"S","FirstRow":1}');
+    expect(url.searchParams.get('filterCriteria')).toBe('["0","0"]');
+  });
+
+  test('preserves donor query parameters the service routes on', () => {
+    const url = new URL(buildQueryUrl(base, { fieldId: '6' }));
+    expect(url.searchParams.get('waccluster')).toBe('PUS1');
+  });
+
+  test('skips undefined values rather than sending the string "undefined"', () => {
+    const url = new URL(buildQueryUrl(base, { fieldId: '6', missing: undefined }));
+    expect(url.searchParams.has('missing')).toBe(false);
   });
 });

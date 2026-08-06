@@ -35,7 +35,16 @@ export const inspectDataModel = defineTool({
     include_hierarchies: z.boolean().optional().describe('Include the hierarchy inventory (default true)'),
   }),
   output: z.object({
-    connections: z.array(connectionSchema).describe('External data connections defined in the workbook'),
+    connections: z
+      .array(connectionSchema)
+      .describe(
+        'External data connections defined in the workbook. These are READ-ONLY from here and cannot be deleted: ' +
+          'no tool in this plugin removes a connection, Microsoft Graph has no connection API at any version, and ' +
+          'Excel for the web only lists them — Data > Queries & Connections shows the list but offers no delete. ' +
+          'Removing a connection requires opening the workbook in the Excel desktop application. Tell the user that ' +
+          'plainly if they ask to delete one, rather than attempting it. Unused connections are inert, but they ' +
+          'accumulate and only the desktop app can clear them.',
+      ),
     pivot_tables: z.array(pivotTableSchema).describe('Every PivotTable in the workbook'),
     available_measures: z
       .array(availableMeasureSchema)

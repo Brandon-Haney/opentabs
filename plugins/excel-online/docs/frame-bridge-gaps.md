@@ -367,12 +367,23 @@ had to be right, and each failed distinctly until it was:
 **Side effect to design around:** `DataConnections.Add` creates a connection every time,
 de-duplicating by appending a numeral (`SMPOSCompanyOwnedStoreSal1`) rather than reusing
 an existing connection of the same name. Repeated attempts therefore accumulate unused
-connections in the workbook. There is no way to undo this through either API here —
-`DataConnectionCollection.getCount`, and by extension item access and deletion, answers
-`ApiNotFound`, and Graph has no connection surface at all. Only the Excel UI (Data →
-Queries & Connections) can remove them. A `create_pivot_from_connection` tool must
-therefore either reuse an existing connection or warn plainly, because its failures are
-not free.
+connections in the workbook.
+
+**A workbook connection cannot be deleted from anywhere reachable here.**
+`DataConnectionCollection.getCount` — and by extension item access and deletion — answers
+`ApiNotFound`; Graph has no connection surface at any version; and Excel for the web only
+*lists* them (Data → Queries & Connections shows the list with no delete affordance).
+Removing one requires the Excel **desktop** application. Confirmed against a live
+workbook. Any tool that can create a connection is therefore taking an action the user
+cannot undo without leaving the browser, and must say so rather than implying the
+web UI can clean up after it.
+
+**A count read back through Graph lags the live session.** `inspect_data_model` reads the
+saved package, so a connection created moments earlier may not appear yet — a check run
+too soon reports "no residue" when residue exists. Verified the hard way: four failed
+attempts looked clean immediately afterwards and had in fact each left a connection
+behind. Re-read after the workbook has saved, or treat an immediate count as a lower
+bound.
 
 **Capture procedure (this is the part that is easy to get wrong):** the debugger's
 `setAutoAttach` only attaches to child targets that load *after* capture is enabled, so

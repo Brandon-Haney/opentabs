@@ -16,9 +16,10 @@ export const getPivotFilterMembers = defineTool({
   displayName: 'Get PivotTable Filter Members',
   description:
     'List the members of a PivotTable page filter — every value the filter can be set to, each with the numeric id set_pivot_filter takes, and which are currently selected. ' +
-    'Always call this before set_pivot_filter. Member ids follow the model\'s ordering rather than the displayed order, so they cannot be inferred from position: on a real month filter "JUN - 2026" is 12, "JUL - 2026" is 15 and "SEP - 2025" is 18. Guessing sets the wrong member with no error. ' +
-    'Members arrive under `response.Result.PivotFilterItemsList.PivotFilterItems` — a single "All" root whose own PivotFilterItems array holds the real members, each with DisplayString, Id, and State (0 selected, 1 not selected, 2 partially selected). ' +
-    'Reads the live session, so it reflects filter changes that have not been saved yet.',
+    'Always call this before set_pivot_filter, and never reuse ids across filters or sessions: they are assigned per filter tree, so the same month is id 15 on one pivot and id 3 on another. Guessing selects the wrong member with no error. ' +
+    'Members arrive under `response.Result.PivotFilterItemsList.PivotFilterItems` — an "All" root whose own PivotFilterItems holds the members, each with DisplayString, Id and State (0 selected, 1 not, 2 partial). ' +
+    'Reads the live session, so it reflects unsaved filter changes. ' +
+    'A PftTokenMissing error means the workbook has not been allowed to query its external data this session: the user must open a PivotTable filter in Excel and answer Yes to the "Query and Refresh Data" prompt. Ask them — that consent cannot be sent from here, and retrying will not help.',
   summary: "List a page filter's members and their ids",
   icon: 'list-filter',
   group: 'Data Model',

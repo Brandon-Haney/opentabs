@@ -524,32 +524,41 @@ export const findPivotTable = (tables: PivotTableModel[], worksheet: string, nam
 };
 
 /**
- * The cell the filter operations address a PivotTable's page-filter block by.
+ * The cell the filter operations address one page filter by: the cell showing
+ * that filter's current selection, zero-based.
  *
- * Page filters stack in the rows directly above the pivot body, separated from
- * it by one blank row, and share its left edge — so the block's top-left sits
- * `filterCount + 1` rows above the anchor. The service wants that cell
- * **one-based**, unlike the zero-based coordinates the field-layout methods
- * take. Verified against live traffic: a pivot anchored at A4 with two page
- * filters is addressed as row 1, column 1.
+ * Page filters stack in the rows directly above the pivot body, one per row and
+ * in declaration order, separated from it by a blank row, with the caption in
+ * the pivot's own column and the selected value in the next one. So the value
+ * cell for filter `filterIndex` is that many rows below the block's top.
  *
- * Returns null when the pivot has no page filters, or when the arithmetic falls
- * off the top of the sheet — both mean there is no block to address, and a
- * fabricated cell would be rejected as an out-of-sync request rather than an
- * obviously bad argument.
+ * Verified on two live pivots that share a layout but differ in which filter
+ * was addressed: on a pivot anchored at A4 with two filters, its *second*
+ * filter is row 1 and its *first* is row 0. Deriving this from the block's top
+ * alone matches only when the filter happens to be the second one.
+ *
+ * Returns null when the index is out of range or the arithmetic falls off the
+ * top of the sheet; a fabricated cell is rejected as a generic out-of-sync
+ * request rather than an obviously bad argument.
  */
-export const pageFilterAnchor = (table: PivotTableModel): { row: number; column: number } | null => {
-  if (table.filters.length === 0) return null;
+export const pageFilterCell = (table: PivotTableModel, filterIndex: number): { row: number; column: number } | null => {
+  if (filterIndex < 0 || filterIndex >= table.filters.length) return null;
   const bounds = parseBoundedRange(table.anchor);
-
-  // Converted to one-based first, so the two adjustments stay legible: the
-  // blank separator row, then one row per page filter. Doing it in zero-based
-  // terms lets the -1 and the +1 cancel, which reads like a bug.
-  const anchorRow = bounds.startRow + 1;
-  const row = anchorRow - 1 - table.filters.length;
-  if (row < 1) return null;
+  const blockTop = bounds.startRow - 1 - table.filters.length;
+  const row = blockTop + filterIndex;
+  if (row < 0) return null;
   return { row, column: bounds.startCol + 1 };
 };
+
+/**
+ * Render a field id the way the filter methods take it: **hexadecimal**, upper
+ * case, as a string.
+ *
+ * Every other pivot method takes this id as a plain number. Field 6 encodes as
+ * "6" in either base, which is why a decimal id worked on the first pivot
+ * tested and failed on the next one, whose field 14 the service wants as "E".
+ */
+export const toFilterFieldId = (fieldIndex: number): string => fieldIndex.toString(16).toUpperCase();
 
 /** True when the package contains at least one PivotTable part. */
 export const hasPivotTableParts = (partNames: string[]): boolean =>

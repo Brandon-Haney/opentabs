@@ -1,5 +1,12 @@
 import { ToolError } from '@opentabs-dev/plugin-sdk';
-import { findPivotTable, pageFilterAnchor, readConnections, readPivotCaches, readPivotTables } from '../pivot-model.js';
+import {
+  findPivotTable,
+  pageFilterCell,
+  readConnections,
+  readPivotCaches,
+  readPivotTables,
+  toFilterFieldId,
+} from '../pivot-model.js';
 import { fetchWorkbookPackage } from '../workbook-package.js';
 
 /**
@@ -52,15 +59,19 @@ export const resolvePivotFilterTarget = async (
     );
   }
 
-  const anchor = pageFilterAnchor(table);
-  if (!anchor) {
+  if (table.filters.length === 0) {
     throw ToolError.validation(
       `PivotTable "${table.name}" on "${worksheet}" has no page filters, so there is no filter to read or set. ` +
         'Use add_pivot_field with zone "filters" to put a field into the Filters zone first.',
     );
   }
 
-  const match = table.filters.find(filter => filter.caption === field || String(filter.fieldIndex) === field.trim());
+  // Matched by position as well as identity, because the cell each filter is
+  // addressed by depends on where it sits in the list.
+  const filterIndex = table.filters.findIndex(
+    filter => filter.caption === field || String(filter.fieldIndex) === field.trim(),
+  );
+  const match = table.filters[filterIndex];
   if (!match) {
     throw ToolError.validation(
       `PivotTable "${table.name}" has no page filter "${field}". Its page filters are: ${table.filters
@@ -69,8 +80,15 @@ export const resolvePivotFilterTarget = async (
     );
   }
 
+  const cell = pageFilterCell(table, filterIndex);
+  if (!cell) {
+    throw ToolError.validation(
+      `Could not locate the cell for page filter "${match.caption}" on "${worksheet}": PivotTable "${table.name}" is anchored at ${table.anchor} with ${table.filters.length} page filters, which puts its filter block above the top of the sheet.`,
+    );
+  }
+
   return {
-    cell: { SheetName: worksheet, NamedObjectName: '', FirstRow: anchor.row, FirstColumn: anchor.column },
-    fieldId: String(match.fieldIndex),
+    cell: { SheetName: worksheet, NamedObjectName: '', FirstRow: cell.row, FirstColumn: cell.column },
+    fieldId: toFilterFieldId(match.fieldIndex),
   };
 };

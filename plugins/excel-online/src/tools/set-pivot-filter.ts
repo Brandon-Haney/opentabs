@@ -21,7 +21,8 @@ export const setPivotFilter = defineTool({
     "Pass member_ids from get_pivot_filter_members, which you must call first: the ids follow the model's ordering, not the displayed order, so an inferred id selects the wrong member without erroring. " +
     'Selecting several members at once is supported and aggregates them. ' +
     'This changes the numbers the PivotTable shows, and therefore every GETPIVOTDATA formula reading it — that is the intent, but say which filter changed when reporting the result. ' +
-    'Applies to the live session immediately; call refresh_pivot afterwards only if the underlying model data also needs re-querying.',
+    'Applies to the live session immediately; call refresh_pivot afterwards only if the underlying model data also needs re-querying. ' +
+    'A PftTokenMissing error means the workbook has not been granted permission to query its external data this session — the user must answer Yes to Excel\'s "Query and Refresh Data" prompt. Ask them; that consent cannot be sent from here.',
   summary: 'Set the members a PivotTable page filter selects',
   icon: 'filter',
   group: 'Data Model',

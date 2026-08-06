@@ -204,13 +204,24 @@ parameters: {
 checkedItems: ["12","15","16"]    // member ids, not names; several selects several
 ```
 
-`Location` is **not** free-form: it addresses the page-filter block's top-left cell,
-**one-based**, and the service answers `RetryOutOfSync` for any other cell — sending the
-pivot's own anchor row fails. Page filters stack in the rows directly above the pivot
-body with one blank row between, sharing its left edge, so for a pivot anchored at `A4`
-with two page filters the block starts at `A1` → `FirstRow: 1, FirstColumn: 1`. Confirmed
-against the sheet itself: `A1`/`A2` hold the filter captions and `B1`/`B2` their values.
-`pageFilterAnchor` in `pivot-model.ts` derives it as `anchorRow - 1 - filterCount`.
+`Location` is **not** free-form: it addresses the cell showing *that filter's* current
+selection, **zero-based**, and the service answers `RetryOutOfSync` for any other cell.
+Page filters stack in the rows directly above the pivot body, one per row in declaration
+order, separated by a blank row, with the caption in the pivot's own column and the value
+in the next one. `pageFilterCell` derives it as
+`(anchorRow - 1 - filterCount) + filterIndex` for the row and `anchorCol + 1` for the
+column, all zero-based.
+
+**The `filterIndex` term is load-bearing and easy to miss.** Both live pivots are anchored
+at `A4` with two page filters, so a derivation from the block's top alone produces `row 1`
+for both — which is right for the Sales pivot, whose target is its *second* filter, and
+wrong for the PROTracker pivot, whose target is its *first* (`row 0`). One pivot is not
+enough to validate this; it took a second one addressing a different filter position.
+
+**`FieldId` is hexadecimal**, upper case, as a string — unlike every other pivot method,
+which takes the same id as a plain number. Field 6 encodes as `"6"` in either base, which
+is exactly why a decimal id worked on the first pivot tested and then failed on the next,
+whose field 14 the service wants as `"E"`.
 
 `GetPivotTableCellInfo` takes `activeCell: { SheetName, NamedObjectName: "", FirstRow,
 FirstColumn }`. Pivot coordinates here are **1-based**, matching the plain-range filter
@@ -314,15 +325,58 @@ Response: `Result.PivotFilterItemsList.PivotFilterItems` — a tree whose root i
 each `{ DisplayString, Id, State, LeafItem }`. `State` is `0` selected, `1` not selected,
 `2` partially selected. `ApplyFilter` then takes `checkedItems: ["<Id>"]`.
 
-**Ids follow the model's ordering, not the displayed order**, so they cannot be inferred
-from position: on a live month filter `JUN - 2026` is 12, `JUL - 2026` is 15, `AUG - 2026`
-is 16 and `SEP - 2025` is 18. Anything that guesses an id selects the wrong member and
-reports success, which is why `set_pivot_filter` takes ids from
-`get_pivot_filter_members` rather than accepting a member name it would have to resolve
-itself — a tool gets one bridge call, so the lookup cannot be folded into the write.
+**Ids are assigned per filter tree and follow the model's ordering, not the displayed
+order.** On one live month filter `JUN - 2026` is 12, `JUL - 2026` is 15 and `SEP - 2025`
+is 18; on a second pivot over a different model the *same months* are 4, 3 and 13. So an
+id is meaningless outside the tree it came from and cannot be inferred from position,
+cached across pivots, or reused after the filter changes. Anything that guesses selects
+the wrong member and reports success.
+
+That is why `set_pivot_filter` takes ids from `get_pivot_filter_members` rather than
+accepting a member name it would resolve itself: a tool gets one bridge call, so the
+lookup cannot be folded into the write.
 
 `parentId` must be `-1`; passing a member id to fetch a subtree answers
 `UnexpectedPivotError`.
+
+**`PftTokenMissing` is a user-consent gate, not a bug.** Both filter methods answer
+`PftTokenMissing` ("Please refresh the page") until the workbook has been allowed to query
+its external data *in that session*. Excel asks for this with the **"Query and Refresh
+Data"** dialog — "the query to get the data might be unsafe so you should only refresh the
+workbook if you trust its source" — and records the answer with:
+
+```
+POST SetParameters
+  parameters: []          setParametersAtOpen: true
+  confirmation: 1243883867      // MessageId of the prompt
+  confirmationChoice: true      // the user pressed Yes
+```
+
+Once that lands, both filter methods work for the rest of the session. It is session-wide
+rather than per-pivot, and any reload — including the plugin's own reauthenticate path —
+discards it.
+
+**Deliberately not automated.** Replaying `SetParameters` would mean answering a security
+prompt about whether an external data source is trustworthy on the user's behalf, from
+code, silently. The tools surface the state and tell the caller to ask instead. This is a
+policy choice, not a technical limitation: the call itself replays fine.
+
+Things that look like the cause and are not, each tested directly — worth recording so the
+next reader does not spend the time again:
+
+- **Session freeze.** `TimeFromLastEcsFreeze` reads `-2` on every successful call and a
+  large value on the failures, which looks conclusive and is not: after a refresh the
+  counter returns to `-2` while the error persists. Pure correlation.
+- **A page reload**, by navigation or by reauthenticate — these *remove* the consent.
+- **`Refresh`** of the data connection.
+- **`GetPivotFieldListData`**, the obvious candidate for what a dropdown loads first.
+- **`needConnect`**, both values.
+- **A `ViewportStateChange` context patch** naming the pivot's sheet.
+
+It was found by capturing the app's own dropdown interaction across the *whole* RPC stream.
+Earlier captures were filtered to `*Filter*` method names, which hid `SetParameters`
+entirely — a filter narrow enough to protect the user's data was also narrow enough to
+hide the answer.
 
 **Solved — `GetPivotFilterData` replays cleanly.** It was blocked for a while behind an
 error that read as a session problem and was not one. Three arguments were wrong at once,

@@ -56,6 +56,7 @@ export {
   getLogFilePath,
   getPidFilePath,
   getTelemetryIdPath,
+  MAX_TOOL_DESCRIPTION_LENGTH,
   normalizePluginName,
   PLATFORM_PACKAGES,
   PLUGIN_PREFIX,

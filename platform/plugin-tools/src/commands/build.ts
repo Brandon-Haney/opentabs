@@ -24,6 +24,7 @@ import {
   DEFAULT_PORT,
   getConfigDir,
   getConfigPath,
+  MAX_TOOL_DESCRIPTION_LENGTH,
   PRE_SCRIPT_FILENAME,
   parsePluginPackageJson,
   pluginNameFromPackage,
@@ -395,6 +396,13 @@ const validatePlugin = (plugin: OpenTabsPlugin): string[] => {
           `Tool "${tool.name || '(unnamed)'}" has an empty displayName — either omit it for auto-derivation or provide a non-empty value`,
         );
       if (tool.description.length === 0) errors.push(`Tool "${tool.name || '(unnamed)'}" is missing a description`);
+      if (tool.description.length > MAX_TOOL_DESCRIPTION_LENGTH) {
+        errors.push(
+          `Tool "${tool.name || '(unnamed)'}" has a ${tool.description.length}-character description, over the ` +
+            `${MAX_TOOL_DESCRIPTION_LENGTH}-character limit. The MCP server rejects the whole plugin over this, ` +
+            'falling back to a previously published copy, so every tool in it silently stops reflecting local changes.',
+        );
+      }
       if (tool.icon !== undefined && !LUCIDE_ICON_NAMES.has(tool.icon)) {
         errors.push(
           `Tool "${tool.name || '(unnamed)'}" has invalid icon "${tool.icon}" — must be a valid Lucide icon name (kebab-case). See https://lucide.dev/icons`,

@@ -17,6 +17,7 @@ import {
   ADAPTER_SOURCE_MAP_FILENAME,
   BROWSER_TOOLS_CATALOG,
   err,
+  MAX_TOOL_DESCRIPTION_LENGTH,
   ok,
   PRE_SCRIPT_FILENAME,
   parsePluginPackageJson,
@@ -142,8 +143,11 @@ const validateTools = (tools: unknown, sourcePath: string): Result<ManifestTool[
     if (typeof description !== 'string' || description.length === 0) {
       return err(`Invalid tools.json at ${sourcePath}: tools[${i}].description must be a non-empty string`);
     }
-    if (description.length > 1000) {
-      return err(`Invalid tools.json at ${sourcePath}: tools[${i}].description must be at most 1000 characters`);
+    if (description.length > MAX_TOOL_DESCRIPTION_LENGTH) {
+      return err(
+        `Invalid tools.json at ${sourcePath}: tools[${i}].description is ${description.length} characters, ` +
+          `over the ${MAX_TOOL_DESCRIPTION_LENGTH}-character limit`,
+      );
     }
 
     const icon = toolRecord.icon;

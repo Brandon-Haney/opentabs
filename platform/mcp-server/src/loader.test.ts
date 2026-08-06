@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { MAX_TOOL_DESCRIPTION_LENGTH } from '@opentabs-dev/shared';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { checkSdkCompatibility, loadPlugin, parseMajorMinor, validateTools } from './loader.js';
 
@@ -129,7 +130,7 @@ describe('validateTools', () => {
         {
           name: 't',
           displayName: 'T',
-          description: 'x'.repeat(1001),
+          description: 'x'.repeat(MAX_TOOL_DESCRIPTION_LENGTH + 1),
           icon: 'i',
           input_schema: {},
           output_schema: {},
@@ -139,7 +140,7 @@ describe('validateTools', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toContain('at most 1000 characters');
+      expect(result.error).toContain(`over the ${MAX_TOOL_DESCRIPTION_LENGTH}-character limit`);
     }
   });
 });

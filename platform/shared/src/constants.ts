@@ -35,6 +35,18 @@ export const TOOLS_FILENAME = 'tools.json';
 /** Filename of the bundled pre-script IIFE (when declared by a plugin) */
 export const PRE_SCRIPT_FILENAME = 'pre-script.iife.js';
 
+/**
+ * Longest tool description the MCP server will accept in a plugin manifest.
+ *
+ * Enforced twice on purpose: `opentabs-plugin build` rejects an over-long
+ * description so the author sees it immediately, and the server's loader
+ * rejects it again because a manifest can reach the server without having been
+ * built by this toolchain. Both read this constant so the two limits cannot
+ * drift — a build that passes and a load that fails is a silent outage, since
+ * the server falls back to a previously published copy of the whole plugin.
+ */
+export const MAX_TOOL_DESCRIPTION_LENGTH = 1000;
+
 // ---------------------------------------------------------------------------
 // Config directory paths
 // ---------------------------------------------------------------------------

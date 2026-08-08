@@ -16,6 +16,7 @@ import { clearRange } from './tools/clear-range.js';
 import { clearTableFilters } from './tools/clear-table-filters.js';
 import { convertTableToRange } from './tools/convert-table-to-range.js';
 import { createChart } from './tools/create-chart.js';
+import { createPivotFromConnection } from './tools/create-pivot-from-connection.js';
 import { createTable } from './tools/create-table.js';
 import { deleteChart } from './tools/delete-chart.js';
 import { deleteRange } from './tools/delete-range.js';
@@ -42,6 +43,7 @@ import { getWorkbookInfo } from './tools/get-workbook-info.js';
 import { groupRowsColumns } from './tools/group-rows-columns.js';
 import { hideRowsColumns } from './tools/hide-rows-columns.js';
 import { insertPageBreak } from './tools/insert-page-break.js';
+import { insertPowerbiTable } from './tools/insert-powerbi-table.js';
 import { insertRange } from './tools/insert-range.js';
 import { insertTable } from './tools/insert-table.js';
 import { inspectDataModel } from './tools/inspect-data-model.js';
@@ -53,7 +55,9 @@ import { listWorksheets } from './tools/list-worksheets.js';
 import { mergeCells } from './tools/merge-cells.js';
 import { protectWorksheet } from './tools/protect-worksheet.js';
 import { reauthenticate } from './tools/reauthenticate.js';
+import { refreshAllConnections } from './tools/refresh-all-connections.js';
 import { refreshPivot } from './tools/refresh-pivot.js';
+import { removePivotField } from './tools/remove-pivot-field.js';
 import { removeDuplicates } from './tools/remove-duplicates.js';
 import { setBorders } from './tools/set-borders.js';
 import { setDimensions } from './tools/set-dimensions.js';
@@ -137,9 +141,13 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     listPivotTables,
     getPivotFieldLayout,
     addPivotField,
+    removePivotField,
     getPivotFilterMembers,
     setPivotFilter,
+    createPivotFromConnection,
+    insertPowerbiTable,
     refreshPivot,
+    refreshAllConnections,
     // Charts
     listCharts,
     createChart,

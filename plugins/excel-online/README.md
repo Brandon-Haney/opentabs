@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 1. Open [excel.cloud.microsoft](https://excel.cloud.microsoft/) in Chrome and log in
 2. Open the OpenTabs side panel — the Excel Online plugin should appear as **ready**
 
-## Tools (69)
+## Tools (73)
 
 ### Account (2)
 
@@ -104,7 +104,7 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 | `filter_table` | Filter a table by a column | Write |
 | `clear_table_filters` | Clear filters on a table | Write |
 
-### Data Model (7)
+### Data Model (11)
 
 | Tool | Description | Type |
 |---|---|---|
@@ -112,9 +112,13 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 | `list_pivot_tables` | List PivotTables with their zones and pinned filters | Read |
 | `get_pivot_field_layout` | Read a PivotTable's live field layout and ids | Read |
 | `add_pivot_field` | Place a measure or hierarchy into a PivotTable zone | Write |
+| `remove_pivot_field` | Take a field out of a PivotTable zone | Write |
 | `get_pivot_filter_members` | List a page filter's members and their ids | Read |
 | `set_pivot_filter` | Set the members a PivotTable page filter selects | Write |
+| `create_pivot_from_connection` | Create a PivotTable over a Power BI semantic model | Write |
+| `insert_powerbi_table` | Insert a DAX query result as a live, refreshable table | Write |
 | `refresh_pivot` | Refresh a workbook data connection | Write |
+| `refresh_all_connections` | Refresh every data connection in the workbook | Write |
 
 ### Charts (5)
 

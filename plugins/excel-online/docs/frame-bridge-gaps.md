@@ -289,10 +289,21 @@ current values rather than assume. `GetPivotFieldManagerData` returns both.
 | `2` | Columns |
 | `4` | Filters (page) |
 | `8` | Values (data) |
-| `0` | Removed — paired with `SourceAxis` set to the zone it left, and a *negative* `ItemIndex` |
+| `0` | Removed — paired with `SourceAxis` set to the zone it left and `SourceAxisPosition` set to its index within that zone |
 | `-1` | Default placement (a measure dropped without a target lands in Values) |
 
 `ItemType` is `3` for a measure, `5` for a hierarchy/field, and `0` on a removal.
+
+**A removal reuses the same positive `ItemIndex` the field was added with** — an earlier
+note here claimed a negative one, which was wrong. Verified end to end against a live
+pivot: removing `Invoice Year` (index 20) from Columns sends
+`{SourceAxis: 2, SourceAxisPosition: 0, ItemType: 0, ItemIndex: 20, DestinationAxis: 0}`,
+after which `ColumnAxis` comes back empty.
+
+**`dataSourceIndex` is per-pivot, not a constant.** The scorecard's pivots answer to `0`;
+a pivot created over the workbook's third connection answers to `2`. Passing the wrong one
+fails as a generic out-of-sync error rather than a bad-argument one, so read it from
+whatever value a successful `GetPivotFieldManagerData` used rather than assuming.
 
 **`GetPivotFieldManagerData`** (GET) is the key lookup — it returns the field well as
 `RowAxis` / `ColumnAxis` / `FilterAxis` / `DataAxis`, each entry carrying `Name` and
@@ -437,6 +448,43 @@ carries add-in identity (`SolutionId`, `CompliantSolutionId`, `InstanceId`,
 `MarketplaceType: sdxcatalog`, `AppPermission`, `RequestFlags`) because the capture came
 from the Power BI task-pane add-in.
 
+**The pane creates the destination sheet in a separate, earlier batch** —
+`Worksheets.Add()` followed by `GetActiveCell`, with `AutoKeepReference: true` — rather
+than folding it into the batch above. Combining the two is what made a hand-rolled
+attempt fail with `InvalidSheetName`: the pivot batch runs against a session context
+captured before the new sheet existed. `create_pivot_from_connection` therefore requires
+the worksheet to exist already, and leaves creating it to `add_worksheet`.
+
+**"Insert Table" is the same mechanism with a different command, and is the more useful
+of the two.** The connection's *command* is a DAX query and its command type is the
+number `4`, where a PivotTable connection sends the strings `"Model"` / `"Cube"`:
+
+```
+ObjectPaths:
+  18 workbook.DataConnections
+  21 DataConnections.Add(<name>, "<same connection string>",
+                         "EVALUATE ROW(\"CMTD_EBITDA\", 'Measure Table'[CMTD EBITDA])", 4)
+  23 Application
+  26 workbook.Tables
+  28 Tables.AddQueryTable(<ref to 21>, "A1")   ReferencedObjectPathIds: [21, 0]
+  32 <table>.Worksheet
+Actions:
+  SuspendScreenUpdatingUntilNextSync on Application
+  Style = "TableStyleMedium7" on the new table
+  Activate on its worksheet
+```
+
+So an inserted table is **a native Excel table bound live to an arbitrary DAX query**,
+refreshable like any other connection — not a paste of values. That makes it a better
+route for "get Power BI data into a sheet" than writing `execute_dax` output into cells,
+which produces numbers that go stale with nothing to indicate it. `insert_powerbi_table`
+builds on this.
+
+**`RefreshAllNew` refreshes every connection at once**, and takes only
+`{periodic: false, refreshOnOpen: false}` — no per-session AAD token, unlike the
+single-connection `Refresh`. It is what Data > Refresh All sends. `RefreshAll` answers 401
+because it does not exist, which reads like an authorisation failure and is not one.
+
 **Replay verified 2026-08-06** — a PivotTable was created and a measure placed into it
 entirely through the bridge, reusing the add-in identity values verbatim. Four things
 had to be right, and each failed distinctly until it was:
@@ -486,3 +534,19 @@ bound.
 the order must be `browser_enable_network_capture` → **reload the page** → interact.
 Enabling capture against an already-loaded Office frame records nothing and looks
 exactly like "there is no such traffic". Verified both ways in the same session.
+
+**The capture buffer does not survive an idle service worker.** `network-capture.ts` keeps
+it in a module-level `Map`, and Chrome evicts an MV3 service worker after roughly thirty
+seconds without activity — taking the buffer and the debugger attachment with it, silently.
+A capture that spans a human doing manual UI work will therefore come back empty, which is
+indistinguishable from the person not having done anything. It cost several rounds of
+asking Brandon to repeat himself before the cause was found, and once led to telling him he
+had not performed an action he had in fact performed.
+
+Until the buffer is persisted (`chrome.storage.session` would survive worker restarts),
+the workaround is to poll something cheap every ~20 seconds for the duration of the
+capture: any tool call reaches the worker and resets its idle timer. Traffic on the
+captured tab also keeps it alive, so the vulnerable window is the gap between arming the
+capture and the first request. **Verify the capture is live before asking a human to act** —
+firing one throwaway request and confirming it lands is a few seconds and rules this out
+entirely.

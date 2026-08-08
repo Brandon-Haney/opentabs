@@ -63,7 +63,9 @@ export const addPivotField = defineTool({
       .number()
       .int()
       .optional()
-      .describe('Data source index within the PivotTable. Defaults to 0, correct for a single-source pivot.'),
+      .describe(
+        "Data source index of the PivotTable — the same value a successful get_pivot_field_layout used. It is per-pivot, not a constant: a pivot built on the workbook's third connection reports 2. Defaults to 0.",
+      ),
   }),
   output: bridgeOutputSchema,
   handle: async params => {

@@ -1,7 +1,26 @@
-import { defineTool } from '@opentabs-dev/plugin-sdk';
+import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
+import { parseBoundedRange } from '../a1.js';
 import { bridgeOutputSchema, ewaBridge, richApiRequest } from '../bridge.js';
 import { CUBE_COMMAND, powerBiConnectionString, qualifyDestination } from '../powerbi-connection.js';
+
+/**
+ * Lowest row (one-based) a cube PivotTable can be anchored at.
+ *
+ * A cube PivotTable reserves the rows *above* its anchor for the page-filter
+ * block, so an anchor too close to the top of the sheet has nowhere to put it.
+ * Verified against a live model, same connection and sheet, anchor the only
+ * variable: `A1` fails, `A3` and `F12` succeed. Row 2 was not tested, so the
+ * limit is set at the lowest row proven to work rather than the lowest that
+ * might.
+ *
+ * The failure is worth guarding rather than passing through, because the
+ * service reports it as `GeneralException` from `PivotTableCollection.add` with
+ * no mention of the anchor — and because reaching it has already cost a
+ * connection by the time it happens, since the connection is created earlier in
+ * the same batch and survives the failed pivot.
+ */
+const MIN_PIVOT_ANCHOR_ROW = 3;
 
 /**
  * Build the object-model batch Excel's Power BI pane sends for "Insert
@@ -79,7 +98,12 @@ export const createPivotFromConnection = defineTool({
   input: z.object({
     dataset_id: z.string().describe('Power BI semantic model ID (a GUID), from list_datasets or inspect_data_model'),
     worksheet: z.string().describe('Existing worksheet to place the PivotTable on. Use a new, empty sheet.'),
-    anchor: z.string().optional().describe('Top-left cell of the PivotTable in A1 notation. Defaults to A1.'),
+    anchor: z
+      .string()
+      .optional()
+      .describe(
+        `Top-left cell of the PivotTable in A1 notation. Defaults to A3. Must be on row ${MIN_PIVOT_ANCHOR_ROW} or below — the rows above the anchor hold the page-filter block, so A1 leaves nowhere to put it and the service rejects the whole call.`,
+      ),
     pivot_name: z
       .string()
       .optional()
@@ -91,7 +115,20 @@ export const createPivotFromConnection = defineTool({
   }),
   output: bridgeOutputSchema,
   handle: async params => {
-    const anchor = params.anchor ?? 'A1';
+    const anchor = params.anchor ?? `A${MIN_PIVOT_ANCHOR_ROW}`;
+
+    // Checked before the call, not after: the connection is created earlier in
+    // the same batch and survives the failed pivot, so letting this through
+    // costs an undeletable connection to learn nothing.
+    const anchorRow = parseBoundedRange(anchor).startRow + 1;
+    if (anchorRow < MIN_PIVOT_ANCHOR_ROW) {
+      throw ToolError.validation(
+        `Anchor "${anchor}" is on row ${anchorRow}; a PivotTable over a cube needs row ${MIN_PIVOT_ANCHOR_ROW} or below. ` +
+          'The rows above the anchor hold the page-filter block, so there is nowhere to put it this near the top of the sheet. ' +
+          `The service rejects this as a GeneralException from PivotTableCollection.add without mentioning the anchor, and the connection is created before it fails — so retrying at A1 leaves an undeletable connection behind each time. Use A${MIN_PIVOT_ANCHOR_ROW} or lower.`,
+      );
+    }
+
     const base = params.worksheet.replace(/[^A-Za-z0-9]/g, '') || 'PowerBI';
     return ewaBridge(
       'ExecuteRichApiRequest',

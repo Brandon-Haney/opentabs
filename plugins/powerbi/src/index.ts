@@ -3,6 +3,7 @@ import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import { isAuthenticated, waitForAuth } from './powerbi-api.js';
 import { describeDataset } from './tools/describe-dataset.js';
 import { executeDax } from './tools/execute-dax.js';
+import { getDataset } from './tools/get-dataset.js';
 import { getReport } from './tools/get-report.js';
 import { listApps } from './tools/list-apps.js';
 import { listDashboards } from './tools/list-dashboards.js';
@@ -27,6 +28,7 @@ class PowerBiPlugin extends OpenTabsPlugin {
     listDashboards,
     // Semantic models
     listDatasets,
+    getDataset,
     describeDataset,
     executeDax,
   ];

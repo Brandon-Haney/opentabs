@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge, pivotCellBounds } from '../bridge.js';
+import { PIVOT_DATA_SOURCE_INDEX } from './pivot-data-source.js';
 
 /**
  * Axis codes a field can currently occupy, as the source of a removal.
@@ -43,12 +44,6 @@ export const removePivotField = defineTool({
       .describe('Zero-based position of the field within that zone, i.e. its index in that axis array'),
     field_list_version: z.number().int().describe('Current FieldListVersion from get_pivot_field_layout'),
     field_well_version: z.number().int().describe('Current FieldWellVersion from get_pivot_field_layout'),
-    data_source_index: z
-      .number()
-      .int()
-      .describe(
-        "Data source index of the PivotTable, the same value a successful get_pivot_field_layout used. It is per-pivot, not a constant — a pivot built on the workbook's third connection reports 2.",
-      ),
   }),
   output: bridgeOutputSchema,
   handle: async params =>
@@ -56,7 +51,7 @@ export const removePivotField = defineTool({
       'ApplyPivot',
       {
         cell: pivotCellBounds(params.worksheet, params.cell),
-        dataSourceIndex: params.data_source_index,
+        dataSourceIndex: PIVOT_DATA_SOURCE_INDEX,
         optionalPivotAnchorParameter: { AnchorType: 0 },
         pivotFieldApplyData: {
           FieldListType: 1,

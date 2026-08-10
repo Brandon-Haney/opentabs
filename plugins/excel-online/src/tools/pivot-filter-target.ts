@@ -25,20 +25,20 @@ export interface PivotFilterTarget {
 }
 
 /**
- * Data-source index the page-filter methods address a PivotTable's model by.
+ * Said whenever a filter is missing from the workbook package.
  *
- * It indexes the PivotTable's *own* sources, one-based — not the workbook's
- * connection list, which is the reading the name invites and which is wrong.
- * Captured from Excel's own client: a pivot built on the workbook's second
- * connection is still addressed as `1`. A PivotTable has exactly one cache and
- * therefore one source, so every pivot reachable here answers to `1`, and
- * deriving the value per pivot would only ever reproduce this constant.
+ * The cell a page-filter method is addressed by depends on the filter's position
+ * in the pivot's filter list, so this resolution has to read the saved workbook
+ * — and the saved workbook trails the open session by however long Excel takes
+ * to autosave. A filter placed by `add_pivot_field` moments earlier is live and
+ * absent here at the same time.
  *
- * Zero is accepted by the field-layout methods and rejected by these, which is
- * worth knowing because the rejection surfaces as a generic out-of-sync error
- * rather than a bad-argument one.
+ * Worth the words because the obvious reading of "no page filters" is that the
+ * add did not happen, and acting on that adds the field a second time.
  */
-export const FILTER_DATA_SOURCE_INDEX = 1;
+const SAVE_LAG_NOTE =
+  'This reads the saved workbook, which trails the open session until Excel autosaves. ' +
+  'If add_pivot_field just placed this filter, it is already live — wait for the save to catch up and call again rather than adding the field again, which would place a second copy.';
 
 /**
  * Resolve the PivotTable on `worksheet` and the page filter identified by
@@ -67,8 +67,9 @@ export const resolvePivotFilterTarget = async (
 
   if (table.filters.length === 0) {
     throw ToolError.validation(
-      `PivotTable "${table.name}" on "${worksheet}" has no page filters, so there is no filter to read or set. ` +
-        'Use add_pivot_field with zone "filters" to put a field into the Filters zone first.',
+      `PivotTable "${table.name}" on "${worksheet}" has no page filters in the saved workbook, so there is no filter to read or set. ` +
+        `${SAVE_LAG_NOTE} ` +
+        'If it genuinely has none, use add_pivot_field with zone "filters" to put a field into the Filters zone first.',
     );
   }
 
@@ -80,9 +81,9 @@ export const resolvePivotFilterTarget = async (
   const match = table.filters[filterIndex];
   if (!match) {
     throw ToolError.validation(
-      `PivotTable "${table.name}" has no page filter "${field}". Its page filters are: ${table.filters
+      `PivotTable "${table.name}" has no page filter "${field}" in the saved workbook. Its page filters are: ${table.filters
         .map(filter => `${filter.caption} (field_index ${filter.fieldIndex})`)
-        .join(', ')}.`,
+        .join(', ')}. ${SAVE_LAG_NOTE}`,
     );
   }
 

@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { bridgeOutputSchema, ewaBridge, richApiRequest } from '../bridge.js';
+import { EWA_ERROR_HINTS, bridgeOutputSchema, ewaBridge, richApiRequest } from '../bridge.js';
 import { DAX_COMMAND_TYPE, powerBiConnectionString } from '../powerbi-connection.js';
 
 /** Table style Excel's own Power BI pane applies to an inserted query table. */
@@ -114,6 +114,7 @@ export const insertPowerbiTable = defineTool({
         anchor,
         insertQueryTableBatch(name, params.dataset_id, params.dax, anchor, params.table_style ?? DEFAULT_TABLE_STYLE),
       ),
+      { errorHints: EWA_ERROR_HINTS },
     );
   },
 });

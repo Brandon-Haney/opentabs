@@ -1,7 +1,8 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge } from '../bridge.js';
-import { FILTER_DATA_SOURCE_INDEX, resolvePivotFilterTarget } from './pivot-filter-target.js';
+import { PIVOT_DATA_SOURCE_INDEX } from './pivot-data-source.js';
+import { resolvePivotFilterTarget } from './pivot-filter-target.js';
 
 /**
  * Level of the hierarchy the filter selection applies to.
@@ -66,7 +67,7 @@ export const setPivotFilter = defineTool({
           },
           IsPivotFilter: true,
           FieldId: target.fieldId,
-          DataSourceIndex: FILTER_DATA_SOURCE_INDEX,
+          DataSourceIndex: PIVOT_DATA_SOURCE_INDEX,
           AnchorType: 0,
           ChartId: null,
           AnchorValue1: -1,

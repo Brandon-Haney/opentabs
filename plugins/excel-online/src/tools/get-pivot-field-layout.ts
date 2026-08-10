@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { EWA_GET_CONTEXT_KEYS, bridgeReadOutputSchema, ewaBridgeRead, pivotCellRef } from '../bridge.js';
+import { PIVOT_DATA_SOURCE_INDEX } from './pivot-data-source.js';
 
 /**
  * Read the live field well of a PivotTable.
@@ -29,11 +30,6 @@ export const getPivotFieldLayout = defineTool({
     cell: z
       .string()
       .describe('Any cell inside the PivotTable, in A1 notation — its anchor is a safe choice (e.g. "A4")'),
-    data_source_index: z
-      .number()
-      .int()
-      .optional()
-      .describe('Data source index within the PivotTable. Defaults to 0, which is correct for a single-source pivot.'),
   }),
   output: bridgeReadOutputSchema,
   handle: async params =>
@@ -41,7 +37,7 @@ export const getPivotFieldLayout = defineTool({
       'GetPivotFieldManagerData',
       {
         cell: pivotCellRef(params.worksheet, params.cell),
-        dataSourceIndex: params.data_source_index ?? 0,
+        dataSourceIndex: PIVOT_DATA_SOURCE_INDEX,
         optionalPivotAnchorParameter: { AnchorType: 0 },
         type: 1,
         version: 4,

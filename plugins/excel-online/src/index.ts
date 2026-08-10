@@ -40,6 +40,7 @@ import { getTableColumns } from './tools/get-table-columns.js';
 import { getTableRows } from './tools/get-table-rows.js';
 import { getUsedRange } from './tools/get-used-range.js';
 import { getWorkbookInfo } from './tools/get-workbook-info.js';
+import { grantDataAccess } from './tools/grant-data-access.js';
 import { groupRowsColumns } from './tools/group-rows-columns.js';
 import { hideRowsColumns } from './tools/hide-rows-columns.js';
 import { insertPageBreak } from './tools/insert-page-break.js';
@@ -138,6 +139,7 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     // Data model — read from the raw .xlsx package, because the Microsoft Graph
     // workbook API exposes no PivotTable, connection, or pivot-cache surface.
     inspectDataModel,
+    grantDataAccess,
     listPivotTables,
     getPivotFieldLayout,
     addPivotField,

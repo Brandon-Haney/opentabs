@@ -7,7 +7,8 @@ import {
   EWA_GET_CONTEXT_KEYS,
   ewaBridgeRead,
 } from '../bridge.js';
-import { FILTER_DATA_SOURCE_INDEX, resolvePivotFilterTarget } from './pivot-filter-target.js';
+import { PIVOT_DATA_SOURCE_INDEX } from './pivot-data-source.js';
+import { resolvePivotFilterTarget } from './pivot-filter-target.js';
 
 /**
  * Return the members as a flat `[{ name, id, state }]` list.
@@ -45,6 +46,11 @@ const memberSchema = z.object({
  * ids follow the model's own ordering, not the display order, so on a live
  * month filter "JUN - 2026" is 12, "JUL - 2026" is 15 and "SEP - 2025" is 18.
  * Anything that infers an id from position sets the wrong member silently.
+ *
+ * The service answers one level of the tree at a time. A small filter such as a
+ * list of months arrives fully populated from the root, but a dimension the size
+ * of a store or product list answers with "All" alone and no members under it;
+ * those arrive only when that row's id is passed back as `parent_id`.
  */
 export const getPivotFilterMembers = defineTool({
   name: 'get_pivot_filter_members',
@@ -53,6 +59,7 @@ export const getPivotFilterMembers = defineTool({
     'List the members of a PivotTable page filter — every value the filter can be set to, each with the numeric id set_pivot_filter takes, and which are currently selected. ' +
     'Always call this before set_pivot_filter, and never reuse ids across filters or sessions: they are assigned per filter tree, so the same month is id 15 on one pivot and id 3 on another. Guessing selects the wrong member with no error. ' +
     'Returns `response` as a flat list of {name, id, state, is_leaf}, including the selectable "All" row. Match on name; state 0 marks what is selected now. ' +
+    'A large dimension comes back as a single unexpanded "All" row — pass its id as parent_id to list the members beneath it. ' +
     'Reads the live session, so it reflects unsaved filter changes. ' +
     "A PftTokenMissing error means this pivot's data source has not been allowed to be queried in this browser session; the error itself says exactly what the user must do.",
   summary: "List a page filter's members and their ids",
@@ -66,6 +73,15 @@ export const getPivotFilterMembers = defineTool({
         'The page filter to read, by caption ("Invoice Month") or by the field_index that inspect_data_model and list_pivot_tables report',
       ),
     pivot_name: z.string().optional().describe('PivotTable name. Only needed when the worksheet hosts more than one.'),
+    parent_id: z
+      .number()
+      .int()
+      .optional()
+      .describe(
+        'Id of the member whose children to list. Omit to read the top of the tree. ' +
+          'A large dimension comes back as a single unexpanded row — "All" with is_leaf false and no members under it — ' +
+          'and its children only arrive when its id is passed back here.',
+      ),
   }),
   output: bridgeOutputSchema.extend({
     response: z
@@ -79,11 +95,14 @@ export const getPivotFilterMembers = defineTool({
       'GetPivotFilterData',
       {
         cell: target.cell,
-        dataSourceIndex: FILTER_DATA_SOURCE_INDEX,
+        dataSourceIndex: PIVOT_DATA_SOURCE_INDEX,
         optionalPivotAnchorParameter: { AnchorType: 0, ChartId: null, AnchorValue1: -1, AnchorValue2: -1 },
         fieldId: target.fieldId,
-        parentId: -1,
-        needConnect: true,
+        parentId: params.parent_id ?? -1,
+        // True only on the call that opens the tree, which is the one that has
+        // to reach the model; expanding a node runs against the connection that
+        // call established. Excel's own client sends exactly this pair.
+        needConnect: params.parent_id === undefined,
       },
       {
         httpMethod: 'GET',

@@ -1,7 +1,7 @@
 import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { parseBoundedRange } from '../a1.js';
-import { bridgeOutputSchema, ewaBridge, richApiRequest } from '../bridge.js';
+import { EWA_ERROR_HINTS, bridgeOutputSchema, ewaBridge, richApiRequest } from '../bridge.js';
 import { CUBE_COMMAND, powerBiConnectionString, qualifyDestination } from '../powerbi-connection.js';
 
 /**
@@ -142,6 +142,7 @@ export const createPivotFromConnection = defineTool({
           qualifyDestination(params.worksheet, anchor),
         ),
       ),
+      { errorHints: EWA_ERROR_HINTS },
     );
   },
 });

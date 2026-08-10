@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge, pivotCellBounds } from '../bridge.js';
 import { findGetPivotDataReferences } from '../pivot-model.js';
 import { fetchWorkbookPackage } from '../workbook-package.js';
+import { PIVOT_DATA_SOURCE_INDEX } from './pivot-data-source.js';
 
 /**
  * Zones a field can be placed into, and the axis code each maps to.
@@ -59,13 +60,6 @@ export const addPivotField = defineTool({
     field_list_version: z.number().int().describe('Current FieldListVersion from get_pivot_field_layout'),
     field_well_version: z.number().int().describe('Current FieldWellVersion from get_pivot_field_layout'),
     position: z.number().int().optional().describe('Zero-based position within the destination zone. Omit to append.'),
-    data_source_index: z
-      .number()
-      .int()
-      .optional()
-      .describe(
-        "Data source index of the PivotTable — the same value a successful get_pivot_field_layout used. It is per-pivot, not a constant: a pivot built on the workbook's third connection reports 2. Defaults to 0.",
-      ),
   }),
   output: bridgeOutputSchema,
   handle: async params => {
@@ -91,7 +85,7 @@ export const addPivotField = defineTool({
       'ApplyPivot',
       {
         cell: pivotCellBounds(params.worksheet, params.cell),
-        dataSourceIndex: params.data_source_index ?? 0,
+        dataSourceIndex: PIVOT_DATA_SOURCE_INDEX,
         optionalPivotAnchorParameter: { AnchorType: 0 },
         pivotFieldApplyData: {
           FieldListType: 1,

@@ -30,22 +30,28 @@ describe('atomicWrite', () => {
     expect(content).toBe('second');
   });
 
-  test('concurrent writes to the same file do not corrupt data', async () => {
-    const filePath = join(tempDir, 'concurrent.json');
+  test('concurrent writes to the same file neither fail nor corrupt data', async () => {
     const contentA = JSON.stringify({ source: 'A', data: 'a'.repeat(1000) });
     const contentB = JSON.stringify({ source: 'B', data: 'b'.repeat(1000) });
 
-    // Fire both writes concurrently — unique temp paths prevent them from
-    // overwriting each other's in-flight temp file.
-    await Promise.all([atomicWrite(filePath, contentA), atomicWrite(filePath, contentB)]);
+    // Repeated rather than run once. Windows fails the losing rename with
+    // EPERM roughly a quarter of the time, so a single pair passes far more
+    // often than not and reports a real race as an intermittent flake.
+    for (let i = 0; i < 25; i++) {
+      const filePath = join(tempDir, `concurrent-${i}.json`);
 
-    const result = await readFile(filePath, 'utf-8');
-    // The result must be exactly one of the two valid contents — never a mix.
-    expect([contentA, contentB]).toContain(result);
-    // Verify the content is well-formed JSON, not truncated or corrupted.
-    expect(() => {
-      JSON.parse(result);
-    }).not.toThrow();
+      // Fire both writes concurrently — unique temp paths prevent them from
+      // overwriting each other's in-flight temp file.
+      await Promise.all([atomicWrite(filePath, contentA), atomicWrite(filePath, contentB)]);
+
+      const result = await readFile(filePath, 'utf-8');
+      // The result must be exactly one of the two valid contents — never a mix.
+      expect([contentA, contentB]).toContain(result);
+      // Verify the content is well-formed JSON, not truncated or corrupted.
+      expect(() => {
+        JSON.parse(result);
+      }).not.toThrow();
+    }
   });
 });
 

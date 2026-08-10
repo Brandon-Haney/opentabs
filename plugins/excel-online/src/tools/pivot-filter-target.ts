@@ -25,12 +25,18 @@ export interface PivotFilterTarget {
 }
 
 /**
- * Data-source index the page-filter methods address an external model by.
+ * Data-source index the page-filter methods address a PivotTable's model by.
  *
- * The external sources are one-based here, matching the `externalSourceIndex` a
- * connection refresh takes. Zero is accepted by the field-layout methods and
- * rejected by these, which is worth knowing because the rejection surfaces as a
- * generic out-of-sync error rather than a bad-argument one.
+ * It indexes the PivotTable's *own* sources, one-based — not the workbook's
+ * connection list, which is the reading the name invites and which is wrong.
+ * Captured from Excel's own client: a pivot built on the workbook's second
+ * connection is still addressed as `1`. A PivotTable has exactly one cache and
+ * therefore one source, so every pivot reachable here answers to `1`, and
+ * deriving the value per pivot would only ever reproduce this constant.
+ *
+ * Zero is accepted by the field-layout methods and rejected by these, which is
+ * worth knowing because the rejection surfaces as a generic out-of-sync error
+ * rather than a bad-argument one.
  */
 export const FILTER_DATA_SOURCE_INDEX = 1;
 

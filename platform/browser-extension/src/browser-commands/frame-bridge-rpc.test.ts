@@ -6,9 +6,94 @@ import { describe, expect, test } from 'vitest';
   tabs: { onRemoved: { addListener: () => {} } },
 };
 
-const { applyProjection, buildQueryUrl, buildReplayHeaders, deriveTargetUrl, mergeContextFromResponse } = await import(
-  './frame-bridge-rpc.js'
-);
+const {
+  applyProjection,
+  buildQueryUrl,
+  buildReplayHeaders,
+  deriveTargetUrl,
+  describeBridgeFailure,
+  mergeContextFromResponse,
+} = await import('./frame-bridge-rpc.js');
+
+describe('describeBridgeFailure', () => {
+  const ok = { ok: true, status: 200, errors: [] as unknown[], response: { Result: {} } };
+
+  test('returns null for a clean success', () => {
+    expect(describeBridgeFailure(ok)).toBeNull();
+  });
+
+  test('reports a service refusal from the outer Errors array', () => {
+    const message = describeBridgeFailure({
+      ...ok,
+      errors: [{ MessageIdName: 'PftTokenMissing', Description: 'There was a problem with this session.' }],
+    });
+    expect(message).toContain('PftTokenMissing');
+    expect(message).toContain('There was a problem with this session.');
+    expect(message).toContain('Nothing was applied.');
+  });
+
+  test('falls back to Caption when the error carries no Description', () => {
+    expect(
+      describeBridgeFailure({ ...ok, errors: [{ MessageIdName: 'X', Caption: 'Please refresh the page' }] }),
+    ).toContain('Please refresh the page');
+  });
+
+  test('appends the hint registered for that error code', () => {
+    expect(
+      describeBridgeFailure(
+        { ...ok, errors: [{ MessageIdName: 'PftTokenMissing' }] },
+        { PftTokenMissing: 'Ask the user.' },
+      ),
+    ).toContain('Ask the user.');
+  });
+
+  test('leaves the message alone when no hint matches the code', () => {
+    expect(
+      describeBridgeFailure({ ...ok, errors: [{ MessageIdName: 'Other' }] }, { PftTokenMissing: 'Ask.' }),
+    ).not.toContain('Ask.');
+  });
+
+  // The trap this function exists for: a tunnelled object-model batch reports its
+  // failure nested in the response body while the outer array stays empty and the
+  // status stays 200, so checking only one layer reads a refusal as a success.
+  test('reports an object-model error nested in the response body', () => {
+    const message = describeBridgeFailure({
+      ...ok,
+      errors: [],
+      response: { Result: { ResponseBody: [{ Error: { Code: 'GeneralException', Message: 'An error occurred.' } }] } },
+    });
+    expect(message).toContain('GeneralException');
+    expect(message).toContain('An error occurred.');
+  });
+
+  test('skips response-body entries that carry no error', () => {
+    expect(
+      describeBridgeFailure({
+        ...ok,
+        response: { Result: { ResponseBody: [{ Value: 1 }, { Error: { Code: 'Late' } }] } },
+      }),
+    ).toContain('Late');
+  });
+
+  test('still reports a refusal when the error entry is not the expected shape', () => {
+    expect(describeBridgeFailure({ ...ok, errors: ['something unexpected'] })).toContain('unknown error');
+  });
+
+  test('reports an HTTP-level failure', () => {
+    expect(describeBridgeFailure({ ...ok, ok: false, status: 500 })).toContain('500');
+  });
+
+  // A truncated body cannot be parsed, so it yields no error array at all — which
+  // would otherwise be indistinguishable from a clean success.
+  test('reports a truncated body rather than treating it as success', () => {
+    const message = describeBridgeFailure({ ok: true, status: 200, errors: undefined, response: 'abc... (truncated)' });
+    expect(message).toContain('truncated');
+  });
+
+  test('does not mistake an ordinary string response for a truncated one', () => {
+    expect(describeBridgeFailure({ ok: true, status: 200, errors: undefined, response: 'plain body' })).toBeNull();
+  });
+});
 
 describe('deriveTargetUrl', () => {
   test('replaces the method segment and preserves the query string', () => {

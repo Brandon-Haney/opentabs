@@ -363,23 +363,61 @@ POST SetParameters
   confirmationChoice: true      // the user pressed Yes
 ```
 
-Once the user answers, every pivot operation works for the rest of the session — the gate
-covers `ApplyPivot` as well as the filter methods, so field placement is blocked by it
-too. It is session-wide rather than per-pivot, and any reload — including the plugin's own
-reauthenticate path — discards it.
+The gate covers `ApplyPivot` as well as the filter methods, so field placement is blocked
+by it too, and any reload — including the plugin's own reauthenticate path — discards it.
 
-**Replaying `SetParameters` does not grant it.** Tested directly, with the captured
-arguments byte-for-byte and with `setParametersAtOpen` both true and false: the call
-answers `Errors: []`, bumps the workbook revision, and changes nothing — the filter
-methods stay blocked. It is the *answer* to a prompt the client raises, not a grant that
-can be issued on its own, and nothing in the captured stream shows the server raising a
-pending confirmation for it to satisfy. A tool built on it was written, tested, and
-removed rather than shipped, because it reported success while silently doing nothing.
+**There are two gates, not one, and the difference matters.** Established by capturing a
+whole session's RPC stream on a freshly reloaded workbook:
 
-So this is a genuine boundary, not a policy choice: the consent has to come from the user
-in Excel's own UI. Which is arguably the right outcome — the prompt asks whether an
-external data source is trustworthy — but it is worth recording that it was tested rather
-than assumed.
+1. **The dialog is raised at most once per session.** It is raised entirely client-side,
+   off a flag the app already holds — `GetPivotMenu` does not exist in the stream, and no
+   request precedes the dialog. So **no replayable method raises it**, and a
+   "grant_data_access that prompts the user" tool cannot be built on this bridge.
+2. **The grant itself is per data source**, and lands when the *app* touches that source.
+
+Observed one variable at a time: fresh session → open PROTracker's filter dropdown →
+dialog → Yes → PROTracker reads work while **Sales still answers `PftTokenMissing`** →
+open Sales' dropdown → **no dialog**, because it is already spent → Sales reads work.
+
+So the rule is **one dialog per session, plus one UI touch per data source**. An earlier
+note here claimed the grant was session-wide; that came from a session where the Power BI
+reports had already been open, so both sources were already granted and opening one
+dropdown merely appeared to cover both. Validating on a single instance again, in the
+same file that already warns against it.
+
+**The failing and succeeding requests are argument-identical.** Diffed from the capture:
+same 18 context keys, same `cell`, `dataSourceIndex`, `fieldId`, `parentId` and
+`needConnect`. The only difference is whether `SetParameters` had run. So this is purely
+server-side session state — not an argument bug and not a forwarding one.
+
+**Replaying `SetParameters` was tested and did nothing — but the test was wrong.** The
+four option fields matched byte-for-byte; the *context* never did. The client sends 21
+context keys on this call and a donor-lifted context has 18, missing
+`BlockingUIOperation`, `BlockingUIOperationTimestamp`, and a `ViewportStateChange` naming
+the pivot's sheet and selection. The tool built on it was removed because it reported
+success while doing nothing, which was the right call, but "cannot be replayed" was proved
+against the wrong request and is not established.
+
+**A correctly-shaped replay is deliberately untested.** If it worked it would answer "do
+you trust this external data source?" on the user's behalf, silently, with no dialog —
+which is not something this plugin should be able to do. Treat it as research, only on an
+explicit request, and never wire it into a tool.
+
+`confirmation: 1243883867` is a **client-side constant**, not the error's `MessageId`
+(`-198950119`), so reading the id off the error and replaying it is not a route either.
+
+`Configurations` ticks `1573649 → 1573648` across the consent — one bit clearing. The
+bridge replays that field from the donor, so a donor captured before the consent carries
+the pre-consent value.
+
+**The bridge used to poison its own donor**, which is worth knowing when reading any
+result recorded before 2026-08-10. `fetchInFrame` runs its replay in the frame's MAIN
+world — the realm the pre-script patched — so every POST replay was captured as the
+freshest donor, and each subsequent call reused a context sourced from the previous call
+rather than from the app. A `contextPatch` therefore persisted into later calls and `ts`
+was meaningless as a freshness signal. Fixed by `BRIDGE_REPLAY_DEPTH_GLOBAL`: the engine
+raises a counter in the frame around the replay and the interceptor skips capture while it
+is non-zero. GETs were never affected, which is what made it invisible.
 
 Things that look like the cause and are not, each tested directly — worth recording so the
 next reader does not spend the time again:

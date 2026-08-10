@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { bridgeOutputSchema, ewaBridge } from '../bridge.js';
+import { bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge } from '../bridge.js';
 import { FILTER_DATA_SOURCE_INDEX, resolvePivotFilterTarget } from './pivot-filter-target.js';
 
 /**
@@ -22,7 +22,7 @@ export const setPivotFilter = defineTool({
     'Selecting several members at once is supported and aggregates them. ' +
     'This changes the numbers the PivotTable shows, and therefore every GETPIVOTDATA formula reading it — that is the intent, but say which filter changed when reporting the result. ' +
     'Applies to the live session immediately; call refresh_pivot afterwards only if the underlying model data also needs re-querying. ' +
-    'A PftTokenMissing error means the workbook has not been allowed to query its external data this session. Ask the user to answer Yes to Excel\'s "Query and Refresh Data" prompt; no tool can grant it.',
+    "A PftTokenMissing error means this pivot's data source has not been allowed to be queried in this browser session; the error itself says exactly what the user must do.",
   summary: 'Set the members a PivotTable page filter selects',
   icon: 'filter',
   group: 'Data Model',
@@ -52,26 +52,30 @@ export const setPivotFilter = defineTool({
   handle: async params => {
     const target = await resolvePivotFilterTarget(params.worksheet, params.field, params.pivot_name);
 
-    return ewaBridge('ApplyFilter', {
-      parameters: {
-        Location: {
-          SheetName: target.cell.SheetName,
-          NamedObjectName: null,
-          FirstRow: target.cell.FirstRow,
-          FirstColumn: target.cell.FirstColumn,
-          LastRow: target.cell.FirstRow,
-          LastColumn: target.cell.FirstColumn,
+    return ewaBridge(
+      'ApplyFilter',
+      {
+        parameters: {
+          Location: {
+            SheetName: target.cell.SheetName,
+            NamedObjectName: null,
+            FirstRow: target.cell.FirstRow,
+            FirstColumn: target.cell.FirstColumn,
+            LastRow: target.cell.FirstRow,
+            LastColumn: target.cell.FirstColumn,
+          },
+          IsPivotFilter: true,
+          FieldId: target.fieldId,
+          DataSourceIndex: FILTER_DATA_SOURCE_INDEX,
+          AnchorType: 0,
+          ChartId: null,
+          AnchorValue1: -1,
+          AnchorValue2: -1,
+          HierarchyLevel: params.hierarchy_level ?? DEFAULT_HIERARCHY_LEVEL,
         },
-        IsPivotFilter: true,
-        FieldId: target.fieldId,
-        DataSourceIndex: FILTER_DATA_SOURCE_INDEX,
-        AnchorType: 0,
-        ChartId: null,
-        AnchorValue1: -1,
-        AnchorValue2: -1,
-        HierarchyLevel: params.hierarchy_level ?? DEFAULT_HIERARCHY_LEVEL,
+        checkedItems: params.member_ids.map(String),
       },
-      checkedItems: params.member_ids.map(String),
-    });
+      { errorHints: EWA_ERROR_HINTS },
+    );
   },
 });

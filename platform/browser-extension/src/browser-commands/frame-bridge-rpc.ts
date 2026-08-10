@@ -1,4 +1,4 @@
-import { fetchInFrame } from './frame-fetch.js';
+import { fetchInFrame, MAX_FRAME_FETCH_RESPONSE } from './frame-fetch.js';
 import {
   requireStringParam,
   requireTabId,
@@ -132,6 +132,12 @@ export interface FrameBridgeRpcResult {
   /** Parsed `EwaResult.Errors` when the response is that shape (empty = success). */
   errors?: unknown[];
   response: unknown;
+  /**
+   * Why the call failed, when it did. Present only on failure, so a caller can
+   * treat its absence as success rather than having to know the several places
+   * this kind of service hides a refusal.
+   */
+  failure?: string;
 }
 
 /** Parameters accepted by {@link runFrameBridgeRpc}. */
@@ -191,6 +197,14 @@ export interface FrameBridgeRpcParams {
    * internally to refresh the context and never reaches the caller.
    */
   projection?: BridgeProjection;
+  /**
+   * Service error code → guidance appended to the failure message for that code.
+   *
+   * What a given code means, and what the user should do about it, is knowledge
+   * about the embedded app rather than about the bridge, so the plugin supplies
+   * it and the engine hard-codes none of it.
+   */
+  errorHints?: Record<string, string>;
 }
 
 /** Error thrown by {@link runFrameBridgeRpc} when no valid donor is available. */
@@ -231,6 +245,82 @@ const nested = (obj: unknown, ...keys: string[]): unknown => {
     cur = (cur as Record<string, unknown>)[key];
   }
   return cur;
+};
+
+/** Marker {@link fetchInFrame} appends to a response body it had to truncate. */
+const TRUNCATION_MARKER = '... (truncated)';
+
+/** Append the plugin's guidance for `code`, when it has any. */
+const withHint = (summary: string, code: string, hints?: Record<string, string>): string => {
+  const hint = hints?.[code];
+  return hint ? `${summary} ${hint}` : summary;
+};
+
+/** Read a non-empty string property, or undefined when it is absent or another type. */
+const stringProp = (obj: Record<string, unknown>, key: string): string | undefined =>
+  typeof obj[key] === 'string' && (obj[key] as string).length > 0 ? (obj[key] as string) : undefined;
+
+/**
+ * Describe why a replayed call failed, or null when it succeeded.
+ *
+ * These services report a refusal in two unrelated places, and a caller checking
+ * only one reads the other as success. `EwaResult.Errors` carries the service's
+ * own refusals; a tunnelled object-model batch instead reports its error nested
+ * under `Result.ResponseBody[].Error`, leaving the outer array empty and the
+ * status 200. Both are checked here so no caller has to know that.
+ *
+ * A truncated body is reported as a failure too. It cannot be parsed, so it
+ * yields no error array at all — which would otherwise be indistinguishable from
+ * a clean success.
+ */
+export const describeBridgeFailure = (
+  result: Pick<FrameBridgeRpcResult, 'ok' | 'status' | 'errors' | 'response'>,
+  errorHints?: Record<string, string>,
+): string | null => {
+  const first = result.errors?.[0];
+  // Keyed on the entry existing rather than on its shape: a non-empty error array
+  // is a refusal whatever it contains, and falling through on an unexpected entry
+  // would reintroduce the reads-as-success bug this exists to remove.
+  if (first !== undefined) {
+    const e = (first && typeof first === 'object' ? first : {}) as Record<string, unknown>;
+    const code = stringProp(e, 'MessageIdName') ?? 'unknown error';
+    const detail = stringProp(e, 'Description') ?? stringProp(e, 'Caption');
+    return withHint(
+      `The application refused the operation: ${code}${detail ? ` — "${detail}"` : ''}. Nothing was applied.`,
+      code,
+      errorHints,
+    );
+  }
+
+  const responseBody = nested(result.response, 'Result', 'ResponseBody');
+  if (Array.isArray(responseBody)) {
+    for (const entry of responseBody) {
+      if (!entry || typeof entry !== 'object') continue;
+      const nestedError = (entry as Record<string, unknown>).Error;
+      if (!nestedError || typeof nestedError !== 'object') continue;
+      const e = nestedError as Record<string, unknown>;
+      const code = stringProp(e, 'Code') ?? 'unknown error';
+      const detail = stringProp(e, 'Message');
+      return withHint(
+        `The application refused the operation: ${code}${detail ? ` — "${detail}"` : ''}. Nothing was applied.`,
+        code,
+        errorHints,
+      );
+    }
+  }
+
+  if (!result.ok) {
+    return `The replayed request failed at the HTTP level (status ${result.status}). Nothing was applied.`;
+  }
+
+  if (typeof result.response === 'string' && result.response.endsWith(TRUNCATION_MARKER)) {
+    return (
+      `The response exceeded ${MAX_FRAME_FETCH_RESPONSE} characters and was truncated, so whether the operation ` +
+      'applied could not be determined. Narrow the request — read a smaller range, or pass a projection.'
+    );
+  }
+
+  return null;
 };
 
 /** Assign a leaf value into a nested path, but only when the parent objects already exist. */
@@ -548,8 +638,12 @@ export const runFrameBridgeRpc = async (params: FrameBridgeRpcParams): Promise<F
     params.httpMethod,
     params.contextKeys,
   );
-  if (!params.projection) return result;
-  return { ...result, response: applyProjection(result.response, params.projection) };
+  // Judged before the projection runs, because a tunnelled object-model batch
+  // reports its error inside the response body — which a projection replaces.
+  const failure = describeBridgeFailure(result, params.errorHints);
+  const judged = failure === null ? result : { ...result, failure };
+  if (!params.projection) return judged;
+  return { ...judged, response: applyProjection(result.response, params.projection) };
 };
 
 /**
@@ -588,6 +682,7 @@ export const handleBrowserFrameBridgeRpc = async (
         ? (params.contextPatch as Record<string, unknown>)
         : undefined;
     const optionsFromFrameGlobals = asStringMap(params.optionsFromFrameGlobals);
+    const errorHints = asStringMap(params.errorHints);
     const httpMethod = params.httpMethod === 'GET' ? 'GET' : undefined;
     const contextKeys = Array.isArray(params.contextKeys)
       ? params.contextKeys.filter((k): k is string => typeof k === 'string')
@@ -621,6 +716,7 @@ export const handleBrowserFrameBridgeRpc = async (
       httpMethod,
       contextKeys,
       projection,
+      errorHints,
     });
     sendSuccessResult(id, result);
   } catch (err) {

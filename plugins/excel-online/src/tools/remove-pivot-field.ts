@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { bridgeOutputSchema, ewaBridge, pivotCellBounds } from '../bridge.js';
+import { bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge, pivotCellBounds } from '../bridge.js';
 
 /**
  * Axis codes a field can currently occupy, as the source of a removal.
@@ -23,7 +23,7 @@ export const removePivotField = defineTool({
     'Take a field out of a PivotTable zone — the inverse of add_pivot_field, and what makes adding a field safely reversible. ' +
     'Every argument comes from get_pivot_field_layout, which must be read immediately before calling: zone is whichever axis array the field appears in, field_index is its PivotCacheIndex, position is its index within that array, and the two version numbers change after every modification. ' +
     'Removing a field from rows or columns changes what a GETPIVOTDATA formula reading this pivot returns, because those formulas resolve to the grand total. Unlike add_pivot_field this is not refused, since removing is how you undo an unwanted change — but check for such formulas first if the pivot is one a scorecard depends on. ' +
-    'A PftTokenMissing error means the workbook has not been allowed to query its external data this session; ask the user to answer Excel\'s "Query and Refresh Data" prompt.',
+    "A PftTokenMissing error means this pivot's data source has not been allowed to be queried in this browser session; the error itself says exactly what the user must do.",
   summary: 'Take a field out of a PivotTable zone',
   icon: 'list-minus',
   group: 'Data Model',
@@ -52,20 +52,24 @@ export const removePivotField = defineTool({
   }),
   output: bridgeOutputSchema,
   handle: async params =>
-    ewaBridge('ApplyPivot', {
-      cell: pivotCellBounds(params.worksheet, params.cell),
-      dataSourceIndex: params.data_source_index,
-      optionalPivotAnchorParameter: { AnchorType: 0 },
-      pivotFieldApplyData: {
-        FieldListType: 1,
-        FieldListVersion: params.field_list_version,
-        FieldWellVersion: params.field_well_version,
-        SourceAxis: SOURCE_AXIS[params.zone],
-        SourceAxisPosition: params.position,
-        ItemType: ITEM_TYPE_REMOVAL,
-        ItemIndex: params.field_index,
-        DestinationAxis: AXIS_REMOVED,
-        DestinationAxisPosition: -1,
+    ewaBridge(
+      'ApplyPivot',
+      {
+        cell: pivotCellBounds(params.worksheet, params.cell),
+        dataSourceIndex: params.data_source_index,
+        optionalPivotAnchorParameter: { AnchorType: 0 },
+        pivotFieldApplyData: {
+          FieldListType: 1,
+          FieldListVersion: params.field_list_version,
+          FieldWellVersion: params.field_well_version,
+          SourceAxis: SOURCE_AXIS[params.zone],
+          SourceAxisPosition: params.position,
+          ItemType: ITEM_TYPE_REMOVAL,
+          ItemIndex: params.field_index,
+          DestinationAxis: AXIS_REMOVED,
+          DestinationAxisPosition: -1,
+        },
       },
-    }),
+      { errorHints: EWA_ERROR_HINTS },
+    ),
 });

@@ -1,6 +1,6 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { bridgeOutputSchema, ewaBridge, pivotCellBounds } from '../bridge.js';
+import { bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge, pivotCellBounds } from '../bridge.js';
 import { findGetPivotDataReferences } from '../pivot-model.js';
 import { fetchWorkbookPackage } from '../workbook-package.js';
 
@@ -39,7 +39,7 @@ export const addPivotField = defineTool({
     'This is how a field the model exposes but the pivot does not yet show becomes readable by GETPIVOTDATA — inspect_data_model lists those as is_laid_out false and reports the field_index to pass here. ' +
     'field_list_version and field_well_version must be current values from get_pivot_field_layout — they change after every modification. ' +
     'Adding to rows or columns is REFUSED when a GETPIVOTDATA formula reads this pivot: those formulas resolve to the grand total, so re-shaping silently changes what they return. Values and filters are always allowed. Prefer a new pivot on its own sheet over re-shaping one a scorecard depends on. ' +
-    'A PftTokenMissing error means the workbook has not been allowed to query its external data this session. Ask the user to answer Yes to Excel\'s "Query and Refresh Data" prompt; no tool can grant it.',
+    "A PftTokenMissing error means this pivot's data source has not been allowed to be queried in this browser session; the error itself says exactly what the user must do.",
   summary: 'Place a measure or hierarchy into a PivotTable zone',
   icon: 'list-plus',
   group: 'Data Model',
@@ -87,21 +87,25 @@ export const addPivotField = defineTool({
       }
     }
 
-    return ewaBridge('ApplyPivot', {
-      cell: pivotCellBounds(params.worksheet, params.cell),
-      dataSourceIndex: params.data_source_index ?? 0,
-      optionalPivotAnchorParameter: { AnchorType: 0 },
-      pivotFieldApplyData: {
-        FieldListType: 1,
-        FieldListVersion: params.field_list_version,
-        FieldWellVersion: params.field_well_version,
-        SourceAxis: 0,
-        SourceAxisPosition: 0,
-        ItemType: ITEM_TYPE[params.field_type],
-        ItemIndex: params.field_index,
-        DestinationAxis: DESTINATION_AXIS[params.zone],
-        DestinationAxisPosition: params.position ?? -1,
+    return ewaBridge(
+      'ApplyPivot',
+      {
+        cell: pivotCellBounds(params.worksheet, params.cell),
+        dataSourceIndex: params.data_source_index ?? 0,
+        optionalPivotAnchorParameter: { AnchorType: 0 },
+        pivotFieldApplyData: {
+          FieldListType: 1,
+          FieldListVersion: params.field_list_version,
+          FieldWellVersion: params.field_well_version,
+          SourceAxis: 0,
+          SourceAxisPosition: 0,
+          ItemType: ITEM_TYPE[params.field_type],
+          ItemIndex: params.field_index,
+          DestinationAxis: DESTINATION_AXIS[params.zone],
+          DestinationAxisPosition: params.position ?? -1,
+        },
       },
-    });
+      { errorHints: EWA_ERROR_HINTS },
+    );
   },
 });

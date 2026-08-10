@@ -1,6 +1,12 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { EWA_GET_CONTEXT_KEYS, type BridgeProjection, bridgeOutputSchema, ewaBridgeRead } from '../bridge.js';
+import {
+  type BridgeProjection,
+  bridgeOutputSchema,
+  EWA_ERROR_HINTS,
+  EWA_GET_CONTEXT_KEYS,
+  ewaBridgeRead,
+} from '../bridge.js';
 import { FILTER_DATA_SOURCE_INDEX, resolvePivotFilterTarget } from './pivot-filter-target.js';
 
 /**
@@ -48,7 +54,7 @@ export const getPivotFilterMembers = defineTool({
     'Always call this before set_pivot_filter, and never reuse ids across filters or sessions: they are assigned per filter tree, so the same month is id 15 on one pivot and id 3 on another. Guessing selects the wrong member with no error. ' +
     'Returns `response` as a flat list of {name, id, state, is_leaf}, including the selectable "All" row. Match on name; state 0 marks what is selected now. ' +
     'Reads the live session, so it reflects unsaved filter changes. ' +
-    'A PftTokenMissing error means the workbook has not been allowed to query its external data this session. Ask the user to open any PivotTable filter in Excel and answer Yes to the "Query and Refresh Data" prompt, then retry. No tool can grant this and retrying alone will not clear it.',
+    "A PftTokenMissing error means this pivot's data source has not been allowed to be queried in this browser session; the error itself says exactly what the user must do.",
   summary: "List a page filter's members and their ids",
   icon: 'list-filter',
   group: 'Data Model',
@@ -79,7 +85,12 @@ export const getPivotFilterMembers = defineTool({
         parentId: -1,
         needConnect: true,
       },
-      { httpMethod: 'GET', contextKeys: EWA_GET_CONTEXT_KEYS, projection: MEMBER_PROJECTION },
+      {
+        httpMethod: 'GET',
+        contextKeys: EWA_GET_CONTEXT_KEYS,
+        projection: MEMBER_PROJECTION,
+        errorHints: EWA_ERROR_HINTS,
+      },
     );
   },
 });

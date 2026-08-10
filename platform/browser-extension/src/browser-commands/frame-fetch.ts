@@ -12,6 +12,22 @@
 /** Maximum response body length returned to the caller before truncation. */
 export const MAX_FRAME_FETCH_RESPONSE = 200_000;
 
+/**
+ * Frame global marking that a bridge replay is in flight.
+ *
+ * The replay runs in the frame's MAIN world, so it goes through whatever `fetch`
+ * a pre-script installed in that realm. A pre-script that captures the app's
+ * requests therefore captures ours too — and since the bridge reuses the freshest
+ * captured request as its donor, every replay after the first would build on a
+ * context sourced from the previous replay instead of from the app. A pre-script
+ * skips capture while this is non-zero to tell the two apart.
+ *
+ * A depth counter rather than a boolean, because replays can overlap and the
+ * inner one finishing must not clear the marker for the outer one. Honouring it
+ * is optional: a pre-script that ignores it behaves exactly as before.
+ */
+export const BRIDGE_REPLAY_DEPTH_GLOBAL = '__otbBridgeReplayDepth';
+
 /** Result of a successful in-frame fetch. */
 export interface FrameFetchResult {
   frameId: number;
@@ -56,14 +72,27 @@ export const fetchInFrame = async (
       requestHeaders: Record<string, string>,
       requestBody: string | null,
       maxLength: number,
+      depthGlobal: string,
     ) => {
+      const scope = globalThis as unknown as Record<string, number | undefined>;
       try {
-        const response = await fetch(requestUrl, {
-          method: requestMethod,
-          headers: requestHeaders,
-          credentials: 'include',
-          body: requestBody ?? undefined,
-        });
+        // Raised only around the call itself: a pre-script's interceptor records
+        // the request synchronously as `fetch` is invoked, so the marker needs to
+        // cover that moment and nothing more. Reading the body afterwards is
+        // outside it, keeping the window in which a genuine app request would be
+        // skipped as narrow as possible.
+        scope[depthGlobal] = (scope[depthGlobal] ?? 0) + 1;
+        let response: Response;
+        try {
+          response = await fetch(requestUrl, {
+            method: requestMethod,
+            headers: requestHeaders,
+            credentials: 'include',
+            body: requestBody ?? undefined,
+          });
+        } finally {
+          scope[depthGlobal] = (scope[depthGlobal] ?? 1) - 1;
+        }
         const text = await response.text();
         return {
           status: response.status,
@@ -74,7 +103,14 @@ export const fetchInFrame = async (
         return { error: `fetch failed: ${err instanceof Error ? err.message : String(err)}` };
       }
     },
-    args: [request.url, request.method, request.headers, request.body ?? null, MAX_FRAME_FETCH_RESPONSE],
+    args: [
+      request.url,
+      request.method,
+      request.headers,
+      request.body ?? null,
+      MAX_FRAME_FETCH_RESPONSE,
+      BRIDGE_REPLAY_DEPTH_GLOBAL,
+    ],
   });
 
   const result = results[0]?.result as { status: number; ok: boolean; body: string } | { error: string } | undefined;

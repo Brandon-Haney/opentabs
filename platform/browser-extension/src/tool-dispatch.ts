@@ -353,6 +353,8 @@ interface BridgeDirective {
   contextKeys?: string[];
   /** Select and reshape part of the response instead of returning the whole envelope. */
   projection?: BridgeProjection;
+  /** Service error code → guidance appended when the call fails with that code. */
+  errorHints?: Record<string, string>;
 }
 
 /**
@@ -406,6 +408,7 @@ const extractBridgeDirective = (output: unknown): BridgeDirective | null => {
       ? (b.contextPatch as Record<string, unknown>)
       : undefined;
   const optionsFromFrameGlobals = asStringMap(b.optionsFromFrameGlobals);
+  const errorHints = asStringMap(b.errorHints);
   const projection = asBridgeProjection(b.projection);
   return {
     method: b.method,
@@ -422,6 +425,7 @@ const extractBridgeDirective = (output: unknown): BridgeDirective | null => {
       ? { contextKeys: b.contextKeys.filter((k): k is string => typeof k === 'string') }
       : {}),
     ...(projection ? { projection } : {}),
+    ...(errorHints ? { errorHints } : {}),
   };
 };
 
@@ -440,6 +444,18 @@ const resolveBridgeDirective = async (result: DispatchResult, tabId: number): Pr
   const params: FrameBridgeRpcParams = { tabId, ...directive };
   try {
     const bridgeResult = await runFrameBridgeRpc(params);
+    // A refused RPC answers 200 with the refusal in the payload. Reporting that
+    // as a success tells the caller a write applied when it did not, so the
+    // engine's verdict is raised to a dispatch error rather than left for the
+    // caller to find.
+    if (bridgeResult.failure !== undefined) {
+      return {
+        type: 'error',
+        code: JSONRPC_INTERNAL_ERROR,
+        message: bridgeResult.failure,
+        data: { code: 'BRIDGE_RPC_FAILED', category: 'internal', retryable: false },
+      };
+    }
     return { type: 'success', output: bridgeResult };
   } catch (err) {
     if (err instanceof FrameBridgeValidationError) {

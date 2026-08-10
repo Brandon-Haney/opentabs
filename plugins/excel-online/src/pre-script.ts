@@ -44,6 +44,19 @@ const EWA_DONOR_GLOBAL = '__otbEwaDonor';
 const EWA_AAD_TOKEN_GLOBAL = '__otbEwaAadToken';
 /** Substring identifying the internal RPC endpoint whose requests we harvest. */
 const EWA_URL_MARKER = 'EwaInternalWebService.json/';
+/**
+ * Frame global the platform's frame-bridge engine raises while it replays a
+ * request inside this frame.
+ *
+ * The replay runs in this same MAIN world and so passes through the interceptor
+ * below. Capturing it would make the bridge its own donor: each replay would
+ * reuse a context sourced from the previous replay rather than from the app, so
+ * a `contextPatch` would persist into later calls and the donor would stop
+ * tracking live session state. The name is defined by
+ * `BRIDGE_REPLAY_DEPTH_GLOBAL` in the platform's `frame-fetch.ts` and the two
+ * must match.
+ */
+const BRIDGE_REPLAY_DEPTH_GLOBAL = '__otbBridgeReplayDepth';
 /** Markers making the EWA interceptor idempotent under re-injection. */
 const EWA_FETCH_MARKER = Symbol.for('opentabs.excel-online.ewa.fetch.patched');
 const EWA_XHR_MARKER = Symbol.for('opentabs.excel-online.ewa.xhr.patched');
@@ -104,6 +117,7 @@ const installEwaDonorInterceptor = (log: {
     XMLHttpRequest: typeof XMLHttpRequest;
     [EWA_DONOR_GLOBAL]?: EwaDonor;
     [EWA_AAD_TOKEN_GLOBAL]?: string;
+    [BRIDGE_REPLAY_DEPTH_GLOBAL]?: number;
   };
 
   /**
@@ -127,6 +141,10 @@ const installEwaDonorInterceptor = (log: {
   const stash = (url: string, requestHeaders: Record<string, string>, requestBody: string): void => {
     try {
       if (!url.includes(EWA_URL_MARKER)) return;
+      // A request the bridge is replaying is our own, not a sample of what the
+      // app does, so nothing is harvested from it — neither the donor nor a
+      // token it merely echoes back.
+      if ((g[BRIDGE_REPLAY_DEPTH_GLOBAL] ?? 0) > 0) return;
       stashAadToken(requestBody);
       if (!requestBody.includes('"context"')) return;
       g[EWA_DONOR_GLOBAL] = { url, requestHeaders, requestBody, ts: Date.now() };

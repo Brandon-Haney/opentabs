@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { type RangeBounds, buildRangeAddress, parseBoundedRange } from './a1.js';
+import { buildRangeAddress, parseBoundedRange, type RangeBounds } from './a1.js';
 
 /**
  * The Excel Online formatting/layout features Microsoft Graph does not expose
@@ -48,6 +48,37 @@ export const bridgeReadOutputSchema = bridgeOutputSchema.extend({
 
 /** Frame global the pre-script stashes the freshest per-session AAD token into. */
 export const AAD_TOKEN_GLOBAL = '__otbEwaAadToken';
+
+/**
+ * What to tell an agent whose pivot operation was refused with `PftTokenMissing`.
+ *
+ * Established by capturing a full session's RPC stream: there are two gates, not
+ * one. Excel's "Query and Refresh Data" dialog is raised at most once per browser
+ * session, and the grant it unlocks is applied **per data source**, as the app
+ * itself touches each one. A workbook drawing on two models therefore needs the
+ * prompt answered once and a filter opened on a pivot over each model — answering
+ * the prompt on one pivot leaves the other still refused.
+ */
+const PIVOT_CONSENT_HINT =
+  "This PivotTable's data source has not been allowed to be queried in this browser session. " +
+  'Ask the user to open a page-filter dropdown on this specific PivotTable in Excel, answering Yes to the ' +
+  '"Query and Refresh Data" prompt if it appears. The prompt appears at most once per session, but every data ' +
+  'source still needs a filter opened on one of its own pivots — granting it for one model does not cover another. ' +
+  'Do not reload the page: a reload revokes every grant. No tool can grant this, and retrying without that ' +
+  'interaction fails identically.';
+
+/**
+ * Guidance attached to a failed bridge call, keyed by the service's error code.
+ *
+ * The engine reports the code and the service's own message; these say what to do
+ * about it, which is knowledge about Excel rather than about the bridge.
+ */
+export const EWA_ERROR_HINTS: Record<string, string> = {
+  PftTokenMissing: PIVOT_CONSENT_HINT,
+  RetryOutOfSync:
+    'This service reports every malformed argument as RetryOutOfSync, so a wrong argument is far more likely than ' +
+    'a stale session. Re-read the pivot layout and check each argument rather than retrying unchanged.',
+};
 
 /**
  * Context keys a GET method on this service carries.
@@ -182,6 +213,7 @@ interface BridgeDirective {
     contextPatch?: Record<string, unknown>;
     optionsFromFrameGlobals?: Record<string, string>;
     projection?: BridgeProjection;
+    errorHints?: Record<string, string>;
   };
 }
 
@@ -231,6 +263,13 @@ export interface EwaBridgeExtra {
   contextKeys?: string[];
   /** Reshape the response before the agent sees it (see {@link BridgeProjection}). */
   projection?: BridgeProjection;
+  /**
+   * Service error code → guidance appended when the call fails with that code
+   * (see {@link EWA_ERROR_HINTS}). The platform raises a failed call as an error
+   * rather than a result, so this is the tool's only chance to say what to do
+   * about it — the handler never sees the response.
+   */
+  errorHints?: Record<string, string>;
 }
 
 /**
@@ -262,6 +301,7 @@ export const ewaBridge = (
       ...(extra?.httpMethod ? { httpMethod: extra.httpMethod } : {}),
       ...(extra?.contextKeys ? { contextKeys: extra.contextKeys } : {}),
       ...(extra?.projection ? { projection: extra.projection } : {}),
+      ...(extra?.errorHints ? { errorHints: extra.errorHints } : {}),
     },
   };
   return directive as unknown as z.infer<typeof bridgeOutputSchema>;

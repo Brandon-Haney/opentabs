@@ -1,4 +1,4 @@
-import { fetchInFrame, MAX_FRAME_FETCH_RESPONSE } from './frame-fetch.js';
+import { type FrameFetchProjection, fetchInFrame, MAX_FRAME_FETCH_RESPONSE } from './frame-fetch.js';
 import {
   requireStringParam,
   requireTabId,
@@ -132,6 +132,23 @@ export interface FrameBridgeRpcResult {
   /** Parsed `EwaResult.Errors` when the response is that shape (empty = success). */
   errors?: unknown[];
   response: unknown;
+  /**
+   * Size of the service's response before any projection or truncation, in
+   * characters.
+   *
+   * Reported so a projected result never reads as the whole of what the service
+   * sent: a caller comparing it against what came back can see how much was
+   * reshaped away, and narrow the request when the gap is large.
+   */
+  rawLength?: number;
+  /**
+   * How many items the projection matched before any cap.
+   *
+   * When this exceeds the length of `response`, the list is partial: the rest
+   * exists and was not returned. Narrow the request rather than treating what
+   * came back as the whole set.
+   */
+  total?: number;
   /**
    * Why the call failed, when it did. Present only on failure, so a caller can
    * treat its absence as success rather than having to know the several places
@@ -442,26 +459,11 @@ export const buildQueryUrl = (targetUrl: string, payload: Record<string, unknown
  * this, a read of a few thousand items ships roughly a megabyte of mostly
  * boilerplate to whoever called the tool.
  */
-export interface BridgeProjection {
-  /**
-   * Dot path to the value to return, relative to the parsed response. A numeric
-   * segment indexes an array (`Result.Items.0.Children`).
-   */
-  path: string;
-  /**
-   * Output key → source key. Omit to return matched values unchanged.
-   * Keys absent from a node come back undefined rather than failing, since the
-   * service decides the payload and a partial node is more useful than none.
-   */
-  fields?: Record<string, string>;
-  /**
-   * Name of the key holding a node's children. When set, the matched nodes are
-   * walked depth-first and returned as one flat list rather than a tree — which
-   * is what a caller choosing among them actually wants, and keeps a parent that
-   * is itself selectable (an "All" row) in the result.
-   */
-  flattenChildren?: string;
-}
+/**
+ * Defined alongside the fetch because it is applied there — in the page, before
+ * the response is measured against the size cap. See {@link FrameFetchProjection}.
+ */
+export type BridgeProjection = FrameFetchProjection;
 
 /**
  * Take values out of the prep call's response and put them into the commit's
@@ -569,7 +571,8 @@ const replayMethod = async (
   options: Record<string, unknown>,
   httpMethod: 'GET' | 'POST' = 'POST',
   contextKeys?: string[],
-): Promise<{ result: FrameBridgeRpcResult; ewaResult?: Record<string, unknown> }> => {
+  projection?: BridgeProjection,
+): Promise<{ result: FrameBridgeRpcResult; envelope: unknown; ewaResult?: Record<string, unknown> }> => {
   if ('ClientRequestId' in context) context.ClientRequestId = crypto.randomUUID();
   const headers = buildReplayHeaders(donor.requestHeaders);
   const targetUrl = deriveTargetUrl(donor.url, harvestUrlIncludes, method);
@@ -577,20 +580,47 @@ const replayMethod = async (
 
   const fr =
     httpMethod === 'GET'
-      ? await fetchInFrame(tabId, frameUrlIncludes, {
-          url: buildQueryUrl(targetUrl, { context: sentContext, ...options }),
-          method: 'GET',
-          headers,
-        })
-      : await fetchInFrame(tabId, frameUrlIncludes, {
-          url: targetUrl,
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ context: sentContext, ...options }),
-        });
+      ? await fetchInFrame(
+          tabId,
+          frameUrlIncludes,
+          {
+            url: buildQueryUrl(targetUrl, { context: sentContext, ...options }),
+            method: 'GET',
+            headers,
+          },
+          projection,
+        )
+      : await fetchInFrame(
+          tabId,
+          frameUrlIncludes,
+          {
+            url: targetUrl,
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ context: sentContext, ...options }),
+          },
+          projection,
+        );
 
   const { response, errors, ewaResult } = parseEwaResult(fr.body);
-  return { result: { frameId: fr.frameId, status: fr.status, ok: fr.ok, errors, response }, ewaResult };
+  // With a projection the payload never left the page whole, so the projected
+  // value stands in for it; `body` carries the envelope the errors live in.
+  const projected = projection ? fr.projected : response;
+  return {
+    result: {
+      frameId: fr.frameId,
+      status: fr.status,
+      ok: fr.ok,
+      errors,
+      response: projected,
+      ...(fr.rawLength !== undefined ? { rawLength: fr.rawLength } : {}),
+      ...(fr.projectedTotal !== undefined ? { total: fr.projectedTotal } : {}),
+    },
+    // The judged envelope, kept separate from the projected payload so the
+    // failure check still sees the fields that report a refusal.
+    envelope: response,
+    ewaResult,
+  };
 };
 
 /** Read a projected node's field as a string, or undefined when it is absent. */
@@ -745,8 +775,10 @@ export const runFrameBridgeRpc = async (params: FrameBridgeRpcParams): Promise<F
     }
   }
 
-  // 4. Replay the commit.
-  const { result } = await replayMethod(
+  // 4. Replay the commit. The projection travels with it and is applied in the
+  // page, so a payload too large to cross the boundary is reshaped rather than
+  // cut off — see FrameFetchProjection.
+  const { result, envelope } = await replayMethod(
     tabId,
     frameUrlIncludes,
     harvestUrlIncludes,
@@ -756,13 +788,13 @@ export const runFrameBridgeRpc = async (params: FrameBridgeRpcParams): Promise<F
     options,
     params.httpMethod,
     params.contextKeys,
+    params.projection,
   );
-  // Judged before the projection runs, because a tunnelled object-model batch
-  // reports its error inside the response body — which a projection replaces.
-  const failure = describeBridgeFailure(result, params.errorHints);
-  const judged = failure === null ? result : { ...result, failure };
-  if (!params.projection) return judged;
-  return { ...judged, response: applyProjection(result.response, params.projection) };
+  // Judged against the envelope rather than the projected payload, because a
+  // tunnelled object-model batch reports its error inside the response body —
+  // which a projection replaces.
+  const failure = describeBridgeFailure({ ...result, response: envelope }, params.errorHints);
+  return failure === null ? result : { ...result, failure };
 };
 
 /** Narrow an untrusted value to a {@link BridgeProjection}, or undefined when it has no usable path. */

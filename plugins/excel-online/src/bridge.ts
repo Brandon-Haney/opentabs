@@ -31,6 +31,18 @@ export const bridgeOutputSchema = z.object({
   errors: z
     .array(z.unknown())
     .describe('Parsed EwaResult.Errors — an empty array means the operation was applied successfully.'),
+  total: z
+    .number()
+    .int()
+    .optional()
+    .describe(
+      'How many items the service actually returned, when the result is a list. Greater than the number of items in `response` means the list was capped and the rest exists — narrow the request rather than treating what came back as all of it.',
+    ),
+  rawLength: z
+    .number()
+    .int()
+    .optional()
+    .describe('Size in characters of the service response before it was reshaped, for judging how much was omitted.'),
 });
 
 /**

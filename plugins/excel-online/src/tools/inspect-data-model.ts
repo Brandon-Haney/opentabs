@@ -9,16 +9,60 @@ import { availableHierarchySchema, availableMeasureSchema, connectionSchema, piv
 const matchesFilter = (filter: string, ...fields: string[]): boolean =>
   filter === '' || fields.some(field => field.toLowerCase().includes(filter));
 
+/**
+ * True when `displayFolder` is `folder` or sits beneath it.
+ *
+ * Compared segment-wise on the model's backslash separator so that
+ * "Time Series Measures" selects its subfolders without also selecting a
+ * sibling that merely starts with the same letters.
+ */
+const inFolder = (displayFolder: string, folder: string): boolean => {
+  const target = folder.toLowerCase().replace(/\\+$/, '');
+  const candidate = displayFolder.toLowerCase();
+  return candidate === target || candidate.startsWith(`${target}\\`);
+};
+
+/**
+ * Summarise the folders a set of measures falls into, mirroring the tree
+ * Excel's field list shows.
+ *
+ * Built from every measure in scope rather than the filtered subset, because
+ * its job is to describe what exists: a caller searching "sales" gets hits from
+ * several folders that mean quite different things, and the counts are what
+ * reveal that a whole folder is period-relative and therefore cannot break a
+ * figure down by month.
+ */
+const summariseFolders = (
+  measures: Array<{ displayFolder: string; caption: string; cacheId: string }>,
+): Array<{ folder: string; cache_id: string; measure_count: number; period_relative_count: number }> => {
+  const byKey = new Map<
+    string,
+    { folder: string; cache_id: string; measure_count: number; period_relative_count: number }
+  >();
+  for (const measure of measures) {
+    const key = JSON.stringify([measure.cacheId, measure.displayFolder]);
+    const entry = byKey.get(key) ?? {
+      folder: measure.displayFolder,
+      cache_id: measure.cacheId,
+      measure_count: 0,
+      period_relative_count: 0,
+    };
+    entry.measure_count += 1;
+    if (isPeriodRelative(measure.caption)) entry.period_relative_count += 1;
+    byKey.set(key, entry);
+  }
+  return [...byKey.values()].sort((a, b) => a.cache_id.localeCompare(b.cache_id) || a.folder.localeCompare(b.folder));
+};
+
 export const inspectDataModel = defineTool({
   name: 'inspect_data_model',
   displayName: 'Inspect Data Model',
   description:
-    'Inspect the data model behind the workbook: external data connections, PivotTables, and — for cube/OLAP connections — every measure and hierarchy the model exposes. ' +
-    'This is the only way to find fields not already in a PivotTable: GETPIVOTDATA resolves a measure only when it is laid out and returns #REF! otherwise. Use "is_laid_out" to tell them apart, and pass "field_index" to add_pivot_field. ' +
-    'CHECK "period_relative" BEFORE CHOOSING A MEASURE FOR A GIVEN PERIOD: one that computes its own period (CMTD, YTD, LM…) ignores a date in rows or filters and returns the same number on every row. ' +
-    'For a Power BI connection, "dataset_id" gives the semantic-model ID for running DAX. ' +
-    'Reads the workbook file itself, because the Graph workbook API has no PivotTable, connection or pivot-cache surface at any version. ' +
-    'A large model exposes several hundred measures — pass "filter" to narrow. The *_count fields report true totals before filtering.',
+    'Inspect the data model behind the workbook: connections, PivotTables, and — for cube/OLAP connections — every measure and hierarchy it exposes. ' +
+    'The only way to find fields not already in a PivotTable: GETPIVOTDATA resolves a measure only when laid out and returns #REF! otherwise. Use "is_laid_out", and pass "field_index" to add_pivot_field. ' +
+    'READ "measure_folders" BEFORE CHOOSING A MEASURE: the model\'s own folder tree with counts. A name search returns candidates from folders meaning different things, and a wholly period_relative folder holds one fixed period each — useless for a monthly breakdown. Drill in with "folder". ' +
+    'Models rarely publish what a measure means, so where two plausible ones exist, show the user the folder-grouped candidates rather than picking silently. ' +
+    'For a Power BI connection, "dataset_id" gives the semantic-model ID for DAX. Reads the workbook file; the Graph API exposes no pivot surface. The *_count fields are true totals before filtering.',
   summary: 'Inspect connections, PivotTables, and all available cube measures',
   icon: 'database',
   group: 'Data Model',
@@ -28,6 +72,13 @@ export const inspectDataModel = defineTool({
       .optional()
       .describe(
         'Case-insensitive substring filter applied to measure and hierarchy names and captions (e.g., "sales", "GM"). Omit to return everything.',
+      ),
+    folder: z
+      .string()
+      .optional()
+      .describe(
+        'Restrict measures to one display folder, as "measure_folders" reports it (e.g. "Base Measures", "Time Series Measures\\\\Sales"). ' +
+          'Matches the folder and everything beneath it, so "Time Series Measures" covers all of its subfolders.',
       ),
     cache_id: z
       .string()
@@ -54,6 +105,23 @@ export const inspectDataModel = defineTool({
     available_hierarchies: z
       .array(availableHierarchySchema)
       .describe('Hierarchies the connected models expose. Empty when include_hierarchies is false.'),
+    measure_folders: z
+      .array(
+        z.object({
+          folder: z.string().describe('Display folder path, "" for measures the model leaves ungrouped'),
+          cache_id: z.string().describe('Pivot cache that exposes this folder'),
+          measure_count: z.number().int().describe('Measures in this folder'),
+          period_relative_count: z
+            .number()
+            .int()
+            .describe('How many of them compute their own period — see period_relative on a measure'),
+        }),
+      )
+      .describe(
+        'The model\'s folder tree with counts, exactly as Excel\'s PivotTable field list groups it, and never narrowed by "filter" or "folder" — so it always describes the whole model. ' +
+          'Read this before choosing a measure: a name search alone returns candidates from several folders that mean different things, and a folder whose measures are all period_relative holds one fixed period each. ' +
+          'Drill into one with the "folder" argument.',
+      ),
     measure_count: z.number().int().describe('Total measures across all caches, before filtering'),
     hierarchy_count: z.number().int().describe('Total hierarchies across all caches, before filtering'),
     laid_out_measure_count: z
@@ -111,10 +179,12 @@ export const inspectDataModel = defineTool({
         })),
         values: table.values,
       })),
+      measure_folders: summariseFolders(allMeasures),
       available_measures:
         params.include_measures === false
           ? []
           : allMeasures
+              .filter(measure => params.folder === undefined || inFolder(measure.displayFolder, params.folder))
               .filter(measure => matchesFilter(filter, measure.caption, measure.uniqueName, measure.displayFolder))
               .map(measure => ({
                 unique_name: measure.uniqueName,

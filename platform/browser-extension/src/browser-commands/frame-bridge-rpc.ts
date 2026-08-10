@@ -285,8 +285,14 @@ export const describeBridgeFailure = (
     const e = (first && typeof first === 'object' ? first : {}) as Record<string, unknown>;
     const code = stringProp(e, 'MessageIdName') ?? 'unknown error';
     const detail = stringProp(e, 'Description') ?? stringProp(e, 'Caption');
+    // Not "nothing was applied", however much a caller would like to be told
+    // that: a refusal can arrive part-way through a request that bundles several
+    // steps, leaving the earlier ones in place. Observed on a refused PivotTable
+    // creation, where the connection the same request created survived — so a
+    // caller that trusted such a claim and retried would duplicate it.
     return withHint(
-      `The application refused the operation: ${code}${detail ? ` — "${detail}"` : ''}. Nothing was applied.`,
+      `The application refused the operation: ${code}${detail ? ` — "${detail}"` : ''}. ` +
+        'Check the current state before retrying: a request that bundles several steps can have applied some of them.',
       code,
       errorHints,
     );
@@ -301,8 +307,13 @@ export const describeBridgeFailure = (
       const e = nestedError as Record<string, unknown>;
       const code = stringProp(e, 'Code') ?? 'unknown error';
       const detail = stringProp(e, 'Message');
+      // Deliberately not "nothing was applied": this layer reports a failure
+      // inside a batch of actions, and the steps before the failing one can have
+      // taken effect and survived it. Claiming otherwise invites a retry that
+      // duplicates whatever already applied.
       return withHint(
-        `The application refused the operation: ${code}${detail ? ` — "${detail}"` : ''}. Nothing was applied.`,
+        `The application refused a step of the operation: ${code}${detail ? ` — "${detail}"` : ''}. ` +
+          'It was a batch, so earlier steps in it may already have applied — check the current state before retrying.',
         code,
         errorHints,
       );

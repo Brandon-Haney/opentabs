@@ -29,7 +29,10 @@ describe('describeBridgeFailure', () => {
     });
     expect(message).toContain('PftTokenMissing');
     expect(message).toContain('There was a problem with this session.');
-    expect(message).toContain('Nothing was applied.');
+    // Must not promise nothing applied: a refused PivotTable creation was
+    // observed leaving behind the connection the same request had just created.
+    expect(message).not.toContain('Nothing was applied');
+    expect(message).toContain('Check the current state before retrying');
   });
 
   test('falls back to Caption when the error carries no Description', () => {
@@ -64,6 +67,10 @@ describe('describeBridgeFailure', () => {
     });
     expect(message).toContain('GeneralException');
     expect(message).toContain('An error occurred.');
+    // A batch can have applied earlier steps before the failing one, so this
+    // layer must not claim otherwise the way the outer-error layer does.
+    expect(message).not.toContain('Nothing was applied');
+    expect(message).toContain('may already have applied');
   });
 
   test('skips response-body entries that carry no error', () => {

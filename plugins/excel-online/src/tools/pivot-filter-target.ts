@@ -1,4 +1,5 @@
 import { ToolError } from '@opentabs-dev/plugin-sdk';
+import type { BridgeProjection } from '../bridge.js';
 import {
   findPivotTable,
   pageFilterCell,
@@ -23,6 +24,53 @@ export interface PivotFilterTarget {
   cell: { SheetName: string; NamedObjectName: string; FirstRow: number; FirstColumn: number };
   fieldId: string;
 }
+
+/**
+ * Level of the hierarchy a filter request applies to.
+ *
+ * Every page filter observed on a cube-backed pivot reports a single level, and
+ * the service echoes it as `Level: 1` in the member list. A multi-level user
+ * hierarchy would need the level the selected members sit at, which is why
+ * set_pivot_filter keeps this overridable rather than folding it into the
+ * request shape.
+ */
+export const DEFAULT_HIERARCHY_LEVEL = 1;
+
+/**
+ * The three fields of a filter member that matter, plus the service's own
+ * truncation flag.
+ *
+ * The service answers with a tree whose nodes carry nine fields each. A date
+ * filter is a few kilobytes either way, but a store or product dimension runs to
+ * hundreds of thousands of characters, most of it boilerplate — enough to be cut
+ * off in transit, and to exhaust a caller's context before it found what it
+ * wanted.
+ */
+const MEMBER_FIELDS = {
+  name: 'DisplayString',
+  id: 'Id',
+  state: 'State',
+  is_leaf: 'LeafItem',
+  list_truncated: 'ItemListMaxExceeded',
+} as const;
+
+/** Members as `GetPivotFilterData` returns them, flattened over the "All" row. */
+export const MEMBER_PROJECTION: BridgeProjection = {
+  path: 'Result.PivotFilterItemsList.PivotFilterItems',
+  fields: MEMBER_FIELDS,
+  flattenChildren: 'PivotFilterItems',
+};
+
+/**
+ * The same nodes as {@link MEMBER_PROJECTION}, one level higher: a search
+ * answers with the matching tree directly under `Result`, where a browse answers
+ * under `PivotFilterItemsList`.
+ */
+export const SEARCH_MEMBER_PROJECTION: BridgeProjection = {
+  path: 'Result.PivotFilterItems',
+  fields: MEMBER_FIELDS,
+  flattenChildren: 'PivotFilterItems',
+};
 
 /**
  * Said whenever a filter is missing from the workbook package.

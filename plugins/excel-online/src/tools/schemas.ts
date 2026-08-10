@@ -420,6 +420,13 @@ export const availableMeasureSchema = z.object({
     .describe(
       'True when the measure is already placed in a PivotTable. GETPIVOTDATA resolves only laid-out measures and returns #REF! for the rest, so a false value means the measure exists in the model but is not yet readable by formula.',
     ),
+  period_relative: z
+    .boolean()
+    .describe(
+      'True when the measure computes its own period and therefore ignores any date in the PivotTable — a date hierarchy in rows returns the identical number on every row, and a date page filter does not move it. ' +
+        'Choose one of these only when the period it names is the one wanted ("CMTD Sales" for the current month to date); for any specific period, pick a measure where this is false and filter the date yourself. ' +
+        'Inferred from the caption, since the pivot cache publishes no formula — confirm against display_folder, which models typically use to separate time-intelligence measures from base ones.',
+    ),
 });
 
 export const availableHierarchySchema = z.object({

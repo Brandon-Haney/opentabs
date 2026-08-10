@@ -210,6 +210,8 @@ interface BridgeDirective {
     donorGlobal: string;
     prepMethod?: string;
     prepOptions?: Record<string, unknown>;
+    prepMergesContext?: boolean;
+    optionsFromPrep?: EwaPrepSelection[];
     contextPatch?: Record<string, unknown>;
     optionsFromFrameGlobals?: Record<string, string>;
     projection?: BridgeProjection;
@@ -243,12 +245,43 @@ export interface BridgeProjection {
 export interface EwaPrep {
   method: string;
   options?: Record<string, unknown>;
+  /**
+   * Whether the prep response's edit-state is folded into the context before the
+   * commit. Defaults to true, which is what a get-state dialog method needs.
+   * Set false for a prep that only looks something up.
+   */
+  mergesContext?: boolean;
+}
+
+/**
+ * Resolve a commit option from the prep call's response.
+ *
+ * For an id the caller cannot know and must not guess: the prep call looks the
+ * name up and the engine feeds the resulting ids into the commit, all inside the
+ * frame, because a tool handler never sees a bridge response. A term matching
+ * nothing or more than one candidate fails the call rather than choosing.
+ */
+export interface EwaPrepSelection {
+  /** Commit option to populate. */
+  option: string;
+  /** How to flatten the prep response before matching. */
+  projection: BridgeProjection;
+  /** Projected field the terms are matched against, case-insensitively and by substring. */
+  matchField: string;
+  /** Projected field collected from each matched node. */
+  valueField: string;
+  /** Terms to resolve; each must identify exactly one node. */
+  values: string[];
+  /** Collect as strings — some methods want their ids quoted. */
+  asString?: boolean;
 }
 
 /** Advanced bridge behaviors for stateful methods. */
 export interface EwaBridgeExtra {
   /** A get-state prep call to run before the commit (see {@link EwaPrep}). */
   prep?: EwaPrep;
+  /** Options resolved from the prep call's response (see {@link EwaPrepSelection}). */
+  prepSelections?: EwaPrepSelection[];
   /** Top-level context fields to patch in before replaying (e.g. {@link viewportSelection}). */
   contextPatch?: Record<string, unknown>;
   /**
@@ -294,8 +327,13 @@ export const ewaBridge = (
       harvestUrlIncludes: HARVEST_URL_INCLUDES,
       donorGlobal: DONOR_GLOBAL,
       ...(extra?.prep
-        ? { prepMethod: extra.prep.method, ...(extra.prep.options ? { prepOptions: extra.prep.options } : {}) }
+        ? {
+            prepMethod: extra.prep.method,
+            ...(extra.prep.options ? { prepOptions: extra.prep.options } : {}),
+            ...(extra.prep.mergesContext === false ? { prepMergesContext: false } : {}),
+          }
         : {}),
+      ...(extra?.prepSelections ? { optionsFromPrep: extra.prepSelections } : {}),
       ...(extra?.contextPatch ? { contextPatch: extra.contextPatch } : {}),
       ...(extra?.optionsFromFrameGlobals ? { optionsFromFrameGlobals: extra.optionsFromFrameGlobals } : {}),
       ...(extra?.httpMethod ? { httpMethod: extra.httpMethod } : {}),

@@ -1,14 +1,13 @@
-import { defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
+import { bridgeOutputSchema, EWA_ERROR_HINTS, EWA_GET_CONTEXT_KEYS, ewaBridgeRead } from '../bridge.js';
+import { PIVOT_DATA_SOURCE_INDEX, SEARCH_DATA_SOURCE_INDEX } from './pivot-data-source.js';
 import {
-  type BridgeProjection,
-  bridgeOutputSchema,
-  EWA_ERROR_HINTS,
-  EWA_GET_CONTEXT_KEYS,
-  ewaBridgeRead,
-} from '../bridge.js';
-import { PIVOT_DATA_SOURCE_INDEX } from './pivot-data-source.js';
-import { resolvePivotFilterTarget } from './pivot-filter-target.js';
+  DEFAULT_HIERARCHY_LEVEL,
+  MEMBER_PROJECTION,
+  resolvePivotFilterTarget,
+  SEARCH_MEMBER_PROJECTION,
+} from './pivot-filter-target.js';
 
 /**
  * Return the members as a flat `[{ name, id, state }]` list.
@@ -23,12 +22,6 @@ import { resolvePivotFilterTarget } from './pivot-filter-target.js';
  * Flattened rather than nested because the "All" row is itself selectable, so a
  * caller wanting "everything" needs its id alongside the individual members.
  */
-const MEMBER_PROJECTION: BridgeProjection = {
-  path: 'Result.PivotFilterItemsList.PivotFilterItems',
-  fields: { name: 'DisplayString', id: 'Id', state: 'State', is_leaf: 'LeafItem' },
-  flattenChildren: 'PivotFilterItems',
-};
-
 const memberSchema = z.object({
   name: z.string().describe('Display text of the member, e.g. "JUL - 2026" or "All"'),
   id: z
@@ -37,6 +30,11 @@ const memberSchema = z.object({
     .describe('Id to pass to set_pivot_filter. Valid only for this filter, and only until it changes.'),
   state: z.number().int().describe('0 selected, 1 not selected, 2 partially selected (an "All" row above a mixed set)'),
   is_leaf: z.boolean().describe('False for a grouping row such as "All" or a level above the leaves'),
+  list_truncated: z
+    .boolean()
+    .describe(
+      'True when the service capped this row\'s children rather than returning them all — the list below it is partial. Narrow with "search" rather than treating it as complete.',
+    ),
 });
 
 /**
@@ -56,12 +54,13 @@ export const getPivotFilterMembers = defineTool({
   name: 'get_pivot_filter_members',
   displayName: 'Get PivotTable Filter Members',
   description:
-    'List the members of a PivotTable page filter — every value the filter can be set to, each with the numeric id set_pivot_filter takes, and which are currently selected. ' +
-    'Always call this before set_pivot_filter, and never reuse ids across filters or sessions: they are assigned per filter tree, so the same month is id 15 on one pivot and id 3 on another. Guessing selects the wrong member with no error. ' +
-    'Returns `response` as a flat list of {name, id, state, is_leaf}, including the selectable "All" row. Match on name; state 0 marks what is selected now. ' +
-    'A large dimension comes back as a single unexpanded "All" row — pass its id as parent_id to list the members beneath it. ' +
-    'Reads the live session, so it reflects unsaved filter changes. ' +
-    "A PftTokenMissing error means this pivot's data source has not been allowed to be queried in this browser session; the error itself says exactly what the user must do.",
+    "List a PivotTable page filter's members, each with the numeric id set_pivot_filter takes. " +
+    'Pass "search" to find one by name — the service matches it and returns only the hits, the only workable route on a large dimension, whose full list runs to hundreds of thousands of characters and comes back capped. ' +
+    'Without it you get the top of the tree, where a large dimension is one unexpanded "All" row whose children arrive only when its id is passed back as parent_id. ' +
+    "Returns a flat list of {name, id, state, is_leaf, list_truncated}: state 0 is selected now; list_truncated true means the service capped that row's children. " +
+    'Never guess or reuse an id — a wrong one selects a different member and reports no error. ' +
+    'Reads the live session. ' +
+    "PftTokenMissing means this pivot's data source has not been allowed to be queried this session; the error says what the user must do.",
   summary: "List a page filter's members and their ids",
   icon: 'list-filter',
   group: 'Data Model',
@@ -82,6 +81,13 @@ export const getPivotFilterMembers = defineTool({
           'A large dimension comes back as a single unexpanded row — "All" with is_leaf false and no members under it — ' +
           'and its children only arrive when its id is passed back here.',
       ),
+    search: z
+      .string()
+      .optional()
+      .describe(
+        'Find members whose name matches this text, e.g. "ATL081". The service does the matching and returns only the hits, ' +
+          'so this is how to reach one member of a large dimension without pulling the whole list. Searches the entire filter, not one branch.',
+      ),
   }),
   output: bridgeOutputSchema.extend({
     response: z
@@ -90,7 +96,33 @@ export const getPivotFilterMembers = defineTool({
       .describe('Every member of the filter, flattened. Null when the call failed — see `errors`.'),
   }),
   handle: async params => {
+    // Refused rather than ignored: a search covers the whole filter, so honouring
+    // both would silently drop whichever the caller cared about.
+    if (params.search !== undefined && params.parent_id !== undefined) {
+      throw ToolError.validation(
+        'Pass either search or parent_id, not both: a search already covers every member of the filter, ' +
+          'so scoping it to one branch is not something the service supports. Drop parent_id to search the whole filter.',
+      );
+    }
+
     const target = await resolvePivotFilterTarget(params.worksheet, params.field, params.pivot_name);
+
+    if (params.search !== undefined) {
+      return ewaBridgeRead<z.infer<typeof memberSchema>[] | null>(
+        'SearchPivotFilter',
+        {
+          cell: target.cell,
+          dataSourceIndex: SEARCH_DATA_SOURCE_INDEX,
+          optionalPivotAnchorParameter: { AnchorType: 0, ChartId: null, AnchorValue1: -1, AnchorValue2: -1 },
+          fieldId: target.fieldId,
+          parentId: -1,
+          searchText: params.search,
+          hierarchyLevel: DEFAULT_HIERARCHY_LEVEL,
+        },
+        { projection: SEARCH_MEMBER_PROJECTION, errorHints: EWA_ERROR_HINTS },
+      );
+    }
+
     return ewaBridgeRead<z.infer<typeof memberSchema>[] | null>(
       'GetPivotFilterData',
       {

@@ -1,5 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
+import { isPeriodRelative } from '../period-relative.js';
 import { readConnections, readPivotCaches, readPivotTables } from '../pivot-model.js';
 import { fetchWorkbookPackage } from '../workbook-package.js';
 import { availableHierarchySchema, availableMeasureSchema, connectionSchema, pivotTableSchema } from './schemas.js';
@@ -12,11 +13,12 @@ export const inspectDataModel = defineTool({
   name: 'inspect_data_model',
   displayName: 'Inspect Data Model',
   description:
-    'Inspect the data model behind the workbook: its external data connections, its PivotTables, and — for cube/OLAP connections — the complete inventory of measures and hierarchies the model exposes. ' +
-    'This is the only way to discover fields that are NOT already in a PivotTable: GETPIVOTDATA resolves a measure only when it is laid out in a pivot and returns #REF! otherwise, so the sheet shows a small fraction of what the model publishes. ' +
-    'Use "is_laid_out" to tell the two apart, and pass "field_index" to add_pivot_field to place one. For a Power BI connection, "dataset_id" gives the semantic-model ID for running DAX against the same model. ' +
-    'Reads the workbook file itself, because the Microsoft Graph workbook API has no PivotTable, connection or pivot-cache surface at any version. ' +
-    'A large semantic model can expose several hundred measures — pass "filter" to narrow the result. The *_count fields always report true totals before filtering, so you can tell when you are seeing a subset.',
+    'Inspect the data model behind the workbook: external data connections, PivotTables, and — for cube/OLAP connections — every measure and hierarchy the model exposes. ' +
+    'This is the only way to find fields not already in a PivotTable: GETPIVOTDATA resolves a measure only when it is laid out and returns #REF! otherwise. Use "is_laid_out" to tell them apart, and pass "field_index" to add_pivot_field. ' +
+    'CHECK "period_relative" BEFORE CHOOSING A MEASURE FOR A GIVEN PERIOD: one that computes its own period (CMTD, YTD, LM…) ignores a date in rows or filters and returns the same number on every row. ' +
+    'For a Power BI connection, "dataset_id" gives the semantic-model ID for running DAX. ' +
+    'Reads the workbook file itself, because the Graph workbook API has no PivotTable, connection or pivot-cache surface at any version. ' +
+    'A large model exposes several hundred measures — pass "filter" to narrow. The *_count fields report true totals before filtering.',
   summary: 'Inspect connections, PivotTables, and all available cube measures',
   icon: 'database',
   group: 'Data Model',
@@ -122,6 +124,7 @@ export const inspectDataModel = defineTool({
                 display_folder: measure.displayFolder,
                 measure_group: measure.measureGroup,
                 is_laid_out: measure.isLaidOut,
+                period_relative: isPeriodRelative(measure.caption),
               })),
       available_hierarchies:
         params.include_hierarchies === false

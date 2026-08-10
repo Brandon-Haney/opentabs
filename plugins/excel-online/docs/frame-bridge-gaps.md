@@ -363,52 +363,56 @@ POST SetParameters
   confirmationChoice: true      // the user pressed Yes
 ```
 
-The gate covers `ApplyPivot` as well as the filter methods, so field placement is blocked
-by it too, and any reload — including the plugin's own reauthenticate path — discards it.
+The gate covers `ApplyPivot` and `RefreshAllNew` as well as the filter methods, so field
+placement and refreshing are blocked by it too. **Refresh is therefore not a way through
+it** — an appealing theory, since `Refresh` is the one method carrying a per-source user
+AAD token, and a dead one: the tokenless `RefreshAllNew` answers `PftTokenMissing` like
+everything else.
 
-**There are two gates, not one, and the difference matters.** Established by capturing a
-whole session's RPC stream on a freshly reloaded workbook:
+**Solved 2026-08-10 — `grant_data_access` replays it, and verifies.** The whole grant is a
+single `SetParameters`. Two earlier conclusions recorded here were wrong, both from
+attributing a grant to whichever action happened to precede it:
 
-1. **The dialog is raised at most once per session.** It is raised entirely client-side,
-   off a flag the app already holds — `GetPivotMenu` does not exist in the stream, and no
-   request precedes the dialog. So **no replayable method raises it**, and a
-   "grant_data_access that prompts the user" tool cannot be built on this bridge.
-2. **The grant itself is per data source**, and lands when the *app* touches that source.
+- **It is not per data source.** Captured end to end on a freshly reloaded two-model
+  workbook: `SetParameters` → `GetObjectMetadataWithFilter` → `GetPivotFilterData` on model
+  A **succeeds** → two more metadata GETs → `GetPivotFilterData` on model **B succeeds**.
+  Eighteen requests total, nothing between the two reads but metadata. One grant covers the
+  workbook.
+- **A reload does not discard it.** The grant survived a full navigation *and* a
+  `reauthenticate` that clears MSAL state. It is scoped to the browser session, not the
+  page load — so it is needed at most once per workbook per browser session.
 
-Observed one variable at a time: fresh session → open PROTracker's filter dropdown →
-dialog → Yes → PROTracker reads work while **Sales still answers `PftTokenMissing`** →
-open Sales' dropdown → **no dialog**, because it is already spent → Sales reads work.
-
-So the rule is **one dialog per session, plus one UI touch per data source**. An earlier
-note here claimed the grant was session-wide; that came from a session where the Power BI
-reports had already been open, so both sources were already granted and opening one
-dropdown merely appeared to cover both. Validating on a single instance again, in the
-same file that already warns against it.
-
-**The failing and succeeding requests are argument-identical.** Diffed from the capture:
-same 18 context keys, same `cell`, `dataSourceIndex`, `fieldId`, `parentId` and
-`needConnect`. The only difference is whether `SetParameters` had run. So this is purely
-server-side session state — not an argument bug and not a forwarding one.
-
-**Replaying `SetParameters` was tested and did nothing — but the test was wrong.** The
-four option fields matched byte-for-byte; the *context* never did. The client sends 21
-context keys on this call and a donor-lifted context has 18, missing
-`BlockingUIOperation`, `BlockingUIOperationTimestamp`, and a `ViewportStateChange` naming
-the pivot's sheet and selection. The tool built on it was removed because it reported
-success while doing nothing, which was the right call, but "cannot be replayed" was proved
-against the wrong request and is not established.
-
-**A correctly-shaped replay is deliberately untested.** If it worked it would answer "do
-you trust this external data source?" on the user's behalf, silently, with no dialog —
-which is not something this plugin should be able to do. Treat it as research, only on an
-explicit request, and never wire it into a tool.
+**What made the replay fail was two context keys, not the option fields.** The four options
+match the client byte-for-byte. The client sends **21** context keys and a donor-lifted
+context has 19; the missing two are `BlockingUIOperation: true` and
+`BlockingUIOperationTimestamp`, epoch millis **as a string**. Sending them lifted from the
+donor was tried and rejected as `InvalidEditSessionDuringShutDown`, which read as "these
+describe client modal state a replay has no business asserting" — but a donor's stamp
+belongs to a modal that closed long ago. **Minted fresh at replay time the same two fields
+are accepted.** `ViewportStateChange` is the third key a donor lacks, and it also carries
+`TopLeft` on this call and on no other.
 
 `confirmation: 1243883867` is a **client-side constant**, not the error's `MessageId`
 (`-198950119`), so reading the id off the error and replaying it is not a route either.
+The dialog itself is raised entirely client-side — `GetPivotMenu` does not exist in the
+stream and no request precedes it — so no replayable method *raises* the prompt. Answering
+it is what is replayable.
+
+**The response to the grant carries no signal.** A `SetParameters` that granted nothing and
+one that granted the workbook are both HTTP 200 with `Errors: []`. This is why the tool
+pairs the grant with a probe in one bridge call — prep `SetParameters`, commit a gated
+operation — and reports the probe's result. Anything that reports on the grant's own
+response is reporting on nothing.
 
 `Configurations` ticks `1573649 → 1573648` across the consent — one bit clearing. The
 bridge replays that field from the donor, so a donor captured before the consent carries
 the pre-consent value.
+
+The error object carries `RequestAccessDataConnectionNames`, `RequestAccessDatasetIds` and
+`RequestAccessHostNames`, null in every capture so far. They imply a "this session needs
+access to these datasets" channel that has not been explored. `UpdateWacAADToken` exists
+(200, `Result: null` when called with no token) and looks like a setter for pushing an AAD
+token to the server, but nothing has been proved about it.
 
 **The bridge used to poison its own donor**, which is worth knowing when reading any
 result recorded before 2026-08-10. `fetchInFrame` runs its replay in the frame's MAIN

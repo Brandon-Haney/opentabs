@@ -58,6 +58,27 @@ const frameBridgeRpc = defineBrowserTool({
       .record(z.string(), z.unknown())
       .optional()
       .describe('Options for the prep call request body (merged alongside the harvested `context`).'),
+    prepHttpMethod: z
+      .enum(['GET', 'POST'])
+      .optional()
+      .describe(
+        'HTTP verb for the prep call (default POST). Reading state is commonly the GET half of these APIs, so a ' +
+          'prep that reads a version counter often has to be a GET even when the commit it feeds is a POST.',
+      ),
+    prepContextKeys: z
+      .array(z.string())
+      .optional()
+      .describe('`contextKeys` for the prep call, which needs its own when it is a GET.'),
+    optionsFromPrepPaths: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe(
+        'Commit options taken verbatim from the prep response, as `{ optionDotPath: responseDotPath }` — e.g. ' +
+          '`{"pivotFieldApplyData.FieldListVersion": "Result.FieldListVersion"}`. Use for a value the caller ' +
+          'cannot know and must not guess, above all an optimistic-concurrency counter: reading it here means it ' +
+          'cannot be stale, because nothing happens between the read and the write that echoes it. A path that ' +
+          'resolves to nothing fails the call before the commit is sent.',
+      ),
     contextPatch: z
       .record(z.string(), z.unknown())
       .optional()
@@ -128,6 +149,9 @@ const frameBridgeRpc = defineBrowserTool({
       ...(args.donorGlobal ? { donorGlobal: args.donorGlobal } : {}),
       ...(args.prepMethod ? { prepMethod: args.prepMethod } : {}),
       ...(args.prepOptions ? { prepOptions: args.prepOptions } : {}),
+      ...(args.prepHttpMethod ? { prepHttpMethod: args.prepHttpMethod } : {}),
+      ...(args.prepContextKeys ? { prepContextKeys: args.prepContextKeys } : {}),
+      ...(args.optionsFromPrepPaths ? { optionsFromPrepPaths: args.optionsFromPrepPaths } : {}),
       ...(args.contextPatch ? { contextPatch: args.contextPatch } : {}),
       ...(args.optionsFromFrameGlobals ? { optionsFromFrameGlobals: args.optionsFromFrameGlobals } : {}),
       ...(args.httpMethod ? { httpMethod: args.httpMethod } : {}),

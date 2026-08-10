@@ -1,7 +1,11 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge, type EwaBridgeExtra } from '../bridge.js';
-import { PIVOT_DATA_SOURCE_INDEX, SEARCH_DATA_SOURCE_INDEX } from './pivot-data-source.js';
+import {
+  DATA_SOURCE_INDEX_DESCRIPTION,
+  PIVOT_DATA_SOURCE_INDEX,
+  SEARCH_DATA_SOURCE_INDEX,
+} from './pivot-data-source.js';
 import { DEFAULT_HIERARCHY_LEVEL, resolvePivotFilterTarget, SEARCH_MEMBER_PROJECTION } from './pivot-filter-target.js';
 
 export const setPivotFilter = defineTool({
@@ -12,7 +16,7 @@ export const setPivotFilter = defineTool({
     'Prefer member_name: pass the name ("ATL081") and the plugin resolves it against the live filter, so no id is ever guessed or carried between calls. It selects one member; use member_ids to select several or to select "All". ' +
     'This changes the numbers the PivotTable shows, and therefore every GETPIVOTDATA formula reading it — that is the intent, but say which filter changed when reporting the result. ' +
     'Applies to the live session immediately; call refresh_pivot afterwards only if the underlying model data also needs re-querying. ' +
-    "A PftTokenMissing error means this pivot's data source has not been allowed to be queried in this browser session; the error itself says exactly what the user must do.",
+    'PftTokenMissing means the workbook has not been allowed to query external data — call grant_data_access.',
   summary: 'Set the members a PivotTable page filter selects',
   icon: 'filter',
   group: 'Data Model',
@@ -46,6 +50,7 @@ export const setPivotFilter = defineTool({
       .describe(
         'Hierarchy level the members sit at, as get_pivot_filter_members reports it in PivotFilterHierarchyItems. Defaults to 1, correct for a single-level filter.',
       ),
+    data_source_index: z.number().int().optional().describe(DATA_SOURCE_INDEX_DESCRIPTION),
   }),
   output: bridgeOutputSchema,
   handle: async params => {
@@ -73,7 +78,7 @@ export const setPivotFilter = defineTool({
             mergesContext: false,
             options: {
               cell: target.cell,
-              dataSourceIndex: SEARCH_DATA_SOURCE_INDEX,
+              dataSourceIndex: params.data_source_index ?? SEARCH_DATA_SOURCE_INDEX,
               optionalPivotAnchorParameter: { AnchorType: 0, ChartId: null, AnchorValue1: -1, AnchorValue2: -1 },
               fieldId: target.fieldId,
               parentId: -1,
@@ -108,7 +113,7 @@ export const setPivotFilter = defineTool({
           },
           IsPivotFilter: true,
           FieldId: target.fieldId,
-          DataSourceIndex: PIVOT_DATA_SOURCE_INDEX,
+          DataSourceIndex: params.data_source_index ?? PIVOT_DATA_SOURCE_INDEX,
           AnchorType: 0,
           ChartId: null,
           AnchorValue1: -1,

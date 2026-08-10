@@ -8,6 +8,7 @@ import { describe, expect, test } from 'vitest';
 
 const {
   applyProjection,
+  assignAtPath,
   buildQueryUrl,
   buildReplayHeaders,
   deriveTargetUrl,
@@ -72,6 +73,64 @@ describe('selectFromPrep', () => {
 
   test('refuses when the lookup returned no candidates at all', () => {
     expect(() => selectFromPrep({ Result: {} }, selection(['ATL081']))).toThrow(/matched none/);
+  });
+});
+
+describe('assignAtPath', () => {
+  // Shaped like an ApplyPivot body, whose concurrency counters the engine lifts
+  // out of a prep response and writes into a nested option object.
+  const pivotOptions = () => ({
+    cell: { SheetName: 'Sales' },
+    pivotFieldApplyData: { FieldListType: 1, ItemIndex: 311 } as Record<string, unknown>,
+  });
+
+  test('writes a value at a nested path', () => {
+    const options = pivotOptions();
+    assignAtPath(options, 'pivotFieldApplyData.FieldListVersion', 5);
+    expect(options.pivotFieldApplyData.FieldListVersion).toBe(5);
+  });
+
+  test('overwrites a value that is already there', () => {
+    const options = pivotOptions();
+    assignAtPath(options, 'pivotFieldApplyData.ItemIndex', 999);
+    expect(options.pivotFieldApplyData.ItemIndex).toBe(999);
+  });
+
+  test('writes a top-level key', () => {
+    const options = pivotOptions();
+    assignAtPath(options, 'dataSourceIndex', 0);
+    expect(options).toHaveProperty('dataSourceIndex', 0);
+  });
+
+  test('leaves every other field untouched', () => {
+    const options = pivotOptions();
+    assignAtPath(options, 'pivotFieldApplyData.FieldWellVersion', 7);
+    expect(options.pivotFieldApplyData).toEqual({ FieldListType: 1, ItemIndex: 311, FieldWellVersion: 7 });
+    expect(options.cell).toEqual({ SheetName: 'Sales' });
+  });
+
+  // The branch is not created, so a path naming a parent that does not exist is
+  // a typo or a changed request shape. Silently growing it would send a request
+  // the service ignores while the call reported success.
+  test('throws rather than creating a missing parent', () => {
+    const options = pivotOptions();
+    expect(() => {
+      assignAtPath(options, 'notThere.FieldListVersion', 5);
+    }).toThrow(/notThere/);
+    expect(options).not.toHaveProperty('notThere');
+  });
+
+  test('throws when an intermediate segment is not an object', () => {
+    const options = pivotOptions();
+    expect(() => {
+      assignAtPath(options, 'pivotFieldApplyData.ItemIndex.Nested', 5);
+    }).toThrow(/ItemIndex/);
+  });
+
+  test('rejects an empty path', () => {
+    expect(() => {
+      assignAtPath(pivotOptions(), '', 5);
+    }).toThrow();
   });
 });
 

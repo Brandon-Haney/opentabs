@@ -191,6 +191,29 @@ export interface FrameBridgeRpcParams {
    */
   optionsFromPrep?: BridgePrepSelection[];
   /**
+   * HTTP verb for the prep call. Defaults to POST, like the commit.
+   *
+   * Reading state is commonly the GET half of these APIs, so a prep that reads
+   * a version counter or a field well often has to be a GET even when the commit
+   * it feeds is a POST.
+   */
+  prepHttpMethod?: 'GET' | 'POST';
+  /** {@link contextKeys} for the prep call, which needs its own when it is a GET. */
+  prepContextKeys?: string[];
+  /**
+   * Commit options taken verbatim from the prep response, as
+   * `{ optionDotPath: responseDotPath }`.
+   *
+   * The sibling {@link optionsFromPrep} resolves a *name* to an id by searching a
+   * list; this lifts a scalar the caller cannot know from a fixed place in the
+   * response. Optimistic-concurrency counters are the case it exists for: a write
+   * must echo the current ones, they change on every operation including failed
+   * ones, and so a caller that reads them in a separate call is racing anything
+   * else touching the document. Read here, they cannot be stale — nothing happens
+   * between the read and the write that uses it.
+   */
+  optionsFromPrepPaths?: Record<string, string>;
+  /**
    * Top-level fields to patch into the reused `context` before replaying — e.g.
    * a `ViewportStateChange` selection that a selection-scoped stateful method
    * requires but a poll-sourced donor context lacks. Shallow-merged.
@@ -516,6 +539,37 @@ const resolvePath = (root: unknown, path: string): unknown => {
   return current;
 };
 
+/**
+ * Write `value` at a dot path inside `target`.
+ *
+ * Deliberately does not create missing branches. Every path here names a field
+ * of a request the caller has already built, so one that does not resolve is a
+ * typo or a shape that has changed — and quietly growing a new branch would send
+ * a request the service ignores while the call reports success.
+ */
+export const assignAtPath = (target: Record<string, unknown>, path: string, value: unknown): void => {
+  const segments = path.split('.');
+  const leaf = segments.pop();
+  if (leaf === undefined || leaf === '') {
+    throw new FrameBridgeValidationError(`"${path}" is not a usable option path.`);
+  }
+  let current: unknown = target;
+  for (const segment of segments) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
+      throw new FrameBridgeValidationError(
+        `Cannot set "${path}": "${segment}" is not an object on the options this call was built with.`,
+      );
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+  if (!current || typeof current !== 'object' || Array.isArray(current)) {
+    throw new FrameBridgeValidationError(
+      `Cannot set "${path}": its parent is not an object on the options this call was built with.`,
+    );
+  }
+  (current as Record<string, unknown>)[leaf] = value;
+};
+
 /** Apply a projection's field map to one node. Non-objects pass through unchanged. */
 const pickFields = (node: unknown, fields?: Record<string, string>): unknown => {
   if (!fields || !node || typeof node !== 'object' || Array.isArray(node)) return node;
@@ -765,13 +819,25 @@ export const runFrameBridgeRpc = async (params: FrameBridgeRpcParams): Promise<F
       params.prepMethod,
       context,
       params.prepOptions ?? {},
+      params.prepHttpMethod,
+      params.prepContextKeys,
     );
     if (prep.ewaResult && params.prepMergesContext !== false) mergeContextFromResponse(context, prep.ewaResult);
 
-    // Before the commit, so an unresolved or ambiguous term fails without
-    // having written anything.
+    // Both loops run before the commit, so an unresolved term or a missing
+    // value fails without having written anything.
     for (const selection of params.optionsFromPrep ?? []) {
       options[selection.option] = selectFromPrep(prep.result.response, selection);
+    }
+    for (const [optionPath, responsePath] of Object.entries(params.optionsFromPrepPaths ?? {})) {
+      const value = resolvePath(prep.result.response, responsePath);
+      if (value === undefined) {
+        throw new FrameBridgeValidationError(
+          `The "${params.prepMethod}" response has nothing at "${responsePath}", which supplies "${optionPath}" for "${method}". ` +
+            'Either the prep call failed or the response shape has changed; the commit was not sent.',
+        );
+      }
+      assignAtPath(options, optionPath, value);
     }
   }
 
@@ -896,6 +962,11 @@ export const handleBrowserFrameBridgeRpc = async (
         : undefined;
     const projection = toProjection(rawProjection);
     const optionsFromPrep = toPrepSelections(params.optionsFromPrep);
+    const prepHttpMethod = params.prepHttpMethod === 'GET' ? 'GET' : undefined;
+    const prepContextKeys = Array.isArray(params.prepContextKeys)
+      ? params.prepContextKeys.filter((k): k is string => typeof k === 'string')
+      : undefined;
+    const optionsFromPrepPaths = asStringMap(params.optionsFromPrepPaths);
 
     const result = await runFrameBridgeRpc({
       tabId,
@@ -907,6 +978,9 @@ export const handleBrowserFrameBridgeRpc = async (
       prepMethod,
       prepOptions,
       optionsFromPrep,
+      prepHttpMethod,
+      prepContextKeys,
+      optionsFromPrepPaths,
       ...(params.prepMergesContext === false ? { prepMergesContext: false } : {}),
       contextPatch,
       optionsFromFrameGlobals,

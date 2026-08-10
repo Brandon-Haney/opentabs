@@ -62,22 +62,25 @@ export const bridgeReadOutputSchema = bridgeOutputSchema.extend({
 export const AAD_TOKEN_GLOBAL = '__otbEwaAadToken';
 
 /**
- * What to tell an agent whose pivot operation was refused with `PftTokenMissing`.
+ * What to tell an agent whose operation was refused with `PftTokenMissing`.
  *
- * Established by capturing a full session's RPC stream: there are two gates, not
- * one. Excel's "Query and Refresh Data" dialog is raised at most once per browser
- * session, and the grant it unlocks is applied **per data source**, as the app
- * itself touches each one. A workbook drawing on two models therefore needs the
- * prompt answered once and a filter opened on a pivot over each model — answering
- * the prompt on one pivot leaves the other still refused.
+ * Established by capturing a full session's RPC stream while a user answered the
+ * prompt on one pivot and then opened a filter on a second pivot over a *different*
+ * model: the second read succeeded with nothing between the two but a metadata GET.
+ * One `SetParameters` grants the whole workbook. The grant also survived a full
+ * navigation and an MSAL-clearing reauthenticate, so it is scoped to the browser
+ * session rather than the page load.
+ *
+ * Both points correct earlier conclusions recorded here — "one UI touch per data
+ * source" and "any reload discards it" — each of which came from attributing a
+ * grant to whichever action happened to precede it.
  */
 const PIVOT_CONSENT_HINT =
-  "This PivotTable's data source has not been allowed to be queried in this browser session. " +
-  'Ask the user to open a page-filter dropdown on this specific PivotTable in Excel, answering Yes to the ' +
-  '"Query and Refresh Data" prompt if it appears. The prompt appears at most once per session, but every data ' +
-  'source still needs a filter opened on one of its own pivots — granting it for one model does not cover another. ' +
-  'Do not reload the page: a reload revokes every grant. No tool can grant this, and retrying without that ' +
-  'interaction fails identically.';
+  'This workbook has not been allowed to query its external data in this browser session. ' +
+  'Call grant_data_access to answer the prompt and verify the grant, then retry this operation. ' +
+  'One grant covers every connection in the workbook and survives page reloads, so it is needed at most ' +
+  'once per workbook per browser session — if grant_data_access reports the grant did not take effect, ' +
+  'say so rather than retrying, because an ungranted retry fails identically.';
 
 /**
  * Guidance attached to a failed bridge call, keyed by the service's error code.
@@ -223,7 +226,10 @@ interface BridgeDirective {
     prepMethod?: string;
     prepOptions?: Record<string, unknown>;
     prepMergesContext?: boolean;
+    prepHttpMethod?: 'GET' | 'POST';
+    prepContextKeys?: string[];
     optionsFromPrep?: EwaPrepSelection[];
+    optionsFromPrepPaths?: Record<string, string>;
     contextPatch?: Record<string, unknown>;
     optionsFromFrameGlobals?: Record<string, string>;
     projection?: BridgeProjection;
@@ -263,6 +269,10 @@ export interface EwaPrep {
    * Set false for a prep that only looks something up.
    */
   mergesContext?: boolean;
+  /** Verb for the prep call; defaults to POST. Reads on this service are GETs. */
+  httpMethod?: 'GET' | 'POST';
+  /** Restrict the prep call's context to these keys — required when it is a GET. */
+  contextKeys?: string[];
 }
 
 /**
@@ -294,6 +304,18 @@ export interface EwaBridgeExtra {
   prep?: EwaPrep;
   /** Options resolved from the prep call's response (see {@link EwaPrepSelection}). */
   prepSelections?: EwaPrepSelection[];
+  /**
+   * Commit options taken verbatim from the prep response, as
+   * `{ optionDotPath: responseDotPath }`.
+   *
+   * Where {@link EwaPrepSelection} resolves a name to an id by searching a list,
+   * this lifts a scalar from a fixed place. It exists for this service's
+   * optimistic-concurrency counters: a write has to echo the current pair, they
+   * advance on every operation including failed ones, and a caller that reads
+   * them in an earlier call is racing anything else touching the document. Read
+   * as a prep they cannot be stale.
+   */
+  prepOptionPaths?: Record<string, string>;
   /** Top-level context fields to patch in before replaying (e.g. {@link viewportSelection}). */
   contextPatch?: Record<string, unknown>;
   /**
@@ -343,9 +365,12 @@ export const ewaBridge = (
             prepMethod: extra.prep.method,
             ...(extra.prep.options ? { prepOptions: extra.prep.options } : {}),
             ...(extra.prep.mergesContext === false ? { prepMergesContext: false } : {}),
+            ...(extra.prep.httpMethod ? { prepHttpMethod: extra.prep.httpMethod } : {}),
+            ...(extra.prep.contextKeys ? { prepContextKeys: extra.prep.contextKeys } : {}),
           }
         : {}),
       ...(extra?.prepSelections ? { optionsFromPrep: extra.prepSelections } : {}),
+      ...(extra?.prepOptionPaths ? { optionsFromPrepPaths: extra.prepOptionPaths } : {}),
       ...(extra?.contextPatch ? { contextPatch: extra.contextPatch } : {}),
       ...(extra?.optionsFromFrameGlobals ? { optionsFromFrameGlobals: extra.optionsFromFrameGlobals } : {}),
       ...(extra?.httpMethod ? { httpMethod: extra.httpMethod } : {}),
@@ -415,8 +440,13 @@ export const selectedRanges = (worksheet: string, ...addresses: string[]): EwaSe
  * Selection-scoped stateful methods (data validation, conditional formatting)
  * validate that the reused context's selection matches the operation's range —
  * a poll-sourced donor context lacks it, so the tool must supply it.
+ *
+ * `topLeft` names the cell scrolled to the top-left of the viewport, which the
+ * client sends alongside the selection and most methods do not care about. It is
+ * optional so that the methods verified without it keep sending exactly what they
+ * were verified with.
  */
-export const viewportSelection = (worksheet: string, address: string): Record<string, unknown> => {
+export const viewportSelection = (worksheet: string, address: string, topLeft?: string): Record<string, unknown> => {
   const bounds = parseBoundedRange(address);
   const activeCell = buildRangeAddress({
     startRow: bounds.startRow,
@@ -427,7 +457,12 @@ export const viewportSelection = (worksheet: string, address: string): Record<st
   return {
     ViewportStateChange: {
       SheetViewportStateChanges: [
-        { SheetName: worksheet, SelectedRanges: selectedRanges(worksheet, address), ActiveCell: activeCell },
+        {
+          SheetName: worksheet,
+          ...(topLeft === undefined ? {} : { TopLeft: topLeft }),
+          SelectedRanges: selectedRanges(worksheet, address),
+          ActiveCell: activeCell,
+        },
       ],
     },
   };

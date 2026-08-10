@@ -345,6 +345,12 @@ interface BridgeDirective {
   prepMergesContext?: boolean;
   /** Commit options resolved from the prep call's response. */
   optionsFromPrep?: BridgePrepSelection[];
+  /** HTTP verb for the prep call; defaults to POST. */
+  prepHttpMethod?: 'GET' | 'POST';
+  /** Restrict the prep call's context to these keys — needed when it is a GET. */
+  prepContextKeys?: string[];
+  /** Commit options lifted verbatim from the prep response, `{ optionPath: responsePath }`. */
+  optionsFromPrepPaths?: Record<string, string>;
   contextPatch?: Record<string, unknown>;
   /**
    * `{ optionName: frameGlobalName }` for option values the embedded frame owns
@@ -414,6 +420,7 @@ const extractBridgeDirective = (output: unknown): BridgeDirective | null => {
       ? (b.contextPatch as Record<string, unknown>)
       : undefined;
   const optionsFromPrep = toPrepSelections(b.optionsFromPrep);
+  const optionsFromPrepPaths = asStringMap(b.optionsFromPrepPaths);
   const optionsFromFrameGlobals = asStringMap(b.optionsFromFrameGlobals);
   const errorHints = asStringMap(b.errorHints);
   const projection = asBridgeProjection(b.projection);
@@ -427,6 +434,11 @@ const extractBridgeDirective = (output: unknown): BridgeDirective | null => {
     ...(prepOptions ? { prepOptions } : {}),
     ...(b.prepMergesContext === false ? { prepMergesContext: false } : {}),
     ...(optionsFromPrep ? { optionsFromPrep } : {}),
+    ...(b.prepHttpMethod === 'GET' ? { prepHttpMethod: 'GET' as const } : {}),
+    ...(Array.isArray(b.prepContextKeys)
+      ? { prepContextKeys: b.prepContextKeys.filter((k): k is string => typeof k === 'string') }
+      : {}),
+    ...(optionsFromPrepPaths ? { optionsFromPrepPaths } : {}),
     ...(contextPatch ? { contextPatch } : {}),
     ...(optionsFromFrameGlobals ? { optionsFromFrameGlobals } : {}),
     ...(b.httpMethod === 'GET' ? { httpMethod: 'GET' as const } : {}),

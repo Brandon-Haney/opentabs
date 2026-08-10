@@ -1,7 +1,11 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { bridgeOutputSchema, EWA_ERROR_HINTS, EWA_GET_CONTEXT_KEYS, ewaBridgeRead } from '../bridge.js';
-import { PIVOT_DATA_SOURCE_INDEX, SEARCH_DATA_SOURCE_INDEX } from './pivot-data-source.js';
+import {
+  DATA_SOURCE_INDEX_DESCRIPTION,
+  PIVOT_DATA_SOURCE_INDEX,
+  SEARCH_DATA_SOURCE_INDEX,
+} from './pivot-data-source.js';
 import {
   DEFAULT_HIERARCHY_LEVEL,
   MEMBER_PROJECTION,
@@ -55,12 +59,13 @@ export const getPivotFilterMembers = defineTool({
   displayName: 'Get PivotTable Filter Members',
   description:
     "List a PivotTable page filter's members, each with the numeric id set_pivot_filter takes. " +
-    'Pass "search" to find one by name — the service matches it and returns only the hits, the only workable route on a large dimension, whose full list runs to hundreds of thousands of characters and comes back capped. ' +
-    'Without it you get the top of the tree, where a large dimension is one unexpanded "All" row whose children arrive only when its id is passed back as parent_id. ' +
+    'Pass "search" to find one by name — the service matches and returns only the hits, the only workable route on a large dimension, whose full list comes back capped. ' +
+    'Without it you get the top of the tree; a large dimension\'s children arrive only when its "All" id is passed back as parent_id. ' +
     "Returns a flat list of {name, id, state, is_leaf, list_truncated}: state 0 is selected now; list_truncated true means the service capped that row's children. " +
     'Never guess or reuse an id — a wrong one selects a different member and reports no error. ' +
+    'If a filter answers with far fewer members than it has, try data_source_index — Excel addresses different pivots by different values. ' +
     'Reads the live session. ' +
-    "PftTokenMissing means this pivot's data source has not been allowed to be queried this session; the error says what the user must do.",
+    'PftTokenMissing means the workbook has not been allowed to query external data — call grant_data_access.',
   summary: "List a page filter's members and their ids",
   icon: 'list-filter',
   group: 'Data Model',
@@ -88,6 +93,7 @@ export const getPivotFilterMembers = defineTool({
         'Find members whose name matches this text, e.g. "ATL081". The service does the matching and returns only the hits, ' +
           'so this is how to reach one member of a large dimension without pulling the whole list. Searches the entire filter, not one branch.',
       ),
+    data_source_index: z.number().int().optional().describe(DATA_SOURCE_INDEX_DESCRIPTION),
   }),
   output: bridgeOutputSchema.extend({
     response: z
@@ -112,7 +118,7 @@ export const getPivotFilterMembers = defineTool({
         'SearchPivotFilter',
         {
           cell: target.cell,
-          dataSourceIndex: SEARCH_DATA_SOURCE_INDEX,
+          dataSourceIndex: params.data_source_index ?? SEARCH_DATA_SOURCE_INDEX,
           optionalPivotAnchorParameter: { AnchorType: 0, ChartId: null, AnchorValue1: -1, AnchorValue2: -1 },
           fieldId: target.fieldId,
           parentId: -1,
@@ -127,7 +133,7 @@ export const getPivotFilterMembers = defineTool({
       'GetPivotFilterData',
       {
         cell: target.cell,
-        dataSourceIndex: PIVOT_DATA_SOURCE_INDEX,
+        dataSourceIndex: params.data_source_index ?? PIVOT_DATA_SOURCE_INDEX,
         optionalPivotAnchorParameter: { AnchorType: 0, ChartId: null, AnchorValue1: -1, AnchorValue2: -1 },
         fieldId: target.fieldId,
         parentId: params.parent_id ?? -1,

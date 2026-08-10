@@ -1,7 +1,8 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge, pivotCellBounds } from '../bridge.js';
+import { bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridgeRead, pivotCellBounds } from '../bridge.js';
 import { PIVOT_DATA_SOURCE_INDEX } from './pivot-data-source.js';
+import { PIVOT_WRITE_PROJECTION, pivotVersionPrep } from './pivot-field-versions.js';
 
 /**
  * Axis codes a field can currently occupy, as the source of a removal.
@@ -22,9 +23,9 @@ export const removePivotField = defineTool({
   displayName: 'Remove PivotTable Field',
   description:
     'Take a field out of a PivotTable zone — the inverse of add_pivot_field, and what makes adding a field safely reversible. ' +
-    'Every argument comes from get_pivot_field_layout, which must be read immediately before calling: zone is whichever axis array the field appears in, field_index is its PivotCacheIndex, position is its index within that array, and the two version numbers change after every modification. ' +
+    'Every argument comes from get_pivot_field_layout: zone is whichever axis array the field appears in, field_index is its PivotCacheIndex, and position is its index within that array. The concurrency counters are read and applied inside the same call, so they are not arguments. ' +
     'Removing a field from rows or columns changes what a GETPIVOTDATA formula reading this pivot returns, because those formulas resolve to the grand total. Unlike add_pivot_field this is not refused, since removing is how you undo an unwanted change — but check for such formulas first if the pivot is one a scorecard depends on. ' +
-    "A PftTokenMissing error means this pivot's data source has not been allowed to be queried in this browser session; the error itself says exactly what the user must do.",
+    'PftTokenMissing means the workbook has not been allowed to query external data — call grant_data_access.',
   summary: 'Take a field out of a PivotTable zone',
   icon: 'list-minus',
   group: 'Data Model',
@@ -42,21 +43,23 @@ export const removePivotField = defineTool({
       .number()
       .int()
       .describe('Zero-based position of the field within that zone, i.e. its index in that axis array'),
-    field_list_version: z.number().int().describe('Current FieldListVersion from get_pivot_field_layout'),
-    field_well_version: z.number().int().describe('Current FieldWellVersion from get_pivot_field_layout'),
   }),
-  output: bridgeOutputSchema,
+  output: bridgeOutputSchema.extend({
+    response: z
+      .number()
+      .nullable()
+      .describe('Document revision after the write. It advances when the field was removed; null if the call failed.'),
+  }),
   handle: async params =>
-    ewaBridge(
+    ewaBridgeRead<number | null>(
       'ApplyPivot',
       {
         cell: pivotCellBounds(params.worksheet, params.cell),
         dataSourceIndex: PIVOT_DATA_SOURCE_INDEX,
         optionalPivotAnchorParameter: { AnchorType: 0 },
+        // Version fields supplied by the prep — see pivotVersionPrep.
         pivotFieldApplyData: {
           FieldListType: 1,
-          FieldListVersion: params.field_list_version,
-          FieldWellVersion: params.field_well_version,
           SourceAxis: SOURCE_AXIS[params.zone],
           SourceAxisPosition: params.position,
           ItemType: ITEM_TYPE_REMOVAL,
@@ -65,6 +68,10 @@ export const removePivotField = defineTool({
           DestinationAxisPosition: -1,
         },
       },
-      { errorHints: EWA_ERROR_HINTS },
+      {
+        ...pivotVersionPrep(params.worksheet, params.cell),
+        projection: PIVOT_WRITE_PROJECTION,
+        errorHints: EWA_ERROR_HINTS,
+      },
     ),
 });

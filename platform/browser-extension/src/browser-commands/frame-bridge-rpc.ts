@@ -159,6 +159,21 @@ export interface FrameBridgeRpcParams {
   /** Options for the prep call's request body (merged alongside `context`). */
   prepOptions?: Record<string, unknown>;
   /**
+   * Whether the prep response's edit-state is merged into the context before the
+   * commit. Defaults to true, which is what a stateful dialog method needs.
+   *
+   * Set false when the prep is a lookup rather than a get-state call: its
+   * response describes a read, and folding a read's session token and revision
+   * counters into a context that is about to be written with has no basis and
+   * the service can reject the commit outright.
+   */
+  prepMergesContext?: boolean;
+  /**
+   * Values to lift out of the prep call's response and into the commit's
+   * options (see {@link BridgePrepSelection}). Requires `prepMethod`.
+   */
+  optionsFromPrep?: BridgePrepSelection[];
+  /**
    * Top-level fields to patch into the reused `context` before replaying — e.g.
    * a `ViewportStateChange` selection that a selection-scoped stateful method
    * requires but a poll-sourced donor context lacks. Shallow-merged.
@@ -448,6 +463,37 @@ export interface BridgeProjection {
   flattenChildren?: string;
 }
 
+/**
+ * Take values out of the prep call's response and put them into the commit's
+ * options.
+ *
+ * Some commits are addressed by an id the caller cannot know and cannot safely
+ * guess — a PivotTable filter selects members by numeric id, where the id
+ * follows the model's own ordering and a wrong one selects a different member
+ * and reports success. The lookup that turns a name into that id is itself a
+ * call into the frame, and a plugin tool handler never sees a bridge response,
+ * so the two have to happen here, as one operation.
+ *
+ * Matching is by name and is required to be unambiguous: a term that matches
+ * nothing, or more than one node, fails the whole call rather than picking. The
+ * point of resolving by name is to remove the chance of silently acting on the
+ * wrong row, which a "best match" would put straight back.
+ */
+export interface BridgePrepSelection {
+  /** Option on the commit call to populate with the collected values. */
+  option: string;
+  /** How to flatten and reshape the prep response before matching. */
+  projection: BridgeProjection;
+  /** Field of a projected node to match `values` against. */
+  matchField: string;
+  /** Field of a projected node to collect from each match. */
+  valueField: string;
+  /** Terms to resolve. Each must match exactly one node. */
+  values: string[];
+  /** Collect the values as strings — some services want ids quoted. */
+  asString?: boolean;
+}
+
 /** Depth cap for {@link applyProjection}; far beyond any real hierarchy. */
 const MAX_FLATTEN_DEPTH = 32;
 
@@ -547,6 +593,62 @@ const replayMethod = async (
   return { result: { frameId: fr.frameId, status: fr.status, ok: fr.ok, errors, response }, ewaResult };
 };
 
+/** Read a projected node's field as a string, or undefined when it is absent. */
+const projectedField = (node: unknown, field: string): string | undefined => {
+  if (!node || typeof node !== 'object') return undefined;
+  const value = (node as Record<string, unknown>)[field];
+  return value === undefined || value === null ? undefined : String(value);
+};
+
+/**
+ * Resolve each of `selection.values` against the prep response, requiring
+ * exactly one match apiece.
+ *
+ * Matching is case-insensitive containment, because the name a caller has is
+ * rarely the whole display string — a store known as "ATL081" is published as
+ * "ATL081 | DOUGLASVILLE | DOUGLASVILLE". An exact-equality rule would reject
+ * every realistic input; containment plus a uniqueness requirement accepts the
+ * realistic ones and refuses precisely the cases where a choice would have to be
+ * invented.
+ *
+ * @throws {FrameBridgeValidationError} when a term matches no node or several.
+ */
+export const selectFromPrep = (response: unknown, selection: BridgePrepSelection): unknown[] => {
+  const projected = applyProjection(response, selection.projection);
+  const nodes = Array.isArray(projected) ? projected : projected === null ? [] : [projected];
+
+  return selection.values.map(term => {
+    const needle = term.trim().toLowerCase();
+    const matches = nodes.filter(node => projectedField(node, selection.matchField)?.toLowerCase().includes(needle));
+
+    if (matches.length === 0) {
+      throw new FrameBridgeValidationError(
+        `"${term}" matched none of the ${nodes.length} candidates the lookup returned. ` +
+          'Check the spelling against what the model publishes, which may differ from how the value is written elsewhere.',
+      );
+    }
+    if (matches.length > 1) {
+      const named = matches
+        .slice(0, 8)
+        .map(node => `"${projectedField(node, selection.matchField) ?? '(unnamed)'}"`)
+        .join(', ');
+      const more = matches.length > 8 ? ` (and ${matches.length - 8} more)` : '';
+      throw new FrameBridgeValidationError(
+        `"${term}" is ambiguous — it matched ${matches.length} candidates: ${named}${more}. ` +
+          'Nothing was changed. Give a term that identifies one of them exactly.',
+      );
+    }
+
+    const value = projectedField(matches[0], selection.valueField);
+    if (value === undefined) {
+      throw new FrameBridgeValidationError(
+        `"${term}" matched a candidate that carries no "${selection.valueField}", so there is nothing to send.`,
+      );
+    }
+    return selection.asString ? value : Number(value);
+  });
+};
+
 /**
  * Harvest-and-replay bridge for coauth-context RPC APIs (e.g. the Office Web
  * Apps `EwaInternalWebService`). One atomic operation:
@@ -634,7 +736,13 @@ export const runFrameBridgeRpc = async (params: FrameBridgeRpcParams): Promise<F
       context,
       params.prepOptions ?? {},
     );
-    if (prep.ewaResult) mergeContextFromResponse(context, prep.ewaResult);
+    if (prep.ewaResult && params.prepMergesContext !== false) mergeContextFromResponse(context, prep.ewaResult);
+
+    // Before the commit, so an unresolved or ambiguous term fails without
+    // having written anything.
+    for (const selection of params.optionsFromPrep ?? []) {
+      options[selection.option] = selectFromPrep(prep.result.response, selection);
+    }
   }
 
   // 4. Replay the commit.
@@ -655,6 +763,58 @@ export const runFrameBridgeRpc = async (params: FrameBridgeRpcParams): Promise<F
   const judged = failure === null ? result : { ...result, failure };
   if (!params.projection) return judged;
   return { ...judged, response: applyProjection(result.response, params.projection) };
+};
+
+/** Narrow an untrusted value to a {@link BridgeProjection}, or undefined when it has no usable path. */
+const toProjection = (raw: unknown): BridgeProjection | undefined => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const source = raw as Record<string, unknown>;
+  if (typeof source.path !== 'string' || source.path.length === 0) return undefined;
+  const fields = asStringMap(source.fields);
+  return {
+    path: source.path,
+    ...(fields ? { fields } : {}),
+    ...(typeof source.flattenChildren === 'string' && source.flattenChildren.length > 0
+      ? { flattenChildren: source.flattenChildren }
+      : {}),
+  } satisfies BridgeProjection;
+};
+
+/**
+ * Narrow an untrusted value to {@link BridgePrepSelection}s.
+ *
+ * Entries missing any required part are dropped rather than half-applied: a
+ * selection that silently lost its `values` would commit whatever the option
+ * already held, which for a filter means selecting the wrong thing.
+ */
+export const toPrepSelections = (raw: unknown): BridgePrepSelection[] | undefined => {
+  if (!Array.isArray(raw)) return undefined;
+  const selections = raw.flatMap(entry => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+    const source = entry as Record<string, unknown>;
+    const projection = toProjection(source.projection);
+    const values = Array.isArray(source.values) ? source.values.filter(v => typeof v === 'string') : [];
+    if (
+      !projection ||
+      values.length === 0 ||
+      typeof source.option !== 'string' ||
+      typeof source.matchField !== 'string' ||
+      typeof source.valueField !== 'string'
+    ) {
+      return [];
+    }
+    return [
+      {
+        option: source.option,
+        projection,
+        matchField: source.matchField,
+        valueField: source.valueField,
+        values,
+        ...(source.asString === true ? { asString: true } : {}),
+      } satisfies BridgePrepSelection,
+    ];
+  });
+  return selections.length > 0 ? selections : undefined;
 };
 
 /**
@@ -702,16 +862,8 @@ export const handleBrowserFrameBridgeRpc = async (
       params.projection && typeof params.projection === 'object' && !Array.isArray(params.projection)
         ? (params.projection as Record<string, unknown>)
         : undefined;
-    const projection =
-      rawProjection && typeof rawProjection.path === 'string' && rawProjection.path.length > 0
-        ? ({
-            path: rawProjection.path,
-            ...(asStringMap(rawProjection.fields) ? { fields: asStringMap(rawProjection.fields) } : {}),
-            ...(typeof rawProjection.flattenChildren === 'string' && rawProjection.flattenChildren.length > 0
-              ? { flattenChildren: rawProjection.flattenChildren }
-              : {}),
-          } satisfies BridgeProjection)
-        : undefined;
+    const projection = toProjection(rawProjection);
+    const optionsFromPrep = toPrepSelections(params.optionsFromPrep);
 
     const result = await runFrameBridgeRpc({
       tabId,
@@ -722,6 +874,8 @@ export const handleBrowserFrameBridgeRpc = async (
       donorGlobal,
       prepMethod,
       prepOptions,
+      optionsFromPrep,
+      ...(params.prepMergesContext === false ? { prepMergesContext: false } : {}),
       contextPatch,
       optionsFromFrameGlobals,
       httpMethod,

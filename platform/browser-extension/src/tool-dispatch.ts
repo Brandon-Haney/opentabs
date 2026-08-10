@@ -1,10 +1,12 @@
 import { toErrorMessage } from '@opentabs-dev/shared';
 import {
   asStringMap,
+  type BridgePrepSelection,
   type BridgeProjection,
   type FrameBridgeRpcParams,
   FrameBridgeValidationError,
   runFrameBridgeRpc,
+  toPrepSelections,
 } from './browser-commands/frame-bridge-rpc.js';
 import { requireStringParam } from './browser-commands/helpers.js';
 import { MAX_INPUT_SIZE, MAX_SCRIPT_TIMEOUT_MS, SCRIPT_TIMEOUT_MS } from './constants.js';
@@ -339,6 +341,10 @@ interface BridgeDirective {
   donorGlobal?: string;
   prepMethod?: string;
   prepOptions?: Record<string, unknown>;
+  /** Whether the prep response's edit-state is merged into the context (default true). */
+  prepMergesContext?: boolean;
+  /** Commit options resolved from the prep call's response. */
+  optionsFromPrep?: BridgePrepSelection[];
   contextPatch?: Record<string, unknown>;
   /**
    * `{ optionName: frameGlobalName }` for option values the embedded frame owns
@@ -407,6 +413,7 @@ const extractBridgeDirective = (output: unknown): BridgeDirective | null => {
     b.contextPatch && typeof b.contextPatch === 'object' && !Array.isArray(b.contextPatch)
       ? (b.contextPatch as Record<string, unknown>)
       : undefined;
+  const optionsFromPrep = toPrepSelections(b.optionsFromPrep);
   const optionsFromFrameGlobals = asStringMap(b.optionsFromFrameGlobals);
   const errorHints = asStringMap(b.errorHints);
   const projection = asBridgeProjection(b.projection);
@@ -418,6 +425,8 @@ const extractBridgeDirective = (output: unknown): BridgeDirective | null => {
     ...(typeof b.donorGlobal === 'string' && b.donorGlobal.length > 0 ? { donorGlobal: b.donorGlobal } : {}),
     ...(typeof b.prepMethod === 'string' && b.prepMethod.length > 0 ? { prepMethod: b.prepMethod } : {}),
     ...(prepOptions ? { prepOptions } : {}),
+    ...(b.prepMergesContext === false ? { prepMergesContext: false } : {}),
+    ...(optionsFromPrep ? { optionsFromPrep } : {}),
     ...(contextPatch ? { contextPatch } : {}),
     ...(optionsFromFrameGlobals ? { optionsFromFrameGlobals } : {}),
     ...(b.httpMethod === 'GET' ? { httpMethod: 'GET' as const } : {}),

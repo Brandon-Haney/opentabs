@@ -13,7 +13,67 @@ const {
   deriveTargetUrl,
   describeBridgeFailure,
   mergeContextFromResponse,
+  selectFromPrep,
 } = await import('./frame-bridge-rpc.js');
+
+describe('selectFromPrep', () => {
+  // Shaped like a PivotTable filter search: an "All" grouping row whose children
+  // are the matching members, each carrying the id the commit is addressed by.
+  const searchResponse = {
+    Result: {
+      PivotFilterItems: [
+        {
+          DisplayString: 'All',
+          Id: 1,
+          PivotFilterItems: [
+            { DisplayString: 'ATL080 | DALLAS | HIRAM', Id: 168, PivotFilterItems: [] },
+            { DisplayString: 'ATL081 | DOUGLASVILLE | DOUGLASVILLE', Id: 169, PivotFilterItems: [] },
+          ],
+        },
+      ],
+    },
+  };
+
+  const selection = (values: string[], asString = true) => ({
+    option: 'checkedItems',
+    projection: {
+      path: 'Result.PivotFilterItems',
+      fields: { name: 'DisplayString', id: 'Id' },
+      flattenChildren: 'PivotFilterItems',
+    },
+    matchField: 'name',
+    valueField: 'id',
+    values,
+    ...(asString ? { asString: true } : {}),
+  });
+
+  test('resolves a partial name to the one matching id', () => {
+    expect(selectFromPrep(searchResponse, selection(['ATL081']))).toEqual(['169']);
+  });
+
+  test('matches case-insensitively', () => {
+    expect(selectFromPrep(searchResponse, selection(['atl080']))).toEqual(['168']);
+  });
+
+  test('returns numbers when asString is not set', () => {
+    expect(selectFromPrep(searchResponse, selection(['ATL081'], false))).toEqual([169]);
+  });
+
+  // The point of resolving by name: a term that could mean several members must
+  // never silently become one of them.
+  test('refuses an ambiguous term and names the candidates', () => {
+    expect(() => selectFromPrep(searchResponse, selection(['ATL08']))).toThrow(/ambiguous/);
+    expect(() => selectFromPrep(searchResponse, selection(['ATL08']))).toThrow(/DOUGLASVILLE/);
+  });
+
+  test('refuses a term that matches nothing', () => {
+    expect(() => selectFromPrep(searchResponse, selection(['ZZZ999']))).toThrow(/matched none/);
+  });
+
+  test('refuses when the lookup returned no candidates at all', () => {
+    expect(() => selectFromPrep({ Result: {} }, selection(['ATL081']))).toThrow(/matched none/);
+  });
+});
 
 describe('describeBridgeFailure', () => {
   const ok = { ok: true, status: 200, errors: [] as unknown[], response: { Result: {} } };

@@ -16,6 +16,7 @@ import { deleteSlide } from './tools/delete-slide.js';
 import { discardPresentationTool } from './tools/discard-presentation.js';
 import { duplicateShape } from './tools/duplicate-shape.js';
 import { duplicateSlide as duplicateSlideTool } from './tools/duplicate-slide.js';
+import { getComments } from './tools/get-comments.js';
 import { getCurrentUser } from './tools/get-current-user.js';
 import { getDownloadUrl } from './tools/get-download-url.js';
 import { getDrive } from './tools/get-drive.js';
@@ -86,6 +87,7 @@ class PowerPointPlugin extends OpenTabsPlugin {
     duplicateShape,
     getSlideNotes,
     updateSlideNotes,
+    getComments,
     deleteSlide,
     duplicateSlideTool,
     // Sharing

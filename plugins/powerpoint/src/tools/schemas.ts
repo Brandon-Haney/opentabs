@@ -190,6 +190,34 @@ export const slideSchema = z.object({
   has_notes: z.boolean().describe('Whether this slide has speaker notes'),
 });
 
+// --- Comments ---
+
+export const commentReplySchema = z.object({
+  id: z.string().describe('Reply identifier, unique within the presentation'),
+  author: z.string().describe('Display name of the reply author (empty if not in the author registry)'),
+  author_id: z.string().describe('Raw author id the reply refers to'),
+  created: z.string().describe('Creation timestamp as stored in the file (UTC, no offset suffix)'),
+  text: z.string().describe('Reply body text'),
+});
+
+export const commentSchema = z.object({
+  id: z.string().describe('Comment identifier, unique within the presentation'),
+  slide_number: z.number().int().describe('Slide the comment is attached to (1-indexed)'),
+  author: z.string().describe('Display name of the comment author (empty if not in the author registry)'),
+  author_id: z.string().describe('Raw author id the comment refers to'),
+  created: z.string().describe('Creation timestamp as stored in the file (UTC, no offset suffix)'),
+  text: z.string().describe('Comment body text'),
+  anchor_shape_id: z
+    .string()
+    .describe(
+      'Shape id the comment is anchored to — matches get_slide_layout shape ids. Empty if anchored to the slide',
+    ),
+  status: z.string().describe('Raw status attribute when the producer set one — usually empty'),
+  replies: z
+    .array(commentReplySchema)
+    .describe('Threaded replies in order. Classic-format comments never have replies'),
+});
+
 // --- Slide layout (structural tree) ---
 
 export const textRunSchema = z.object({

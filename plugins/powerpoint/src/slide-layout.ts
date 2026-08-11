@@ -13,6 +13,13 @@
 
 import { ToolError } from '@opentabs-dev/plugin-sdk';
 import { TEXT_DECODER } from './pptx-utils.js';
+import {
+  childByLocalName,
+  childElements,
+  descendantsByLocalName,
+  firstDescendantByLocalName,
+  parseXml,
+} from './xml.js';
 
 // --- Units ---
 
@@ -93,54 +100,6 @@ export interface SlideLayout {
   height: number;
   shapes: ShapeNode[];
 }
-
-// --- DOM helpers (namespace-agnostic via localName) ---
-
-const xmlParser = typeof DOMParser !== 'undefined' ? new DOMParser() : undefined;
-
-const parseXml = (xml: string): Document => {
-  if (!xmlParser) throw ToolError.internal('DOMParser not available');
-  return xmlParser.parseFromString(xml, 'application/xml');
-};
-
-const isElement = (node: Node): node is Element => node.nodeType === Node.ELEMENT_NODE;
-
-const childElements = (el: Element): Element[] => {
-  const out: Element[] = [];
-  for (const n of el.childNodes) if (isElement(n)) out.push(n);
-  return out;
-};
-
-/** First direct child with the given local name, ignoring namespace prefix. */
-const childByLocalName = (el: Element, localName: string): Element | undefined =>
-  childElements(el).find(c => c.localName === localName);
-
-/** All descendants with the given local name (document order). */
-const descendantsByLocalName = (root: Element | Document, localName: string): Element[] => {
-  const results: Element[] = [];
-  const walker =
-    'createTreeWalker' in root
-      ? (root as Document).createTreeWalker(root as unknown as Node, NodeFilter.SHOW_ELEMENT)
-      : (root.ownerDocument as Document).createTreeWalker(root as unknown as Node, NodeFilter.SHOW_ELEMENT);
-  let node: Node | null = walker.nextNode();
-  while (node) {
-    if (isElement(node) && node.localName === localName) results.push(node);
-    node = walker.nextNode();
-  }
-  return results;
-};
-
-/** First descendant with the given local name. */
-const firstDescendantByLocalName = (root: Element, localName: string): Element | undefined => {
-  const walker = root.ownerDocument?.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-  if (!walker) return undefined;
-  let node: Node | null = walker.nextNode();
-  while (node) {
-    if (isElement(node) && node.localName === localName) return node;
-    node = walker.nextNode();
-  }
-  return undefined;
-};
 
 // --- Geometry parsing ---
 

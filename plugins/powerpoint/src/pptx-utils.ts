@@ -17,6 +17,7 @@ import {
   storeSession,
   touchSession,
 } from './session.js';
+import { getLocalName, isElement, parseXml, serializeXml } from './xml.js';
 
 // --- ZIP constants ---
 const LOCAL_FILE_HEADER_SIG = 0x04034b50;
@@ -24,10 +25,6 @@ const CENTRAL_DIR_HEADER_SIG = 0x02014b50;
 const END_OF_CENTRAL_DIR_SIG = 0x06054b50;
 
 // --- Helpers ---
-
-const isElement = (node: Node): node is Element => node.nodeType === Node.ELEMENT_NODE;
-
-const getLocalName = (node: Node): string | undefined => (isElement(node) ? node.localName : undefined);
 
 const collectStreamChunks = async (readable: ReadableStream<Uint8Array>): Promise<Uint8Array> => {
   const chunks: Uint8Array[] = [];
@@ -203,19 +200,6 @@ export const writeZip = async (entries: Map<string, Uint8Array>): Promise<Blob> 
 
 // --- OOXML slide helpers ---
 
-const xmlParser = typeof DOMParser !== 'undefined' ? new DOMParser() : undefined;
-const xmlSerializer = typeof XMLSerializer !== 'undefined' ? new XMLSerializer() : undefined;
-
-const parseXml = (xml: string): Document => {
-  if (!xmlParser) throw ToolError.internal('DOMParser not available');
-  return xmlParser.parseFromString(xml, 'application/xml');
-};
-
-const serializeXml = (doc: Document): string => {
-  if (!xmlSerializer) throw ToolError.internal('XMLSerializer not available');
-  return xmlSerializer.serializeToString(doc);
-};
-
 export const TEXT_DECODER = new TextDecoder();
 export const TEXT_ENCODER = new TextEncoder();
 
@@ -323,28 +307,66 @@ export const getSlideList = (entries: Map<string, Uint8Array>): string[] => {
   return fallback.map(t => `ppt/${t}`);
 };
 
-/** Get the notes filename for a given slide. */
-export const getNotesForSlide = (entries: Map<string, Uint8Array>, slideFile: string): string | null => {
-  const slideBaseName = slideFile.split('/').pop()?.replace('.xml', '') ?? '';
-  const relsPath = `ppt/slides/_rels/${slideBaseName}.xml.rels`;
-  const relsData = entries.get(relsPath);
-  if (!relsData) return null;
+/** Path of the `.rels` part describing a given part. */
+const relsPathFor = (partPath: string): string => {
+  const segments = partPath.split('/');
+  const fileName = segments.pop() ?? '';
+  return [...segments, '_rels', `${fileName}.rels`].join('/');
+};
 
-  const relsXml = TEXT_DECODER.decode(relsData);
-  const doc = parseXml(relsXml);
+/**
+ * Resolve a relationship `Target` to a package-absolute path.
+ *
+ * Targets are relative to the directory of the part that owns the `.rels`
+ * file, so `ppt/slides/slide3.xml` + `../comments/c.xml` → `ppt/comments/c.xml`.
+ * Never derive the destination from a filename convention — OOXML producers are
+ * free to place a related part anywhere, and several of Microsoft's newer part
+ * types have no documented path at all.
+ */
+const resolveRelTarget = (sourcePartPath: string, target: string): string => {
+  if (target.startsWith('/')) return target.slice(1);
+  const segments = sourcePartPath.split('/').slice(0, -1);
+  for (const segment of target.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') segments.pop();
+    else segments.push(segment);
+  }
+  return segments.join('/');
+};
+
+/**
+ * Package-absolute paths of every part related to `sourcePartPath` whose
+ * relationship `Type` contains `relTypeSubstring`, in relationship order.
+ *
+ * External targets are skipped — they name a URL, not a part.
+ */
+export const getRelatedParts = (
+  entries: Map<string, Uint8Array>,
+  sourcePartPath: string,
+  relTypeSubstring: string,
+): string[] => {
+  const relsData = entries.get(relsPathFor(sourcePartPath));
+  if (!relsData) return [];
+
+  const doc = parseXml(TEXT_DECODER.decode(relsData));
   const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_ELEMENT);
+  const targets: string[] = [];
   let node = walker.nextNode();
   while (node) {
-    if (isElement(node) && getLocalName(node) === 'Relationship') {
-      if ((node.getAttribute('Type') ?? '').includes('/notesSlide')) {
-        const target = node.getAttribute('Target') ?? '';
-        if (target) return `ppt/notesSlides/${target.split('/').pop()}`;
+    if (isElement(node) && getLocalName(node) === 'Relationship' && node.getAttribute('TargetMode') !== 'External') {
+      const target = node.getAttribute('Target') ?? '';
+      if (target && (node.getAttribute('Type') ?? '').includes(relTypeSubstring)) {
+        targets.push(resolveRelTarget(sourcePartPath, target));
       }
     }
     node = walker.nextNode();
   }
-  return null;
+  return targets;
 };
+
+/** Get the notes part path for a given slide, or null when it has none. */
+export const getNotesForSlide = (entries: Map<string, Uint8Array>, slideFile: string): string | null =>
+  getRelatedParts(entries, slideFile, '/relationships/notesSlide')[0] ?? null;
 
 // --- Download/Upload helpers ---
 
@@ -399,6 +421,18 @@ export const downloadPptx = async (itemId: string): Promise<Map<string, Uint8Arr
 
   const blob = await fetchPptxBytes(downloadUrl);
   return readZip(blob);
+};
+
+/**
+ * Whether an `open_presentation` session is currently holding this item.
+ *
+ * Read tools use this to tell callers that a result came from a session
+ * snapshot rather than the saved file. Uses `peekSession` so that merely
+ * asking does not extend the session's idle timeout.
+ */
+export const isSessionOpen = async (itemId: string): Promise<boolean> => {
+  const { driveId } = await requireAuth();
+  return peekSession(driveId, itemId) !== undefined;
 };
 
 /**

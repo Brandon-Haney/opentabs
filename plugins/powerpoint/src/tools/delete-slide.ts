@@ -1,6 +1,6 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { downloadPptx, getSlideList, TEXT_DECODER, TEXT_ENCODER, uploadPptx } from '../pptx-utils.js';
+import { downloadPptx, getRelatedParts, getSlideList, TEXT_DECODER, TEXT_ENCODER, uploadPptx } from '../pptx-utils.js';
 
 export const deleteSlide = defineTool({
   name: 'delete_slide',
@@ -34,12 +34,19 @@ export const deleteSlide = defineTool({
     if (!slideFile) throw ToolError.notFound(`Slide ${params.slide_number} not found`);
     const slideBaseName = slideFile.split('/').pop() ?? '';
 
+    // Resolve parts owned solely by this slide before its rels file is removed —
+    // afterwards they are unreachable and would be left orphaned in the package.
+    const commentParts = getRelatedParts(entries, slideFile, '/relationships/comments');
+
     // Remove the slide file
     entries.delete(slideFile);
 
     // Remove the slide's relationship file
     const relsPath = `ppt/slides/_rels/${slideBaseName}.rels`;
     entries.delete(relsPath);
+
+    // Remove the slide's comment parts
+    for (const part of commentParts) entries.delete(part);
 
     // Remove the slide reference from presentation.xml.rels
     const presRelsData = entries.get('ppt/_rels/presentation.xml.rels');
@@ -69,12 +76,15 @@ export const deleteSlide = defineTool({
       }
     }
 
-    // Remove from [Content_Types].xml
+    // Remove the Override for the slide and for every part deleted with it.
+    // Part names carry `.` and `_`, so they are escaped before use in a pattern.
     const contentTypesData = entries.get('[Content_Types].xml');
     if (contentTypesData) {
       let ctXml = TEXT_DECODER.decode(contentTypesData);
-      const ctRegex = new RegExp(`<Override[^>]*PartName="/ppt/slides/${slideBaseName}"[^>]*/?>`, 'g');
-      ctXml = ctXml.replace(ctRegex, '');
+      for (const partName of [`/ppt/slides/${slideBaseName}`, ...commentParts.map(p => `/${p}`)]) {
+        const escaped = partName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        ctXml = ctXml.replace(new RegExp(`<Override[^>]*PartName="${escaped}"[^>]*/?>`, 'g'), '');
+      }
       entries.set('[Content_Types].xml', TEXT_ENCODER.encode(ctXml));
     }
 

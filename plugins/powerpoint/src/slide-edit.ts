@@ -17,6 +17,7 @@
 
 import { ToolError } from '@opentabs-dev/plugin-sdk';
 import { getNotesForSlide, getSlideList, TEXT_DECODER, TEXT_ENCODER } from './pptx-utils.js';
+import { childByLocalName, childElements, isElement, parseXml, serializeXml } from './xml.js';
 
 // --- Units ---
 
@@ -31,34 +32,6 @@ const degreesToRotUnits = (deg: number): number => Math.round(deg * ROT_UNITS_PE
 
 const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 const P_NS = 'http://schemas.openxmlformats.org/presentationml/2006/main';
-
-// --- XML IO ---
-
-const xmlParser = typeof DOMParser !== 'undefined' ? new DOMParser() : undefined;
-const xmlSerializer = typeof XMLSerializer !== 'undefined' ? new XMLSerializer() : undefined;
-
-const parseXml = (xml: string): Document => {
-  if (!xmlParser) throw ToolError.internal('DOMParser not available');
-  return xmlParser.parseFromString(xml, 'application/xml');
-};
-
-const serializeXml = (doc: Document): string => {
-  if (!xmlSerializer) throw ToolError.internal('XMLSerializer not available');
-  return xmlSerializer.serializeToString(doc);
-};
-
-// --- DOM helpers ---
-
-const isElement = (node: Node): node is Element => node.nodeType === Node.ELEMENT_NODE;
-
-const childElements = (el: Element): Element[] => {
-  const out: Element[] = [];
-  for (const n of el.childNodes) if (isElement(n)) out.push(n);
-  return out;
-};
-
-const childByLocalName = (el: Element, localName: string): Element | undefined =>
-  childElements(el).find(c => c.localName === localName);
 
 /** Return the nvProps container for any shape kind. */
 const getNvProps = (shape: Element): Element | undefined =>
@@ -905,6 +878,25 @@ const retargetNotesRelationship = (relsDoc: Document, newNotesBaseName: string |
   for (const el of toRemove) relsRoot.removeChild(el);
 };
 
+/**
+ * Strip comment relationships from a cloned slide's rels.
+ *
+ * Comments are review annotations on a specific slide instance, and the modern
+ * comment part's filename encodes the identity of the slide that owns it.
+ * Carrying the relationship across would leave two slides pointing at one part,
+ * so the clone starts with no comments — which is also what duplicating a slide
+ * in PowerPoint itself does.
+ */
+const dropCommentRelationships = (relsDoc: Document): void => {
+  const relsRoot = relsDoc.documentElement;
+  if (!relsRoot) return;
+  const toRemove = childElements(relsRoot).filter(
+    child =>
+      child.localName === 'Relationship' && (child.getAttribute('Type') ?? '').includes('/relationships/comments'),
+  );
+  for (const el of toRemove) relsRoot.removeChild(el);
+};
+
 /** Minimal notesSlide XML with an empty body placeholder for `replaceNotesText` to fill. */
 const buildEmptyNotesSlideXml = (): string =>
   `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -1060,6 +1052,7 @@ export const duplicateSlide = (
   if (sourceRelsData) {
     const relsDoc = parseXml(TEXT_DECODER.decode(sourceRelsData));
     retargetNotesRelationship(relsDoc, clonedNotesBase);
+    dropCommentRelationships(relsDoc);
     entries.set(newRelsPath, TEXT_ENCODER.encode(serializeXml(relsDoc)));
   }
 

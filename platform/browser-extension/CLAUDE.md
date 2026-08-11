@@ -132,6 +132,35 @@ When the MCP server dispatches a tool call, the extension receives the `tool.dis
 - **Targeted dispatch** (tabId present): Dispatches directly to the specified tab. Validates the tab exists via `chrome.tabs.get()` and that its URL matches the plugin's URL patterns (security check to prevent cross-origin abuse). Returns an error if the tab doesn't exist, the URL doesn't match, or the adapter isn't ready — no fallback to other tabs.
 - **Auto-select dispatch** (tabId absent): Uses `dispatchWithTabFallback` — ranks matching tabs (active tab in focused window > active tab in any window > any tab in focused window > other tabs) and tries each in order until one succeeds.
 
+### Frame Bridge
+
+Some web apps host their real API inside a **cross-origin embedded frame** — Office Web Apps is the reference case: the document lives in an `officeapps.live.com` frame whose JSON-RPC endpoint sends no CORS headers, so an adapter running in the host page cannot call it. The frame bridge (`browser-commands/frame-bridge-rpc.ts`) closes that gap.
+
+A plugin tool does not perform the call. Its handler returns a `__bridge` directive, and `tool-dispatch.ts` intercepts that directive and runs the engine, replacing it with the parsed response. **A tool handler therefore never sees the response it asked for** — this is the single most surprising thing about the subsystem, and it shapes everything else: anything that must react to a response (resolving a name to an id, echoing a version counter, reshaping a payload) has to be declared to the engine rather than written as code in the handler.
+
+The engine:
+
+1. Reads the freshest **donor** request that a `document_start` pre-script interceptor stashed in a frame global. The donor supplies the live session `context` and auth headers, so no debugger and no tab reload are needed.
+2. Optionally replays a **prep** call, then the **commit**, back to back against one context.
+3. Replays inside the frame via `fetchInFrame`, so the request is same-origin and carries the frame's cookies and tokens.
+
+Capabilities worth knowing before hand-rolling around them:
+
+| Field | Use |
+| --- | --- |
+| `contextPatch` | Merge fields into the reused context (e.g. a selection a stateful method requires but a poll-sourced donor lacks) |
+| `optionsFromPrep` | Resolve a **name** to an id by searching the prep response; ambiguity fails the call rather than guessing |
+| `optionsFromPrepPaths` | Lift a **scalar** from a fixed path in the prep response into a nested commit option — the answer for optimistic-concurrency counters, which cannot be read in an earlier call without racing |
+| `optionsFromFrameGlobals` | Take an option value from a frame global, for credentials only the embedded app can mint. The value never crosses into the host page, the adapter, or the tool result |
+| `projection` | Reshape the response **inside the page**, before it crosses the boundary, so a large payload is trimmed rather than truncated |
+| `contextKeys` | Restrict the context, required for GET where it travels in the URL |
+
+**Adding a field to the directive means editing three places.** The engine's `FrameBridgeRpcParams`, the allow-list parser in `tool-dispatch.ts` (`extractBridgeDirective`), and the Zod schema for the `browser_frame_bridge_rpc` MCP tool. The parser is an allow-list: **a field it does not know is dropped silently**, and the call then runs with that behavior simply absent. This has cost real debugging time more than once — the symptom is a request that looks correct at the tool layer and reaches the service missing a field, with no error anywhere.
+
+**A refused RPC answers HTTP 200** with the refusal in the payload, so success is judged on the parsed `errors` array, not the status. `describeBridgeFailure` raises that to a dispatch error, and it is evaluated against the full envelope *before* a projection replaces it — which is why a projection cannot hide a failure.
+
+Plugin-side knowledge about a specific service (method names, argument shapes, error codes) belongs in that plugin's `docs/`, not here.
+
 ### Port Configuration
 
 The MCP server port is configured in the side panel footer, stored in `chrome.storage.local` under the `serverPort` key (number, default 9515). The side panel footer displays the current port on the right side and supports inline editing — click to edit, Enter to save, Escape to cancel. When the port changes, the side panel sends a `port-changed` message through the background script to the offscreen document, which closes the current WebSocket and reconnects to the new port. The port is not stored in `auth.json` — auth.json contains only the secret.

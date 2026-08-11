@@ -1,4 +1,4 @@
-import { defineTool } from '@opentabs-dev/plugin-sdk';
+import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { isPeriodRelative } from '../period-relative.js';
 import { readConnections, readPivotCaches, readPivotTables } from '../pivot-model.js';
@@ -83,7 +83,11 @@ export const inspectDataModel = defineTool({
     cache_id: z
       .string()
       .optional()
-      .describe('Restrict measures and hierarchies to a single pivot cache. Omit to cover every cache.'),
+      .describe(
+        'Restrict measures and hierarchies to a single pivot cache. Omit to cover every cache. ' +
+          'Read it from this call, not from an earlier one: Excel reassigns cache ids whenever it rewrites the workbook, ' +
+          'which ordinary edits do, so an id from a previous call may name nothing.',
+      ),
     include_measures: z.boolean().optional().describe('Include the measure inventory (default true)'),
     include_hierarchies: z.boolean().optional().describe('Include the hierarchy inventory (default true)'),
   }),
@@ -141,6 +145,17 @@ export const inspectDataModel = defineTool({
     const pivotTables = await readPivotTables(pkg, caches);
 
     const scoped = params.cache_id ? caches.filter(cache => cache.cacheId === params.cache_id) : caches;
+    // Raised rather than answered with an empty inventory, which reads exactly
+    // like a model that publishes nothing. Cache ids are reassigned when Excel
+    // rewrites the workbook, so an id carried over from an earlier call is the
+    // likely cause — and the ids that exist now are what the caller needs.
+    if (params.cache_id && scoped.length === 0) {
+      throw ToolError.validation(
+        `No pivot cache "${params.cache_id}" in this workbook. Its caches are: ${
+          caches.map(cache => cache.cacheId).join(', ') || '(none — the workbook has no PivotTables)'
+        }. Cache ids are reassigned whenever Excel rewrites the workbook, so re-read this call rather than reusing an id from an earlier one.`,
+      );
+    }
     const filter = (params.filter ?? '').toLowerCase();
 
     const allMeasures = scoped.flatMap(cache =>

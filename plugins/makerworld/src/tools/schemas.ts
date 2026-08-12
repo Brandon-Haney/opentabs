@@ -135,6 +135,52 @@ export const mapTransaction = (t: RawTransaction) => {
   };
 };
 
+/** One page of the point ledger, plus the lifetime totals it always carries. */
+export interface RawTransactionList {
+  total?: number;
+  totalIncome?: number;
+  totalExpense?: number;
+  totalRegularIncome?: number;
+  totalRegularExpense?: number;
+  totalExclusiveIncome?: number;
+  totalExclusiveExpense?: number;
+  hits?: RawTransaction[];
+}
+
+export const earningsVelocitySchema = z.object({
+  design_id: z.number().describe('Model ID'),
+  title: z.string().describe('Model title'),
+  published_at: z.string().describe('Publication date (YYYY-MM-DD)'),
+  age_days: z.number().describe('Days between publication and today'),
+  points_total: z.number().describe('Every point the ledger credits to this model, boost tips and bonuses included'),
+  points_in_launch_window: z
+    .number()
+    .describe('Points earned within launch_window_days of publication — the age-neutral measure of a strong launch'),
+  points_first_90_days: z.number().describe('Points earned within 90 days of publication'),
+  points_last_30_days: z.number().describe('Points earned in the last 30 days — what the model earns now'),
+  points_per_day_lifetime: z.number().describe('points_total divided by age_days'),
+  days_to_threshold: z
+    .number()
+    .nullable()
+    .describe('Days from publication until cumulative earnings reached threshold_points, null if never reached'),
+  momentum: z
+    .number()
+    .describe(
+      'Recent daily rate divided by lifetime daily rate. Above 1 the model is earning faster than its own average, below 1 it is slowing.',
+    ),
+  trajectory: z
+    .enum(['growing', 'steady', 'fading', 'dormant'])
+    .describe(
+      'Plain reading of momentum: growing >= 1.1, steady >= 0.5, fading below that, dormant when nothing came in',
+    ),
+  earns_exclusive_points: z
+    .boolean()
+    .describe('Whether this model has ever earned exclusive points, which indicates exclusive-program membership'),
+  prints: z.number().describe('Lifetime prints'),
+  impressions: z.number().describe('Lifetime impressions'),
+  points_per_1k_impressions: z.number().describe('Points earned per thousand impressions — how well reach converts'),
+});
+
 export const shopProductSchema = z.object({
   sku: z.string().describe('Product SKU — pass this to redeem_product'),
   title: z.string().describe('Product name'),

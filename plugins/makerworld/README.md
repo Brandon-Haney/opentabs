@@ -108,6 +108,18 @@ resolution — prefer a coarser granularity over long ranges, since `day` return
 Lifetime totals (from `list_my_models` and `get_model`) and date-range totals are different figures; use the
 range-based tools whenever the question is about a period.
 
+`analyze_earnings_velocity` answers a question those tools cannot: which models earned the most in the least
+time. A lifetime total rewards age, so an ordinary model published a year ago outranks a strong one published
+last month. This measures every model from its own publication date instead — points inside the launch window,
+points in the first 90 days, and days taken to reach a point threshold — and sets that against the last 30 days
+to separate a model that opened well and went quiet from one that still earns daily. It walks the whole point
+ledger once and aggregates locally, so it costs a handful of requests regardless of how many models exist.
+
+Two figures in that output are worth reading together. `points_in_launch_window` says how fast a design found
+its audience, and `momentum` — the recent daily rate over the lifetime daily rate — says whether it still has
+one. A high launch with low momentum is a design whose niche is now saturated; a modest launch with momentum
+near or above 1 is still compounding.
+
 ## License
 
 MIT

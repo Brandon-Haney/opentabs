@@ -1,6 +1,7 @@
 import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import { isAuthenticated, waitForAuth } from './makerworld-api.js';
+import { analyzeEarningsVelocity } from './tools/analyze-earnings-velocity.js';
 import { deleteDraft } from './tools/delete-draft.js';
 import { getAnalyticsTimeseries } from './tools/get-analytics-timeseries.js';
 import { getCashRedemptionInfo } from './tools/get-cash-redemption-info.js';
@@ -44,6 +45,7 @@ class MakerWorldPlugin extends OpenTabsPlugin {
     listModelStats,
     listProfileStats,
     getAnalyticsTimeseries,
+    analyzeEarningsVelocity,
     // Models
     listMyModels,
     getModel,

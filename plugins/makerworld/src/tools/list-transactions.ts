@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../makerworld-api.js';
-import { mapTransaction, type RawTransaction, transactionSchema } from './schemas.js';
+import { mapTransaction, type RawTransactionList, transactionSchema } from './schemas.js';
 
 const LEDGER_FILTERS = ['all', 'income', 'expenses'] as const;
 
@@ -16,17 +16,6 @@ const FILTER_WIRE_VALUE: Record<(typeof LEDGER_FILTERS)[number], string> = {
   income: 'incomes',
   expenses: 'expenses',
 };
-
-interface RawTransactionList {
-  total?: number;
-  totalIncome?: number;
-  totalExpense?: number;
-  totalRegularIncome?: number;
-  totalRegularExpense?: number;
-  totalExclusiveIncome?: number;
-  totalExclusiveExpense?: number;
-  hits?: RawTransaction[];
-}
 
 export const listTransactions = defineTool({
   name: 'list_transactions',

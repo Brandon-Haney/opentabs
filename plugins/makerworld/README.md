@@ -133,6 +133,25 @@ Ratings carry a score, whether the print succeeded, and the problem category cho
 variants usually surface in the replies rather than the top-level comments. Reach for it before acting on any
 page-side recommendation, and to find what people are asking you to build next.
 
+## Editing a published listing
+
+`update_model` changes the title, description, or tags of a model that is already live, and nothing else. Cover
+image, model files, print profiles, license, and category are carried through untouched — those are where a bad
+write does real damage, and none of them are what listing analysis produces.
+
+The model stays live throughout. MakerWorld does not patch a published design; requesting its editor page forks a
+draft, and the tool then PUTs the whole draft back and submits it. An automated review usually clears within a
+few minutes, at which point the new version swaps in. Until then the old version keeps serving, and the design
+ID, URL, impressions, prints, and points all survive the round trip.
+
+Two consequences worth knowing. The draft must be read immediately before writing, because it carries
+time-limited signed URLs for the model files. And an edit in review does not appear in `list_drafts` — MakerWorld
+keeps edit-drafts out of the draft list entirely, so an abandoned one is invisible rather than cluttering.
+
+`suggest_tags` is the autocomplete the upload form uses, and reports how many models carry each tag. It turns tag
+choice into something checkable: a tag on thousands of models is a crowded search, one on a handful may be too
+obscure to bring traffic, and it confirms the spelling MakerWorld actually stores.
+
 Two figures in the velocity output are worth reading together. `points_in_launch_window` says how fast a design found
 its audience, and `momentum` — the recent daily rate over the lifetime daily rate — says whether it still has
 one. A high launch with low momentum is a design whose niche is now saturated; a modest launch with momentum

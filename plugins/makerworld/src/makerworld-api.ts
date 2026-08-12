@@ -25,6 +25,7 @@ export type MakerWorldService =
   | 'design-service'
   | 'design-user-service'
   | 'point-service'
+  | 'search-service'
   | 'user-service';
 
 /** Headers MakerWorld's own web client sends on every API call. */

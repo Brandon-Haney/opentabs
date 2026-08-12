@@ -64,7 +64,11 @@ export const transactionSchema = z.object({
   earned_for_date: z
     .string()
     .describe('Calendar date (YYYY-MM-DD) whose activity produced this reward, empty when not applicable'),
-  design_id: z.number().describe('Model ID this transaction relates to, 0 when not model-related'),
+  design_id: z
+    .number()
+    .describe(
+      'Model ID this transaction relates to, 0 when not model-related. On create_rating rows it identifies the model that was rated, which belongs to another creator, so exclude that type when totalling earnings per owned model.',
+    ),
   design_title: z.string().describe('Model title this transaction relates to, empty when not model-related'),
   instance_id: z.number().describe('Print profile ID this transaction relates to, 0 when not profile-related'),
   instance_title: z.string().describe('Print profile title, empty when not profile-related'),
@@ -91,17 +95,29 @@ export interface RawTransaction {
   syncSource?: string;
   designRewardV2?: RawRewardDetail;
   instanceRewardV2?: RawRewardDetail;
+  designReward?: RawRewardDetail;
+  instanceReward?: RawRewardDetail;
+  design?: RawRewardDetail;
+  pointRating?: RawRewardDetail;
   extInfoBoostExchangePoint?: RawRewardDetail;
 }
 
 /**
  * Reward details live under a different key per transaction type, and the model
- * identifier is `id` on model rewards but `designId` on profile and boost rewards.
- * Normalise all of that into one flat shape.
+ * identifier is `id` on model-level rewards but `designId` on profile, rating,
+ * and boost rewards. Normalise all of that into one flat shape.
+ *
+ * Both generations of the reward payload appear in a mature ledger: the current
+ * `designRewardV2`/`instanceRewardV2` keys and the original
+ * `designReward`/`instanceReward` pair the API still returns for older entries.
+ * Reading only the V2 keys silently drops model attribution for every reward
+ * earned before the payload changed.
  */
 export const mapTransaction = (t: RawTransaction) => {
-  const detail: RawRewardDetail = t.designRewardV2 ?? t.instanceRewardV2 ?? t.extInfoBoostExchangePoint ?? {};
-  const designTitle = t.designRewardV2?.title ?? detail.designTitle;
+  const modelDetail = t.designRewardV2 ?? t.designReward ?? t.design;
+  const detail: RawRewardDetail =
+    modelDetail ?? t.instanceRewardV2 ?? t.instanceReward ?? t.pointRating ?? t.extInfoBoostExchangePoint ?? {};
+  const designTitle = modelDetail?.title ?? detail.designTitle;
 
   return {
     type: t.type ?? '',
@@ -111,7 +127,7 @@ export const mapTransaction = (t: RawTransaction) => {
     is_exclusive_bonus: t.isExclusiveBonus ?? false,
     occurred_at: t.pointTime ?? '',
     earned_for_date: detail.earningTime ?? '',
-    design_id: t.designRewardV2?.id ?? detail.designId ?? 0,
+    design_id: modelDetail?.id ?? detail.designId ?? 0,
     design_title: typeof designTitle === 'string' ? designTitle : '',
     instance_id: detail.instanceId ?? 0,
     instance_title: detail.instanceTitle ?? '',

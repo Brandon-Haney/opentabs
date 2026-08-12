@@ -297,6 +297,66 @@ export const mapFeedbackEntry = (entry: RawFeedbackEntry) => {
   };
 };
 
+// --- Print profiles ------------------------------------------------------------
+
+export const printProfileDetailSchema = z.object({
+  instance_id: z.number().describe('Print profile ID'),
+  title: z.string().describe('Profile title, e.g. "0.2mm layer, 2 walls, 15% infill"'),
+  supported_printers: z
+    .array(z.string())
+    .describe('Printers this profile was sliced against and can be printed on, primary included'),
+  unsupported_printers: z
+    .array(z.string())
+    .describe(
+      'Printers MakerWorld checks that this profile does not cover. Usually models released after the profile was uploaded, whose owners are silently unable to print it — republishing the model re-runs the check and picks them up.',
+    ),
+  nozzle_mm: z.number().describe('Nozzle diameter the profile was sliced for'),
+  print_time_minutes: z.number().describe('Estimated print time'),
+  filament_grams: z.number().describe('Estimated filament use'),
+  plate_count: z.number().describe('Build plates the profile spans — more than one is extra work for the printer'),
+  needs_ams: z.boolean().describe('Whether an AMS is required, which excludes anyone without one'),
+  prints: z.number().describe('Prints recorded against this profile'),
+  downloads: z.number().describe('Downloads of this profile'),
+  rating_count: z.number().describe('Ratings received'),
+  average_rating: z.number().describe('Mean star rating, 0 when unrated'),
+});
+
+interface RawPrinter {
+  devProductName?: string;
+  nozzleDiameter?: number;
+}
+
+interface RawInstanceModelInfo {
+  compatibility?: RawPrinter;
+  otherCompatibility?: RawPrinter[];
+  plates?: unknown[];
+}
+
+interface RawInstance {
+  id?: number;
+  title?: string;
+  weight?: number;
+  prediction?: number;
+  needAms?: boolean;
+  printCount?: number;
+  downloadCount?: number;
+  ratingCount?: number;
+  ratingScoreTotal?: number;
+  extention?: { modelInfo?: RawInstanceModelInfo };
+}
+
+/**
+ * A design together with its print profiles.
+ *
+ * Printer compatibility is nested at `instances[].extention.modelInfo` rather
+ * than on the instance itself, and is absent from the dedicated instances
+ * endpoint, so the plain design payload is the only reliable source for it.
+ */
+export interface RawDesignWithInstances {
+  title?: string;
+  instances?: RawInstance[];
+}
+
 // --- Listing diagnosis ---------------------------------------------------------
 
 export const listingDiagnosisSchema = z.object({

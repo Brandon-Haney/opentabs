@@ -1,6 +1,7 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { apiVoid, fetchPageData } from '../makerworld-api.js';
+import { api, apiVoid, fetchPageData } from '../makerworld-api.js';
+import type { RawDesignWithInstances } from './schemas.js';
 
 /**
  * A draft of a published model, as the editor page hands it back.
@@ -64,6 +65,28 @@ const EDITOR_FIELDS: Record<string, unknown> = {
 /** Status MakerWorld reports for a design that is live. */
 const DESIGN_STATUS_PUBLISHED = 1;
 
+/**
+ * Printers each print profile currently supports, one sorted list per profile.
+ *
+ * Publishing makes MakerWorld re-derive compatibility from the model file, and
+ * the result is not always a superset of what was there before — a stale list
+ * can gain printers released since upload, but a re-slice can also drop ones it
+ * no longer considers viable. The draft carries no compatibility fields, so this
+ * tool cannot preserve or override that. Recording the pre-edit state is the
+ * only way to notice the change afterwards instead of it passing unseen.
+ */
+const readCompatibility = async (designId: number): Promise<string[][]> => {
+  const design = await api<RawDesignWithInstances>('design-service', `/design/${designId}`);
+  return (design.instances ?? []).map(instance => {
+    const modelInfo = instance.extention?.modelInfo ?? {};
+    const printers = [
+      modelInfo.compatibility?.devProductName ?? '',
+      ...(modelInfo.otherCompatibility ?? []).map(printer => printer.devProductName ?? ''),
+    ].filter(name => name.length > 0);
+    return [...new Set(printers)].sort();
+  });
+};
+
 export const updateModel = defineTool({
   name: 'update_model',
   displayName: 'Update Model Listing',
@@ -89,6 +112,11 @@ export const updateModel = defineTool({
     draft_id: z.number().describe('Draft the edit was submitted through'),
     updated_fields: z.array(z.string()).describe('Which of title, description, and tags were changed'),
     previous_tags: z.array(z.string()).describe('Tags before the edit, so a tag change can be reversed'),
+    printer_compatibility_before: z
+      .array(z.array(z.string()))
+      .describe(
+        'Printers each print profile supported immediately before the edit. Publishing re-derives compatibility from the model file and the result can differ in either direction, so compare this against get_print_profiles once review clears.',
+      ),
     review: z
       .string()
       .describe('What happens next — the edit is queued for automated review while the live model keeps serving'),
@@ -120,6 +148,7 @@ export const updateModel = defineTool({
       );
     }
 
+    const compatibilityBefore = await readCompatibility(params.design_id);
     const previousTags = draft.tags ?? [];
     const payload: Record<string, unknown> = { ...draft, ...EDITOR_FIELDS };
     const updatedFields: string[] = [];
@@ -149,8 +178,9 @@ export const updateModel = defineTool({
       draft_id: draft.id,
       updated_fields: updatedFields,
       previous_tags: previousTags,
+      printer_compatibility_before: compatibilityBefore,
       review:
-        'Submitted for automated review, which usually clears within a few minutes. The published model keeps serving its current version until the edit is approved, and keeps its ID, URL, and statistics.',
+        'Submitted for automated review, which usually clears within a few minutes. The published model keeps serving its current version until the edit is approved, and keeps its ID, URL, and statistics. Publishing also re-derives printer compatibility from the model file — call get_print_profiles once review clears and compare against printer_compatibility_before, because the new list is not guaranteed to be a superset.',
     };
   },
 });

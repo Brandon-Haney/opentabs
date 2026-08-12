@@ -144,9 +144,20 @@ draft, and the tool then PUTs the whole draft back and submits it. An automated 
 few minutes, at which point the new version swaps in. Until then the old version keeps serving, and the design
 ID, URL, impressions, prints, and points all survive the round trip.
 
-Two consequences worth knowing. The draft must be read immediately before writing, because it carries
-time-limited signed URLs for the model files. And an edit in review does not appear in `list_drafts` — MakerWorld
+Three consequences worth knowing. The draft must be read immediately before writing, because it carries
+time-limited signed URLs for the model files. An edit in review does not appear in `list_drafts` — MakerWorld
 keeps edit-drafts out of the draft list entirely, so an abandoned one is invisible rather than cluttering.
+
+And publishing re-derives **printer compatibility** from the model file. That is not a side effect the tool can
+suppress: the draft carries no compatibility fields, so the server decides. The result is not guaranteed to be a
+superset of what was there before. Observed both directions on real models — one small part gained five newer
+printers while keeping every older one, and one larger part kept a narrowed list that a browser editor session
+had already recomputed. `update_model` therefore returns `printer_compatibility_before`; compare it against
+`get_print_profiles` once review clears rather than assuming the change was harmless.
+
+`get_print_profiles` reads compatibility from `instances[].extention.modelInfo`, which is the only reliable
+source — the dedicated instances endpoint omits it entirely. It also reports the printers a profile does *not*
+cover, which is how a model published before a printer existed reveals that it silently excludes those owners.
 
 `suggest_tags` is the autocomplete the upload form uses, and reports how many models carry each tag. It turns tag
 choice into something checkable: a tag on thousands of models is a crowded search, one on a handful may be too

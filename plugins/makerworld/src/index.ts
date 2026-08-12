@@ -10,6 +10,7 @@ import { getCurrentUser } from './tools/get-current-user.js';
 import { getModel } from './tools/get-model.js';
 import { getPointsProgress } from './tools/get-points-progress.js';
 import { getPointsSummary } from './tools/get-points-summary.js';
+import { getPrintProfiles } from './tools/get-print-profiles.js';
 import { listDrafts } from './tools/list-drafts.js';
 import { listLicenses } from './tools/list-licenses.js';
 import { listModelFeedback } from './tools/list-model-feedback.js';
@@ -55,6 +56,7 @@ class MakerWorldPlugin extends OpenTabsPlugin {
     // Models
     listMyModels,
     getModel,
+    getPrintProfiles,
     updateModel,
     suggestTags,
     setModelVisibility,

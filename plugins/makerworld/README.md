@@ -90,10 +90,11 @@ megabytes — upload larger models through the MakerWorld web interface.
 
 ## Points and Redemption
 
-Point balances are split into **regular** and **exclusive** points. Only exclusive points can be redeemed for cash
-or gift cards; regular points are limited to the point shop. `get_points_summary` reports the split,
-`get_cash_redemption_info` gives the per-point cash rate, and `list_shop_products` gives each item's point cost —
-comparing the two shows which redemption route returns more value per point.
+Point balances are split into **regular** and **exclusive** points. Point shop items, gift cards included, are
+payable with either kind and MakerWorld draws on both in the same order, so a shop redemption should be forecast
+against the combined balance. Cashing out is the one route restricted to exclusive points. `get_points_summary`
+reports the split, `get_cash_redemption_info` gives the per-point cash rate, and `list_shop_products` gives each
+item's point cost — comparing the two shows which redemption route returns more value per point.
 
 `redeem_product` spends points irreversibly and MakerWorld does not reverse redemptions. Keep it on the `ask`
 permission so every call requires explicit approval.

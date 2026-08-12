@@ -7,7 +7,7 @@ export const getPointsSummary = defineTool({
   name: 'get_points_summary',
   displayName: 'Get Points Summary',
   description:
-    'Get the current point balance, split into regular and exclusive points, plus boost token holdings. Exclusive points are the ones that can be redeemed for cash and gift cards; regular points can only be spent in the point shop. Use this as the starting point for any balance, budgeting, or redemption-forecasting question.',
+    'Get the current point balance, split into regular and exclusive points, plus boost token holdings. Point shop items, gift cards included, are payable with either kind, so forecast a shop redemption against the combined total_points rather than the exclusive balance alone. Cashing out is the one route restricted to exclusive points — see get_cash_redemption_info. Use this as the starting point for any balance, budgeting, or redemption-forecasting question.',
   summary: 'Get the current point balance',
   icon: 'coins',
   group: 'Points',

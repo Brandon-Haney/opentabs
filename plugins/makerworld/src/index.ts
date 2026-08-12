@@ -3,6 +3,7 @@ import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import { isAuthenticated, waitForAuth } from './makerworld-api.js';
 import { analyzeEarningsVelocity } from './tools/analyze-earnings-velocity.js';
 import { deleteDraft } from './tools/delete-draft.js';
+import { diagnoseListing } from './tools/diagnose-listing.js';
 import { getAnalyticsTimeseries } from './tools/get-analytics-timeseries.js';
 import { getCashRedemptionInfo } from './tools/get-cash-redemption-info.js';
 import { getCurrentUser } from './tools/get-current-user.js';
@@ -11,6 +12,7 @@ import { getPointsProgress } from './tools/get-points-progress.js';
 import { getPointsSummary } from './tools/get-points-summary.js';
 import { listDrafts } from './tools/list-drafts.js';
 import { listLicenses } from './tools/list-licenses.js';
+import { listModelFeedback } from './tools/list-model-feedback.js';
 import { listModelStats } from './tools/list-model-stats.js';
 import { listMyModels } from './tools/list-my-models.js';
 import { listNotifications } from './tools/list-notifications.js';
@@ -46,6 +48,8 @@ class MakerWorldPlugin extends OpenTabsPlugin {
     listProfileStats,
     getAnalyticsTimeseries,
     analyzeEarningsVelocity,
+    diagnoseListing,
+    listModelFeedback,
     // Models
     listMyModels,
     getModel,

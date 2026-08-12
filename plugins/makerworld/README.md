@@ -115,7 +115,25 @@ points in the first 90 days, and days taken to reach a point threshold — and s
 to separate a model that opened well and went quiet from one that still earns daily. It walks the whole point
 ledger once and aggregates locally, so it costs a handful of requests regardless of how many models exist.
 
-Two figures in that output are worth reading together. `points_in_launch_window` says how fast a design found
+`diagnose_listing` splits each model into its funnel and sizes what a better listing could be worth. Impressions
+to views is close to a pure measure of the title and cover image, since that is all a browsing user sees before
+clicking; views to prints measures the page. Each rate is compared against the upper quartile of your own
+catalogue and the shortfall is carried through the rest of that model's funnel, which is the part that makes the
+number mean anything — a poor click-through rate on a model nobody prints is worth almost nothing, while a small
+shortfall on a model with heavy traffic and strong print conversion is worth a lot. Ranking on any single rate
+points at the wrong models.
+
+The page-side estimate is capped at doubling the prints a design has already drawn. Without that cap the tool
+ranks unproven niches first, because a mount for one specific car converts at a twelfth of the benchmark and the
+uncapped arithmetic reads that as an enormous opportunity. A low print rate is as often narrow demand as a weak
+page, and the metrics cannot tell the two apart — `list_model_feedback` can.
+
+`list_model_feedback` reads the comments and ratings, which is the only qualitative signal MakerWorld exposes.
+Ratings carry a score, whether the print succeeded, and the problem category chosen on a low score; requests for
+variants usually surface in the replies rather than the top-level comments. Reach for it before acting on any
+page-side recommendation, and to find what people are asking you to build next.
+
+Two figures in the velocity output are worth reading together. `points_in_launch_window` says how fast a design found
 its audience, and `momentum` — the recent daily rate over the lifetime daily rate — says whether it still has
 one. A high launch with low momentum is a design whose niche is now saturated; a modest launch with momentum
 near or above 1 is still compounding.

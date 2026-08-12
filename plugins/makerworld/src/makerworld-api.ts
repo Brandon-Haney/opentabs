@@ -20,7 +20,12 @@ import {
 } from '@opentabs-dev/plugin-sdk';
 
 /** Named backend services behind /api/v1 that this plugin calls. */
-export type MakerWorldService = 'design-service' | 'design-user-service' | 'point-service' | 'user-service';
+export type MakerWorldService =
+  | 'comment-service'
+  | 'design-service'
+  | 'design-user-service'
+  | 'point-service'
+  | 'user-service';
 
 /** Headers MakerWorld's own web client sends on every API call. */
 const CLIENT_HEADERS: Record<string, string> = {

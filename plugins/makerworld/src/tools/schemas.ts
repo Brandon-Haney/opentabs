@@ -181,6 +181,150 @@ export const earningsVelocitySchema = z.object({
   points_per_1k_impressions: z.number().describe('Points earned per thousand impressions — how well reach converts'),
 });
 
+// --- Feedback -----------------------------------------------------------------
+
+const feedbackReplySchema = z.object({
+  author: z.string().describe('Display name of the replier'),
+  content: z.string().describe('Reply text'),
+  created_at: z.string().describe('ISO 8601 timestamp'),
+  like_count: z.number().describe('Likes on the reply'),
+});
+
+export const modelFeedbackSchema = z.object({
+  kind: z.enum(['comment', 'rating']).describe('A plain comment, or a rating that carries a score'),
+  id: z.number().describe('Feedback entry ID'),
+  content: z.string().describe('What was written'),
+  author: z.string().describe('Display name of the author'),
+  author_handle: z.string().describe('Profile handle of the author'),
+  created_at: z.string().describe('ISO 8601 timestamp'),
+  score: z.number().describe('Star rating from 1 to 5, or 0 on a plain comment'),
+  printed_successfully: z.boolean().describe('Whether the rater reported a successful print'),
+  issues: z
+    .array(z.string())
+    .describe('Problem categories the rater selected on a low score, such as "Support Issue" — empty otherwise'),
+  like_count: z.number().describe('Likes received'),
+  reply_count: z.number().describe('Replies received'),
+  image_count: z.number().describe('Photos attached, which usually indicates a real print'),
+  instance_id: z.number().describe('Print profile the rating applies to, 0 for comments'),
+  replies: z.array(feedbackReplySchema).describe('Replies carried inline, where the API supplies them'),
+});
+
+interface RawFeedbackUser {
+  name?: string;
+  handle?: string;
+}
+
+interface RawFeedbackReply {
+  content?: string;
+  createTime?: string;
+  likeCount?: number;
+  creator?: RawFeedbackUser;
+}
+
+interface RawLowScoreDetail {
+  reason?: string;
+}
+
+interface RawFeedbackRating {
+  id?: number;
+  content?: string;
+  createTime?: string;
+  score?: number;
+  likeCount?: number;
+  replyCount?: number;
+  images?: string[];
+  instanceId?: number;
+  successPrinted?: boolean;
+  lowScoreDetails?: RawLowScoreDetail[];
+  instRatingReply?: RawFeedbackReply[];
+  creator?: RawFeedbackUser;
+}
+
+interface RawFeedbackComment {
+  id?: number;
+  content?: string;
+  createTime?: string;
+  likeCount?: number;
+  replyCount?: number;
+  images?: string[];
+  user?: RawFeedbackUser;
+}
+
+export interface RawFeedbackEntry {
+  type?: number;
+  ratingItem?: RawFeedbackRating;
+  comment?: RawFeedbackComment;
+}
+
+/** Feed entries tagged with this type carry a rating; anything else is a comment. */
+const FEEDBACK_TYPE_RATING = 2;
+
+/**
+ * Flatten one entry of the combined comment-and-rating feed.
+ *
+ * The endpoint interleaves two different records under one list: plain comments
+ * arrive under `comment` with a `user`, while ratings arrive under `ratingItem`
+ * with a `creator`, a score, and — on low scores — the structured problem
+ * categories the rater picked. Ratings also carry their replies inline, which
+ * comments do not.
+ */
+export const mapFeedbackEntry = (entry: RawFeedbackEntry) => {
+  const rating = entry.type === FEEDBACK_TYPE_RATING ? entry.ratingItem : undefined;
+  const comment = rating ? undefined : entry.comment;
+  const author = rating?.creator ?? comment?.user;
+  const source = rating ?? comment;
+
+  return {
+    kind: (rating ? 'rating' : 'comment') as 'comment' | 'rating',
+    id: source?.id ?? 0,
+    content: source?.content ?? '',
+    author: author?.name ?? '',
+    author_handle: author?.handle ?? '',
+    created_at: source?.createTime ?? '',
+    score: rating?.score ?? 0,
+    printed_successfully: rating?.successPrinted ?? false,
+    issues: (rating?.lowScoreDetails ?? []).map(detail => detail.reason ?? '').filter(reason => reason.length > 0),
+    like_count: source?.likeCount ?? 0,
+    reply_count: source?.replyCount ?? 0,
+    image_count: (source?.images ?? []).length,
+    instance_id: rating?.instanceId ?? 0,
+    replies: (rating?.instRatingReply ?? []).map(reply => ({
+      author: reply.creator?.name ?? '',
+      content: reply.content ?? '',
+      created_at: reply.createTime ?? '',
+      like_count: reply.likeCount ?? 0,
+    })),
+  };
+};
+
+// --- Listing diagnosis ---------------------------------------------------------
+
+export const listingDiagnosisSchema = z.object({
+  design_id: z.number().describe('Model ID'),
+  title: z.string().describe('Model title'),
+  impressions: z.number().describe('Times the model card was shown'),
+  views: z.number().describe('Times the card was clicked through to the page'),
+  prints: z.number().describe('Prints recorded'),
+  points: z.number().describe('Performance points earned, excluding boost tips'),
+  view_rate: z.number().describe('Views per 100 impressions — how well the title and cover image sell the click'),
+  print_rate: z.number().describe('Prints per 100 views — how well the page itself converts an interested visitor'),
+  points_per_print: z.number().describe('Points earned per print'),
+  card_opportunity_points: z
+    .number()
+    .describe('Modelled points gained if view_rate rose to the catalogue 75th percentile, holding everything else'),
+  page_opportunity_points: z
+    .number()
+    .describe(
+      'Modelled points gained if print_rate rose to the catalogue 75th percentile, capped at doubling the prints the design has already drawn. The cap matters: a very low print rate is as often narrow demand as a weak page, so an uncapped figure would rank unproven niches above proven designs.',
+    ),
+  opportunity_points: z.number().describe('card_opportunity_points plus page_opportunity_points'),
+  bottleneck: z
+    .enum(['card', 'page', 'none'])
+    .describe(
+      'Where the larger modelled gain sits: "card" points at the title and cover image, "page" at the description, photos, and print profiles, "none" when the model already beats both benchmarks',
+    ),
+});
+
 export const shopProductSchema = z.object({
   sku: z.string().describe('Product SKU — pass this to redeem_product'),
   title: z.string().describe('Product name'),

@@ -58,8 +58,8 @@ const byLowercaseKey = new Map<string, Printer>(
 export const resolvePrinterName = (input: string): string | undefined =>
   byLowercaseKey.get(input.trim().toLowerCase())?.name;
 
-/** The printers the account owner said they support, as read from plugin settings. */
-export interface DeclaredPrinters {
+/** The printers the account owner has in the room, as read from plugin settings. */
+export interface OwnedPrinters {
   /** Canonical product names, deduplicated and sorted. Empty when unset. */
   names: string[];
   /** Setting entries matching no known printer, so a tool can report the typo. */
@@ -67,14 +67,15 @@ export interface DeclaredPrinters {
 }
 
 /**
- * Read the `printers` setting.
+ * Read the `owned_printers` setting.
  *
- * Compatibility can only ever be narrowed, so this is a statement of intent
- * rather than a guarantee — a printer listed here is offered only when
- * MakerWorld also derived it from the model file.
+ * This describes the hardware available for testing, and nothing else. It is
+ * deliberately never used to decide which printers a model is published for:
+ * a design is normally offered to every printer whose plate it fits, which has
+ * no relationship to what its author happens to own.
  */
-export const declaredPrinters = (): DeclaredPrinters => {
-  const raw = getConfig('printers');
+export const ownedPrinters = (): OwnedPrinters => {
+  const raw = getConfig('owned_printers');
   if (typeof raw !== 'string' || raw.trim().length === 0) return { names: [], unrecognised: [] };
 
   const names = new Set<string>();

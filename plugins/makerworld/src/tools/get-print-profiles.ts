@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../makerworld-api.js';
-import { declaredPrinters, KNOWN_PRINTER_NAMES } from '../printers.js';
+import { KNOWN_PRINTER_NAMES, ownedPrinters } from '../printers.js';
 import { printProfileDetailSchema, type RawDesignWithInstances } from './schemas.js';
 
 /** MakerWorld reports estimated print time in seconds. */
@@ -11,7 +11,7 @@ export const getPrintProfiles = defineTool({
   name: 'get_print_profiles',
   displayName: 'Get Print Profiles',
   description:
-    'Inspect the print profiles attached to a model: which printers each one supports, which it does not, nozzle size, estimated print time, filament weight, plate count, whether an AMS is needed, and how each profile has been received. Printer compatibility is the detail worth checking first — a profile only lists the printers it was sliced against when it was uploaded, so a model published before a printer existed silently excludes everyone who owns one, and no metric reveals it. The same properties explain weak conversion generally: supports, long prints, multiple plates, and AMS requirements all cost prints from people who viewed the page. Complements list_profile_stats, which reports what a profile earned rather than what it is. When the account owner has listed their printers in plugin settings, missing_from_your_printers narrows the gap to the ones they actually care about.',
+    'Inspect the print profiles attached to a model: which printers each one supports, which it does not, nozzle size, estimated print time, filament weight, plate count, whether an AMS is needed, and how each profile has been received. Printer compatibility is the detail worth checking first — a profile only lists the printers it was sliced against when it was uploaded, so a model published before a printer existed silently excludes everyone who owns one, and no metric reveals it. The same properties explain weak conversion generally: supports, long prints, multiple plates, and AMS requirements all cost prints from people who viewed the page. Complements list_profile_stats, which reports what a profile earned rather than what it is. A narrow printer list is usually either a plate that is genuinely too small or a printer that did not exist at upload time, and the two look identical here — compare print_time_minutes and the model dimensions before assuming a gap is deliberate.',
   summary: 'Printer compatibility and print settings for a model',
   icon: 'printer',
   group: 'Models',
@@ -23,13 +23,15 @@ export const getPrintProfiles = defineTool({
     title: z.string().describe('Model title'),
     profiles: z.array(printProfileDetailSchema).describe('Print profiles attached to the model'),
     count: z.number().describe('Number of profiles'),
-    your_printers: z
+    owned_printers: z
       .array(z.string())
-      .describe('Printers declared in plugin settings, which missing_from_your_printers is measured against'),
+      .describe(
+        'Printers the account owner has, per the owned_printers setting, which cannot_test_on measures against',
+      ),
   }),
   handle: async params => {
     const design = await api<RawDesignWithInstances>('design-service', `/design/${params.design_id}`);
-    const declared = declaredPrinters();
+    const owned = ownedPrinters();
 
     const profiles = (design.instances ?? []).map(instance => {
       const modelInfo = instance.extention?.modelInfo ?? {};
@@ -50,7 +52,7 @@ export const getPrintProfiles = defineTool({
         title: instance.title ?? '',
         supported_printers: supported,
         unsupported_printers: unsupported,
-        missing_from_your_printers: declared.names.filter(printer => !supported.includes(printer)),
+        cannot_test_on: owned.names.filter(printer => !supported.includes(printer)),
         nozzle_mm: modelInfo.compatibility?.nozzleDiameter ?? 0,
         print_time_minutes: Math.round(printSeconds / SECONDS_PER_MINUTE),
         filament_grams: instance.weight ?? 0,
@@ -68,7 +70,7 @@ export const getPrintProfiles = defineTool({
       title: design.title ?? '',
       profiles,
       count: profiles.length,
-      your_printers: declared.names,
+      owned_printers: owned.names,
     };
   },
 });

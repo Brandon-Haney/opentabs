@@ -23,19 +23,16 @@ npm install -g @opentabs-dev/opentabs-plugin-makerworld
 
 | Setting | Description |
 |---|---|
-| `printers` | Printers you want your models offered for, comma separated. Product names (`X1 Carbon, P1S, A1 mini`) or device codes (`BL-P001, C12, N1`) both work, and case does not matter. |
+| `owned_printers` | The printers you actually have, comma separated. Product names (`H2D, X1 Carbon, A1 mini`) or device codes (`O1D, BL-P001, N1`) both work, and case does not matter. |
 
 ```bash
-opentabs plugin configure makerworld
-# or
-opentabs config set setting.makerworld.printers "X1 Carbon, P1S, A1, A1 mini"
+opentabs config set setting.makerworld.owned_printers "H2D, X1 Carbon, A1 mini"
 ```
 
-Leaving it empty is fine — every tool treats an unset value as "all printers are equally
-relevant". Setting it makes two tools sharper: `set_printer_compatibility` narrows to this set
-when called with no explicit list, and `get_print_profiles` reports which of *your* printers a
-profile fails to cover instead of every printer MakerWorld knows about. `list_printers` shows the
-full table with the device code beside each product name.
+This is used **only** for reporting which of your own models you cannot test a print of
+first-hand — `get_print_profiles` returns it as `cannot_test_on`. It never decides which printers
+a model is published for. Those are separate questions: a design goes to every printer whose
+plate it fits, which has nothing to do with what its author owns. Leaving it unset is fine.
 
 ## Tools (31)
 
@@ -72,7 +69,7 @@ full table with the device code beside each product name.
 | `get_print_profiles` | Printer compatibility and print settings for a model | Read |
 | `suggest_tags` | Look up real tags and how many models carry each | Read |
 | `update_model` | Change a live model's title, description, or tags | Write |
-| `set_printer_compatibility` | Narrow which printers a print profile is offered for | Write |
+| `set_printer_compatibility` | Withdraw printers from a print profile | Write |
 | `set_model_visibility` | Take a model offline or bring it back online | Write |
 
 ### Uploads (4)
@@ -98,7 +95,7 @@ full table with the device code beside each product name.
 |---|---|---|
 | `list_licenses` | List licenses available for models | Read |
 | `list_categories` | List categories a model can be filed under | Read |
-| `list_printers` | Printer names, device codes, and the set you support | Read |
+| `list_printers` | Printer names, device codes, and which you own | Read |
 
 ## How It Works
 
@@ -198,6 +195,8 @@ had already recomputed. `update_model` therefore returns `printer_compatibility_
 `get_print_profiles` reads compatibility from `instances[].extention.modelInfo`, which is the only reliable
 source — the dedicated instances endpoint omits it entirely. It also reports the printers a profile does *not*
 cover, which is how a model published before a printer existed reveals that it silently excludes those owners.
+That list mixes two very different causes, though — a plate genuinely too small, and a printer that did not exist
+at upload time — and nothing in the data separates them. Only the dimensions can.
 
 ## Printer compatibility
 
@@ -212,6 +211,12 @@ So compatibility can be narrowed but never widened. Restoring a printer absent f
 re-slicing and replacing the 3MF; no API can do it. The website's own editor obscures this — its checkboxes
 render from `unsupportedDevModels` while the form submits `otherCompatibility`, so a printer can appear ticked,
 publish, and still not be offered.
+
+A design is normally offered to **every printer whose plate it fits**, so the usual edit is dropping the one or
+two it does not fit — most often the A1 mini, whose 180mm plate is the tightest. `set_printer_compatibility`
+therefore takes `withdraw_printers`, which drops the printers named and leaves everything else untouched.
+`supported_printers` also exists and replaces the whole list, withdrawing anything left out of it; it is the
+sharper edge of the two, so pass `dry_run` first and read the `withdrawn` list before committing to it.
 
 Two further quirks. The derived set is recomputed each time a profile draft is opened, so read it immediately
 before writing rather than reusing an earlier value — it grows as MakerWorld adds printers. And edits driven

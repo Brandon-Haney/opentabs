@@ -40,12 +40,12 @@ class MakerWorldPlugin extends OpenTabsPlugin {
   readonly urlPatterns = ['*://makerworld.com/*', '*://*.makerworld.com/*'];
   override readonly homepage = 'https://makerworld.com';
   override readonly configSchema: ConfigSchema = {
-    printers: {
+    owned_printers: {
       type: 'string',
-      label: 'My printers',
+      label: 'Printers you own',
       description:
-        'Printers you want your models offered for, comma separated — product names such as "X1 Carbon, P1S, A1 mini" or device codes such as "BL-P001, C12, N1". set_printer_compatibility narrows to this set when called without an explicit list, and get_print_profiles reports which of these a profile fails to cover. Leave empty to treat every printer MakerWorld checks as equally relevant.',
-      placeholder: 'X1 Carbon, P1S, A1, A1 mini',
+        'The printers you actually have, comma separated — product names such as "H2D, X1 Carbon, A1 mini" or device codes such as "O1D, BL-P001, N1". Used only to report which models you cannot test a print of first-hand. It never decides which printers a model is published for: a design is offered to every printer whose plate it fits, which has nothing to do with what its author owns.',
+      placeholder: 'H2D, X1 Carbon, A1 mini',
     },
   };
   readonly tools: ToolDefinition[] = [

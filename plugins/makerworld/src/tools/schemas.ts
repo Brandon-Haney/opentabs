@@ -310,10 +310,10 @@ export const printProfileDetailSchema = z.object({
     .describe(
       'Printers MakerWorld checks that this profile does not cover. Usually models released after the profile was uploaded, whose owners are silently unable to print it — republishing the model re-runs the check and picks them up.',
     ),
-  missing_from_your_printers: z
+  cannot_test_on: z
     .array(z.string())
     .describe(
-      'Printers the account owner declared support for in plugin settings that this profile does not cover — the subset of unsupported_printers actually worth acting on. Empty when the setting is unset, in which case every printer is treated as equally relevant.',
+      'Printers the account owner has, per the owned_printers setting, that this profile is not offered for — so a print cannot be verified first-hand. Empty when the setting is unset. Says nothing about whether the exclusion is intended.',
     ),
   nozzle_mm: z.number().describe('Nozzle diameter the profile was sliced for'),
   print_time_minutes: z.number().describe('Estimated print time'),

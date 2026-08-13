@@ -109,11 +109,21 @@ carried in the plugin. Consumers union it with whatever a profile already lists,
 so a stale entry can only under-report, and `set_printer_compatibility`
 validates against the live fleet it has to read anyway.
 
-The `printers` setting lets the account owner name the printers they care about.
+The `owned_printers` setting records the hardware in the room and nothing else.
 It accepts either identifier in any case, so `a1 mini` and `N1` both resolve.
-Unset is a supported state everywhere and means "all printers equally relevant";
-`set_printer_compatibility` refuses to fall back to a setting containing a
-typo, because narrowing from a misread list silently withdraws printers.
+
+It was briefly wired as a publish target — `set_printer_compatibility` narrowed
+to it when called with no list — which was **wrong**, and is worth recording so
+nobody rebuilds it. The two questions are unrelated: a design is offered to
+every printer whose plate it fits, and Brandon owns three of the fourteen while
+almost every model of his is meant for all of them. Defaulting to the owned set
+would have withdrawn ten printers from a model intended for everyone. Ownership
+is now reporting-only (`cannot_test_on` — models you cannot test a print of
+yourself), and the write path takes an explicit argument.
+
+The real editing pattern is opt-out, not opt-in, which is why
+`set_printer_compatibility` leads with `withdraw_printers`. The A1 mini's 180mm
+plate is the usual reason a model is excluded from anything.
 
 ---
 
@@ -144,18 +154,12 @@ in the repo.
 
 ## Open work
 
-### A — printer compatibility · complete except A5
+### A — printer compatibility · closed
 
-Mechanism mapped, `set_printer_compatibility` shipped. **A5 is the only open item:**
-design `1490785` is missing X1 Carbon, X1, X1E, P1S and P1P, which no tool can
-restore. Two routes, Brandon's call:
-
-1. **Report to MakerWorld.** The derivation is internally inconsistent — P1S and P2S
-   have identical 256×256 build volumes and one is derived while the other is not.
-   The part fits when rotated, so auto-placement is likely not rotating before testing
-   fit. A platform fix would help every creator with a wide bracket.
-2. **Re-slice** in Bambu Studio against the current printer set and use `Replace File`
-   on the profile editor.
+Mechanism mapped, `set_printer_compatibility` shipped with `withdraw_printers`,
+`supported_printers` and `dry_run`. Design `1490785` is still missing X1 Carbon,
+X1, X1E, P1S and P1P, which no tool can restore. Brandon decided on 2026-08-12
+not to pursue it — no bug report, no re-slice. Do not reopen it unprompted.
 
 ### B — peer benchmarking · not started, read-only
 

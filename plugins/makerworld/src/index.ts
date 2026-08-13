@@ -25,6 +25,7 @@ import { listTransactions } from './tools/list-transactions.js';
 import { publishDraft } from './tools/publish-draft.js';
 import { redeemProduct } from './tools/redeem-product.js';
 import { setModelVisibility } from './tools/set-model-visibility.js';
+import { setPrinterCompatibility } from './tools/set-printer-compatibility.js';
 import { suggestTags } from './tools/suggest-tags.js';
 import { updateModel } from './tools/update-model.js';
 import { updateProfile } from './tools/update-profile.js';
@@ -57,6 +58,7 @@ class MakerWorldPlugin extends OpenTabsPlugin {
     listMyModels,
     getModel,
     getPrintProfiles,
+    setPrinterCompatibility,
     updateModel,
     suggestTags,
     setModelVisibility,

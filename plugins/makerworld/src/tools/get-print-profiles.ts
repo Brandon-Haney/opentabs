@@ -4,14 +4,15 @@ import { api } from '../makerworld-api.js';
 import { printProfileDetailSchema, type RawDesignWithInstances } from './schemas.js';
 
 /**
- * Printers MakerWorld's compatibility checker currently covers.
+ * Printers MakerWorld's compatibility checker covers, as of the last time the
+ * profile editor was observed serving its fleet list.
  *
- * A print profile stores the subset it was sliced against, and that subset is
- * frozen at upload time — a printer released afterwards is simply absent, which
- * silently excludes those owners from printing the model. Comparing against this
- * list is what surfaces that. It is a moving target as Bambu ships hardware, so
- * anything already on a profile is folded in as well; a stale entry here can
- * only under-report, never invent a missing printer.
+ * The authoritative list lives on the profile editor's page props, but fetching
+ * that page forks a draft server-side, so a read-only tool cannot use it. This
+ * baseline stands in, and every printer already present on a profile is unioned
+ * in on top — so a name missing here can only ever cause an under-report, never
+ * a phantom "unsupported" entry. set_printer_compatibility, which has to write
+ * anyway, reads the live fleet and validates against that instead.
  */
 const KNOWN_PRINTERS = [
   'A1',

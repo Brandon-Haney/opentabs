@@ -357,6 +357,35 @@ export interface RawDesignWithInstances {
   instances?: RawInstance[];
 }
 
+/** One entry of MakerWorld's printer fleet, as the profile editor supplies it. */
+export interface RawMachine {
+  devModelName?: string;
+  devProductName?: string;
+  model?: string;
+  name?: string;
+}
+
+/**
+ * A print profile draft, plus the fleet and derived compatibility around it.
+ *
+ * `detail.otherCompatibility` is what MakerWorld derived by slicing the 3MF and
+ * is read-only in practice — writing it is accepted into the draft and then
+ * discarded on publish. `detail.unsupportedDevModels` is the author's opt-out
+ * list and is the only field that actually changes what gets published.
+ */
+export interface RawProfileEditPage {
+  detail?: {
+    id?: number;
+    instanceId?: number;
+    compatibility?: RawPrinter;
+    otherCompatibility?: RawPrinter[];
+    unsupportedDevModels?: string[];
+    details?: string[];
+    [field: string]: unknown;
+  };
+  machines?: RawMachine[];
+}
+
 // --- Listing diagnosis ---------------------------------------------------------
 
 export const listingDiagnosisSchema = z.object({

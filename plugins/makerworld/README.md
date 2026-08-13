@@ -159,6 +159,25 @@ had already recomputed. `update_model` therefore returns `printer_compatibility_
 source — the dedicated instances endpoint omits it entirely. It also reports the printers a profile does *not*
 cover, which is how a model published before a printer existed reveals that it silently excludes those owners.
 
+## Printer compatibility
+
+Published compatibility is **the set MakerWorld derives from the 3MF, minus the author's opt-outs**. Two separate
+fields carry those halves and they behave very differently:
+
+- `otherCompatibility` is derived server-side by slicing. Writing it is accepted into a draft and survives
+  review, then is discarded on publish. It cannot be set.
+- `unsupportedDevModels` is the opt-out list, and it is authoritative. `set_printer_compatibility` writes it.
+
+So compatibility can be narrowed but never widened. Restoring a printer absent from the derived set means
+re-slicing and replacing the 3MF; no API can do it. The website's own editor obscures this — its checkboxes
+render from `unsupportedDevModels` while the form submits `otherCompatibility`, so a printer can appear ticked,
+publish, and still not be offered.
+
+Two further quirks. The derived set is recomputed each time a profile draft is opened, so read it immediately
+before writing rather than reusing an earlier value — it grows as MakerWorld adds printers. And edits driven
+through the API are routed to manual review, while publishes from the website clear automatically in a couple of
+minutes; a tool should not promise the faster path.
+
 `suggest_tags` is the autocomplete the upload form uses, and reports how many models carry each tag. It turns tag
 choice into something checkable: a tag on thousands of models is a crowded search, one on a handful may be too
 obscure to bring traffic, and it confirms the spelling MakerWorld actually stores.

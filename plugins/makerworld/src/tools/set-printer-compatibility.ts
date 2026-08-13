@@ -1,6 +1,7 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { apiVoid, fetchPageData } from '../makerworld-api.js';
+import { declaredPrinters, resolvePrinterName } from '../printers.js';
 import type { RawProfileEditPage } from './schemas.js';
 
 /**
@@ -40,8 +41,9 @@ export const setPrinterCompatibility = defineTool({
     supported_printers: z
       .array(z.string())
       .min(1)
+      .optional()
       .describe(
-        'Printers the profile should be offered for, by product name such as "X1 Carbon" or "P1S". Anything derived but absent from this list is withdrawn. The profile\'s primary printer is always kept and does not need listing.',
+        'Printers the profile should be offered for, by product name such as "X1 Carbon" or "P1S". Anything derived but absent from this list is withdrawn. The profile\'s primary printer is always kept and does not need listing. Omit to use the printers the account owner declared in plugin settings.',
       ),
   }),
   output: z.object({
@@ -57,9 +59,29 @@ export const setPrinterCompatibility = defineTool({
       .describe(
         'Requested printers that are not in the derived set and therefore could not be enabled. Fixing these means re-slicing the model, not changing a setting.',
       ),
+    requested_from: z
+      .enum(['argument', 'settings'])
+      .describe('Whether the target list came from supported_printers or from the printers plugin setting'),
     review: z.string().describe('What happens next'),
   }),
   handle: async (params, context) => {
+    // Resolved before the profile is opened: fetching an editor route forks a
+    // draft, so a request that was never going to be actionable should fail
+    // without leaving one behind.
+    const declared = declaredPrinters();
+    const requestedFrom: 'argument' | 'settings' = params.supported_printers === undefined ? 'settings' : 'argument';
+    const requested = params.supported_printers ?? declared.names;
+    if (requested.length === 0) {
+      throw ToolError.validation(
+        'No printers were given and the "printers" plugin setting is empty, so there is nothing to narrow the profile to. Pass supported_printers, or record the printers you support once with: opentabs config set setting.makerworld.printers "X1 Carbon, P1S, A1"',
+      );
+    }
+    if (requestedFrom === 'settings' && declared.unrecognised.length > 0) {
+      throw ToolError.validation(
+        `The "printers" plugin setting contains unrecognised entries: ${declared.unrecognised.join(', ')}. Fix the setting or pass supported_printers explicitly — narrowing compatibility from a misread list would withdraw printers unintentionally.`,
+      );
+    }
+
     context?.reportProgress({ progress: 0, total: 2, message: 'Opening the print profile…' });
     const page = await fetchPageData<RawProfileEditPage>(`/my/profiles/${params.instance_id}/edit`);
 
@@ -75,8 +97,11 @@ export const setPrinterCompatibility = defineTool({
       throw ToolError.internal('MakerWorld did not return its printer list, so the request cannot be validated.');
     }
 
+    // Device codes and casing are accepted, so "N1" and "a1 mini" both resolve
+    // to the product name the fleet is keyed by.
     const known = new Set(fleet.map(printerName));
-    const unknown = params.supported_printers.filter(name => !known.has(name));
+    const target = requested.map(entry => resolvePrinterName(entry) ?? entry.trim());
+    const unknown = target.filter(name => !known.has(name));
     if (unknown.length > 0) {
       throw ToolError.validation(
         `Unrecognised printer name(s): ${unknown.join(', ')}. Valid names are: ${[...known].sort().join(', ')}.`,
@@ -88,7 +113,7 @@ export const setPrinterCompatibility = defineTool({
       .map(printer => printer.devProductName ?? '')
       .filter(name => name.length > 0);
 
-    const wanted = new Set(params.supported_printers);
+    const wanted = new Set(target);
     // The primary printer is fixed — the editor locks it and it cannot be withdrawn.
     const keep = new Set([primary, ...derived.filter(name => wanted.has(name))].filter(name => name.length > 0));
 
@@ -113,7 +138,8 @@ export const setPrinterCompatibility = defineTool({
       derived_printers: [...derived].sort(),
       will_publish: [...keep].sort(),
       withdrawn: derived.filter(name => !keep.has(name)).sort(),
-      unavailable: params.supported_printers.filter(name => name !== primary && !derived.includes(name)).sort(),
+      unavailable: target.filter(name => name !== primary && !derived.includes(name)).sort(),
+      requested_from: requestedFrom,
       review:
         'Submitted for review. Edits driven through the API are routed to manual review rather than the automated path the website uses, so this can take longer than the couple of minutes a publish from the site takes. The profile keeps serving its current printer list until it clears.',
     };

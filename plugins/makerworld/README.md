@@ -19,7 +19,25 @@ npm install -g @opentabs-dev/opentabs-plugin-makerworld
 1. Open [makerworld.com](https://makerworld.com) in Chrome and log in
 2. Open the OpenTabs side panel — the MakerWorld plugin should appear as **ready**
 
-## Tools (22)
+## Settings
+
+| Setting | Description |
+|---|---|
+| `printers` | Printers you want your models offered for, comma separated. Product names (`X1 Carbon, P1S, A1 mini`) or device codes (`BL-P001, C12, N1`) both work, and case does not matter. |
+
+```bash
+opentabs plugin configure makerworld
+# or
+opentabs config set setting.makerworld.printers "X1 Carbon, P1S, A1, A1 mini"
+```
+
+Leaving it empty is fine — every tool treats an unset value as "all printers are equally
+relevant". Setting it makes two tools sharper: `set_printer_compatibility` narrows to this set
+when called with no explicit list, and `get_print_profiles` reports which of *your* printers a
+profile fails to cover instead of every printer MakerWorld knows about. `list_printers` shows the
+full table with the device code beside each product name.
+
+## Tools (31)
 
 ### Points (8)
 
@@ -34,20 +52,27 @@ npm install -g @opentabs-dev/opentabs-plugin-makerworld
 | `get_cash_redemption_info` | Get the exclusive-point cash-out rate and limits | Read |
 | `redeem_product` | Spend points on a point shop product (irreversible) | Write |
 
-### Analytics (3)
+### Analytics (6)
 
 | Tool | Description | Type |
 |---|---|---|
 | `list_model_stats` | Per-model performance metrics for a date range | Read |
 | `list_profile_stats` | Per-print-profile performance metrics for a date range | Read |
 | `get_analytics_timeseries` | Metric series over time for the account, a model, or a profile | Read |
+| `analyze_earnings_velocity` | Rank models by earning speed and current momentum | Read |
+| `diagnose_listing` | Find where listings lose traffic and what fixing them is worth | Read |
+| `list_model_feedback` | Read the comments and ratings on a model | Read |
 
-### Models (3)
+### Models (7)
 
 | Tool | Description | Type |
 |---|---|---|
 | `list_my_models` | List your published models with lifetime totals | Read |
 | `get_model` | Get full detail for one model | Read |
+| `get_print_profiles` | Printer compatibility and print settings for a model | Read |
+| `suggest_tags` | Look up real tags and how many models carry each | Read |
+| `update_model` | Change a live model's title, description, or tags | Write |
+| `set_printer_compatibility` | Narrow which printers a print profile is offered for | Write |
 | `set_model_visibility` | Take a model offline or bring it back online | Write |
 
 ### Uploads (4)
@@ -67,20 +92,35 @@ npm install -g @opentabs-dev/opentabs-plugin-makerworld
 | `update_profile` | Update your public profile and privacy settings | Write |
 | `list_notifications` | List account notifications | Read |
 
-### Reference (1)
+### Reference (3)
 
 | Tool | Description | Type |
 |---|---|---|
 | `list_licenses` | List licenses available for models | Read |
+| `list_categories` | List categories a model can be filed under | Read |
+| `list_printers` | Printer names, device codes, and the set you support | Read |
 
 ## How It Works
 
 This plugin runs inside your MakerWorld tab through the [OpenTabs](https://opentabs.dev) Chrome extension. It uses your existing browser session — no API tokens or OAuth apps required. All operations happen as you, with your permissions.
 
+MakerWorld rate-limits per account, so every request this plugin makes is serialized and spaced
+rather than fired concurrently. A 429 is retried — honouring `Retry-After` — and widens the
+spacing for the rest of the session, narrowing again only after a run of clean responses. That
+matters most for the tools that page through the whole point ledger, which would otherwise spend
+the budget belonging to whatever runs next. Reads are cached for a minute, so an agent running
+several analytics tools in a row pays once for the dashboard payload they share; a write clears
+the cache.
+
 ## Uploading Models
 
 `upload_model` creates a **draft** — it never publishes. Review the draft on MakerWorld, then release it with
 `publish_draft`, or discard it with `delete_draft`.
+
+`list_categories` supplies the `category_id`. Only leaf categories are assignable — the eleven top-level sections
+are returned with `assignable: false` and exist to group them. Category is worth getting right, and worth
+re-checking on an existing model with weak impressions, because it decides which browse pages and filters the
+model appears on at all.
 
 Files are supplied as base64 (`content_base64`) or as an **https** URL (`source_url`). Plain-http URLs, including
 loopback addresses such as `http://127.0.0.1`, cannot be used: MakerWorld sends a

@@ -5,7 +5,7 @@ _user_ of the tools needs; this file records what was learned reverse-engineerin
 site, what has been ruled out, and what is still open — so a later session can resume
 without re-deriving any of it.
 
-Last worked: **2026-08-12**. Tool count: **29**.
+Last worked: **2026-08-12**. Tool count: **31**.
 
 ---
 
@@ -36,6 +36,12 @@ roughly half the endpoints.
 `operation` · `point` · `design-user` · `creation` · `creation-executor` · `wallet` ·
 `community` · `crowdfunding` · `put` · `design-store` · `design-recommend` · `seller` ·
 `buyer` · `mwstore-common` · `task` — each as `<name>-service`.
+
+Reference data follows a `design-service/design/<noun>` shape: `/design/license`
+and `/design/category` both sit there. The category tree arrives as an unnamed
+root whose children are the eleven browse sections, each with the assignable
+leaves beneath it, and carries about 25 KB of marketing prose that
+`list_categories` discards.
 
 ### Server-rendered data
 
@@ -95,16 +101,46 @@ from earlier in a session.
 
 ### Device codes
 
-`BL-P001` X1 Carbon · `BL-P002` X1 · `C13` X1E · `C12` P1S · `C11` P1P · `N7` P2S ·
-`N1` A1 mini · `N2S` A1 · `O1C2` H2C · `O1D` H2D · `O1E` H2D Pro · `O1S` H2S ·
-`N6` X2D · `N9` A2L
+Held in `src/printers.ts` and surfaced by `list_printers`. Authoritative source is
+`pageProps.machines` on the profile editor, which pairs `devModelName` with
+`devProductName`. There is no read-only endpoint for it — twelve candidates
+probed, all 404, and it is not a client-side constant — so the pairing is
+carried in the plugin. Consumers union it with whatever a profile already lists,
+so a stale entry can only under-report, and `set_printer_compatibility`
+validates against the live fleet it has to read anyway.
 
-Authoritative list is `pageProps.machines` on the profile editor. There is no
-read-only endpoint for it — twelve candidates probed, all 404, and it is not a
-client-side constant. `get_print_profiles` therefore carries a hardcoded baseline
-unioned with whatever a profile already lists, so a stale entry can only under-report.
+The `printers` setting lets the account owner name the printers they care about.
+It accepts either identifier in any case, so `a1 mini` and `N1` both resolve.
+Unset is a supported state everywhere and means "all printers equally relevant";
+`set_printer_compatibility` refuses to fall back to a setting containing a
+typo, because narrowing from a misread list silently withdraws printers.
 
 ---
+
+## Request pacing
+
+A 429 at the end of the 2026-08-12 session prompted `src/request-gate.ts`, which
+every API call now passes through. Requests are serialized and spaced 200 ms
+apart; a 429 multiplies the spacing by four for the rest of the page's life and
+it steps back down only after twelve clean responses. Rate-limited requests are
+retried whatever their method, since a refusal means nothing executed; transient
+failures are retried for reads only. A `Retry-After` above 30 s is reported
+rather than waited out.
+
+Reads are cached for a minute by full URL, which collapses the shared
+creator-dashboard fetch that `diagnose_listing` and `analyze_earnings_velocity`
+both open with. Two reads deliberately bypass the cache: anything through
+`fetchPageData`, because editor payloads carry short-lived signed URLs and
+fetching one forks a draft. Any write clears the cache.
+
+The limit itself is still unmeasured — B4 remains the task that would replace
+these numbers with evidence. They are deliberately conservative in the meantime.
+
+Verified offline against stubs (pacing, serialization, cache hit and
+invalidation, retry and no-retry paths, the attempt cap, queue survival after a
+rejection). The plugin has no test runner, so the harness lived in the
+scratchpad and was run against `dist/`; re-create it rather than looking for it
+in the repo.
 
 ## Open work
 
@@ -130,8 +166,10 @@ restore. Two routes, Brandon's call:
    compare funnels or only outcomes.
 3. Map category browse and sort params; check whether competitors'
    `instances[].extention.modelInfo` exposes their profiles.
-4. Probe rate limits. A 429 was hit incidentally at the end of the last session, so
-   the ceiling is lower than assumed.
+4. Probe rate limits. A 429 was hit incidentally at the end of the 2026-08-12
+   session, so the ceiling is lower than assumed. The request gate now paces
+   and retries, but its numbers are guesses; this task is what would replace
+   them with a measurement.
 5. Build the tool.
 
 ### C — comment and rating replies · not started, needs UI captures

@@ -18,6 +18,7 @@ import {
   ToolError,
   waitUntil,
 } from '@opentabs-dev/plugin-sdk';
+import { scheduleRead, scheduleUncachedRead, scheduleWrite } from './request-gate.js';
 
 /** Named backend services behind /api/v1 that this plugin calls. */
 export type MakerWorldService =
@@ -78,6 +79,10 @@ interface ApiOptions {
  * `fetchJSON` supplies `credentials: 'include'`, a timeout, and HTTP-status →
  * `ToolError` classification, so this only layers on the service base URL,
  * the client headers, and the signed-out guard.
+ *
+ * Every call is paced and retried by the request gate. GETs are additionally
+ * cached for a short window, which matters most where several tools open from
+ * the same creator-dashboard payload.
  */
 export const api = async <T>(service: MakerWorldService, path: string, options: ApiOptions = {}): Promise<T> => {
   if (!isAuthenticated()) {
@@ -95,8 +100,10 @@ export const api = async <T>(service: MakerWorldService, path: string, options: 
 
   // fetchJSON resolves undefined for 204 No Content, which MakerWorld returns from
   // some write endpoints. Callers of those pass T = void and never read the value.
-  const data = await fetchJSON<T>(buildUrl(service, path, options.query), init);
-  return data as T;
+  const url = buildUrl(service, path, options.query);
+  const send = async (): Promise<T> => (await fetchJSON<T>(url, init)) as T;
+
+  return method === 'GET' ? scheduleRead(url, send) : scheduleWrite(send);
 };
 
 /**
@@ -120,7 +127,8 @@ export const apiVoid = async (service: MakerWorldService, path: string, options:
     init.body = JSON.stringify(options.body);
   }
 
-  await fetchFromPage(buildUrl(service, path, options.query), init);
+  const url = buildUrl(service, path, options.query);
+  await scheduleWrite(() => fetchFromPage(url, init));
 };
 
 /**
@@ -152,6 +160,10 @@ export const fetchFullProfile = async <T extends Record<string, unknown>>(): Pro
  *
  * `buildId` changes on every MakerWorld deploy, so it is read from the live page
  * rather than hardcoded.
+ *
+ * These responses are never cached. Requesting an editor route forks a draft
+ * server-side and the payload carries signed URLs with a short life, so a write
+ * built on a reused copy would submit stale links to a draft it does not own.
  */
 export const fetchPageData = async <T>(route: string, query?: QueryParams): Promise<T> => {
   if (!isAuthenticated()) {
@@ -165,7 +177,8 @@ export const fetchPageData = async <T>(route: string, query?: QueryParams): Prom
 
   const qs = query ? buildQueryString(query) : '';
   const base = `https://makerworld.com/_next/data/${buildId}/en${route}.json`;
-  const data = await fetchJSON<{ pageProps?: T }>(qs ? `${base}?${qs}` : base, { headers: CLIENT_HEADERS });
+  const url = qs ? `${base}?${qs}` : base;
+  const data = await scheduleUncachedRead(() => fetchJSON<{ pageProps?: T }>(url, { headers: CLIENT_HEADERS }));
 
   if (!data?.pageProps) {
     throw ToolError.notFound(`MakerWorld returned no page data for ${route}.`);

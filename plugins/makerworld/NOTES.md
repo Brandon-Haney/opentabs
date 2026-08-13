@@ -161,20 +161,42 @@ Mechanism mapped, `set_printer_compatibility` shipped with `withdraw_printers`,
 X1, X1E, P1S and P1P, which no tool can restore. Brandon decided on 2026-08-12
 not to pursue it — no bug report, no re-slice. Do not reopen it unprompted.
 
-### B — peer benchmarking · not started, read-only
+### B — peer benchmarking · endpoint and metric surface mapped
 
-1. Map `search-service/searchlist` — params, sort options, response shape.
-2. Establish which metrics are public for other creators. Impressions and views are
-   expected to be private, which would cap peer comparison at prints, downloads,
-   likes, collects. **Confirm before designing** — it decides whether the tool can
-   compare funnels or only outcomes.
-3. Map category browse and sort params; check whether competitors'
-   `instances[].extention.modelInfo` exposes their profiles.
-4. Probe rate limits. A 429 was hit incidentally at the end of the 2026-08-12
-   session, so the ceiling is lower than assumed. The request gate now paces
-   and retries, but its numbers are guesses; this task is what would replace
-   them with a measurement.
-5. Build the tool.
+**Search is `search-service/search/design`**, taking `keyword`, `limit` and
+`offset`, returning `{total, hits[], suggest}`. Two wrong guesses first:
+`search-service/searchlist` exists but serves the trending-words panel behind an
+empty search box, and `select/collection/design/v2` is a 404. A keyword search
+for `unifi` reports 1,397 models.
+
+**B2 is answered by the same response, and the answer is the pessimistic one.**
+Per hit, public: `printCount`, `downloadCount`, `likeCount`, `collectionCount`,
+`commentCount`, `shareCount`, `createTime`, `tags`, `license`, `modelSource`,
+`isExclusive`, `isStaffPicked`, `boostCnt`, and MakerWorld's own `hotScore` /
+`designScore` / relevance `score`. The creator object carries `handle`, `uid`,
+`fanCount` and lifetime `downloadCount` / `likeCount`.
+
+Absent: **impressions, views and points**. So a peer tool can compare
+*outcomes* but never *funnels* — there is no way to learn a competitor's
+click-through rate, which is exactly the metric `diagnose_listing` leans on.
+Peer work is therefore "how do my prints compare in this niche", not "is my
+card working harder than theirs". Design B5 accordingly.
+
+`readCount` is present but zero on every hit seen, and `bc` (720, 3880) does not
+track any visible counter — both unexplained, neither worth chasing.
+
+Remaining:
+
+1. Establish whether the endpoint takes a sort parameter. Relevance order is
+   the wrong ranking for "who is winning this niche"; without sort, B5 has to
+   pull a page and rank locally.
+2. Check whether a competitor's `instances[].extention.modelInfo` is readable,
+   which would expose their printer coverage and print times.
+3. Build the tool.
+
+**Rate-limit probing is off the table** — Brandon ruled it out on 2026-08-12,
+so the request gate keeps its conservative guesses rather than being tuned
+against a measured ceiling. Prefer few, wide requests over many narrow ones.
 
 ### C — comment and rating replies · not started, needs UI captures
 

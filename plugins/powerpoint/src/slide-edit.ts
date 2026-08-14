@@ -969,6 +969,182 @@ export const addImageToSlide = (
   return { new_shape_id: String(id) };
 };
 
+// --- Tables ---
+
+const TABLE_GRAPHIC_URI = 'http://schemas.openxmlformats.org/drawingml/2006/table';
+
+/**
+ * Built-in table styles, referenced by the GUID PowerPoint compiles in.
+ *
+ * These need no `ppt/tableStyles.xml` — that part holds only *custom* styles, so
+ * emitting a built-in GUID keeps a table entirely within the slide part. The
+ * default matches what PowerPoint's own Insert Table produces.
+ */
+/** Medium Style 2 – Accent 1, what PowerPoint's own Insert Table produces. */
+const DEFAULT_TABLE_STYLE_ID = '{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}';
+
+const TABLE_STYLE_IDS: Record<string, string> = {
+  default: DEFAULT_TABLE_STYLE_ID,
+  grid: '{5940675A-B579-460E-94D1-54222C63F5DA}', // No Style, Table Grid
+};
+
+/**
+ * Split a total length in inches into `parts` EMU spans that sum *exactly* to
+ * the total, giving the remainder to the last span.
+ *
+ * PowerPoint rewrites a table's geometry on save unless `sum(gridCol) == ext.cx`
+ * and `sum(tr) == ext.cy` to the EMU — and then the coordinates a caller reads
+ * back would not match what it asked for. Distributing exactly avoids that.
+ */
+const distributeEmu = (totalInches: number, parts: number): number[] => {
+  const total = inchesToEmu(totalInches);
+  const base = Math.floor(total / parts);
+  const spans = new Array<number>(parts).fill(base);
+  spans[parts - 1] = total - base * (parts - 1);
+  return spans;
+};
+
+/** Build a table cell's `<a:txBody>` — DrawingML, not the PresentationML body used elsewhere. */
+const buildCellTxBody = (doc: Document, text: string): Element => {
+  const txBody = doc.createElementNS(A_NS, 'a:txBody');
+  txBody.appendChild(doc.createElementNS(A_NS, 'a:bodyPr'));
+  txBody.appendChild(doc.createElementNS(A_NS, 'a:lstStyle'));
+
+  const lines = text.length > 0 ? text.split('\n') : [''];
+  for (const line of lines) {
+    const p = doc.createElementNS(A_NS, 'a:p');
+    if (line.length > 0) {
+      const r = doc.createElementNS(A_NS, 'a:r');
+      const rPr = doc.createElementNS(A_NS, 'a:rPr');
+      rPr.setAttribute('lang', 'en-US');
+      rPr.setAttribute('dirty', '0');
+      r.appendChild(rPr);
+      const t = doc.createElementNS(A_NS, 'a:t');
+      t.textContent = line;
+      r.appendChild(t);
+      p.appendChild(r);
+    } else {
+      // An empty cell still needs one paragraph; endParaRPr carries its run
+      // properties so the cell keeps a stable baseline height.
+      const endParaRPr = doc.createElementNS(A_NS, 'a:endParaRPr');
+      endParaRPr.setAttribute('lang', 'en-US');
+      p.appendChild(endParaRPr);
+    }
+    txBody.appendChild(p);
+  }
+  return txBody;
+};
+
+export interface AddTableOptions {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Row-major cell text. Ragged rows are padded to the widest row with empty cells. */
+  data: string[][];
+  /** Style the first row as a header (bold, filled). Defaults to true. */
+  headerRow?: boolean;
+  /** Alternate row shading. Defaults to true. */
+  bandRow?: boolean;
+  /** "default", "grid", "none", or a literal built-in style GUID like "{...}". */
+  style?: string;
+  name?: string;
+}
+
+/**
+ * Add a table to a slide.
+ *
+ * A table is inline DrawingML inside a `<p:graphicFrame>` — no new package part,
+ * no relationship, no content-type change. Every row is emitted with exactly one
+ * cell per column (ragged input is padded), because a row whose cell count
+ * disagrees with the grid makes PowerPoint offer to repair the file.
+ */
+export const addTableToSlide = (slideXml: string, opts: AddTableOptions): { xml: string; new_shape_id: string } => {
+  const doc = parseXml(slideXml);
+  const spTree = findSpTree(doc);
+  if (!spTree) throw ToolError.internal('Slide has no spTree');
+
+  const rows = opts.data.length;
+  if (rows === 0) throw ToolError.validation('A table needs at least one row');
+  const cols = Math.max(...opts.data.map(r => r.length));
+  if (cols === 0) throw ToolError.validation('A table needs at least one column');
+
+  const id = getMaxCNvPrId(doc) + 1;
+  const colWidths = distributeEmu(opts.w, cols);
+  const rowHeights = distributeEmu(opts.h, rows);
+
+  const graphicFrame = doc.createElementNS(P_NS, 'p:graphicFrame');
+
+  const nvGraphicFramePr = doc.createElementNS(P_NS, 'p:nvGraphicFramePr');
+  const cNvPr = doc.createElementNS(P_NS, 'p:cNvPr');
+  cNvPr.setAttribute('id', String(id));
+  cNvPr.setAttribute('name', opts.name ?? `Table ${id}`);
+  nvGraphicFramePr.appendChild(cNvPr);
+  const cNvGraphicFramePr = doc.createElementNS(P_NS, 'p:cNvGraphicFramePr');
+  const locks = doc.createElementNS(A_NS, 'a:graphicFrameLocks');
+  locks.setAttribute('noGrp', '1');
+  cNvGraphicFramePr.appendChild(locks);
+  nvGraphicFramePr.appendChild(cNvGraphicFramePr);
+  nvGraphicFramePr.appendChild(doc.createElementNS(P_NS, 'p:nvPr'));
+  graphicFrame.appendChild(nvGraphicFramePr);
+
+  // The frame's xfrm is a PresentationML element with DrawingML off/ext children.
+  const xfrm = doc.createElementNS(P_NS, 'p:xfrm');
+  const off = doc.createElementNS(A_NS, 'a:off');
+  off.setAttribute('x', String(inchesToEmu(opts.x)));
+  off.setAttribute('y', String(inchesToEmu(opts.y)));
+  xfrm.appendChild(off);
+  const ext = doc.createElementNS(A_NS, 'a:ext');
+  ext.setAttribute('cx', String(colWidths.reduce((a, b) => a + b, 0)));
+  ext.setAttribute('cy', String(rowHeights.reduce((a, b) => a + b, 0)));
+  xfrm.appendChild(ext);
+  graphicFrame.appendChild(xfrm);
+
+  const graphic = doc.createElementNS(A_NS, 'a:graphic');
+  const graphicData = doc.createElementNS(A_NS, 'a:graphicData');
+  graphicData.setAttribute('uri', TABLE_GRAPHIC_URI);
+  const tbl = doc.createElementNS(A_NS, 'a:tbl');
+
+  const style = opts.style ?? 'default';
+  if (style !== 'none') {
+    const tblPr = doc.createElementNS(A_NS, 'a:tblPr');
+    tblPr.setAttribute('firstRow', opts.headerRow === false ? '0' : '1');
+    tblPr.setAttribute('bandRow', opts.bandRow === false ? '0' : '1');
+    const guid = TABLE_STYLE_IDS[style] ?? (/^\{[0-9A-Fa-f-]+\}$/.test(style) ? style : DEFAULT_TABLE_STYLE_ID);
+    const tableStyleId = doc.createElementNS(A_NS, 'a:tableStyleId');
+    tableStyleId.textContent = guid;
+    tblPr.appendChild(tableStyleId);
+    tbl.appendChild(tblPr);
+  }
+
+  const tblGrid = doc.createElementNS(A_NS, 'a:tblGrid');
+  for (const w of colWidths) {
+    const gridCol = doc.createElementNS(A_NS, 'a:gridCol');
+    gridCol.setAttribute('w', String(w));
+    tblGrid.appendChild(gridCol);
+  }
+  tbl.appendChild(tblGrid);
+
+  for (let ri = 0; ri < rows; ri++) {
+    const tr = doc.createElementNS(A_NS, 'a:tr');
+    tr.setAttribute('h', String(rowHeights[ri]));
+    for (let ci = 0; ci < cols; ci++) {
+      const tc = doc.createElementNS(A_NS, 'a:tc');
+      tc.appendChild(buildCellTxBody(doc, opts.data[ri]?.[ci] ?? ''));
+      tc.appendChild(doc.createElementNS(A_NS, 'a:tcPr'));
+      tr.appendChild(tc);
+    }
+    tbl.appendChild(tr);
+  }
+
+  graphicData.appendChild(tbl);
+  graphic.appendChild(graphicData);
+  graphicFrame.appendChild(graphic);
+  spTree.appendChild(graphicFrame);
+
+  return { xml: serializeXml(doc), new_shape_id: String(id) };
+};
+
 // --- duplicate_slide ---
 
 /** Return the highest slide index currently in the archive (e.g. slide5.xml → 5). */

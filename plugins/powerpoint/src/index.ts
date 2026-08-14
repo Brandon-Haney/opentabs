@@ -4,6 +4,7 @@ import { isAuthenticated, isPowerPointTab, isSharePoint, waitForAuth } from './p
 import { addImage } from './tools/add-image.js';
 import { addShape } from './tools/add-shape.js';
 import { addSlide } from './tools/add-slide.js';
+import { addTable } from './tools/add-table.js';
 import { addTextBox } from './tools/add-text-box.js';
 import { commitPresentationTool } from './tools/commit-presentation.js';
 import { copyItem } from './tools/copy-item.js';
@@ -96,6 +97,7 @@ class PowerPointPlugin extends OpenTabsPlugin {
     addTextBox,
     addShape,
     addImage,
+    addTable,
     updateSlideText,
     updateShape,
     fitText,

@@ -13,8 +13,9 @@ identity chaining, construction, and application are all confirmed end-to-end, a
 **head read is solved**, and the **dispatch path is shipped** (see
 [The dispatch path](#the-dispatch-path--shipped-2026-08-14)) — a plugin tool now triggers a
 pods write with one call. What remains before real formatting tools is the **object-graph
-read**: discovering a target shape's `CellId` and its run/paragraph object ids on the live
-deck, so a tool can construct an edit for an arbitrary shape rather than a captured template.
+read** (decoded; build pending): finding a target shape and its per-session edit-form
+paragraph/run object ids on the live deck, so a tool can construct an edit for an arbitrary
+shape rather than a captured template.
 
 ## Why this exists
 
@@ -126,14 +127,43 @@ returns a `__podsBridge` directive; the extension resolves it on the dispatch ta
   engine substitution/verdict/retry/null-head, the allow-list parser, and the `podsWrite` factory.
 
 The gap to real formatting tools is now purely the **object-graph read** (below) — a tool still
-needs to discover the target shape's `CellId` and its run/paragraph object ids on the live deck.
+needs to find the target shape and its per-session edit-form paragraph/run object ids on the live deck.
+
+## The object-graph read — decoded (build pending, 2026-08-14)
+
+The last piece before real formatting tools: on the live deck, find a target shape and
+its edit-form paragraph/run object ids so a tool can construct a write for it. Decoded
+from a cold-load HAR:
+
+- **`CellId` is a per-slide storage cell, not a shape.** `23069e19…|3` holds the *whole*
+  slide's objects (100+). Shapes are addressed by their object ids *within* the cell, and
+  the edit targets a paragraph/run, not the cell.
+- **Two id-spaces, two read forms:**
+  - **Render form** — a **type-2 poll** returns shapes as `ClassId 1074135132` objects, each
+    carrying the shape **name** (`469780826`, e.g. "Title 1") and a render run-list. Good for
+    *finding* a shape by name; its ids are render-space, not writable.
+  - **Edit form** — a **type-3 `PutOnlyCall`** returns, in its **`MergedChanges`**, the
+    write-form model: `393230` paragraphs carrying the **text** (`469769250`) + a run-ref list
+    (`603987475`), and `1179725` runs carrying the **formatting** (`268442635` font size in
+    half-points). This is exactly the shape a constructed write uses, plus `LatestRevisionId`
+    (the head). Object ids here are **per-session** (they change every load), so the read must
+    be live.
+- **Triggering the edit-form read:** `MergedChanges` is "everything since your base." The
+  cold-load client pushed one trivial slide-flag revision (`393271`) against a *behind* base
+  and got the full model back. An **empty-revisions** type-3 returns `StatusCode:0` with **no**
+  `MergedChanges` (confirmed live) — so a benign revision against a behind base is needed.
+  Nailing the least-side-effect trigger (a no-op-objects revision against the file's base
+  version) is the first build-phase experiment.
+
+**Build plan:** a `__podsRead` engine step (poll/PutOnlyCall via the donor) whose response is
+parsed **in-frame** (it is ~350 KB — too big to cross whole) to (a) match the target shape by
+name/role from the render form and (b) return its edit-form paragraph id + run-ref list +
+target run from `MergedChanges`. Then `set_font_size` = read → construct (new run + rewrite
+run-ref, tokens for identity) → the shipped `podsWrite` dispatch. Also test whether a **partial
+run update** (only the size property) applies, which would shrink what must be read.
 
 ## Still open
 
-3. **Shape / cell targeting.** `CellId` names the shape a run edit applies to (proven:
-   `23069e19…|3` = the "Title 1" placeholder). Map a target shape (by slide +
-   placeholder/role, as the Graph tools do) to its `CellId` — needs a
-   `CellId`-discovery read, likely from the same sync response.
 4. **Token freshness over a long session.** The `x-aadtoken`/`x-accesstoken` in the
    donor expire; today recovery is a tab reload. A silent refresh is the better
    answer — see the token TODO below.

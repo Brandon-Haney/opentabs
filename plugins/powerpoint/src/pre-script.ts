@@ -26,6 +26,145 @@ interface CapturedGraphToken {
   exp: number;
 }
 
+// --- pods donor interceptor (runs INSIDE the officeapps.live.com editor frame) ---
+//
+// PowerPoint on the web edits the open deck by POSTing incremental revisions to
+// `/pods/PowerPoint.ashx` into the live co-authoring session — the only channel
+// that can change a file while it is open, since Graph's full-file PUT is
+// refused under the co-authoring lock. Replaying an edit needs that request's
+// live session headers (the WOPI `X-AccessToken`, `X-Key`, `PodSID`, …).
+//
+// This stashes the freshest such request in a global INSIDE the editor frame and
+// nowhere else. It is the security-critical difference from an earlier version:
+// the donor is never postMessaged to the host page, and no host-reachable global
+// is exposed, so the session credentials never cross the frame boundary. The
+// replay (`browser_fetch_in_frame`) reads the donor here and POSTs inside this
+// same frame, exactly as Excel's bridge does.
+
+/** Frame-local global the freshest `/pods` request is stashed under. */
+const PODS_DONOR_GLOBAL = '__otbPptPodsDonor';
+const PODS_PATH = '/pods/PowerPoint.ashx';
+/** Marker making the pods interceptor idempotent under re-injection. */
+const PODS_FETCH_MARKER = Symbol.for('opentabs.powerpoint.pods.fetch.patched');
+const PODS_XHR_MARKER = Symbol.for('opentabs.powerpoint.pods.xhr.patched');
+
+/** The freshest `/pods` request observed in this frame, for in-frame replay. */
+interface PodsDonor {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body: string;
+  ts: number;
+}
+
+/** True when this realm is the cross-origin Office Web Apps editor frame. */
+const isOfficeAppsFrame = (): boolean => {
+  try {
+    return location.hostname.toLowerCase().endsWith('officeapps.live.com');
+  } catch {
+    return false;
+  }
+};
+
+/** Normalize any `HeadersInit` form into a plain name→value map. */
+const headersToRecord = (headers: unknown): Record<string, string> => {
+  const out: Record<string, string> = {};
+  if (!headers) return out;
+  if (headers instanceof Headers) {
+    headers.forEach((value, name) => {
+      out[name] = value;
+    });
+  } else if (Array.isArray(headers)) {
+    for (const entry of headers as string[][]) {
+      if (typeof entry[0] === 'string' && typeof entry[1] === 'string') out[entry[0]] = entry[1];
+    }
+  } else if (typeof headers === 'object') {
+    for (const [name, value] of Object.entries(headers as Record<string, unknown>)) {
+      if (typeof value === 'string') out[name] = value;
+    }
+  }
+  return out;
+};
+
+/**
+ * Wrap `fetch`/`XHR` in the editor frame to keep the freshest `/pods` POST as a
+ * frame-local donor. Defensive throughout — a throw here would surface inside
+ * the editor, so every path swallows its own error and falls through.
+ */
+const installPodsDonorInterceptor = (log: { info(message: string): void }): void => {
+  const g = globalThis as {
+    fetch: typeof fetch & { [PODS_FETCH_MARKER]?: true };
+    XMLHttpRequest: typeof XMLHttpRequest;
+    [PODS_DONOR_GLOBAL]?: PodsDonor;
+  };
+
+  const stashDonor = (url: string, method: string, headers: Record<string, string>, body: string): void => {
+    if (!url.includes(PODS_PATH) || method.toUpperCase() !== 'POST') return;
+    g[PODS_DONOR_GLOBAL] = { url, method, headers, body, ts: Date.now() };
+  };
+
+  if (!g.fetch[PODS_FETCH_MARKER]) {
+    const origFetch = g.fetch;
+    const patched = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      try {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+        const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+        const headers = headersToRecord(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+        const body = typeof init?.body === 'string' ? init.body : '';
+        stashDonor(url, method, headers, body);
+      } catch {
+        /* observation only — never disturb the editor's own request */
+      }
+      return origFetch(input, init);
+    };
+    (patched as typeof patched & { [PODS_FETCH_MARKER]: true })[PODS_FETCH_MARKER] = true;
+    g.fetch = patched as typeof fetch & { [PODS_FETCH_MARKER]?: true };
+  }
+
+  const Xhr = g.XMLHttpRequest as typeof XMLHttpRequest & { [k: symbol]: unknown };
+  if (!Xhr[PODS_XHR_MARKER]) {
+    const origOpen = Xhr.prototype.open;
+    const origSetHeader = Xhr.prototype.setRequestHeader;
+    const origSend = Xhr.prototype.send;
+    const STATE = Symbol('opentabs.powerpoint.pods.xhr.state');
+    type XhrState = { url: string; method: string; headers: Record<string, string> };
+    type XhrWithState = XMLHttpRequest & { [STATE]?: XhrState };
+    type OpenRest = [async?: boolean, username?: string | null, password?: string | null];
+
+    Xhr.prototype.open = function patchedOpen(
+      this: XhrWithState,
+      method: string,
+      url: string | URL,
+      ...rest: OpenRest
+    ) {
+      this[STATE] = { url: typeof url === 'string' ? url : url.href, method, headers: {} };
+      const forward = origOpen as (this: XMLHttpRequest, m: string, u: string | URL, ...r: unknown[]) => void;
+      return forward.call(this, method, url, ...rest);
+    } as typeof Xhr.prototype.open;
+
+    Xhr.prototype.setRequestHeader = function patchedSetHeader(this: XhrWithState, name: string, value: string) {
+      if (this[STATE]) this[STATE].headers[name] = value;
+      return origSetHeader.call(this, name, value);
+    };
+
+    Xhr.prototype.send = function patchedSend(this: XhrWithState, body?: Document | XMLHttpRequestBodyInit | null) {
+      const state = this[STATE];
+      if (state) {
+        try {
+          stashDonor(state.url, state.method, state.headers, typeof body === 'string' ? body : '');
+        } catch {
+          /* observation only */
+        }
+      }
+      return origSend.call(this, body);
+    };
+
+    Xhr[PODS_XHR_MARKER] = true;
+  }
+
+  log.info('[powerpoint] pods donor interceptor installed (fetch + XHR)');
+};
+
 const GRAPH_HOSTNAME = 'graph.microsoft.com';
 /**
  * Well-known Microsoft Graph resource app id. Legacy v1 token-endpoint
@@ -69,6 +208,13 @@ const isTokenEndpointUrl = (url: string): boolean => {
 };
 
 definePreScript(({ set, log }) => {
+  // The editor frame carries the co-authoring protocol but no MSAL or Graph
+  // traffic, so it runs only the pods donor interceptor and nothing else.
+  if (isOfficeAppsFrame()) {
+    installPodsDonorInterceptor(log);
+    return;
+  }
+
   const g = globalThis as {
     fetch: typeof fetch & { [FETCH_PATCHED_MARKER]?: true };
     XMLHttpRequest: typeof XMLHttpRequest & { [XHR_PATCHED_MARKER]?: true };

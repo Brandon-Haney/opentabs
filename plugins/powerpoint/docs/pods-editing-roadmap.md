@@ -9,10 +9,11 @@ of tools we intend to support.
 **Status (2026-08-14): Phase 0 PROVEN.** A hand-constructed `SetFontSize` revision
 was accepted (`StatusCode:0, IsConflict:false`) and **applied** to a live open deck
 — the "Fusion draft" title's `draft` run visibly shrank 44 pt → 24 pt. Transport,
-identity chaining, construction, and application are all confirmed end-to-end. The
-remaining gate is a lightweight **head read** (see
-[The head-read gap](#the-head-read-gap--now-the-1-blocker)) — needed to chain a
-*second* edit; the first works by merging off any recent real revision.
+identity chaining, construction, and application are all confirmed end-to-end, and the
+**head read is solved** (see [The head read](#the-head-read--solved-2026-08-14)) so edits
+now chain freely. What remains is *productization*: a dispatch path that lets a plugin
+tool issue a pods write (the frame bridge speaks EWA's `{context,…}`, not `{Mode,srs}`),
+and `CellId` discovery to target a shape by role instead of a captured id.
 
 ## Why this exists
 
@@ -76,23 +77,28 @@ counterpart of an existing Graph-based tool.
    accepted (`StatusCode:0, IsConflict:false`) and applied (verified visually). The
    rule stands: `StatusCode:0` = accepted; still verify *application* by re-reading.
 
-## The head-read gap — now the #1 blocker
+## The head read — SOLVED (2026-08-14)
 
-A *second* edit needs the **current** server head as its `BaseId`. Two things are now
-proven about that:
+A *second* edit needs the **current** server head as its `BaseId` (basing off your own
+just-submitted `Id`, or off a base a prior edit has superseded, fails with
+`StatusCode:124, ServerError Code 157, Source 2`). The head lives only in the poll
+**request** (`ExpectedLatestRevisionId`) — a poll response omits it when current, and
+polling from *behind* returns a full slide sync (863 K for one slide) with the head at
+the truncated tail.
 
-- Basing off your own just-submitted `Id`, or off a base your own edit has superseded,
-  fails with `StatusCode:124, ServerError Code 157, Source 2`.
-- The head lives only in the poll **request** (`ExpectedLatestRevisionId`), which the
-  donor hides; and polling from *behind* returns a **full slide sync** (100s of KB;
-  observed 863 K for one slide) with the head at the truncated tail — unreadable
-  through the tool's response cap.
+**Fix (candidate (b), shipped):** the pods interceptor parses `ExpectedLatestRevisionId`
+out of the editor's own polls and serves the latest head back through an in-frame
+`fetch` **sentinel** (URL marker `__otb_pods_head__`). `browser_fetch_in_frame` reads it
+in one cheap call; only a bare revision id leaves, and only inside the frame. Proven
+end-to-end: read head → construct a chained `SetFontSize` → accepted and applied (the
+"draft" run was shrunk and then restored on a live deck). Chaining is no longer bounded
+to one edit per session.
 
-So the open work is a **lightweight head read**. Candidates, cheapest first:
-(a) find the pods op the editor uses to learn the head without a full graph dump;
-(b) expose the editor's own client-side head via a tiny pre-script read (it already
-holds it — it puts it in every poll); (c) a bounded/paged sync read. Until one lands,
-each session can make exactly **one** constructed edit off a known recent revision.
+**The read flow:** `browser_fetch_in_frame(tabId, frameUrlIncludes:"powerpoint.officeapps",
+donorGlobal:"__otbPptPodsDonor", url:"https://opentabs.invalid/__otb_pods_head__")` →
+`{ head, ts }`. The `donorGlobal` is only there to select the editor frame; the URL
+override hits the sentinel. Read the head fresh right before each edit — after your own
+edit the editor briefly reports an optimistic id, then settles to a server `newguid|1`.
 
 ## Still open
 

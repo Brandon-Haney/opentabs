@@ -40,10 +40,25 @@ interface CapturedGraphToken {
 // is exposed, so the session credentials never cross the frame boundary. The
 // replay (`browser_fetch_in_frame`) reads the donor here and POSTs inside this
 // same frame, exactly as Excel's bridge does.
+//
+// It also reads the current co-authoring head from the editor's polls and serves
+// it back through an in-frame `fetch` sentinel, so a second incremental edit can
+// chain on the live head (see `PODS_HEAD_SENTINEL`).
 
 /** Frame-local global the freshest `/pods` request is stashed under. */
 const PODS_DONOR_GLOBAL = '__otbPptPodsDonor';
 const PODS_PATH = '/pods/PowerPoint.ashx';
+/**
+ * URL marker for the head-read channel. An in-frame `fetch` whose URL contains
+ * this marker is answered locally with the latest co-authoring head instead of
+ * hitting the network — the only way to read the head, which the editor holds
+ * client-side and never echoes in a response. Chaining a second incremental edit
+ * needs the current head as its `BaseId`; the server rejects a base that a prior
+ * edit has already superseded. The value returned is a bare revision id
+ * (`<guid>|<counter>`) — no credentials, no document content — and it is
+ * reachable only from inside this frame, which can already see far more.
+ */
+const PODS_HEAD_SENTINEL = '__otb_pods_head__';
 /** Marker making the pods interceptor idempotent under re-injection. */
 const PODS_FETCH_MARKER = Symbol.for('opentabs.powerpoint.pods.fetch.patched');
 const PODS_XHR_MARKER = Symbol.for('opentabs.powerpoint.pods.xhr.patched');
@@ -103,6 +118,29 @@ const installPodsDonorInterceptor = (log: { info(message: string): void }): void
     [PODS_DONOR_GLOBAL]?: PodsDonor;
   };
 
+  // The latest co-authoring head, read from the editor's own poll traffic. Kept
+  // in closure scope (never a page global) and surfaced only through the read
+  // sentinel in the fetch patch below.
+  let latestHead: { head: string; ts: number } | null = null;
+
+  /**
+   * A type-2 `/pods` request is a poll whose body carries the client's current
+   * head as `ExpectedLatestRevisionId`. That is the only place the head appears —
+   * a poll *response* omits it when the client is up to date. Capture it as the
+   * editor issues each poll.
+   */
+  const captureHead = (body: string): void => {
+    try {
+      const parsed = JSON.parse(body) as { srs?: [number, { ExpectedLatestRevisionId?: unknown }][] };
+      const sr = parsed.srs?.[0];
+      if (sr && sr[0] === 2 && typeof sr[1]?.ExpectedLatestRevisionId === 'string') {
+        latestHead = { head: sr[1].ExpectedLatestRevisionId, ts: Date.now() };
+      }
+    } catch {
+      /* non-JSON or unexpected shape — leave the last known head in place */
+    }
+  };
+
   const stashDonor = (url: string, method: string, headers: Record<string, string>, body: string): void => {
     // The editor opens these XHRs with a URL relative to the pods base (e.g.
     // `open("POST", "PowerPoint.ashx?action=…")`), so the raw argument does not
@@ -116,6 +154,7 @@ const installPodsDonorInterceptor = (log: { info(message: string): void }): void
     }
     if (!absolute.includes(PODS_PATH) || method.toUpperCase() !== 'POST') return;
     g[PODS_DONOR_GLOBAL] = { url: absolute, method, headers, body, ts: Date.now() };
+    captureHead(body);
   };
 
   if (!g.fetch[PODS_FETCH_MARKER]) {
@@ -123,6 +162,15 @@ const installPodsDonorInterceptor = (log: { info(message: string): void }): void
     const patched = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       try {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+        // Read sentinel: answer an in-frame head-read request locally, before any
+        // network. `browser_fetch_in_frame` issues this through the frame's patched
+        // `fetch`, so the head never has to cross the frame boundary as raw traffic.
+        if (url.includes(PODS_HEAD_SENTINEL)) {
+          return new Response(JSON.stringify(latestHead), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
         const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
         const headers = headersToRecord(init?.headers ?? (input instanceof Request ? input.headers : undefined));
         const body = typeof init?.body === 'string' ? init.body : '';
@@ -177,7 +225,7 @@ const installPodsDonorInterceptor = (log: { info(message: string): void }): void
     Xhr[PODS_XHR_MARKER] = true;
   }
 
-  log.info('[powerpoint] pods donor interceptor installed (fetch + XHR)');
+  log.info('[powerpoint] pods donor + head-read interceptor installed (fetch + XHR)');
 };
 
 const GRAPH_HOSTNAME = 'graph.microsoft.com';

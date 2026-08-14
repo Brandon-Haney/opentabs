@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { WsHandle } from '@opentabs-dev/shared';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
+  ConfirmationTimeoutError,
   dispatchToAllConnections,
   dispatchToExtension,
   handleExtensionMessage,
@@ -4016,5 +4017,101 @@ describe('multi-connection — plugin-aware dispatch routing', () => {
     pending?.resolve('ok');
     if (pending) clearTimeout(pending.timerId);
     return promise;
+  });
+});
+
+describe('sendConfirmationRequest — unanswered prompt', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A state with one connected extension, so confirmations are actually sent. */
+  const connectedState = () => {
+    const state = createState();
+    const ws = createMockWs();
+    state.extensionConnections.set('test-conn', {
+      ws,
+      connectionId: 'test-conn',
+      profileLabel: 'test-conn',
+      tabMapping: new Map(),
+      activeNetworkCaptures: new Set(),
+    });
+    return { state, ws };
+  };
+
+  test('rejects with ConfirmationTimeoutError when nobody answers', async () => {
+    // The prompt can fail to reach anyone at all — a side panel that never
+    // rendered the dialog. Without a bound the call waits forever and the MCP
+    // client kills it with a message that says nothing about approval.
+    const { state } = connectedState();
+    const promise = sendConfirmationRequest(state, 'delete_slide', 'powerpoint', { slide_number: 2 });
+    const assertion = expect(promise).rejects.toBeInstanceOf(ConfirmationTimeoutError);
+
+    await vi.advanceTimersByTimeAsync(240_000);
+    await assertion;
+  });
+
+  test('drops the pending entry on timeout so it cannot leak', async () => {
+    const { state } = connectedState();
+    const promise = sendConfirmationRequest(state, 'delete_slide', 'powerpoint', {});
+    const assertion = expect(promise).rejects.toThrow();
+    expect(state.pendingConfirmations.size).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(240_000);
+    await assertion;
+    expect(state.pendingConfirmations.size).toBe(0);
+  });
+
+  test('a decision arriving after the timeout is ignored rather than resolving a dead promise', async () => {
+    const { state, ws } = connectedState();
+    const promise = sendConfirmationRequest(state, 'delete_slide', 'powerpoint', {});
+    const assertion = expect(promise).rejects.toThrow();
+    const id = (JSON.parse(ws.sent[0] as string) as { params: { id: string } }).params.id;
+
+    await vi.advanceTimersByTimeAsync(240_000);
+    await assertion;
+
+    // The user finally clicks Allow. Nothing is listening any more, and this
+    // must not throw or resurrect the abandoned call.
+    expect(() =>
+      handleExtensionMessage(
+        state,
+        JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'confirmation.response',
+          params: { id, decision: 'allow', alwaysAllow: false },
+        }),
+        noopCallbacks,
+      ),
+    ).not.toThrow();
+    expect(state.pendingConfirmations.size).toBe(0);
+  });
+
+  test('an answer within the window still resolves, and cancels the timeout', async () => {
+    // A person reading a prompt must not be cut off; only silence is bounded.
+    const { state, ws } = connectedState();
+    const promise = sendConfirmationRequest(state, 'delete_slide', 'powerpoint', {});
+    const id = (JSON.parse(ws.sent[0] as string) as { params: { id: string } }).params.id;
+
+    await vi.advanceTimersByTimeAsync(200_000);
+    handleExtensionMessage(
+      state,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'confirmation.response',
+        params: { id, decision: 'allow', alwaysAllow: false },
+      }),
+      noopCallbacks,
+    );
+
+    await expect(promise).resolves.toEqual({ action: 'allow', alwaysAllow: false });
+
+    // Advancing past the ceiling must not produce an unhandled rejection from
+    // a timer that outlived the decision.
+    await vi.advanceTimersByTimeAsync(240_000);
   });
 });

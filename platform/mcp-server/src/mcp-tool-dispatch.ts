@@ -13,6 +13,7 @@ import type { ZodError } from 'zod';
 import { savePluginPermissions } from './config.js';
 import { buildConfigStatePayload, sendToExtension } from './extension-handlers.js';
 import {
+  ConfirmationTimeoutError,
   dispatchToExtension,
   isDispatchError,
   sendConfirmationRequest,
@@ -178,6 +179,14 @@ interface DispatchCallbacks {
 }
 
 /**
+ * How often to repeat the "waiting for approval" notice while a prompt is open.
+ *
+ * Comfortably inside the 30s a dispatch may go quiet before it is treated as
+ * hung, so a prompt a person is still reading is never mistaken for a stall.
+ */
+const APPROVAL_HEARTBEAT_MS = 15_000;
+
+/**
  * Run the 'ask' confirmation flow for a tool call.
  * Sends a confirmation request to the extension, waits for the user's decision,
  * and persists the permission change if alwaysAllow is selected.
@@ -192,9 +201,14 @@ const runAskFlow = async (
   extra: RequestHandlerExtra,
   callbacks: DispatchCallbacks,
 ): Promise<'allow' | ToolCallResult> => {
-  // Send MCP progress notification to let the agent know we're waiting for approval
+  // Tell the agent we are waiting, and keep saying so. A single notification is
+  // not enough: MCP clients treat a call that emits nothing for long enough as
+  // hung and abort it, so a prompt left open while someone reads it would be
+  // killed for being slow. Repeating the notice keeps the call alive and gives
+  // the user a standing reason for the wait.
   const progressToken = extra._meta?.progressToken;
-  if (progressToken !== undefined) {
+  const notifyWaiting = (): void => {
+    if (progressToken === undefined) return;
     extra
       .sendNotification({
         method: 'notifications/progress',
@@ -202,24 +216,38 @@ const runAskFlow = async (
           progressToken,
           progress: 0,
           total: 1,
-          message: 'Waiting for user approval in the OpenTabs side panel',
+          message: `Waiting for approval of ${toolName} in the OpenTabs side panel`,
         },
       })
       .catch(() => {
-        // Fire-and-forget
+        // Fire-and-forget — a failed notification must not fail the tool call.
       });
-  }
+  };
+
+  notifyWaiting();
+  const heartbeat = setInterval(notifyWaiting, APPROVAL_HEARTBEAT_MS);
+  heartbeat.unref?.();
 
   let decision: { action: 'allow' | 'deny'; alwaysAllow: boolean };
   try {
     decision = await sendConfirmationRequest(state, toolName, pluginName, params);
-  } catch {
+  } catch (err) {
     return {
       content: [
-        { type: 'text' as const, text: `Tool ${toolName} requires approval but the extension is not connected.` },
+        {
+          type: 'text' as const,
+          text:
+            err instanceof ConfirmationTimeoutError
+              ? `Tool ${toolName} needs approval and no answer arrived. Open the OpenTabs side panel and retry — ` +
+                `if no prompt appeared there, the approval dialog did not reach you, and you can set ${toolName} ` +
+                `to "auto" in the side panel to run it without one.`
+              : `Tool ${toolName} requires approval but the extension is not connected.`,
+        },
       ],
       isError: true,
     };
+  } finally {
+    clearInterval(heartbeat);
   }
 
   if (decision.action === 'deny') {

@@ -403,10 +403,40 @@ const sendInvocationEnd = (
 };
 
 /**
+ * Nobody answered an approval prompt before the ceiling. Distinct from a denial:
+ * the user did not refuse, the question never reached them.
+ */
+export class ConfirmationTimeoutError extends Error {
+  constructor(readonly waitedMs: number) {
+    super(`No answer to the approval prompt after ${Math.round(waitedMs / 1000)}s`);
+    this.name = 'ConfirmationTimeoutError';
+  }
+}
+
+/**
+ * How long to wait for a human to answer an approval prompt.
+ *
+ * Deliberately generous — a person may take a minute to read a prompt and
+ * decide, and cutting off a real decision is worse than waiting. The bound
+ * exists for the case where the prompt reaches nobody at all: a side panel that
+ * never rendered the dialog, or an extension that dropped the notification.
+ * Without it, the call waits forever and the MCP client eventually kills it with
+ * a message about silence that says nothing about approval.
+ *
+ * Held below the client's own idle ceiling (300s) so the server is always the
+ * one to answer first, and the caller gets a reason instead of a timeout. This
+ * mirrors the dispatch timeouts, where each inner bound sits below its outer one.
+ */
+const CONFIRMATION_TIMEOUT_MS = 240_000;
+
+/**
  * Send a confirmation request to the extension and return a promise that resolves
- * with the user's decision. The promise rejects on extension disconnect.
- * There is no timeout — the request hangs until the user responds or the
- * WebSocket disconnects (at which point rejectAllPendingConfirmations fires).
+ * with the user's decision.
+ *
+ * Rejects on extension disconnect (via `rejectAllPendingConfirmations`), and with
+ * `ConfirmationTimeoutError` if no decision arrives within the ceiling — after
+ * which a late answer is discarded, since the caller has already been told the
+ * request failed.
  */
 const sendConfirmationRequest = (
   state: ServerState,
@@ -417,9 +447,28 @@ const sendConfirmationRequest = (
   const id = crypto.randomUUID();
 
   return new Promise<ConfirmationDecision>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      // Drop the entry so a decision arriving afterwards is ignored rather than
+      // resolving a promise nobody is waiting on, and so the map cannot grow
+      // one stale entry per unanswered prompt.
+      state.pendingConfirmations.delete(id);
+      reject(new ConfirmationTimeoutError(CONFIRMATION_TIMEOUT_MS));
+    }, CONFIRMATION_TIMEOUT_MS);
+    // The server outlives any one request; a pending timer must never be the
+    // reason the process stays alive.
+    timer.unref?.();
+
+    /** Wrap a settler so answering the prompt also cancels the ceiling. */
+    const settle =
+      <T extends unknown[]>(fn: (...args: T) => void) =>
+      (...args: T): void => {
+        clearTimeout(timer);
+        fn(...args);
+      };
+
     state.pendingConfirmations.set(id, {
-      resolve,
-      reject,
+      resolve: settle(resolve),
+      reject: settle(reject),
       tool,
       plugin,
       params,
@@ -432,6 +481,7 @@ const sendConfirmationRequest = (
     });
 
     if (!sent) {
+      clearTimeout(timer);
       state.pendingConfirmations.delete(id);
       reject(new Error('Extension not connected — cannot request confirmation'));
     }

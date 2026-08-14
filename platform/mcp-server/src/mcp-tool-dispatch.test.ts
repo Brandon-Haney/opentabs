@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { savePluginPermissions } from './config.js';
 import { buildConfigStatePayload, sendToExtension } from './extension-handlers.js';
 import {
+  ConfirmationTimeoutError,
   dispatchToExtension,
   isDispatchError,
   sendConfirmationRequest,
@@ -216,7 +217,8 @@ vi.mock('./extension-handlers.js', () => ({
     .mockReturnValue({ plugins: [], failedPlugins: [], browserTools: [], serverVersion: '0.0.0' }),
 }));
 
-vi.mock('./extension-protocol.js', () => ({
+vi.mock('./extension-protocol.js', async importOriginal => ({
+  ...(await importOriginal<typeof import('./extension-protocol.js')>()),
   dispatchToExtension: vi.fn(),
   isDispatchError: vi.fn(),
   sendInvocationStart: vi.fn(),
@@ -450,6 +452,26 @@ describe('handleBrowserToolCall', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain('extension is not connected');
+  });
+
+  test('permission ask that nobody answers explains the approval prompt, not silence', async () => {
+    // The old behaviour was to hang until the MCP client gave up, reporting
+    // only that the tool had gone quiet — which says nothing about a pending
+    // decision and leaves the user with no idea what to do.
+    vi.mocked(getToolPermission).mockReturnValue('ask');
+    vi.mocked(sendConfirmationRequest).mockRejectedValue(new ConfirmationTimeoutError(240_000));
+    const state = createMockState();
+    const bt = createMockBrowserTool();
+    const extra = createMockExtra();
+    const callbacks = createMockCallbacks();
+
+    const result = await handleBrowserToolCall(state, 'browser_test_tool', {}, bt, extra, callbacks);
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? '';
+    expect(text).toContain('needs approval');
+    expect(text).toContain('side panel');
+    expect(text).not.toContain('extension is not connected');
   });
 
   test('Zod validation failure returns isError with formatted message', async () => {

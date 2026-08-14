@@ -148,19 +148,26 @@ from a cold-load HAR:
     half-points). This is exactly the shape a constructed write uses, plus `LatestRevisionId`
     (the head). Object ids here are **per-session** (they change every load), so the read must
     be live.
-- **Triggering the edit-form read:** `MergedChanges` is "everything since your base." The
-  cold-load client pushed one trivial slide-flag revision (`393271`) against a *behind* base
-  and got the full model back. An **empty-revisions** type-3 returns `StatusCode:0` with **no**
-  `MergedChanges` (confirmed live) — so a benign revision against a behind base is needed.
-  Nailing the least-side-effect trigger (a no-op-objects revision against the file's base
-  version) is the first build-phase experiment.
+- **On-demand `MergedChanges` is hard (2 negative live experiments).** `MergedChanges` is
+  "everything since your base," and the cold-load client got it by pushing a real slide-flag
+  revision (`393271`) against a *behind* base. But **both** an empty-`Revisions` type-3 **and**
+  a no-op (empty-`ObjectGroups`) revision against the file base `0f4f6c23…|1` come back
+  `StatusCode:0` with **no** `MergedChanges` — the server just accepts them. So it needs the
+  genuine cold-load conditions (a real object push against a server-tracked behind base with an
+  actual delta), which is not cleanly replicable from a tool.
 
-**Build plan:** a `__podsRead` engine step (poll/PutOnlyCall via the donor) whose response is
-parsed **in-frame** (it is ~350 KB — too big to cross whole) to (a) match the target shape by
-name/role from the render form and (b) return its edit-form paragraph id + run-ref list +
-target run from `MergedChanges`. Then `set_font_size` = read → construct (new run + rewrite
-run-ref, tokens for identity) → the shipped `podsWrite` dispatch. Also test whether a **partial
-run update** (only the size property) applies, which would shrink what must be read.
+**Recommended build (capture, don't trigger).** Every reload the editor *already* fetches the
+full edit-form model via the #3 type-3. Extend the **pre-script** (which already intercepts pods
+traffic) to catch that `MergedChanges` response, parse it **in-frame**, and expose a compact
+**shape index** — `{ shapeName → { paragraphId, runRefs, runs:[{id,size}] } }` — through a
+sentinel, exactly like the head. Paragraph ids are **stable within a session** (only run ids
+re-mint per edit), so the cold-load index stays valid for the whole session. Then a tool reads
+the index + the head and constructs the write. This reuses the proven pre-script + sentinel
+pattern and sidesteps the trigger problem entirely.
+
+Then `set_font_size` = read the index → construct (new run + rewrite the paragraph's run-ref,
+identity tokens) → the shipped `podsWrite` dispatch. Also test whether a **partial run update**
+(only the size property) applies, which would further shrink what the index must carry.
 
 ## Still open
 

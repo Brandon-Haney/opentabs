@@ -1,4 +1,9 @@
-import { type FrameFetchProjection, fetchInFrame, MAX_FRAME_FETCH_RESPONSE } from './frame-fetch.js';
+import {
+  FORBIDDEN_REPLAY_HEADERS,
+  type FrameFetchProjection,
+  fetchInFrame,
+  MAX_FRAME_FETCH_RESPONSE,
+} from './frame-fetch.js';
 import {
   requireStringParam,
   requireTabId,
@@ -25,26 +30,6 @@ interface CapturedDonor {
   requestBody: string;
   ts: number;
 }
-
-/**
- * Request headers that a `fetch()` cannot set (the browser forbids or manages
- * them). They are stripped from the harvested set before replay; cookies flow
- * automatically via `credentials: 'include'`.
- */
-const FORBIDDEN_REPLAY_HEADERS = new Set([
-  'cookie',
-  'host',
-  'content-length',
-  'origin',
-  'referer',
-  'connection',
-  'accept-encoding',
-  'user-agent',
-  'dnt',
-  'sec-ch-ua',
-  'sec-ch-ua-mobile',
-  'sec-ch-ua-platform',
-]);
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 

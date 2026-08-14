@@ -50,6 +50,30 @@ export const MAX_PROJECTED_ITEMS = 500;
 export const BRIDGE_REPLAY_DEPTH_GLOBAL = '__otbBridgeReplayDepth';
 
 /**
+ * Request headers a `fetch()` cannot set — the browser forbids or manages them.
+ * They are stripped from a donor's captured headers before a replay reuses them;
+ * cookies flow automatically via `credentials: 'include'`.
+ *
+ * Shared with the harvest-and-replay bridge (`frame-bridge-rpc`), which strips the
+ * same set from an EWA donor. One source of truth so the two replay paths agree on
+ * what a `fetch` is allowed to carry.
+ */
+export const FORBIDDEN_REPLAY_HEADERS = new Set([
+  'cookie',
+  'host',
+  'content-length',
+  'origin',
+  'referer',
+  'connection',
+  'accept-encoding',
+  'user-agent',
+  'dnt',
+  'sec-ch-ua',
+  'sec-ch-ua-mobile',
+  'sec-ch-ua-platform',
+]);
+
+/**
  * Select and reshape part of a response, in the page, before it is measured
  * against {@link MAX_FRAME_FETCH_RESPONSE}.
  *
@@ -123,20 +147,46 @@ export interface FrameFetchResult {
  * substring (e.g. "xlviewerinternal.aspx"), not just the host.
  *
  * `projection` reshapes the payload inside the frame, before the size cap.
+ *
+ * `request.donorGlobal` names a MAIN-world global in the target frame holding a
+ * captured request `{ url, method, headers, body }` that a pre-script interceptor
+ * stashed. When set, the replay reads that donor and builds the real request from
+ * it — its `url`/`method`/`body` fill in whatever `request` omits, and its headers
+ * form the base that `request.headers` overrides. The read and merge happen inside
+ * the frame, so the donor's session credentials are used where they were minted
+ * and never cross back into the service worker, the host page, or a tool result.
  */
 export const fetchInFrame = async (
   tabId: number,
   frameUrlIncludes: string,
-  request: { url: string; method: string; headers: Record<string, string>; body?: string },
+  request: { url?: string; method?: string; headers: Record<string, string>; body?: string; donorGlobal?: string },
   projection?: FrameFetchProjection,
 ): Promise<FrameFetchResult> => {
   // An all-frames probe returns one result per frame, each tagged with frameId.
+  // It also reports whether the donor global is present, because an embedded
+  // editor nests several frames on the same path (an Office app has more than
+  // one `…/ppt.aspx` frame): a plain URL-substring match can land on a sibling
+  // that never issued the request being replayed, so its donor global is empty.
   const frameProbe = await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
     world: 'MAIN',
-    func: () => location.href,
+    func: (donorName: string | null) => ({
+      href: location.href,
+      hasDonor: donorName ? Boolean((globalThis as Record<string, unknown>)[donorName]) : false,
+    }),
+    args: [request.donorGlobal ?? null],
   });
-  const match = frameProbe.find(frame => typeof frame.result === 'string' && frame.result.includes(frameUrlIncludes));
+  const frameResult = (frame: (typeof frameProbe)[number]): { href?: string; hasDonor?: boolean } =>
+    (frame.result as { href?: string; hasDonor?: boolean } | undefined) ?? {};
+  const urlMatches = frameProbe.filter(frame => frameResult(frame).href?.includes(frameUrlIncludes));
+  // With a donor, prefer a URL-matching frame that actually holds it; fall back
+  // to any frame that holds it (the substring may be too broad); finally the
+  // first URL match, so a genuinely absent donor still surfaces a clean error.
+  const match = request.donorGlobal
+    ? (urlMatches.find(frame => frameResult(frame).hasDonor) ??
+      frameProbe.find(frame => frameResult(frame).hasDonor) ??
+      urlMatches[0])
+    : urlMatches[0];
   if (!match || match.frameId === undefined) {
     throw new Error(`No frame in tab ${tabId} with a URL containing "${frameUrlIncludes}"`);
   }
@@ -145,14 +195,16 @@ export const fetchInFrame = async (
     target: { tabId, frameIds: [match.frameId] },
     world: 'MAIN',
     func: async (
-      requestUrl: string,
-      requestMethod: string,
+      requestUrl: string | null,
+      requestMethod: string | null,
       requestHeaders: Record<string, string>,
       requestBody: string | null,
       maxLength: number,
       depthGlobal: string,
       shape: FrameFetchProjection | null,
       maxItems: number,
+      donorGlobalName: string | null,
+      forbiddenHeaders: string[],
     ) => {
       // Everything this function needs is defined inside it: chrome.scripting
       // serialises it with Function.prototype.toString, so it cannot close over
@@ -210,6 +262,45 @@ export const fetchInFrame = async (
           : pickFields(selected, shape.fields);
       };
 
+      // When a donor global is named, this call is a replay: read the request the
+      // pre-script interceptor captured in this frame and build the real request
+      // from it. Reading and merging here, in the frame's MAIN world, is what keeps
+      // the donor's session credentials from ever crossing back into the service
+      // worker, the host page, or a tool result — only the response leaves.
+      let effectiveUrl = requestUrl;
+      let effectiveMethod = requestMethod;
+      let effectiveHeaders = requestHeaders;
+      let effectiveBody = requestBody;
+      if (donorGlobalName) {
+        const donor = (globalThis as Record<string, unknown>)[donorGlobalName];
+        if (!donor || typeof donor !== 'object') {
+          return {
+            error:
+              `No donor request is stashed in this frame under "${donorGlobalName}". The embedded app has not made ` +
+              'the request being replayed since the interceptor was installed — open and activate the editor so it ' +
+              'issues one, then retry.',
+          };
+        }
+        const d = donor as { url?: unknown; method?: unknown; headers?: unknown; body?: unknown };
+        if (!effectiveUrl && typeof d.url === 'string') effectiveUrl = d.url;
+        if (!effectiveMethod && typeof d.method === 'string') effectiveMethod = d.method;
+        const forbidden = new Set(forbiddenHeaders);
+        const merged: Record<string, string> = {};
+        if (d.headers && typeof d.headers === 'object') {
+          for (const [name, value] of Object.entries(d.headers as Record<string, unknown>)) {
+            if (typeof value === 'string' && !forbidden.has(name.toLowerCase())) merged[name] = value;
+          }
+        }
+        // The caller's own headers win, so an explicit override still takes effect.
+        for (const [name, value] of Object.entries(requestHeaders)) merged[name] = value;
+        effectiveHeaders = merged;
+        if (effectiveBody === null && typeof d.body === 'string') effectiveBody = d.body;
+      }
+      if (!effectiveUrl) {
+        return { error: 'No request URL: pass `url`, or a `donorGlobal` whose captured request carries one.' };
+      }
+      const resolvedMethod = effectiveMethod ?? 'GET';
+
       const scope = globalThis as unknown as Record<string, number | undefined>;
       try {
         // Raised only around the call itself: a pre-script's interceptor records
@@ -220,11 +311,11 @@ export const fetchInFrame = async (
         scope[depthGlobal] = (scope[depthGlobal] ?? 0) + 1;
         let response: Response;
         try {
-          response = await fetch(requestUrl, {
-            method: requestMethod,
-            headers: requestHeaders,
+          response = await fetch(effectiveUrl, {
+            method: resolvedMethod,
+            headers: effectiveHeaders,
             credentials: 'include',
-            body: requestBody ?? undefined,
+            body: effectiveBody ?? undefined,
           });
         } finally {
           scope[depthGlobal] = (scope[depthGlobal] ?? 1) - 1;
@@ -268,14 +359,16 @@ export const fetchInFrame = async (
       }
     },
     args: [
-      request.url,
-      request.method,
+      request.url ?? null,
+      request.method ?? null,
       request.headers,
       request.body ?? null,
       MAX_FRAME_FETCH_RESPONSE,
       BRIDGE_REPLAY_DEPTH_GLOBAL,
       projection ?? null,
       MAX_PROJECTED_ITEMS,
+      request.donorGlobal ?? null,
+      [...FORBIDDEN_REPLAY_HEADERS],
     ],
   });
 

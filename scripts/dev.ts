@@ -144,6 +144,14 @@ const readWsSecret = async (): Promise<string | null> => {
 };
 
 /**
+ * Resolve an argv that invokes a Node CLI shim (`npm`, `npx`, and the
+ * `node_modules/.bin` entries they dispatch to). On Windows those shims are
+ * `.cmd` batch files, which `spawn` cannot execute directly — route them
+ * through `cmd /c` so the shell resolves them.
+ */
+const shimCmd = (cmd: string[]): string[] => (process.platform === 'win32' ? ['cmd', '/c', ...cmd] : cmd);
+
+/**
  * Spawn a child process and return its exit promise plus Web-compatible
  * stdout/stderr streams.
  */
@@ -189,19 +197,19 @@ const buildExtension = async (): Promise<boolean> => {
 
   console.log(`${coloredPrefix} Rebuilding extension...`);
 
-  const bundleCode = await runWithPrefix(['npm', 'run', 'build:bundle'], extDir, prefix, color);
+  const bundleCode = await runWithPrefix(shimCmd(['npm', 'run', 'build:bundle']), extDir, prefix, color);
   if (bundleCode !== 0) {
     console.error(`${coloredPrefix} build:bundle failed (exit ${bundleCode})`);
     return false;
   }
 
-  const sidePanelCode = await runWithPrefix(['npm', 'run', 'build:side-panel'], extDir, prefix, color);
+  const sidePanelCode = await runWithPrefix(shimCmd(['npm', 'run', 'build:side-panel']), extDir, prefix, color);
   if (sidePanelCode !== 0) {
     console.error(`${coloredPrefix} build:side-panel failed (exit ${sidePanelCode})`);
     return false;
   }
 
-  const installCode = await runWithPrefix(['npx', 'tsx', 'scripts/install-extension.ts'], ROOT, prefix, color);
+  const installCode = await runWithPrefix(shimCmd(['npx', 'tsx', 'scripts/install-extension.ts']), ROOT, prefix, color);
   if (installCode !== 0) {
     console.error(`${coloredPrefix} install-extension failed (exit ${installCode})`);
     return false;
@@ -271,13 +279,13 @@ const buildSidePanel = async (): Promise<boolean> => {
 
   console.log(`${coloredPrefix} Rebuilding side panel...`);
 
-  const sidePanelCode = await runWithPrefix(['npm', 'run', 'build:side-panel'], extDir, prefix, color);
+  const sidePanelCode = await runWithPrefix(shimCmd(['npm', 'run', 'build:side-panel']), extDir, prefix, color);
   if (sidePanelCode !== 0) {
     console.error(`${coloredPrefix} build:side-panel failed (exit ${sidePanelCode})`);
     return false;
   }
 
-  const installCode = await runWithPrefix(['npx', 'tsx', 'scripts/install-extension.ts'], ROOT, prefix, color);
+  const installCode = await runWithPrefix(shimCmd(['npx', 'tsx', 'scripts/install-extension.ts']), ROOT, prefix, color);
   if (installCode !== 0) {
     console.error(`${coloredPrefix} install-extension failed (exit ${installCode})`);
     return false;
@@ -297,13 +305,13 @@ const buildBackground = async (): Promise<boolean> => {
 
   console.log(`${coloredPrefix} Rebuilding background/offscreen...`);
 
-  const bundleCode = await runWithPrefix(['npm', 'run', 'build:bundle'], extDir, prefix, color);
+  const bundleCode = await runWithPrefix(shimCmd(['npm', 'run', 'build:bundle']), extDir, prefix, color);
   if (bundleCode !== 0) {
     console.error(`${coloredPrefix} build:bundle failed (exit ${bundleCode})`);
     return false;
   }
 
-  const installCode = await runWithPrefix(['npx', 'tsx', 'scripts/install-extension.ts'], ROOT, prefix, color);
+  const installCode = await runWithPrefix(shimCmd(['npx', 'tsx', 'scripts/install-extension.ts']), ROOT, prefix, color);
   if (installCode !== 0) {
     console.error(`${coloredPrefix} install-extension failed (exit ${installCode})`);
     return false;
@@ -392,10 +400,9 @@ process.env.OPENTABS_DEV = '1';
 // 1. Start tsc --build --watch
 const devPrefix = `${MAGENTA}${BOLD}[dev]${RESET}`;
 console.log(`${devPrefix} Starting tsc --build --watch...`);
-// On Windows, .bin shims are .cmd files — use 'npx tsc' via shell to resolve correctly.
 const tscCmd =
   process.platform === 'win32'
-    ? ['cmd', '/c', 'npx', 'tsc', '--build', '--watch']
+    ? shimCmd(['npx', 'tsc', '--build', '--watch'])
     : ['node_modules/.bin/tsc', '--build', '--watch'];
 const tscSpawn = spawnProcess(tscCmd, {
   cwd: ROOT,

@@ -18,7 +18,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEFAULT_HOST, DEFAULT_PORT, getConfigDir, getConfigPath, platformExec } from '@opentabs-dev/shared';
+import { DEFAULT_HOST, DEFAULT_PORT, getConfigDir, getConfigPath, isWindows, platformExec } from '@opentabs-dev/shared';
 
 const repoRoot = join(import.meta.dirname, '..');
 const pluginsDir = join(repoRoot, 'plugins');
@@ -191,10 +191,33 @@ const runInPlugin = (pluginName: string, cmd: string[], extraEnv?: Record<string
     cwd: join(pluginsDir, pluginName),
     stdio: ['ignore', 'inherit', 'inherit'],
     env: extraEnv ? { ...process.env, ...extraEnv } : undefined,
+    // `npm` on Windows is a `.cmd` batch file, and Node refuses to spawn one
+    // directly — it needs an interpreter. Every argument here is a fixed literal,
+    // so there is nothing for the shell to re-parse.
+    shell: isWindows(),
   });
   return new Promise(resolve => {
     proc.on('close', code => resolve(code === 0));
   });
+};
+
+/**
+ * Whether a plugin declares its own `test` script.
+ *
+ * Plugins are standalone projects and most carry no tests, so the check runs
+ * them only where they exist — asking npm for a missing script would fail every
+ * plugin that has none. Gating on the declaration means a plugin that adds
+ * tests gets them run in CI without any change here.
+ */
+const hasTestScript = (pluginName: string): boolean => {
+  try {
+    const pkg = JSON.parse(readFileSync(join(pluginsDir, pluginName, 'package.json'), 'utf-8')) as {
+      scripts?: Record<string, string>;
+    };
+    return typeof pkg.scripts?.test === 'string';
+  } catch {
+    return false;
+  }
 };
 
 for (const pluginName of pluginDirs) {
@@ -211,7 +234,8 @@ for (const pluginName of pluginDirs) {
     success =
       (await runInPlugin(pluginName, ['npm', 'run', 'type-check'])) &&
       (await runInPlugin(pluginName, ['npm', 'run', 'lint'])) &&
-      (await runInPlugin(pluginName, ['npm', 'run', 'format:check']));
+      (await runInPlugin(pluginName, ['npm', 'run', 'format:check'])) &&
+      (!hasTestScript(pluginName) || (await runInPlugin(pluginName, ['npm', 'run', 'test'])));
   }
 
   if (success) {

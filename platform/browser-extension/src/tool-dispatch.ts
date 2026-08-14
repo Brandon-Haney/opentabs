@@ -9,6 +9,7 @@ import {
   toPrepSelections,
 } from './browser-commands/frame-bridge-rpc.js';
 import { requireStringParam } from './browser-commands/helpers.js';
+import { type PodsBridgeParams, runPodsBridge } from './browser-commands/pods-bridge.js';
 import { MAX_INPUT_SIZE, MAX_SCRIPT_TIMEOUT_MS, SCRIPT_TIMEOUT_MS } from './constants.js';
 import type { DispatchResult } from './dispatch-helpers.js';
 import { dispatchToTargetedTab, dispatchWithTabFallback, resolvePlugin } from './dispatch-helpers.js';
@@ -487,6 +488,88 @@ const resolveBridgeDirective = async (result: DispatchResult, tabId: number): Pr
 };
 
 /**
+ * A `__podsBridge` directive an adapter tool may return to write an incremental
+ * revision to an open deck's co-authoring session. A sibling of `__bridge`: it
+ * uses its own engine ({@link runPodsBridge}) because the pods `{Mode,srs}`
+ * envelope shares nothing with EWA's `{context,…}` shape. The engine reads the
+ * live head, mints a GUID, substitutes both into the body, and replays the POST
+ * in the editor frame with the donor's session headers.
+ */
+interface PodsBridgeDirective {
+  frameUrlIncludes: string;
+  donorGlobal: string;
+  headSentinel: string;
+  body: Record<string, unknown>;
+  guidToken?: string;
+  headToken?: string;
+}
+
+/**
+ * Extract a well-formed `__podsBridge` directive, or null when the output is a
+ * plain result or a different directive. Keyed on a distinct `__podsBridge` field
+ * — never `__bridge` — so the two allow-lists never silently drop each other's
+ * fields. Like {@link extractBridgeDirective}, the directive comes from a reviewed
+ * adapter but drives an authenticated request, so every field is checked.
+ */
+const extractPodsBridgeDirective = (output: unknown): PodsBridgeDirective | null => {
+  if (!output || typeof output !== 'object') return null;
+  const pods = (output as Record<string, unknown>).__podsBridge;
+  if (!pods || typeof pods !== 'object') return null;
+  const p = pods as Record<string, unknown>;
+  if (
+    typeof p.frameUrlIncludes !== 'string' ||
+    typeof p.donorGlobal !== 'string' ||
+    typeof p.headSentinel !== 'string' ||
+    !p.body ||
+    typeof p.body !== 'object' ||
+    Array.isArray(p.body)
+  ) {
+    return null;
+  }
+  return {
+    frameUrlIncludes: p.frameUrlIncludes,
+    donorGlobal: p.donorGlobal,
+    headSentinel: p.headSentinel,
+    body: p.body as Record<string, unknown>,
+    ...(typeof p.guidToken === 'string' && p.guidToken.length > 0 ? { guidToken: p.guidToken } : {}),
+    ...(typeof p.headToken === 'string' && p.headToken.length > 0 ? { headToken: p.headToken } : {}),
+  };
+};
+
+/**
+ * When a tool result carries a `__podsBridge` directive, run the pods write engine
+ * on the resolved tab and replace the output with the parsed result. A no-op when
+ * the marker is absent (so it chains cleanly after {@link resolveBridgeDirective}).
+ * A write that did not apply — a stale-base conflict or a rejection — comes back as
+ * `failure`, which is raised to a dispatch error rather than reported as success,
+ * so a caller is never told a write applied when it did not.
+ */
+const resolvePodsBridgeDirective = async (result: DispatchResult, tabId: number): Promise<DispatchResult> => {
+  if (result.type !== 'success') return result;
+  const directive = extractPodsBridgeDirective(result.output);
+  if (!directive) return result;
+
+  const params: PodsBridgeParams = { tabId, ...directive };
+  try {
+    const podsResult = await runPodsBridge(params);
+    if (podsResult.failure !== undefined) {
+      return {
+        type: 'error',
+        code: JSONRPC_INTERNAL_ERROR,
+        message: podsResult.failure,
+        data: { code: 'PODS_WRITE_FAILED', category: 'internal', retryable: false },
+      };
+    }
+    return { type: 'success', output: podsResult };
+  } catch (err) {
+    if (err instanceof FrameBridgeValidationError) {
+      return { type: 'error', code: JSONRPC_INVALID_PARAMS, message: err.message };
+    }
+    return { type: 'error', code: JSONRPC_INTERNAL_ERROR, message: `Pods write failed: ${toErrorMessage(err)}` };
+  }
+};
+
+/**
  * Handle tool.dispatch request from MCP server.
  * Finds matching tabs, checks adapter readiness (with fallback to other
  * matching tabs when the best-ranked tab is not ready), executes the tool,
@@ -553,9 +636,13 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
     await injectProgressListener(tid, dispatchId);
     try {
       const result = await executeToolOnTab(tid, pluginName, toolName, input, dispatchId);
-      // A tool may return a `__bridge` directive to drive an embedded-frame RPC
-      // on this same tab; resolve it here where the tab id is known.
-      return await resolveBridgeDirective(result, tid);
+      // A tool may return a directive to drive an in-frame operation on this same
+      // tab; resolve it here where the tab id is known. The two resolvers are
+      // mutually exclusive — each is a no-op unless its own marker is present — so
+      // chaining them lets a tool return either an EWA `__bridge` or a co-authoring
+      // `__podsBridge` directive.
+      const bridged = await resolveBridgeDirective(result, tid);
+      return await resolvePodsBridgeDirective(bridged, tid);
     } finally {
       removeProgressListener(tid, dispatchId);
     }
@@ -581,4 +668,10 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
   }
 };
 
-export { extractBridgeDirective, getPluginLink, handleToolDispatch, notifyDispatchProgress };
+export {
+  extractBridgeDirective,
+  extractPodsBridgeDirective,
+  getPluginLink,
+  handleToolDispatch,
+  notifyDispatchProgress,
+};

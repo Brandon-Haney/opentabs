@@ -59,6 +59,14 @@ const PODS_PATH = '/pods/PowerPoint.ashx';
  * reachable only from inside this frame, which can already see far more.
  */
 const PODS_HEAD_SENTINEL = '__otb_pods_head__';
+/**
+ * Depth counter `browser.fetchInFrame` raises around a replay it issues into this
+ * frame. Our own replayed `/pods` POST goes through this same patched `fetch`/XHR,
+ * so without this guard `stashDonor` would re-capture our replay as the freshest
+ * donor — drifting it off the editor's real traffic. Skip capture while it is
+ * non-zero; honouring it is the convention shared with the EWA bridge.
+ */
+const BRIDGE_REPLAY_DEPTH_GLOBAL = '__otbBridgeReplayDepth';
 /** Marker making the pods interceptor idempotent under re-injection. */
 const PODS_FETCH_MARKER = Symbol.for('opentabs.powerpoint.pods.fetch.patched');
 const PODS_XHR_MARKER = Symbol.for('opentabs.powerpoint.pods.xhr.patched');
@@ -142,6 +150,9 @@ const installPodsDonorInterceptor = (log: { info(message: string): void }): void
   };
 
   const stashDonor = (url: string, method: string, headers: Record<string, string>, body: string): void => {
+    // Skip capture while one of our own in-frame replays is in flight, so a
+    // replayed POST is never re-captured as the donor (see BRIDGE_REPLAY_DEPTH_GLOBAL).
+    if (Number((g as Record<string, unknown>)[BRIDGE_REPLAY_DEPTH_GLOBAL]) > 0) return;
     // The editor opens these XHRs with a URL relative to the pods base (e.g.
     // `open("POST", "PowerPoint.ashx?action=…")`), so the raw argument does not
     // contain the full `/pods/PowerPoint.ashx` path. Resolve against the frame's

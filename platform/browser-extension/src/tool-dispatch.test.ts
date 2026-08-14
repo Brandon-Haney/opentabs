@@ -69,7 +69,7 @@ const notifyDispatchProgress = (dispatchId: string): void => {
   if (cb) cb();
 };
 
-const { handleToolDispatch, extractBridgeDirective } = await import('./tool-dispatch.js');
+const { handleToolDispatch, extractBridgeDirective, extractPodsBridgeDirective } = await import('./tool-dispatch.js');
 const { invalidatePluginCache } = await import('./plugin-storage.js');
 
 /** Helper to build a minimal PluginMeta for tests */
@@ -226,6 +226,51 @@ describe('extractBridgeDirective', () => {
     expect(
       extractBridgeDirective({ __bridge: { method: 1, frameUrlIncludes: 'f', harvestUrlIncludes: 'h' } }),
     ).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractPodsBridgeDirective — the pods-write allow-list parser
+// ---------------------------------------------------------------------------
+
+describe('extractPodsBridgeDirective', () => {
+  const base = {
+    frameUrlIncludes: 'powerpoint.officeapps.live.com',
+    donorGlobal: '__otbPptPodsDonor',
+    headSentinel: '__otb_pods_head__',
+    body: { Mode: 4, srs: [] },
+  };
+
+  test('extracts a well-formed directive and defaults the optional tokens away', () => {
+    if (!extractPodsBridgeDirective) return;
+    expect(extractPodsBridgeDirective({ __podsBridge: base })).toEqual(base);
+  });
+
+  test('carries explicit guidToken and headToken when present', () => {
+    if (!extractPodsBridgeDirective) return;
+    const directive = extractPodsBridgeDirective({
+      __podsBridge: { ...base, guidToken: '__G__', headToken: '__H__' },
+    });
+    expect(directive?.guidToken).toBe('__G__');
+    expect(directive?.headToken).toBe('__H__');
+  });
+
+  test('is keyed on __podsBridge, not __bridge', () => {
+    if (!extractPodsBridgeDirective || !extractBridgeDirective) return;
+    // A pods directive is not mistaken for an EWA one, and vice versa.
+    expect(extractBridgeDirective({ __podsBridge: base })).toBeNull();
+    expect(
+      extractPodsBridgeDirective({ __bridge: { method: 'M', frameUrlIncludes: 'f', harvestUrlIncludes: 'h' } }),
+    ).toBeNull();
+  });
+
+  test('returns null when required fields are missing or the body is not a plain object', () => {
+    if (!extractPodsBridgeDirective) return;
+    expect(extractPodsBridgeDirective({ __podsBridge: { ...base, headSentinel: undefined } })).toBeNull();
+    expect(extractPodsBridgeDirective({ __podsBridge: { ...base, body: [1, 2] } })).toBeNull();
+    expect(extractPodsBridgeDirective({ __podsBridge: { ...base, body: 'nope' } })).toBeNull();
+    expect(extractPodsBridgeDirective({ __podsBridge: null })).toBeNull();
+    expect(extractPodsBridgeDirective(null)).toBeNull();
   });
 });
 

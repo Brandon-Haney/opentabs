@@ -10,10 +10,11 @@ of tools we intend to support.
 was accepted (`StatusCode:0, IsConflict:false`) and **applied** to a live open deck
 — the "Fusion draft" title's `draft` run visibly shrank 44 pt → 24 pt. Transport,
 identity chaining, construction, and application are all confirmed end-to-end, and the
-**head read is solved** (see [The head read](#the-head-read--solved-2026-08-14)) so edits
-now chain freely. What remains is *productization*: a dispatch path that lets a plugin
-tool issue a pods write (the frame bridge speaks EWA's `{context,…}`, not `{Mode,srs}`),
-and `CellId` discovery to target a shape by role instead of a captured id.
+**head read is solved**, and the **dispatch path is shipped** (see
+[The dispatch path](#the-dispatch-path--shipped-2026-08-14)) — a plugin tool now triggers a
+pods write with one call. What remains before real formatting tools is the **object-graph
+read**: discovering a target shape's `CellId` and its run/paragraph object ids on the live
+deck, so a tool can construct an edit for an arbitrary shape rather than a captured template.
 
 ## Why this exists
 
@@ -99,6 +100,33 @@ donorGlobal:"__otbPptPodsDonor", url:"https://opentabs.invalid/__otb_pods_head__
 `{ head, ts }`. The `donorGlobal` is only there to select the editor frame; the URL
 override hits the sentinel. Read the head fresh right before each edit — after your own
 edit the editor briefly reports an optimistic id, then settles to a server `newguid|1`.
+
+## The dispatch path — SHIPPED (2026-08-14)
+
+A plugin tool can now trigger a pods write with one call — it never touches the editor
+frame itself. The tool builds the `{Mode,srs}` body with two placeholder tokens and
+returns a `__podsBridge` directive; the extension resolves it on the dispatch tab.
+
+- **Directive** (`podsWrite(body)` in `plugins/powerpoint/src/pods-bridge.ts`):
+  `{ __podsBridge: { frameUrlIncludes, donorGlobal, headSentinel, body, guidToken, headToken } }`.
+  The body carries `__OTB_PODS_GUID__` in the run/revision/object-group ids + the run-reference,
+  and `__OTB_PODS_HEAD__` at `BaseId`/top-`ExpectedLatestId`.
+- **Engine** (`runPodsBridge` in `platform/browser-extension/src/browser-commands/pods-bridge.ts`):
+  reads the head sentinel → mints one `crypto.randomUUID()` → two string substitutions over the
+  serialized body → replays the POST via `fetchInFrame(donorGlobal)` → judges success on the
+  parsed payload (`StatusCode:0 && !IsConflict`) → retries a stale-base conflict (up to 3×) with a
+  freshly-read head. A sibling of the EWA bridge, sharing only `fetchInFrame`; wired as a second
+  resolver after `resolveBridgeDirective` in `tool-dispatch.ts` (each a no-op unless its marker is
+  present). No MCP-server surface.
+- **Security:** the donor and head are read only inside the editor frame; only a bare revision id
+  and the constructed body cross the boundary. The pods pre-script honours `__otbBridgeReplayDepth`
+  so a replayed write is not re-captured as its own donor.
+- **Proven** end-to-end via a temporary tool (since removed): two tool-triggered `SetFontSize`
+  writes on a live deck, each reading a fresh head and returning `StatusCode:0`. Unit-tested:
+  engine substitution/verdict/retry/null-head, the allow-list parser, and the `podsWrite` factory.
+
+The gap to real formatting tools is now purely the **object-graph read** (below) — a tool still
+needs to discover the target shape's `CellId` and its run/paragraph object ids on the live deck.
 
 ## Still open
 

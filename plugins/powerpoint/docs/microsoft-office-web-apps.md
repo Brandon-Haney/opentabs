@@ -205,7 +205,49 @@ safe on a real deck.
 **Know which transport you are on.** Bundle extraction *is* the right tool for the
 *other* Office channel — Excel's EWA `Command` codes live in the bundle as named
 constants, decoded exactly this way (see `excel-online` and the EWA command
-catalog). The pods co-authoring wire is the exception: capture, do not decode.
+catalog). The pods *envelope* is the exception: copy it, do not try to build it.
+Its **property semantics**, however, *are* decodable — from labelled captures, not
+the bundle. See below.
+
+## Decoding the property catalog
+
+Copy-an-exemplar replays one captured action verbatim. To **construct** varied
+edits — any font, any size, any colour — you need the semantic layer: which numeric
+property id means what. That is decodable, and a handful of *labelled* captures
+decode it fast:
+
+1. In the open editor make a few formatting edits with **distinctive, greppable
+   values** — font size 37, font "Consolas", colour `FF0000`, right-align — each
+   ideally its own edit. Export a HAR (DevTools captures the OOPIF; CDP capture does
+   not).
+2. Each action self-labels via `ActionName`, so you know which edit is which. Grep
+   the type-3 bodies for your distinctive values to map value → property id, then
+   cross-check the id against the client bundle for a symbolic name.
+
+Text formatting lives on a **`ClassId 1179725`** run object; the run's text and the
+paragraph geometry live on a sibling **`ClassId 393230`**. Decoded from one capture
+set (font 37pt / Consolas / red / right-aligned):
+
+| Property id | Meaning | Notes |
+| --- | --- | --- |
+| `268442635` | **Font size** | half-points — `74` = 37pt |
+| `469780527` / `528` / `529` | **Font family** (latin / EA / complex-script) | e.g. `"Consolas"` |
+| `469769226` | Primary typeface | |
+| `469780760` | **Font colour** | string `"@RRGGBB,,"`, e.g. `"@FF0000,,"` |
+| `335551500` | Font colour (redundant encoding) | BGR integer — `255` = red |
+| `335551547` | Language | LCID — `1033` = en-US |
+| `134224900` | **Bold** (inferred) | `true` across every capture while the text was bold; `134224901–905` are its italic/underline/… siblings, all `false`. A bold-toggle capture would confirm. |
+| `469769250` | Run **text** (on `393230`) | e.g. `" Fusion draft"` |
+| `469780968` | Placeholder type (on `393230`) | e.g. `"Slide"` |
+
+Alignment and structural changes are **actions**, not properties
+(`RightTextJustify`, `LeftTextJustify`, `NewSlideWithoutDialog`, …).
+
+**Constructing an edit** = take a captured exemplar of the closest action, keep its
+object graph, and patch (a) the identity fields from a live poll, (b) the single
+property for your change (`268442635` for size, `469780527–529` for font,
+`469780760` for colour, …). That yields `set_font` / `set_size` / `set_color` and
+the rest from one capture set — no per-feature recording.
 
 ## The diagnostic playbook — how not to lose hours
 

@@ -1,6 +1,7 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { downloadPptx, extractNotesText, getNotesForSlide, getSlideList, TEXT_DECODER } from '../pptx-utils.js';
+import { driveIdInput } from './schemas.js';
 
 export const getSlideNotes = defineTool({
   name: 'get_slide_notes',
@@ -11,6 +12,7 @@ export const getSlideNotes = defineTool({
   group: 'Slides',
   input: z.object({
     item_id: z.string().describe('Item ID of the PowerPoint file'),
+    drive_id: driveIdInput,
     slide_number: z.number().int().min(1).describe('Slide number (1-indexed)'),
   }),
   output: z.object({
@@ -18,7 +20,7 @@ export const getSlideNotes = defineTool({
     has_notes: z.boolean().describe('Whether this slide has a notes file'),
   }),
   handle: async params => {
-    const entries = await downloadPptx(params.item_id);
+    const entries = await downloadPptx(params.item_id, params.drive_id);
     const slideFiles = getSlideList(entries);
 
     if (params.slide_number > slideFiles.length || params.slide_number < 1) {

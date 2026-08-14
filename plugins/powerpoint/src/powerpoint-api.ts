@@ -242,14 +242,23 @@ const authError = (msg: string): never => {
 };
 
 /**
- * Return the current auth context, throwing an actionable error if unavailable.
+ * Return the auth context, throwing an actionable error if unavailable.
+ *
  * The Graph token comes from the pre-script capture (SharePoint) or the
- * standalone app's plaintext MSAL cache; the drive id from the URL, the WOPI
- * context, or Graph `/shares`.
+ * standalone app's plaintext MSAL cache. It is a delegated token for
+ * `https://graph.microsoft.com` carrying the signed-in user's full file scopes
+ * (`Files.ReadWrite.All`, `Sites.ReadWrite.All`), so it addresses every drive
+ * the user has rights on — not just the one the current tab happens to show.
+ *
+ * `explicitDriveId` therefore lets a caller operate on a file in someone
+ * else's drive while the tab stays on an unrelated presentation. Only when it
+ * is omitted do we fall back to deriving the drive from the tab (URL, WOPI
+ * context, or Graph `/shares`).
  */
-export const requireAuth = async (): Promise<PowerPointAuth> => {
+export const requireAuth = async (explicitDriveId?: string): Promise<PowerPointAuth> => {
   const token = getToken();
   if (!token) return authError('Not authenticated — please log in to Microsoft 365.');
+  if (explicitDriveId) return { token, driveId: explicitDriveId };
   const driveId = await resolveDriveId(token);
   if (!driveId) {
     throw ToolError.validation('Could not determine the current drive. Open a presentation in the browser first.');
@@ -257,7 +266,16 @@ export const requireAuth = async (): Promise<PowerPointAuth> => {
   return { token, driveId };
 };
 
-export const getCurrentDriveId = async (): Promise<string> => (await requireAuth()).driveId;
+/**
+ * The drive to operate on: the one the caller named, or the one the tab shows.
+ *
+ * File tools take the same `drive_id` as the presentation tools and for the same
+ * reason — the token addresses every drive the user has rights on, so pinning
+ * them to the tab's drive would make a file unreachable simply because the tab
+ * moved on.
+ */
+export const requireDriveId = async (explicitDriveId?: string): Promise<string> =>
+  (await requireAuth(explicitDriveId)).driveId;
 
 // --- API caller ---
 

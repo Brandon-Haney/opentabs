@@ -1,6 +1,7 @@
 import { defineTool, stripUndefined } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { api, getCurrentDriveId } from '../powerpoint-api.js';
+import { driveIdInput } from './schemas.js';
+import { api, requireDriveId } from '../powerpoint-api.js';
 
 export const copyItem = defineTool({
   name: 'copy_item',
@@ -11,6 +12,7 @@ export const copyItem = defineTool({
   icon: 'copy',
   group: 'Files',
   input: z.object({
+    drive_id: driveIdInput,
     item_id: z.string().describe('Item ID of the file to copy'),
     name: z.string().optional().describe('Name for the copy (defaults to "original name (copy)")'),
     destination_folder_id: z.string().optional().describe('Destination folder item ID — defaults to same folder'),
@@ -19,7 +21,7 @@ export const copyItem = defineTool({
     success: z.boolean().describe('Whether the copy was initiated (runs asynchronously)'),
   }),
   handle: async params => {
-    const driveId = await getCurrentDriveId();
+    const driveId = await requireDriveId(params.drive_id);
     const body = stripUndefined({
       name: params.name,
       parentReference: params.destination_folder_id ? { id: params.destination_folder_id } : undefined,

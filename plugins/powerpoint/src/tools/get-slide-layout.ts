@@ -1,8 +1,8 @@
-import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
+import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { downloadPptx, getSlideList, TEXT_DECODER } from '../pptx-utils.js';
-import { getSlideSize, parseSlideLayout } from '../slide-layout.js';
-import { slideLayoutSchema } from './schemas.js';
+import { downloadPptx, readSlideXml, requireSlideFile } from '../pptx-utils.js';
+import { getSlideSize, parseSlideLayout, resolveInheritedGeometry } from '../slide-layout.js';
+import { driveIdInput, slideLayoutSchema } from './schemas.js';
 
 export const getSlideLayout = defineTool({
   name: 'get_slide_layout',
@@ -16,27 +16,24 @@ export const getSlideLayout = defineTool({
   group: 'Slides',
   input: z.object({
     item_id: z.string().describe('Item ID of the PowerPoint file'),
+    drive_id: driveIdInput,
     slide_number: z.number().int().min(1).describe('Slide number to inspect (1-indexed)'),
   }),
   output: z.object({
     layout: slideLayoutSchema.describe('Structured slide layout'),
   }),
   handle: async params => {
-    const entries = await downloadPptx(params.item_id);
-    const slideFiles = getSlideList(entries);
-
-    if (params.slide_number > slideFiles.length || params.slide_number < 1) {
-      throw ToolError.notFound(`Slide ${params.slide_number} not found — presentation has ${slideFiles.length} slides`);
-    }
-
-    const file = slideFiles[params.slide_number - 1];
-    if (!file) throw ToolError.notFound(`Slide ${params.slide_number} not found`);
-    const slideData = entries.get(file);
-    if (!slideData) throw ToolError.internal(`Slide file not found in archive: ${file}`);
-
-    const slideXml = TEXT_DECODER.decode(slideData);
-    const canvas = getSlideSize(entries);
-    const layout = parseSlideLayout(slideXml, params.slide_number, canvas);
+    const entries = await downloadPptx(params.item_id, params.drive_id);
+    const file = requireSlideFile(entries, params.slide_number);
+    // Placeholders usually state no geometry of their own and take it from the
+    // layout placeholder sharing their `idx`, so the inheritance chain is
+    // resolved and supplied rather than reporting the zeroes on the slide.
+    const layout = parseSlideLayout(
+      readSlideXml(entries, file),
+      params.slide_number,
+      getSlideSize(entries),
+      resolveInheritedGeometry(entries, file),
+    );
 
     return { layout };
   },

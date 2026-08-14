@@ -3,6 +3,7 @@ import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import { isAuthenticated, isPowerPointTab, isSharePoint, waitForAuth } from './powerpoint-api.js';
 import { addImage } from './tools/add-image.js';
 import { addShape } from './tools/add-shape.js';
+import { addSlide } from './tools/add-slide.js';
 import { addTextBox } from './tools/add-text-box.js';
 import { commitPresentationTool } from './tools/commit-presentation.js';
 import { copyItem } from './tools/copy-item.js';
@@ -16,6 +17,7 @@ import { deleteSlide } from './tools/delete-slide.js';
 import { discardPresentationTool } from './tools/discard-presentation.js';
 import { duplicateShape } from './tools/duplicate-shape.js';
 import { duplicateSlide as duplicateSlideTool } from './tools/duplicate-slide.js';
+import { fitText } from './tools/fit-text.js';
 import { getComments } from './tools/get-comments.js';
 import { getCurrentUser } from './tools/get-current-user.js';
 import { getDownloadUrl } from './tools/get-download-url.js';
@@ -25,6 +27,7 @@ import { getPreviewUrl } from './tools/get-preview-url.js';
 import { getSlideContent } from './tools/get-slide-content.js';
 import { getSlideLayout } from './tools/get-slide-layout.js';
 import { getSlideNotes } from './tools/get-slide-notes.js';
+import { getSlideStructure } from './tools/get-slide-structure.js';
 import { getSlides } from './tools/get-slides.js';
 import { getThumbnails } from './tools/get-thumbnails.js';
 import { listChildren } from './tools/list-children.js';
@@ -32,12 +35,16 @@ import { listPermissions } from './tools/list-permissions.js';
 import { listPresentationSessionsTool } from './tools/list-presentation-sessions.js';
 import { listRecent } from './tools/list-recent.js';
 import { listSharedWithMe } from './tools/list-shared-with-me.js';
+import { listSlideLayouts } from './tools/list-slide-layouts.js';
 import { listVersions } from './tools/list-versions.js';
 import { moveItem } from './tools/move-item.js';
+import { moveSlide } from './tools/move-slide.js';
 import { openPresentationTool } from './tools/open-presentation.js';
 import { reauthenticate } from './tools/reauthenticate.js';
 import { renameItem } from './tools/rename-item.js';
 import { searchFiles } from './tools/search-files.js';
+import { setPlaceholderText } from './tools/set-placeholder-text.js';
+import { setSlideHiddenTool } from './tools/set-slide-hidden.js';
 import { updateShape } from './tools/update-shape.js';
 import { updateSlideNotes } from './tools/update-slide-notes.js';
 import { updateSlideText } from './tools/update-slide-text.js';
@@ -74,7 +81,15 @@ class PowerPointPlugin extends OpenTabsPlugin {
     commitPresentationTool,
     discardPresentationTool,
     listPresentationSessionsTool,
-    // Slides
+    // Slides — structure first, since naming a slot is the usual way in
+    getSlideStructure,
+    setPlaceholderText,
+    listSlideLayouts,
+    addSlide,
+    deleteSlide,
+    duplicateSlideTool,
+    moveSlide,
+    setSlideHiddenTool,
     getSlides,
     getSlideContent,
     getSlideLayout,
@@ -83,13 +98,12 @@ class PowerPointPlugin extends OpenTabsPlugin {
     addImage,
     updateSlideText,
     updateShape,
+    fitText,
     deleteShape,
     duplicateShape,
     getSlideNotes,
     updateSlideNotes,
     getComments,
-    deleteSlide,
-    duplicateSlideTool,
     // Sharing
     listPermissions,
     createSharingLink,

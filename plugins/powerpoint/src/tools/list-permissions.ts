@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { api, getCurrentDriveId } from '../powerpoint-api.js';
-import { type GraphCollection, mapPermission, permissionSchema, type RawPermission } from './schemas.js';
+import { api, requireDriveId } from '../powerpoint-api.js';
+import { driveIdInput, type GraphCollection, mapPermission, permissionSchema, type RawPermission } from './schemas.js';
 
 export const listPermissions = defineTool({
   name: 'list_permissions',
@@ -12,13 +12,14 @@ export const listPermissions = defineTool({
   icon: 'shield',
   group: 'Sharing',
   input: z.object({
+    drive_id: driveIdInput,
     item_id: z.string().describe('Item ID of the file or folder'),
   }),
   output: z.object({
     permissions: z.array(permissionSchema).describe('Sharing permissions'),
   }),
   handle: async params => {
-    const driveId = await getCurrentDriveId();
+    const driveId = await requireDriveId(params.drive_id);
     const data = await api<GraphCollection<RawPermission>>(`/drives/${driveId}/items/${params.item_id}/permissions`);
     return { permissions: (data.value ?? []).map(mapPermission) };
   },

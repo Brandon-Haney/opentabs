@@ -1,13 +1,15 @@
-import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
+import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import {
   downloadPptx,
   extractNotesText,
   extractSlideText,
   getNotesForSlide,
-  getSlideList,
+  requireSlideFile,
   TEXT_DECODER,
 } from '../pptx-utils.js';
+import { isSlideHidden } from '../slide-edit.js';
+import { driveIdInput } from './schemas.js';
 
 export const getSlideContent = defineTool({
   name: 'get_slide_content',
@@ -19,24 +21,19 @@ export const getSlideContent = defineTool({
   group: 'Slides',
   input: z.object({
     item_id: z.string().describe('Item ID of the PowerPoint file'),
+    drive_id: driveIdInput,
     slide_number: z.number().int().min(1).describe('Slide number (1-indexed)'),
   }),
   output: z.object({
     number: z.number().int().describe('Slide number'),
     texts: z.array(z.string()).describe('Text content from the slide'),
     notes: z.string().describe('Speaker notes text (empty if no notes)'),
+    hidden: z.boolean().describe('True when the slide is hidden from the slide show'),
     file: z.string().describe('Internal file path within the PPTX archive'),
   }),
   handle: async params => {
-    const entries = await downloadPptx(params.item_id);
-    const slideFiles = getSlideList(entries);
-
-    if (params.slide_number > slideFiles.length || params.slide_number < 1) {
-      throw ToolError.notFound(`Slide ${params.slide_number} not found — presentation has ${slideFiles.length} slides`);
-    }
-
-    const file = slideFiles[params.slide_number - 1];
-    if (!file) throw ToolError.notFound(`Slide ${params.slide_number} not found`);
+    const entries = await downloadPptx(params.item_id, params.drive_id);
+    const file = requireSlideFile(entries, params.slide_number);
     const slideData = entries.get(file);
     const slideXml = slideData ? TEXT_DECODER.decode(slideData) : '';
     const texts = slideXml ? extractSlideText(slideXml) : [];
@@ -50,6 +47,6 @@ export const getSlideContent = defineTool({
       }
     }
 
-    return { number: params.slide_number, texts, notes, file };
+    return { number: params.slide_number, texts, notes, hidden: isSlideHidden(slideXml), file };
   },
 });

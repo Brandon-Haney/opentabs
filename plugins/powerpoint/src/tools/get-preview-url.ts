@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { api, getCurrentDriveId } from '../powerpoint-api.js';
+import { driveIdInput } from './schemas.js';
+import { api, requireDriveId } from '../powerpoint-api.js';
 
 export const getPreviewUrl = defineTool({
   name: 'get_preview_url',
@@ -11,13 +12,14 @@ export const getPreviewUrl = defineTool({
   icon: 'eye',
   group: 'Presentations',
   input: z.object({
+    drive_id: driveIdInput,
     item_id: z.string().describe('Item ID of the file'),
   }),
   output: z.object({
     url: z.string().describe('Embeddable preview URL'),
   }),
   handle: async params => {
-    const driveId = await getCurrentDriveId();
+    const driveId = await requireDriveId(params.drive_id);
     const data = await api<{ getUrl?: string }>(`/drives/${driveId}/items/${params.item_id}/preview`, {
       method: 'POST',
       body: {},

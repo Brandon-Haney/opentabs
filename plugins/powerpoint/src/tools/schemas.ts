@@ -5,6 +5,24 @@ import { z } from 'zod';
 export const DRIVE_ITEM_SELECT =
   'id,name,size,webUrl,file,folder,createdBy,createdDateTime,lastModifiedBy,lastModifiedDateTime';
 
+/**
+ * Optional drive selector shared by every presentation tool.
+ *
+ * The Graph token carries the user's tenant-wide file scopes, so a file in a
+ * colleague's OneDrive is reachable without opening it — which matters because
+ * opening it in the web editor takes a co-authoring lock that makes Graph
+ * reject the save with HTTP 423. Passing `drive_id` lets the browser tab stay
+ * on an unrelated presentation while the tools operate on the target file.
+ * Resolve the id with `list_shared_with_me` or `search_files`.
+ */
+export const driveIdInput = z
+  .string()
+  .optional()
+  .describe(
+    'Drive containing the file. Defaults to the drive of the presentation open in the tab. Pass this to edit a ' +
+      "file in another user's OneDrive without opening it (avoiding the co-authoring lock that blocks saving).",
+  );
+
 // --- User ---
 
 export const userSchema = z.object({
@@ -188,6 +206,9 @@ export const slideSchema = z.object({
   file: z.string().describe('Internal file path within the PPTX archive'),
   texts: z.array(z.string()).describe('Text content extracted from the slide'),
   has_notes: z.boolean().describe('Whether this slide has speaker notes'),
+  hidden: z
+    .boolean()
+    .describe('True when the slide is hidden from the slide show — backup or appendix material, not part of the flow'),
 });
 
 // --- Comments ---
@@ -266,4 +287,20 @@ export const slideLayoutSchema = z.object({
   width: z.number().describe('Slide canvas width in inches'),
   height: z.number().describe('Slide canvas height in inches'),
   shapes: z.array(shapeNodeSchema).describe('All top-level shapes on the slide'),
+});
+
+export const slideSlotSchema = z.object({
+  role: z.enum(['title', 'subtitle', 'body']).describe('The slot to name when writing to it'),
+  placeholder_type: z.string().describe('Raw OOXML placeholder type ("title", "ctrTitle", "body", "obj", ...)'),
+  idx: z.number().int().describe('Placeholder index — the slot identity, and what disambiguates same-role slots'),
+  shape_id: z
+    .string()
+    .nullable()
+    .describe('Shape serving this slot, or null when the layout offers it but the slide has no shape for it yet'),
+  name: z.string().describe('Shape name as PowerPoint shows it'),
+  x: z.number().describe('X offset in inches, resolved through the layout and master'),
+  y: z.number().describe('Y offset in inches'),
+  w: z.number().describe('Width in inches'),
+  h: z.number().describe('Height in inches'),
+  text: z.string().describe('Current text, paragraphs joined by newline'),
 });

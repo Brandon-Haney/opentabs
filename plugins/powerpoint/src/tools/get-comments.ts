@@ -2,7 +2,7 @@ import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { readComments } from '../comments.js';
 import { downloadPptx, getSlideList, isSessionOpen } from '../pptx-utils.js';
-import { commentSchema } from './schemas.js';
+import { commentSchema, driveIdInput } from './schemas.js';
 
 export const getComments = defineTool({
   name: 'get_comments',
@@ -14,6 +14,7 @@ export const getComments = defineTool({
   group: 'Slides',
   input: z.object({
     item_id: z.string().describe('Item ID of the PowerPoint file'),
+    drive_id: driveIdInput,
     slide_number: z
       .number()
       .int()
@@ -32,9 +33,9 @@ export const getComments = defineTool({
   }),
   handle: async params => {
     // Observed before downloadPptx, which transparently serves session entries.
-    const fromOpenSession = await isSessionOpen(params.item_id);
+    const fromOpenSession = await isSessionOpen(params.item_id, params.drive_id);
 
-    const entries = await downloadPptx(params.item_id);
+    const entries = await downloadPptx(params.item_id, params.drive_id);
     const slideFiles = getSlideList(entries);
 
     if (params.slide_number !== undefined && params.slide_number > slideFiles.length) {

@@ -10,6 +10,22 @@
 
 import { ToolError } from '@opentabs-dev/plugin-sdk';
 
+/**
+ * Namespace URIs used across the package. Elements are created against these
+ * rather than matched by them — `createElementNS` needs the URI, while every
+ * lookup goes through `localName` for the reason described above.
+ */
+/** DrawingML: shape geometry, fills, and everything inside a text body. */
+export const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+/** PresentationML: slides, placeholders, and the shape tree. */
+export const P_NS = 'http://schemas.openxmlformats.org/presentationml/2006/main';
+/** Relationship references from inside a part (`r:id`, `r:embed`). */
+export const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+/** The `.rels` parts themselves. */
+export const PKG_REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+/** `[Content_Types].xml`. */
+export const CT_NS = 'http://schemas.openxmlformats.org/package/2006/content-types';
+
 const xmlParser = typeof DOMParser !== 'undefined' ? new DOMParser() : undefined;
 const xmlSerializer = typeof XMLSerializer !== 'undefined' ? new XMLSerializer() : undefined;
 

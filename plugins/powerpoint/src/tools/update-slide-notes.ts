@@ -1,7 +1,8 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { downloadPptx, getSlideList, replaceNotesText, TEXT_DECODER, TEXT_ENCODER, uploadPptx } from '../pptx-utils.js';
+import { editPresentation, replaceNotesText, requireSlideFile, TEXT_DECODER, TEXT_ENCODER } from '../pptx-utils.js';
 import { ensureNotesSlide } from '../slide-edit.js';
+import { driveIdInput } from './schemas.js';
 
 export const updateSlideNotes = defineTool({
   name: 'update_slide_notes',
@@ -13,35 +14,24 @@ export const updateSlideNotes = defineTool({
   group: 'Slides',
   input: z.object({
     item_id: z.string().describe('Item ID of the PowerPoint file'),
+    drive_id: driveIdInput,
     slide_number: z.number().int().min(1).describe('Slide number (1-indexed)'),
     notes: z.string().describe('New speaker notes text'),
   }),
   output: z.object({
     success: z.boolean().describe('Whether the update succeeded'),
   }),
-  handle: async params => {
-    const entries = await downloadPptx(params.item_id);
-    const slideFiles = getSlideList(entries);
+  handle: async params =>
+    editPresentation(params.item_id, params.drive_id, entries => {
+      const file = requireSlideFile(entries, params.slide_number);
 
-    if (params.slide_number > slideFiles.length || params.slide_number < 1) {
-      throw ToolError.notFound(`Slide ${params.slide_number} not found — presentation has ${slideFiles.length} slides`);
-    }
+      // Create an empty notes part if the slide has none, so notes can be added
+      // to any slide — not just ones that already have a notes file.
+      const notesFile = ensureNotesSlide(entries, file);
+      const notesData = entries.get(notesFile);
+      if (!notesData) throw ToolError.internal(`Notes file not found in archive: ${notesFile}`);
 
-    const file = slideFiles[params.slide_number - 1];
-    if (!file) throw ToolError.notFound(`Slide ${params.slide_number} not found`);
-
-    // Create an empty notes part if the slide has none, so notes can be added
-    // to any slide — not just ones that already have a notes file.
-    const notesFile = ensureNotesSlide(entries, file);
-
-    const notesData = entries.get(notesFile);
-    if (!notesData) throw ToolError.internal(`Notes file not found in archive: ${notesFile}`);
-
-    const notesXml = TEXT_DECODER.decode(notesData);
-    const updatedXml = replaceNotesText(notesXml, params.notes);
-    entries.set(notesFile, TEXT_ENCODER.encode(updatedXml));
-
-    await uploadPptx(params.item_id, entries);
-    return { success: true };
-  },
+      entries.set(notesFile, TEXT_ENCODER.encode(replaceNotesText(TEXT_DECODER.decode(notesData), params.notes)));
+      return { success: true };
+    }),
 });

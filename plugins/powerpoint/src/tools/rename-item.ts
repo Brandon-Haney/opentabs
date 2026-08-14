@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { api, getCurrentDriveId } from '../powerpoint-api.js';
-import { driveItemSchema, mapDriveItem, type RawDriveItem } from './schemas.js';
+import { api, requireDriveId } from '../powerpoint-api.js';
+import { driveIdInput, driveItemSchema, mapDriveItem, type RawDriveItem } from './schemas.js';
 
 export const renameItem = defineTool({
   name: 'rename_item',
@@ -11,6 +11,7 @@ export const renameItem = defineTool({
   icon: 'pencil',
   group: 'Files',
   input: z.object({
+    drive_id: driveIdInput,
     item_id: z.string().describe('Item ID of the file or folder'),
     name: z.string().describe('New name including file extension (e.g., "My Presentation.pptx")'),
   }),
@@ -18,7 +19,7 @@ export const renameItem = defineTool({
     item: driveItemSchema.describe('Updated file or folder details'),
   }),
   handle: async params => {
-    const driveId = await getCurrentDriveId();
+    const driveId = await requireDriveId(params.drive_id);
     const data = await api<RawDriveItem>(`/drives/${driveId}/items/${params.item_id}`, {
       method: 'PATCH',
       body: { name: params.name },

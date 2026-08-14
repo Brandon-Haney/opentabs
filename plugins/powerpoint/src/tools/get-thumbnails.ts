@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { api, getCurrentDriveId } from '../powerpoint-api.js';
-import { type GraphCollection, mapThumbnail, type RawThumbnailSet, thumbnailSchema } from './schemas.js';
+import { api, requireDriveId } from '../powerpoint-api.js';
+import { driveIdInput, type GraphCollection, mapThumbnail, type RawThumbnailSet, thumbnailSchema } from './schemas.js';
 
 export const getThumbnails = defineTool({
   name: 'get_thumbnails',
@@ -12,6 +12,7 @@ export const getThumbnails = defineTool({
   icon: 'image',
   group: 'Files',
   input: z.object({
+    drive_id: driveIdInput,
     item_id: z.string().describe('Item ID of the file'),
   }),
   output: z.object({
@@ -26,7 +27,7 @@ export const getThumbnails = defineTool({
       .describe('Thumbnail sets'),
   }),
   handle: async params => {
-    const driveId = await getCurrentDriveId();
+    const driveId = await requireDriveId(params.drive_id);
     const data = await api<GraphCollection<RawThumbnailSet>>(`/drives/${driveId}/items/${params.item_id}/thumbnails`);
     return {
       thumbnails: (data.value ?? []).map(set => ({

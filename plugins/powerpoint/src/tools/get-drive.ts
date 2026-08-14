@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { api, getCurrentDriveId } from '../powerpoint-api.js';
-import { driveSchema, mapDrive, type RawDrive } from './schemas.js';
+import { api, requireDriveId } from '../powerpoint-api.js';
+import { driveIdInput, driveSchema, mapDrive, type RawDrive } from './schemas.js';
 
 export const getDrive = defineTool({
   name: 'get_drive',
@@ -10,12 +10,14 @@ export const getDrive = defineTool({
   summary: 'Get drive storage quota info',
   icon: 'hard-drive',
   group: 'Drive',
-  input: z.object({}),
+  input: z.object({
+    drive_id: driveIdInput,
+  }),
   output: z.object({
     drive: driveSchema.describe('Drive storage information'),
   }),
-  handle: async () => {
-    const driveId = await getCurrentDriveId();
+  handle: async params => {
+    const driveId = await requireDriveId(params.drive_id);
     const data = await api<RawDrive>(`/drives/${driveId}`, {
       query: { $select: 'id,name,driveType,quota' },
     });

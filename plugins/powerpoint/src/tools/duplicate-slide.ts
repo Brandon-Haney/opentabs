@@ -1,7 +1,8 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { downloadPptx, uploadPptx } from '../pptx-utils.js';
+import { editPresentation } from '../pptx-utils.js';
 import { duplicateSlide as duplicateSlideInPlace } from '../slide-edit.js';
+import { driveIdInput } from './schemas.js';
 
 export const duplicateSlide = defineTool({
   name: 'duplicate_slide',
@@ -16,6 +17,7 @@ export const duplicateSlide = defineTool({
   group: 'Slides',
   input: z.object({
     item_id: z.string().describe('Item ID of the PowerPoint file'),
+    drive_id: driveIdInput,
     source_slide_number: z.number().int().min(1).describe('Slide number to duplicate (1-indexed)'),
     insert_at: z
       .number()
@@ -28,10 +30,8 @@ export const duplicateSlide = defineTool({
     new_slide_number: z.number().int().describe('Position of the new slide in the deck (1-indexed)'),
     total_slides: z.number().int().describe('Total number of slides after duplication'),
   }),
-  handle: async params => {
-    const entries = await downloadPptx(params.item_id);
-    const result = duplicateSlideInPlace(entries, params.source_slide_number, params.insert_at);
-    await uploadPptx(params.item_id, entries);
-    return result;
-  },
+  handle: async params =>
+    editPresentation(params.item_id, params.drive_id, entries =>
+      duplicateSlideInPlace(entries, params.source_slide_number, params.insert_at),
+    ),
 });

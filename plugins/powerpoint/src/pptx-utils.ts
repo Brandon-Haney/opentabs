@@ -17,7 +17,7 @@ import {
   storeSession,
   touchSession,
 } from './session.js';
-import { getLocalName, isElement, parseXml, serializeXml } from './xml.js';
+import { A_NS, getLocalName, isElement, parseXml, serializeXml } from './xml.js';
 
 // --- ZIP constants ---
 const LOCAL_FILE_HEADER_SIG = 0x04034b50;
@@ -139,11 +139,18 @@ const crc32 = (data: Uint8Array): number => {
 
 /** Write a ZIP file from entries. */
 export const writeZip = async (entries: Map<string, Uint8Array>): Promise<Blob> => {
+  // Snapshot the map before compressing. Deflating each entry yields to the
+  // event loop, and the map being written may be a live session's — another
+  // tool call landing between two entries would otherwise put pre- and
+  // post-edit parts in one archive, and change `entries.size` after the count
+  // had already been written into the end-of-central-directory record.
+  const snapshot = Array.from(entries);
+
   const parts: ArrayBuffer[] = [];
   const centralDir: ArrayBuffer[] = [];
   let offset = 0;
 
-  for (const [name, data] of entries) {
+  for (const [name, data] of snapshot) {
     const nameBytes = new TextEncoder().encode(name);
     const compressed = await deflateData(data);
     const crcVal = crc32(data);
@@ -189,8 +196,8 @@ export const writeZip = async (entries: Map<string, Uint8Array>): Promise<Blob> 
   const eocd = new ArrayBuffer(22);
   const eocdView = new DataView(eocd);
   eocdView.setUint32(0, END_OF_CENTRAL_DIR_SIG, true);
-  eocdView.setUint16(8, entries.size, true);
-  eocdView.setUint16(10, entries.size, true);
+  eocdView.setUint16(8, snapshot.length, true);
+  eocdView.setUint16(10, snapshot.length, true);
   eocdView.setUint32(12, centralDirSize, true);
   eocdView.setUint32(16, centralDirOffset, true);
   parts.push(eocd);
@@ -308,7 +315,7 @@ export const getSlideList = (entries: Map<string, Uint8Array>): string[] => {
 };
 
 /** Path of the `.rels` part describing a given part. */
-const relsPathFor = (partPath: string): string => {
+export const relsPathFor = (partPath: string): string => {
   const segments = partPath.split('/');
   const fileName = segments.pop() ?? '';
   return [...segments, '_rels', `${fileName}.rels`].join('/');
@@ -323,7 +330,7 @@ const relsPathFor = (partPath: string): string => {
  * free to place a related part anywhere, and several of Microsoft's newer part
  * types have no documented path at all.
  */
-const resolveRelTarget = (sourcePartPath: string, target: string): string => {
+export const resolveRelTarget = (sourcePartPath: string, target: string): string => {
   if (target.startsWith('/')) return target.slice(1);
   const segments = sourcePartPath.split('/').slice(0, -1);
   for (const segment of target.split('/')) {
@@ -368,6 +375,34 @@ export const getRelatedParts = (
 export const getNotesForSlide = (entries: Map<string, Uint8Array>, slideFile: string): string | null =>
   getRelatedParts(entries, slideFile, '/relationships/notesSlide')[0] ?? null;
 
+/**
+ * Resolve a 1-indexed slide number to its package path.
+ *
+ * Slide numbers come from agents, so an out-of-range one is an ordinary input
+ * error rather than a defect — the message names the deck's actual length so the
+ * caller can correct itself without another read.
+ */
+export const requireSlideFile = (entries: Map<string, Uint8Array>, slideNumber: number): string => {
+  const slideFiles = getSlideList(entries);
+  const file = slideNumber >= 1 ? slideFiles[slideNumber - 1] : undefined;
+  if (!file) {
+    throw ToolError.notFound(`Slide ${slideNumber} not found — presentation has ${slideFiles.length} slides`);
+  }
+  return file;
+};
+
+/** Read a slide part's XML out of the package. */
+export const readSlideXml = (entries: Map<string, Uint8Array>, slideFile: string): string => {
+  const data = entries.get(slideFile);
+  if (!data) throw ToolError.internal(`Slide file not found in archive: ${slideFile}`);
+  return TEXT_DECODER.decode(data);
+};
+
+/** Write a slide part's XML back into the package. */
+export const writeSlideXml = (entries: Map<string, Uint8Array>, slideFile: string, slideXml: string): void => {
+  entries.set(slideFile, TEXT_ENCODER.encode(slideXml));
+};
+
 // --- Download/Upload helpers ---
 
 /**
@@ -375,9 +410,30 @@ export const getNotesForSlide = (entries: Map<string, Uint8Array>, slideFile: st
  * co-authoring lock — almost always because it is open in the PowerPoint web
  * editor in this very browser. Graph cannot overwrite a locked file, so the
  * only path is to close the editor (or wait for the lock to lapse) and retry.
+ *
+ * The lock outlives the editor tab: the server keeps the co-authoring session
+ * alive for several minutes after the last client disconnects, and no request
+ * shortens that. Measured at roughly four minutes.
  */
 const FILE_LOCKED_MESSAGE =
-  'The presentation is locked because it is open in the PowerPoint web editor (or another co-authoring session), so Microsoft Graph cannot save changes to it. Close the editor tab — or wait ~30–60 seconds after closing for the lock to release — then retry. Any pending session edits are preserved.';
+  'The presentation is locked because it is open in the PowerPoint web editor (or another co-authoring session), so Microsoft Graph cannot save changes to it. Close the editor tab and retry — the server holds the lock for a few minutes after the last editor disconnects, so expect to wait rather than to retry immediately. Any pending session edits are preserved.';
+
+/**
+ * Guidance after `editPresentation` runs out of attempts. Distinct from the
+ * lock case: the file is writable, someone else is simply saving it faster than
+ * a read-modify-write round trip can complete.
+ */
+const CONCURRENT_EDIT_MESSAGE =
+  'Another editor saved this presentation between each read and write attempt, so the change could not be applied without discarding their work. Nothing was overwritten and nothing was saved. Retry when the deck is quieter, or call open_presentation to batch edits behind a single guarded save.';
+
+const PPTX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
+/**
+ * Read-modify-write attempts before giving up. A save loses the race only if
+ * someone else saved during the round trip; losing it three times running means
+ * the deck is under active editing, and a fourth attempt would not fare better.
+ */
+const MAX_SAVE_ATTEMPTS = 3;
 
 interface ItemMetadata {
   eTag?: string;
@@ -401,6 +457,63 @@ const fetchPptxBytes = async (downloadUrl: string): Promise<Blob> => {
   return resp.blob();
 };
 
+/** A package as it stood on the server, paired with the version it was read at. */
+interface PackageSnapshot {
+  entries: Map<string, Uint8Array>;
+  /**
+   * The item's eTag at read time, used as the `If-Match` precondition on the
+   * write. Absent only if Graph omits it, in which case the write proceeds
+   * unguarded — there is nothing to compare against.
+   */
+  etag: string | undefined;
+}
+
+/** Read the saved package and the version it was read at, in one round trip. */
+const readPackage = async (driveId: string, itemId: string, token: string): Promise<PackageSnapshot> => {
+  const itemData = await fetchItemMetadata(driveId, itemId, token);
+  const downloadUrl = itemData['@microsoft.graph.downloadUrl'];
+  if (!downloadUrl) throw ToolError.internal('No download URL available');
+  const blob = await fetchPptxBytes(downloadUrl);
+  return { entries: await readZip(blob), etag: itemData.eTag };
+};
+
+/**
+ * Write the package back, refusing to overwrite a newer version.
+ *
+ * Returns `false` when the precondition failed — the file moved on since it was
+ * read, and this save would have discarded whatever changed. Every other failure
+ * throws, because only the lost-update case has a sensible recovery.
+ */
+const savePackage = async (
+  driveId: string,
+  itemId: string,
+  token: string,
+  entries: Map<string, Uint8Array>,
+  etag: string | undefined,
+): Promise<boolean> => {
+  const blob = await writeZip(entries);
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': PPTX_CONTENT_TYPE,
+  };
+  if (etag) headers['If-Match'] = etag;
+
+  const resp = await fetch(`${GRAPH_BASE}/drives/${driveId}/items/${itemId}/content`, {
+    method: 'PUT',
+    headers,
+    body: blob,
+    signal: AbortSignal.timeout(60_000),
+  });
+
+  if (resp.status === 412) return false;
+  if (resp.status === 423) throw ToolError.validation(FILE_LOCKED_MESSAGE);
+  if (!resp.ok) {
+    const errorBody = (await resp.text().catch(() => '')).substring(0, 512);
+    throw ToolError.internal(`Failed to upload PPTX: ${resp.status} — ${errorBody}`);
+  }
+  return true;
+};
+
 /**
  * Download a PPTX from the Graph API and return its ZIP entries.
  *
@@ -408,19 +521,14 @@ const fetchPptxBytes = async (downloadUrl: string): Promise<Blob> => {
  * by reference — tools mutate in place and the changes persist in the
  * session until `commit_presentation` or `discard_presentation` is called.
  */
-export const downloadPptx = async (itemId: string): Promise<Map<string, Uint8Array>> => {
-  const { token, driveId } = await requireAuth();
+export const downloadPptx = async (itemId: string, explicitDriveId?: string): Promise<Map<string, Uint8Array>> => {
+  const { token, driveId } = await requireAuth(explicitDriveId);
 
   // Session fast path — skip both the metadata fetch and the content download.
   const session = touchSession(driveId, itemId);
   if (session) return session.entries;
 
-  const itemData = await fetchItemMetadata(driveId, itemId, token);
-  const downloadUrl = itemData['@microsoft.graph.downloadUrl'];
-  if (!downloadUrl) throw ToolError.internal('No download URL available');
-
-  const blob = await fetchPptxBytes(downloadUrl);
-  return readZip(blob);
+  return (await readPackage(driveId, itemId, token)).entries;
 };
 
 /**
@@ -430,46 +538,58 @@ export const downloadPptx = async (itemId: string): Promise<Map<string, Uint8Arr
  * snapshot rather than the saved file. Uses `peekSession` so that merely
  * asking does not extend the session's idle timeout.
  */
-export const isSessionOpen = async (itemId: string): Promise<boolean> => {
-  const { driveId } = await requireAuth();
+export const isSessionOpen = async (itemId: string, explicitDriveId?: string): Promise<boolean> => {
+  const { driveId } = await requireAuth(explicitDriveId);
   return peekSession(driveId, itemId) !== undefined;
 };
 
 /**
- * Upload a PPTX to the Graph API by re-zipping the entries.
+ * Apply an edit to a presentation and save it, without discarding anyone else's work.
  *
- * If a session is open for `{driveId}:{itemId}`, no HTTP happens — the
- * session is marked dirty and the updated entries map is retained so that
- * `commit_presentation` can flush them later.
+ * Saving means PUTting the entire package, so an unguarded write silently
+ * replaces every change made since the read — a co-author's paragraph simply
+ * disappears, with no error anywhere to say so. The write therefore carries the
+ * version the read observed as an `If-Match` precondition, which turns a lost
+ * update into a rejected save.
+ *
+ * A rejected save is not a failed edit. `mutate` is expressed as a function of
+ * the package rather than as a fixed set of bytes, so it is re-applied to a
+ * freshly read package and saved again; the caller sees a conflict only when the
+ * deck is being edited faster than a round trip completes.
+ *
+ * With a session open the edit lands in the in-memory copy instead, and
+ * `commit_presentation` performs the one guarded save for the whole batch.
  */
-export const uploadPptx = async (itemId: string, entries: Map<string, Uint8Array>): Promise<void> => {
-  const { token, driveId } = await requireAuth();
+export const editPresentation = async <T>(
+  itemId: string,
+  explicitDriveId: string | undefined,
+  mutate: (entries: Map<string, Uint8Array>) => T | Promise<T>,
+): Promise<T> => {
+  const { token, driveId } = await requireAuth(explicitDriveId);
 
-  // Session fast path — defer the actual upload until commit.
   const session = touchSession(driveId, itemId);
   if (session) {
-    session.entries = entries;
-    session.dirty = true;
-    return;
+    // Edits replace whole entries rather than writing through the byte arrays
+    // already in the map, so a shallow copy restores the package if `mutate`
+    // throws part-way. Without it a failed edit would leave the session holding
+    // half a change that the next commit would save as though it were intended.
+    const rollback = new Map(session.entries);
+    try {
+      const result = await mutate(session.entries);
+      session.dirty = true;
+      return result;
+    } catch (err) {
+      session.entries = rollback;
+      throw err;
+    }
   }
 
-  const blob = await writeZip(entries);
-  const url = `${GRAPH_BASE}/drives/${driveId}/items/${itemId}/content`;
-
-  const resp = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    },
-    body: blob,
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (resp.status === 423) throw ToolError.validation(FILE_LOCKED_MESSAGE);
-  if (!resp.ok) {
-    const errorBody = (await resp.text().catch(() => '')).substring(0, 512);
-    throw ToolError.internal(`Failed to upload PPTX: ${resp.status} — ${errorBody}`);
+  for (let attempt = 1; attempt <= MAX_SAVE_ATTEMPTS; attempt++) {
+    const { entries, etag } = await readPackage(driveId, itemId, token);
+    const result = await mutate(entries);
+    if (await savePackage(driveId, itemId, token, entries, etag)) return result;
   }
+  throw ToolError.validation(CONCURRENT_EDIT_MESSAGE);
 };
 
 // --- Phase 4: session operations ---
@@ -490,8 +610,8 @@ export interface OpenPresentationResult {
  * Rejects if a session is already open for this item — agents should
  * explicitly commit or discard before re-opening.
  */
-export const openPresentation = async (itemId: string): Promise<OpenPresentationResult> => {
-  const { token, driveId } = await requireAuth();
+export const openPresentation = async (itemId: string, explicitDriveId?: string): Promise<OpenPresentationResult> => {
+  const { token, driveId } = await requireAuth(explicitDriveId);
 
   const existing = peekSession(driveId, itemId);
   if (existing) {
@@ -501,16 +621,10 @@ export const openPresentation = async (itemId: string): Promise<OpenPresentation
     );
   }
 
-  const itemData = await fetchItemMetadata(driveId, itemId, token);
-  const downloadUrl = itemData['@microsoft.graph.downloadUrl'];
-  if (!downloadUrl) throw ToolError.internal('No download URL available');
-  const etag = itemData.eTag;
+  const { entries, etag } = await readPackage(driveId, itemId, token);
   if (!etag) {
     throw ToolError.internal('Item metadata missing eTag — cannot guarantee safe commit. Refusing to open a session.');
   }
-
-  const blob = await fetchPptxBytes(downloadUrl);
-  const entries = await readZip(blob);
 
   const now = Date.now();
   const session: PresentationSession = {
@@ -551,7 +665,11 @@ export interface CommitPresentationResult {
  * clears the session.
  */
 export const commitPresentation = async (itemId: string, driveId?: string): Promise<CommitPresentationResult> => {
-  const { token, driveId: currentDriveId } = await requireAuth();
+  // Resolve against the drive the caller named. Deriving it from the tab
+  // instead would throw whenever the tab has moved off a presentation, which is
+  // exactly the situation `drive_id` exists to handle — and would strand a
+  // dirty session as neither committable nor discardable until it expired.
+  const { token, driveId: currentDriveId } = await requireAuth(driveId);
 
   // Look the session up under the explicit drive when given (e.g. from
   // list_presentation_sessions after the tab navigated to another deck),
@@ -571,36 +689,18 @@ export const commitPresentation = async (itemId: string, driveId?: string): Prom
   }
 
   // Commit against the session's own drive/item — the file lives there
-  // regardless of which deck the tab currently shows.
-  const blob = await writeZip(session.entries);
-  const url = `${GRAPH_BASE}/drives/${session.driveId}/items/${session.itemId}/content`;
-  const resp = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      'If-Match': session.etag,
-    },
-    body: blob,
-    signal: AbortSignal.timeout(60_000),
-  });
-
-  if (resp.status === 412) {
+  // regardless of which deck the tab currently shows. A rejected save cannot be
+  // retried here the way `editPresentation` retries: a session's edits are bytes
+  // accumulated over many tool calls, not a function that can be re-applied to
+  // newer content. Every failure therefore leaves the session in place, with its
+  // pending edits intact, for the caller to retry or discard.
+  const saved = await savePackage(session.driveId, session.itemId, token, session.entries, session.etag);
+  if (!saved) {
     throw ToolError.validation(
       `File changed in the browser since open_presentation (ETag mismatch). ` +
         `Pending edits were NOT saved. Call discard_presentation and then open_presentation to reload the latest version, ` +
         `or commit individual changes without a session.`,
     );
-  }
-  if (resp.status === 423) {
-    // Leave the session in place — its dirty edits are preserved so the caller
-    // can close the editor (releasing the lock) and call commit again.
-    throw ToolError.validation(FILE_LOCKED_MESSAGE);
-  }
-  if (!resp.ok) {
-    const errorBody = (await resp.text().catch(() => '')).substring(0, 512);
-    // Leave the session in place so the caller can retry or discard.
-    throw ToolError.internal(`Failed to commit session: ${resp.status} — ${errorBody}`);
   }
 
   deleteSession(session.driveId, session.itemId);
@@ -614,7 +714,7 @@ export interface DiscardPresentationResult {
 
 /** Drop a session without uploading. Idempotent — returns discarded=false if nothing was open. */
 export const discardPresentation = async (itemId: string, driveId?: string): Promise<DiscardPresentationResult> => {
-  const { driveId: currentDriveId } = await requireAuth();
+  const { driveId: currentDriveId } = await requireAuth(driveId);
   const discarded = deleteSession(driveId ?? currentDriveId, itemId);
   return { item_id: itemId, discarded };
 };
@@ -642,8 +742,6 @@ export const listPresentationSessions = (): ListedSession[] => {
     idle_seconds: Math.round((now - s.lastAccessedAt) / 1000),
   }));
 };
-
-const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 
 const childElementsByName = (parent: Element, localName: string): Element[] => {
   const out: Element[] = [];

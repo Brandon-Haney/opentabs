@@ -1,7 +1,8 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { downloadPptx, uploadPptx } from '../pptx-utils.js';
+import { editPresentation } from '../pptx-utils.js';
 import { addImageToSlide } from '../slide-edit.js';
+import { driveIdInput } from './schemas.js';
 
 export const addImage = defineTool({
   name: 'add_image',
@@ -15,6 +16,7 @@ export const addImage = defineTool({
   group: 'Slides',
   input: z.object({
     item_id: z.string().describe('Item ID of the PowerPoint file'),
+    drive_id: driveIdInput,
     slide_number: z.number().int().min(1).describe('Slide number (1-indexed)'),
     base64: z.string().describe('Base64-encoded image bytes. Accepts raw base64 or a `data:image/...;base64,...` URI.'),
     format: z
@@ -35,19 +37,17 @@ export const addImage = defineTool({
       throw ToolError.validation('base64 image data is required');
     }
 
-    const entries = await downloadPptx(params.item_id);
-    const { new_shape_id } = addImageToSlide(entries, params.slide_number, {
-      base64: params.base64,
-      format: params.format,
-      x: params.x,
-      y: params.y,
-      w: params.w,
-      h: params.h,
-      rotation: params.rotation,
-      name: params.name,
-    });
-
-    await uploadPptx(params.item_id, entries);
-    return { new_shape_id };
+    return editPresentation(params.item_id, params.drive_id, entries =>
+      addImageToSlide(entries, params.slide_number, {
+        base64: params.base64,
+        format: params.format,
+        x: params.x,
+        y: params.y,
+        w: params.w,
+        h: params.h,
+        rotation: params.rotation,
+        name: params.name,
+      }),
+    );
   },
 });

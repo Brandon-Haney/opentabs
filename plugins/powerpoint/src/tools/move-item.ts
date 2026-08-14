@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { api, getCurrentDriveId } from '../powerpoint-api.js';
-import { driveItemSchema, mapDriveItem, type RawDriveItem } from './schemas.js';
+import { api, requireDriveId } from '../powerpoint-api.js';
+import { driveIdInput, driveItemSchema, mapDriveItem, type RawDriveItem } from './schemas.js';
 
 export const moveItem = defineTool({
   name: 'move_item',
@@ -11,6 +11,7 @@ export const moveItem = defineTool({
   icon: 'folder-input',
   group: 'Files',
   input: z.object({
+    drive_id: driveIdInput,
     item_id: z.string().describe('Item ID of the file or folder to move'),
     destination_folder_id: z.string().describe('Destination folder item ID'),
   }),
@@ -18,7 +19,7 @@ export const moveItem = defineTool({
     item: driveItemSchema.describe('Moved file or folder details'),
   }),
   handle: async params => {
-    const driveId = await getCurrentDriveId();
+    const driveId = await requireDriveId(params.drive_id);
     const data = await api<RawDriveItem>(`/drives/${driveId}/items/${params.item_id}`, {
       method: 'PATCH',
       body: { parentReference: { id: params.destination_folder_id } },

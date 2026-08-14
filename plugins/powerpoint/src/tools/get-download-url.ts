@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { api, getCurrentDriveId } from '../powerpoint-api.js';
-import type { RawDriveItem } from './schemas.js';
+import { api, requireDriveId } from '../powerpoint-api.js';
+import { driveIdInput, type RawDriveItem } from './schemas.js';
 
 export const getDownloadUrl = defineTool({
   name: 'get_download_url',
@@ -11,6 +11,7 @@ export const getDownloadUrl = defineTool({
   icon: 'download',
   group: 'Files',
   input: z.object({
+    drive_id: driveIdInput,
     item_id: z.string().describe('Item ID of the file'),
     format: z
       .enum(['pdf', 'jpg', 'png'])
@@ -22,7 +23,7 @@ export const getDownloadUrl = defineTool({
     name: z.string().describe('File name'),
   }),
   handle: async params => {
-    const driveId = await getCurrentDriveId();
+    const driveId = await requireDriveId(params.drive_id);
 
     if (params.format) {
       return {

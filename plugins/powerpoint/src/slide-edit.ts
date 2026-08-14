@@ -16,8 +16,29 @@
  */
 
 import { ToolError } from '@opentabs-dev/plugin-sdk';
-import { getNotesForSlide, getSlideList, TEXT_DECODER, TEXT_ENCODER } from './pptx-utils.js';
-import { childByLocalName, childElements, isElement, parseXml, serializeXml } from './xml.js';
+import { buildSolidFill } from './color.js';
+import { appendPlaceholder, type PlaceholderSpec, readLayoutSlots } from './placeholders.js';
+import {
+  getNotesForSlide,
+  getRelatedParts,
+  getSlideList,
+  relsPathFor,
+  resolveRelTarget,
+  TEXT_DECODER,
+  TEXT_ENCODER,
+} from './pptx-utils.js';
+import {
+  A_NS,
+  childByLocalName,
+  childElements,
+  CT_NS,
+  isElement,
+  P_NS,
+  parseXml,
+  PKG_REL_NS,
+  R_NS,
+  serializeXml,
+} from './xml.js';
 
 // --- Units ---
 
@@ -27,11 +48,6 @@ const ROT_UNITS_PER_DEG = 60000;
 
 const inchesToEmu = (inches: number): number => Math.round(inches * EMU_PER_INCH);
 const degreesToRotUnits = (deg: number): number => Math.round(deg * ROT_UNITS_PER_DEG);
-
-// --- Namespaces ---
-
-const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
-const P_NS = 'http://schemas.openxmlformats.org/presentationml/2006/main';
 
 /** Return the nvProps container for any shape kind. */
 const getNvProps = (shape: Element): Element | undefined =>
@@ -172,8 +188,8 @@ export const editShapeGeometry = (slideXml: string, shapeId: string, edit: Geome
   return serializeXml(doc);
 };
 
-/** Replace a shape's fill with a solid color. Accepts hex with or without `#`. */
-export const editShapeFill = (slideXml: string, shapeId: string, hexColor: string): string => {
+/** Replace a shape's fill with a solid color — a hex literal or a theme slot. */
+export const editShapeFill = (slideXml: string, shapeId: string, color: string): string => {
   const doc = parseXml(slideXml);
   const shape = findShapeById(doc, shapeId);
   if (!shape) throw ToolError.notFound(`Shape ${shapeId} not found on slide`);
@@ -184,21 +200,15 @@ export const editShapeFill = (slideXml: string, shapeId: string, hexColor: strin
   const spPr = childByLocalName(shape, 'spPr') ?? childByLocalName(shape, 'grpSpPr');
   if (!spPr) throw ToolError.internal('Shape has no spPr');
 
-  const normalized = hexColor.replace(/^#/, '').toUpperCase();
-  if (!/^[0-9A-F]{6}$/.test(normalized)) {
-    throw ToolError.validation(`Invalid hex color: ${hexColor} — expected 6 hex digits`);
-  }
+  // Built before anything is removed, so an invalid colour leaves the shape
+  // exactly as it was rather than stripping its fill on the way to failing.
+  const solidFill = buildSolidFill(doc, color, 'fill');
 
   // Remove any existing fill elements to keep the shape in a consistent state.
   for (const tag of ['solidFill', 'gradFill', 'blipFill', 'pattFill', 'noFill']) {
     const existing = childByLocalName(spPr, tag);
     if (existing) spPr.removeChild(existing);
   }
-
-  const solidFill = doc.createElementNS(A_NS, 'a:solidFill');
-  const srgb = doc.createElementNS(A_NS, 'a:srgbClr');
-  srgb.setAttribute('val', normalized);
-  solidFill.appendChild(srgb);
 
   // Schema order: xfrm, custGeom/prstGeom, fill, ln, ...
   // Insert fill after geometry if present, else after xfrm, else at end.
@@ -211,12 +221,58 @@ export const editShapeFill = (slideXml: string, shapeId: string, hexColor: strin
   return serializeXml(doc);
 };
 
+/** Deepest outline level OOXML allows: `ST_TextIndentLevelType` is 0–8. */
+const MAX_OUTLINE_LEVEL = 8;
+
+/** One paragraph of an outline, with the level its leading tabs asked for. */
+export interface OutlineParagraph {
+  text: string;
+  level: number;
+}
+
+/**
+ * Split text into paragraphs, reading leading tabs as outline levels.
+ *
+ * A tab is what a person presses to demote a bullet, so it is what the tools
+ * take: one tab is the second level, two the third. Prose never begins with a
+ * tab, so text that uses none is simply flat — the behaviour every existing
+ * caller already relies on.
+ */
+export const parseOutline = (text: string): OutlineParagraph[] =>
+  text.split('\n').map(line => {
+    const stripped = line.replace(/^\t+/, '');
+    return {
+      text: stripped,
+      level: Math.min(line.length - stripped.length, MAX_OUTLINE_LEVEL),
+    };
+  });
+
+/**
+ * Build the `<a:pPr>` for one outline paragraph.
+ *
+ * Carries `lvl` and nothing else. Indent, bullet glyph, and per-level size all
+ * resolve up the cascade to the layout and master, and stating any of them here
+ * would *win* over that cascade — freezing the list against the deck's own
+ * styling and, in practice, rendering every level flat. The preserved `pPr` is
+ * therefore consulted only for alignment, which has no level-specific default
+ * to conflict with.
+ */
+const buildOutlinePPr = (doc: Document, level: number, preserved: Element | null): Element => {
+  const pPr = doc.createElementNS(A_NS, 'a:pPr');
+  // Level 0 is the schema default and PowerPoint omits it.
+  if (level > 0) pPr.setAttribute('lvl', String(level));
+  const algn = preserved?.getAttribute('algn');
+  if (algn) pPr.setAttribute('algn', algn);
+  return pPr;
+};
+
 /**
  * Replace the text content of a shape's text body. Preserves the first
  * paragraph's pPr and the first run's rPr so existing formatting carries
- * over to the new text. Newlines split into separate paragraphs.
+ * over to the new text. Newlines split into separate paragraphs, and leading
+ * tabs demote a paragraph to a deeper outline level.
  */
-export const editShapeText = (slideXml: string, shapeId: string, newText: string): string => {
+export const editShapeText = (slideXml: string, shapeId: string, newText: string, format?: TextFormatEdit): string => {
   const doc = parseXml(slideXml);
   const shape = findShapeById(doc, shapeId);
   if (!shape) throw ToolError.notFound(`Shape ${shapeId} not found on slide`);
@@ -245,22 +301,120 @@ export const editShapeText = (slideXml: string, shapeId: string, newText: string
     txBody.removeChild(p);
   }
 
-  const lines = newText.split('\n');
-  for (const line of lines) {
+  const paragraphs = parseOutline(newText);
+  // Only text that actually asks for levels gets a rebuilt `pPr`. Without that
+  // gate, rewriting a shape's text would silently discard a bullet glyph or
+  // indent a person had set by hand on the paragraph we cloned from.
+  const hasLevels = paragraphs.some(p => p.level > 0);
+
+  for (const paragraph of paragraphs) {
     const p = doc.createElementNS(A_NS, 'a:p');
-    if (preservedPPr) p.appendChild(preservedPPr.cloneNode(true));
+    if (hasLevels) p.appendChild(buildOutlinePPr(doc, paragraph.level, preservedPPr));
+    else if (preservedPPr) p.appendChild(preservedPPr.cloneNode(true));
 
     const r = doc.createElementNS(A_NS, 'a:r');
     if (preservedRPr) r.appendChild(preservedRPr.cloneNode(true));
+    if (format) applyRunFormat(doc, r, format);
 
     const t = doc.createElementNS(A_NS, 'a:t');
-    t.textContent = line;
+    t.textContent = paragraph.text;
     r.appendChild(t);
     p.appendChild(r);
     txBody.appendChild(p);
   }
 
   return serializeXml(doc);
+};
+
+/**
+ * Apply run formatting to every run already in a shape, leaving the text alone.
+ *
+ * Resizing text is the remedy for a box that overflows, and that has to be
+ * reachable without rewriting the content — otherwise a caller has to know the
+ * existing text just to change its size.
+ */
+export const formatShapeText = (slideXml: string, shapeId: string, format: TextFormatEdit): string => {
+  const doc = parseXml(slideXml);
+  const shape = findShapeById(doc, shapeId);
+  if (!shape) throw ToolError.notFound(`Shape ${shapeId} not found on slide`);
+
+  const txBody = childByLocalName(shape, 'txBody');
+  if (!txBody) throw ToolError.validation(`Shape ${shapeId} (${shape.localName}) does not have a text body`);
+
+  let runCount = 0;
+  for (const p of childElements(txBody).filter(c => c.localName === 'p')) {
+    for (const r of childElements(p).filter(c => c.localName === 'r')) {
+      applyRunFormat(doc, r, format);
+      runCount++;
+    }
+    // An empty paragraph carries its formatting on `endParaRPr`, so a size
+    // applied there keeps blank lines in step with the rest of the text.
+    const endParaRPr = childByLocalName(p, 'endParaRPr');
+    if (endParaRPr && format.fontSize !== undefined) {
+      endParaRPr.setAttribute('sz', String(Math.round(format.fontSize * 100)));
+    }
+  }
+  if (runCount === 0) throw ToolError.validation(`Shape ${shapeId} has no text runs to format`);
+
+  return serializeXml(doc);
+};
+
+/** Run-level text formatting applied on top of the preserved `rPr`. */
+export interface TextFormatEdit {
+  /** Font size in points. */
+  fontSize?: number;
+  bold?: boolean;
+  italic?: boolean;
+  /** Text color as hex, with or without a leading `#`. */
+  color?: string;
+}
+
+/**
+ * Apply run formatting to a run element, creating or amending its `<a:rPr>`.
+ *
+ * Amends rather than replaces: the run may already carry a preserved `rPr`
+ * holding theme font and language, and only the requested attributes should
+ * change. `sz` is in hundredths of a point.
+ */
+const applyRunFormat = (doc: Document, run: Element, format: TextFormatEdit): void => {
+  // Built before the DOM is touched. An unvalidated colour would otherwise reach
+  // `a:srgbClr/@val`, which is `xsd:hexBinary` — PowerPoint rejects the part and
+  // offers to repair the file by discarding the slide, and by then the whole
+  // package has already been PUT over the co-edited original.
+  const fill = format.color === undefined ? undefined : buildSolidFill(doc, format.color, 'text');
+
+  let rPr = childByLocalName(run, 'rPr');
+  if (!rPr) {
+    rPr = doc.createElementNS(A_NS, 'a:rPr');
+    run.insertBefore(rPr, run.firstChild);
+  }
+  if (format.fontSize !== undefined) rPr.setAttribute('sz', String(Math.round(format.fontSize * 100)));
+  if (format.bold !== undefined) rPr.setAttribute('b', format.bold ? '1' : '0');
+  if (format.italic !== undefined) rPr.setAttribute('i', format.italic ? '1' : '0');
+  if (fill) setRunFill(rPr, fill);
+};
+
+/** Fill kinds in `EG_FillProperties`, of which an `a:rPr` may carry at most one. */
+const FILL_ELEMENTS = ['noFill', 'solidFill', 'gradFill', 'blipFill', 'pattFill', 'grpFill'];
+
+/**
+ * Replace a run's fill with a solid colour, in the position the schema requires.
+ *
+ * `CT_TextCharacterProperties` is a sequence, and its fill group comes *after*
+ * `a:ln` — the reverse of `CT_ShapeProperties`, where the fill precedes the
+ * line. A run carrying a text outline is ordinary content (it is what
+ * PowerPoint writes for outlined and WordArt text), so anchoring at the first
+ * child would put the fill ahead of that outline and make the part invalid.
+ * Any other fill kind is removed first, since the group permits only one.
+ */
+const setRunFill = (rPr: Element, solidFill: Element): void => {
+  for (const existing of childElements(rPr).filter(c => FILL_ELEMENTS.includes(c.localName))) {
+    rPr.removeChild(existing);
+  }
+
+  const ln = childByLocalName(rPr, 'ln');
+  if (ln) rPr.insertBefore(solidFill, ln.nextSibling);
+  else rPr.insertBefore(solidFill, rPr.firstChild);
 };
 
 /** Remove a shape from its parent (spTree or group). */
@@ -277,7 +431,7 @@ export const deleteShapeById = (slideXml: string, shapeId: string): string => {
 };
 
 /** Find the `<p:spTree>` element that holds all shapes on a slide. */
-const findSpTree = (doc: Document): Element | undefined => {
+export const findSpTree = (doc: Document): Element | undefined => {
   const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_ELEMENT);
   let node: Node | null = walker.nextNode();
   while (node) {
@@ -304,14 +458,6 @@ export interface TextFormatting {
   font?: string;
   align?: TextAlign;
 }
-
-const normalizeHex = (hex: string, label: string): string => {
-  const normalized = hex.replace(/^#/, '').toUpperCase();
-  if (!/^[0-9A-F]{6}$/.test(normalized)) {
-    throw ToolError.validation(`Invalid ${label} color: ${hex} — expected 6 hex digits`);
-  }
-  return normalized;
-};
 
 /** Build a minimal `<p:txBody>` containing the given text and formatting. */
 const buildTxBody = (doc: Document, text: string, fmt: TextFormatting): Element => {
@@ -352,14 +498,7 @@ const buildTxBody = (doc: Document, text: string, fmt: TextFormatting): Element 
     if (fmt.font_size !== undefined) rPr.setAttribute('sz', String(Math.round(fmt.font_size * 100)));
     if (fmt.bold) rPr.setAttribute('b', '1');
     if (fmt.italic) rPr.setAttribute('i', '1');
-    if (fmt.color) {
-      const normalized = normalizeHex(fmt.color, 'text');
-      const solidFill = doc.createElementNS(A_NS, 'a:solidFill');
-      const srgb = doc.createElementNS(A_NS, 'a:srgbClr');
-      srgb.setAttribute('val', normalized);
-      solidFill.appendChild(srgb);
-      rPr.appendChild(solidFill);
-    }
+    if (fmt.color) rPr.appendChild(buildSolidFill(doc, fmt.color, 'text'));
     if (fmt.font) {
       const latin = doc.createElementNS(A_NS, 'a:latin');
       latin.setAttribute('typeface', fmt.font);
@@ -405,7 +544,7 @@ const populateSpPr = (
   spPr: Element,
   geom: { x: number; y: number; w: number; h: number; rotation?: number },
   preset: string,
-  fillHex: string | undefined,
+  fill: string | undefined,
 ): void => {
   const doc = spPr.ownerDocument;
   if (!doc) throw ToolError.internal('spPr has no owner document');
@@ -429,18 +568,11 @@ const populateSpPr = (
   prstGeom.appendChild(doc.createElementNS(A_NS, 'a:avLst'));
   spPr.appendChild(prstGeom);
 
-  if (fillHex !== undefined) {
-    const normalized = normalizeHex(fillHex, 'fill');
-    const solidFill = doc.createElementNS(A_NS, 'a:solidFill');
-    const srgb = doc.createElementNS(A_NS, 'a:srgbClr');
-    srgb.setAttribute('val', normalized);
-    solidFill.appendChild(srgb);
-    spPr.appendChild(solidFill);
-  }
+  if (fill !== undefined) spPr.appendChild(buildSolidFill(doc, fill, 'fill'));
 };
 
 /** Get the largest cNvPr id currently in use anywhere in the document. */
-const getMaxCNvPrId = (doc: Document): number => {
+export const getMaxCNvPrId = (doc: Document): number => {
   let max = 0;
   const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_ELEMENT);
   let node: Node | null = walker.nextNode();
@@ -609,10 +741,6 @@ export const addPresetShape = (
 
 // --- Multi-file operations (Phase 3b) ---
 
-const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
-const PKG_REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
-const CT_NS = 'http://schemas.openxmlformats.org/package/2006/content-types';
-
 const IMAGE_CONTENT_TYPES: Record<string, { ext: string; mime: string }> = {
   png: { ext: 'png', mime: 'image/png' },
   jpg: { ext: 'jpg', mime: 'image/jpeg' },
@@ -685,6 +813,24 @@ const ensureContentTypeDefault = (entries: Map<string, Uint8Array>, ext: string,
   const firstOverride = childElements(types).find(c => c.localName === 'Override');
   if (firstOverride) types.insertBefore(def, firstOverride);
   else types.appendChild(def);
+
+  entries.set('[Content_Types].xml', TEXT_ENCODER.encode(serializeXml(doc)));
+};
+
+/** Remove the `[Content_Types].xml` Override entries naming any of the given parts. */
+const removeContentTypeOverrides = (entries: Map<string, Uint8Array>, partPaths: string[]): void => {
+  const data = entries.get('[Content_Types].xml');
+  if (!data) throw ToolError.internal('[Content_Types].xml missing from archive');
+  const doc = parseXml(TEXT_DECODER.decode(data));
+  const types = doc.documentElement;
+  if (!types || types.localName !== 'Types') throw ToolError.internal('Malformed [Content_Types].xml');
+
+  const partNames = new Set(partPaths.map(p => `/${p}`));
+  for (const child of childElements(types)) {
+    if (child.localName === 'Override' && partNames.has(child.getAttribute('PartName') ?? '')) {
+      types.removeChild(child);
+    }
+  }
 
   entries.set('[Content_Types].xml', TEXT_ENCODER.encode(serializeXml(doc)));
 };
@@ -1056,6 +1202,236 @@ export const duplicateSlide = (
     entries.set(newRelsPath, TEXT_ENCODER.encode(serializeXml(relsDoc)));
   }
 
+  // 4-7. Register the part with the package: content-type override,
+  //      presentation relationship, and sldIdLst entry at the target position.
+  return registerSlidePart(entries, newBaseName, slideFiles.length, insertAt);
+};
+
+/** A slide document with an empty shape tree, ready for placeholders to be appended. */
+const EMPTY_SLIDE_XML =
+  `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+  `<p:sld xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}"><p:cSld><p:spTree>` +
+  `<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>` +
+  `<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/>` +
+  `<a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>` +
+  `</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
+
+/** Build a slide part holding one empty placeholder per slot the layout defines. */
+const buildSlideFromLayout = (specs: PlaceholderSpec[]): string => {
+  const doc = parseXml(EMPTY_SLIDE_XML);
+  const spTree = findSpTree(doc);
+  if (!spTree) throw ToolError.internal('Slide scaffold has no spTree');
+  // Shape id 1 belongs to the shape tree's own group, so slots start at 2.
+  for (const [i, spec] of specs.entries()) appendPlaceholder(spTree, spec, i + 2, i + 1);
+  return serializeXml(doc);
+};
+
+/**
+ * Create a slide from a layout, the way PowerPoint's own New Slide does.
+ *
+ * The layout defaults to the one slide 1 uses, so a deck's prevailing look is
+ * kept without the caller having to name a part.
+ */
+export const addSlide = (
+  entries: Map<string, Uint8Array>,
+  opts: { layoutPart?: string; insertAt?: number } = {},
+): DuplicateSlideResult => {
+  const slideFiles = getSlideList(entries);
+  const layoutPart =
+    opts.layoutPart ?? (slideFiles[0] ? getRelatedParts(entries, slideFiles[0], '/slideLayout')[0] : undefined);
+  if (!layoutPart) throw ToolError.notFound('Could not resolve a slide layout to build the new slide from');
+
+  // A caller-supplied path is written verbatim into a relationship target, so
+  // it has to be a layout and nothing else: pointing the relationship at some
+  // other part yields a slide PowerPoint cannot render, and a path carrying XML
+  // metacharacters would corrupt the rels part outright.
+  if (!/^ppt\/slideLayouts\/[\w.-]+\.xml$/.test(layoutPart)) {
+    throw ToolError.validation(
+      `Not a slide layout part: "${layoutPart}". Expected a path like "ppt/slideLayouts/slideLayout2.xml" — ` +
+        `get one from \`get_slide_structure\`.`,
+    );
+  }
+  const layoutData = entries.get(layoutPart);
+  if (!layoutData) throw ToolError.notFound(`Slide layout not found in this presentation: ${layoutPart}`);
+
+  const specs = readLayoutSlots(TEXT_DECODER.decode(layoutData));
+  const newBaseName = `slide${getMaxSlideIndex(entries) + 1}`;
+  entries.set(`ppt/slides/${newBaseName}.xml`, TEXT_ENCODER.encode(buildSlideFromLayout(specs)));
+
+  // The slide must point at the layout it was built from; the relative target
+  // steps out of `ppt/slides/` and back into the layout's own directory.
+  const layoutTarget = `../${layoutPart.replace(/^ppt\//, '')}`;
+  entries.set(
+    `ppt/slides/_rels/${newBaseName}.xml.rels`,
+    TEXT_ENCODER.encode(
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<Relationships xmlns="${PKG_REL_NS}">` +
+        `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" ` +
+        `Target="${layoutTarget}"/></Relationships>`,
+    ),
+  );
+
+  return registerSlidePart(entries, newBaseName, slideFiles.length, opts.insertAt);
+};
+
+/** Locate the `<p:sldIdLst>` in a parsed `ppt/presentation.xml`. */
+const findSldIdLst = (presDoc: Document): Element => {
+  const walker = presDoc.createTreeWalker(presDoc, NodeFilter.SHOW_ELEMENT);
+  let node: Node | null = walker.nextNode();
+  while (node) {
+    if (isElement(node) && node.localName === 'sldIdLst') return node;
+    node = walker.nextNode();
+  }
+  throw ToolError.internal('presentation.xml has no sldIdLst');
+};
+
+/**
+ * Whether a slide is hidden from the slide show.
+ *
+ * Hiding is `<p:sld show="0">` on the slide root. The attribute defaults to
+ * true, so a slide that states nothing is visible — which is how nearly every
+ * slide is stored, and why its absence must not be read as hidden.
+ */
+export const isSlideHidden = (slideXml: string): boolean => {
+  const show = parseXml(slideXml).documentElement?.getAttribute('show');
+  return show === '0' || show === 'false';
+};
+
+/**
+ * Hide a slide from the slide show, or restore it.
+ *
+ * A hidden slide stays in the deck, keeps its number, and is still editable —
+ * it is simply skipped when presenting. Restoring visibility removes the
+ * attribute rather than writing `show="1"`: true is the schema default and
+ * PowerPoint omits it, so writing it back would leave a fingerprint on every
+ * slide this ever touched.
+ */
+export const setSlideHidden = (slideXml: string, hidden: boolean): string => {
+  const doc = parseXml(slideXml);
+  const root = doc.documentElement;
+  if (!root) throw ToolError.internal('Empty slide XML');
+  if (hidden) root.setAttribute('show', '0');
+  else root.removeAttribute('show');
+  return serializeXml(doc);
+};
+
+export interface MoveSlideResult {
+  new_position: number;
+  total_slides: number;
+}
+
+/**
+ * Move a slide to another position in the deck.
+ *
+ * Slide order lives entirely in `<p:sldIdLst>` — the `slideN.xml` filenames are
+ * allocation order and mean nothing to the reader — so reordering is a move
+ * within that one list and touches no other part.
+ *
+ * Positions are 1-indexed and describe where the slide ends up *after* the
+ * move, which is what a person means by "make this slide 2".
+ */
+export const moveSlide = (entries: Map<string, Uint8Array>, from: number, to: number): MoveSlideResult => {
+  const presData = entries.get('ppt/presentation.xml');
+  if (!presData) throw ToolError.internal('ppt/presentation.xml missing');
+  const presDoc = parseXml(TEXT_DECODER.decode(presData));
+  const sldIdLst = findSldIdLst(presDoc);
+  const sldIds = childElements(sldIdLst).filter(c => c.localName === 'sldId');
+
+  const moving = from >= 1 ? sldIds[from - 1] : undefined;
+  if (!moving) {
+    throw ToolError.notFound(`Slide ${from} not found — presentation has ${sldIds.length} slides`);
+  }
+  const target = Math.max(1, Math.min(to, sldIds.length));
+
+  // Remove first, then re-insert against the shortened list, so a target
+  // position is read the way a person means it: where the slide ends up, not
+  // where it would land if everything else stayed put.
+  sldIdLst.removeChild(moving);
+  const remaining = childElements(sldIdLst).filter(c => c.localName === 'sldId');
+  const anchor = remaining[target - 1];
+  if (anchor) sldIdLst.insertBefore(moving, anchor);
+  else sldIdLst.appendChild(moving);
+
+  entries.set('ppt/presentation.xml', TEXT_ENCODER.encode(serializeXml(presDoc)));
+  return { new_position: target, total_slides: sldIds.length };
+};
+
+/**
+ * Remove a slide from the package along with every reference to it.
+ *
+ * The inverse of `registerSlidePart`. A slide is named in four places, and
+ * leaving any one behind produces a dangling reference that PowerPoint reports
+ * as a damaged file, so each is resolved structurally rather than by matching
+ * text: the presentation relationship is found by resolving its `Target` back to
+ * this slide's path — which is correct whether the target is written relative or
+ * package-absolute — and the `<p:sldId>` by the relationship id that lookup
+ * yields.
+ *
+ * @param ownedParts parts referenced by this slide alone, deleted along with it.
+ */
+export const removeSlideFromPackage = (
+  entries: Map<string, Uint8Array>,
+  slideFile: string,
+  ownedParts: string[],
+): void => {
+  // 1. Delete the slide, its relationships, and the parts it alone owned.
+  const deletedParts = [slideFile, ...ownedParts];
+  for (const part of deletedParts) {
+    entries.delete(part);
+    entries.delete(relsPathFor(part));
+  }
+
+  // 2. Drop the presentation → slide relationship, keeping its id to find the
+  //    slide's entry in the slide order.
+  const presRelsData = entries.get('ppt/_rels/presentation.xml.rels');
+  if (!presRelsData) throw ToolError.internal('ppt/_rels/presentation.xml.rels missing');
+  const presRelsDoc = parseXml(TEXT_DECODER.decode(presRelsData));
+  const presRelsRoot = presRelsDoc.documentElement;
+  if (!presRelsRoot) throw ToolError.internal('Malformed presentation.xml.rels');
+
+  let slideRelId: string | undefined;
+  for (const child of childElements(presRelsRoot)) {
+    if (child.localName !== 'Relationship') continue;
+    const target = child.getAttribute('Target') ?? '';
+    if (!target || resolveRelTarget('ppt/presentation.xml', target) !== slideFile) continue;
+    slideRelId = child.getAttribute('Id') ?? undefined;
+    presRelsRoot.removeChild(child);
+  }
+  entries.set('ppt/_rels/presentation.xml.rels', TEXT_ENCODER.encode(serializeXml(presRelsDoc)));
+
+  // 3. Drop the slide's place in the slide order.
+  const presData = entries.get('ppt/presentation.xml');
+  if (!presData) throw ToolError.internal('ppt/presentation.xml missing');
+  const presDoc = parseXml(TEXT_DECODER.decode(presData));
+  const sldIdLst = findSldIdLst(presDoc);
+  for (const sldId of childElements(sldIdLst)) {
+    if (sldId.localName !== 'sldId') continue;
+    const rId = sldId.getAttributeNS(R_NS, 'id') || sldId.getAttribute('r:id') || '';
+    if (rId && rId === slideRelId) sldIdLst.removeChild(sldId);
+  }
+  entries.set('ppt/presentation.xml', TEXT_ENCODER.encode(serializeXml(presDoc)));
+
+  // 4. Drop the content-type declarations for every part removed.
+  removeContentTypeOverrides(entries, deletedParts);
+};
+
+/**
+ * Register an already-written `ppt/slides/<baseName>.xml` part with the package.
+ *
+ * Shared by every slide-creating operation: writing the part is what differs
+ * between duplicating a slide and building one from a layout, while declaring
+ * it to the package is identical and easy to get subtly wrong.
+ *
+ * @param existingSlideCount slide count *before* this one was added.
+ */
+const registerSlidePart = (
+  entries: Map<string, Uint8Array>,
+  newBaseName: string,
+  existingSlideCount: number,
+  insertAt?: number,
+): DuplicateSlideResult => {
+  const newSlideFile = `ppt/slides/${newBaseName}.xml`;
+
   // 4. Add an Override in [Content_Types].xml.
   addContentTypeOverride(
     entries,
@@ -1081,17 +1457,7 @@ export const duplicateSlide = (
   const presData = entries.get('ppt/presentation.xml');
   if (!presData) throw ToolError.internal('ppt/presentation.xml missing');
   const presDoc = parseXml(TEXT_DECODER.decode(presData));
-  const walker = presDoc.createTreeWalker(presDoc, NodeFilter.SHOW_ELEMENT);
-  let sldIdLst: Element | undefined;
-  let node: Node | null = walker.nextNode();
-  while (node) {
-    if (isElement(node) && node.localName === 'sldIdLst') {
-      sldIdLst = node;
-      break;
-    }
-    node = walker.nextNode();
-  }
-  if (!sldIdLst) throw ToolError.internal('presentation.xml has no sldIdLst');
+  const sldIdLst = findSldIdLst(presDoc);
 
   // sldId id values start at 256 and must be unique.
   const existingSldIds = childElements(sldIdLst).filter(c => c.localName === 'sldId');
@@ -1118,6 +1484,6 @@ export const duplicateSlide = (
 
   return {
     new_slide_number: targetPosition,
-    total_slides: slideFiles.length + 1,
+    total_slides: existingSlideCount + 1,
   };
 };

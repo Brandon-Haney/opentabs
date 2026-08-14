@@ -12,7 +12,7 @@
  */
 
 import { ToolError } from '@opentabs-dev/plugin-sdk';
-import { TEXT_DECODER } from './pptx-utils.js';
+import { getRelatedParts, TEXT_DECODER } from './pptx-utils.js';
 import {
   childByLocalName,
   childElements,
@@ -73,6 +73,8 @@ export interface ShapeNode {
   preset?: string;
   /** Placeholder type for placeholder shapes ("title", "body", "ctrTitle", ...). */
   placeholder_type?: string;
+  /** Placeholder index, which disambiguates same-typed placeholders on one slide. */
+  placeholder_idx?: number;
   /** Position/size in inches. May be 0 when inherited from a layout/master. */
   x: number;
   y: number;
@@ -220,6 +222,17 @@ interface ShapeCommon {
   id: string;
   name: string;
   placeholderType?: string;
+  /**
+   * `<p:ph idx>`, defaulting to 0 when the attribute is absent.
+   *
+   * The index — not the type — is what identifies a placeholder within a slide.
+   * A two-content layout carries two `body` placeholders distinguished only by
+   * `idx`, and a slide's placeholder is matched to the layout placeholder it
+   * inherits position, size, and formatting from by `(type, idx)`. Resolving a
+   * placeholder by type alone silently targets whichever one happens to come
+   * first in document order.
+   */
+  placeholderIdx?: number;
   isTextBox: boolean;
 }
 
@@ -233,8 +246,13 @@ const parseNvProps = (nvProps: Element | undefined): ShapeCommon => {
   const isTextBox = cNvSpPr?.getAttribute('txBox') === '1';
   const nvPr = childByLocalName(nvProps, 'nvPr');
   const ph = nvPr ? childByLocalName(nvPr, 'ph') : undefined;
+  // A `<p:ph>` with no `type` is a body placeholder — that is the schema
+  // default, not a fallback guess.
   const placeholderType = ph?.getAttribute('type') ?? (ph ? 'body' : undefined);
-  return { id, name, placeholderType, isTextBox };
+  const rawIdx = ph?.getAttribute('idx');
+  const parsedIdx = rawIdx === null || rawIdx === undefined ? Number.NaN : Number.parseInt(rawIdx, 10);
+  const placeholderIdx = ph ? (Number.isNaN(parsedIdx) ? 0 : parsedIdx) : undefined;
+  return { id, name, placeholderType, placeholderIdx, isTextBox };
 };
 
 const parseSp = (sp: Element): ShapeNode => {
@@ -264,6 +282,7 @@ const parseSp = (sp: Element): ShapeNode => {
   };
   if (preset) node.preset = preset;
   if (common.placeholderType) node.placeholder_type = common.placeholderType;
+  if (common.placeholderIdx !== undefined) node.placeholder_idx = common.placeholderIdx;
   if (xfrm.rotation !== undefined && xfrm.rotation !== 0) node.rotation = xfrm.rotation;
   if (fill) node.fill = fill;
   if (text) node.text = text;
@@ -413,11 +432,64 @@ export const getSlideSize = (entries: Map<string, Uint8Array>): { width: number;
   return { width: emuToInches(cx), height: emuToInches(cy) };
 };
 
+/**
+ * Map a layout part's placeholders to their geometry, keyed by `<p:ph idx>`.
+ *
+ * A slide placeholder normally carries no `<a:xfrm>` of its own and takes its
+ * position and size from the layout placeholder sharing its `idx`. Reporting
+ * only what the slide states would describe most placeholders as having no
+ * geometry at all — the shape is on screen, but nothing says where.
+ */
+export const parseLayoutPlaceholderGeometry = (layoutXml: string): Map<number, Xfrm> => {
+  const byIdx = new Map<number, Xfrm>();
+  const root = parseXml(layoutXml).documentElement;
+  if (!root) return byIdx;
+  const cSld = firstDescendantByLocalName(root, 'cSld');
+  const spTree = cSld ? childByLocalName(cSld, 'spTree') : undefined;
+  if (!spTree) return byIdx;
+
+  for (const child of childElements(spTree)) {
+    const nvSpPr = childByLocalName(child, 'nvSpPr');
+    const common = parseNvProps(nvSpPr);
+    if (common.placeholderIdx === undefined) continue;
+    const spPr = childByLocalName(child, 'spPr');
+    const xfrm = parseXfrm(spPr ? childByLocalName(spPr, 'xfrm') : undefined);
+    if (xfrm.found) byIdx.set(common.placeholderIdx, xfrm);
+  }
+  return byIdx;
+};
+
+/**
+ * Resolve the geometry a slide's placeholders inherit, keyed by `<p:ph idx>`.
+ *
+ * Inheritance runs slide → layout → master, and both hops matter: a title
+ * placeholder typically states no geometry on the slide *or* on the layout, so
+ * resolving one hop still leaves it at the origin with no size. The master is
+ * therefore merged in underneath, with any layout value winning.
+ */
+export const resolveInheritedGeometry = (entries: Map<string, Uint8Array>, slideFile: string): Map<number, Xfrm> => {
+  const layoutPart = getRelatedParts(entries, slideFile, '/slideLayout')[0];
+  const layoutData = layoutPart ? entries.get(layoutPart) : undefined;
+  const masterPart = layoutPart ? getRelatedParts(entries, layoutPart, '/slideMaster')[0] : undefined;
+  const masterData = masterPart ? entries.get(masterPart) : undefined;
+
+  const geometry = masterData
+    ? parseLayoutPlaceholderGeometry(TEXT_DECODER.decode(masterData))
+    : new Map<number, Xfrm>();
+  if (layoutData) {
+    for (const [idx, xfrm] of parseLayoutPlaceholderGeometry(TEXT_DECODER.decode(layoutData))) {
+      geometry.set(idx, xfrm);
+    }
+  }
+  return geometry;
+};
+
 /** Parse a single slide XML into a structured layout tree. */
 export const parseSlideLayout = (
   slideXml: string,
   slideNumber: number,
   canvas: { width: number; height: number },
+  inheritedGeometry?: Map<number, Xfrm>,
 ): SlideLayout => {
   const doc = parseXml(slideXml);
   const root = doc.documentElement;
@@ -429,7 +501,22 @@ export const parseSlideLayout = (
   const shapes: ShapeNode[] = [];
   for (const child of childElements(spTree)) {
     const node = parseShapeElement(child);
-    if (node) shapes.push(node);
+    if (!node) continue;
+    // A value stated on the slide always wins; only an absent one inherits.
+    // `inherited_geometry` is already set upstream whenever the shape carried
+    // no `<a:xfrm>` — this resolves what it stands for instead of leaving
+    // zeroes behind. An unmatched idx keeps the flag and the zeroes rather
+    // than raising: a layout need not define every placeholder a slide carries.
+    if (node.inherited_geometry && node.placeholder_idx !== undefined) {
+      const inherited = inheritedGeometry?.get(node.placeholder_idx);
+      if (inherited) {
+        node.x = inherited.x;
+        node.y = inherited.y;
+        node.w = inherited.w;
+        node.h = inherited.h;
+      }
+    }
+    shapes.push(node);
   }
 
   return {

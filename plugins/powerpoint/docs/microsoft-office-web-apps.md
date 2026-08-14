@@ -138,9 +138,13 @@ A **type-3 revision** is a graph of typed objects:
   of a poll is a legitimate no-op that returns `StatusCode 0` and an empty
   `RevisionList`. Verify resulting state independently.
 
-Because it is JSON, the numeric `ClassId`/property enums can be **decoded from the
-client bundle** rather than reverse-engineered from binary — see
-[the bundle-extraction technique](#decoding-classid-and-property-enums).
+Crucially, **you do not build this from decoded enums — you copy an exemplar.**
+The action self-labels: the `ClassId: 131140` object carries a literal
+`"ActionName":"NewSlideWithLayout"` property. Diffing two captures of the *same*
+action shows everything byte-identical except four slots — the revision `Id`, its
+`BaseId`, and the action's `ActionId`/`ActionTime`. So capture one real request per
+action and patch those four; do not reverse-engineer the object graph. See
+[the pods wire is copy-an-exemplar](#the-pods-wire-is-copy-an-exemplar).
 
 ## The donor / replay pattern (using captured auth safely)
 
@@ -169,21 +173,39 @@ Two gotchas that will eat an afternoon:
   frame that actually *holds* it, not the first URL match. (`browser_fetch_in_frame`
   now does this automatically when `donorGlobal` is set.)
 
-## Decoding ClassId and property enums
+## The pods wire is copy-an-exemplar
 
-The numeric enums are symbolic constants in the client's webpack bundles. The
-technique (proven for Excel's EWA `Command` codes):
+The instinct is to decode the numeric `ClassId`/property enums from the client
+bundle and *construct* a revision. **For the pods co-authoring wire that is the
+wrong tool, and it costs a day to learn.** ~7 MB of client JS across ~30 bundles
+contains **none** of the wire field names (`ObjectGroups`, `ExpectedLatestId`, …),
+and the WASM is only text layout — the request graph is assembled by native/opaque
+code you cannot read. You do not need to. The wire is a **copy-an-exemplar**
+protocol:
 
-1. Find the editor's entry bundle — for PowerPoint it is loaded from
-   `res.public.onecdn.static.microsoft/wise/owl/powerpoint.app.boot.<hash>.js`, and
-   the editor logic is in `ppteditDS.core1.js` / `core2.js` / `core3.js` (their
-   names show up in call stacks). Discover the current hashed URLs from the boot
-   bundle's webpack chunk map.
-2. `curl` the public CDN bundles to files (no auth needed) and `grep` for the
-   feature name (`NewSlide`, `InsertSlide`, …), the `ClassId` decimals and their
-   hex forms, and the property-enum constant names near the numbers.
-3. Follow the webpack module graph to the routine that assembles the request and
-   read how it builds the objects.
+1. **Capture one real request per action.** Every write self-labels via the
+   `ClassId: 131140` object's `ActionName` (`NewSlideWithoutDialog`, `DuplicateSlide`,
+   `DeleteSlide`, `CommitTextEdit`, …), so attribution is free.
+2. **Diff two captures of the same action** — everything is byte-identical except
+   four slots: the revision `Id` (`<session-guid>|<counter>`; the guid is stable
+   per session), its `BaseId` (the current head, from a poll), and the action's
+   `ActionId`/`ActionTime`.
+3. **Replay = copy the exemplar verbatim, patch those four.** Derive `Id`/`BaseId`/
+   `ExpectedLatestId` from a fresh type-2 poll; mint a new `ActionId`/`ActionTime`.
+   This is the donor pattern, and being an opaque copy is also why it survives
+   Microsoft's build churn — there are no field names to break.
+
+**Capture needs no human "recording."** Drive the editor programmatically: CDP
+keyboard events route to the focused OOPIF, and a coordinate click reaches into it
+via a zero-size `pointer-events:none` marker placed in the *host* page at the target
+viewport coordinate (selector-based clicks cannot cross the frame boundary).
+`Ctrl+Z` undoes cleanly, so a drive → capture → undo → screenshot-verify loop is
+safe on a real deck.
+
+**Know which transport you are on.** Bundle extraction *is* the right tool for the
+*other* Office channel — Excel's EWA `Command` codes live in the bundle as named
+constants, decoded exactly this way (see `excel-online` and the EWA command
+catalog). The pods co-authoring wire is the exception: capture, do not decode.
 
 ## The diagnostic playbook — how not to lose hours
 

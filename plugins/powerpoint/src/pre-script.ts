@@ -99,8 +99,18 @@ const installPodsDonorInterceptor = (log: { info(message: string): void }): void
   };
 
   const stashDonor = (url: string, method: string, headers: Record<string, string>, body: string): void => {
-    if (!url.includes(PODS_PATH) || method.toUpperCase() !== 'POST') return;
-    g[PODS_DONOR_GLOBAL] = { url, method, headers, body, ts: Date.now() };
+    // The editor opens these XHRs with a URL relative to the pods base (e.g.
+    // `open("POST", "PowerPoint.ashx?action=…")`), so the raw argument does not
+    // contain the full `/pods/PowerPoint.ashx` path. Resolve against the frame's
+    // own URL before matching, and stash the absolute form — a replay needs it.
+    let absolute: string;
+    try {
+      absolute = new URL(url, location.href).href;
+    } catch {
+      absolute = url;
+    }
+    if (!absolute.includes(PODS_PATH) || method.toUpperCase() !== 'POST') return;
+    g[PODS_DONOR_GLOBAL] = { url: absolute, method, headers, body, ts: Date.now() };
   };
 
   if (!g.fetch[PODS_FETCH_MARKER]) {

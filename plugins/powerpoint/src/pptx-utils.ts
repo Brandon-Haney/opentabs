@@ -17,7 +17,16 @@ import {
   storeSession,
   touchSession,
 } from './session.js';
-import { A_NS, getLocalName, isElement, parseXml, serializeXml } from './xml.js';
+import {
+  A_NS,
+  childByLocalName,
+  descendantsByLocalName,
+  firstDescendantByLocalName,
+  getLocalName,
+  isElement,
+  parseXml,
+  serializeXml,
+} from './xml.js';
 
 // --- ZIP constants ---
 const LOCAL_FILE_HEADER_SIG = 0x04034b50;
@@ -225,19 +234,35 @@ export const extractSlideText = (slideXml: string): string[] => {
   return texts;
 };
 
-/** Extract speaker notes text from a notes XML file. */
+/** The `<p:txBody>` of the notes body placeholder, where the speaker notes live. */
+const findNotesBody = (doc: Document): Element | undefined => {
+  for (const sp of descendantsByLocalName(doc, 'sp')) {
+    const ph = firstDescendantByLocalName(sp, 'ph');
+    if (ph?.getAttribute('type') === 'body') return childByLocalName(sp, 'txBody');
+  }
+  return undefined;
+};
+
+/**
+ * Extract speaker notes text from a notes XML file.
+ *
+ * A notes page carries more than the notes: a thumbnail of the slide and a
+ * slide-number field are placeholders too. Walking every `<a:t>` would fold the
+ * slide number into the notes and fuse each paragraph's end onto the next
+ * paragraph's start. So this scopes to the notes *body* placeholder when present
+ * and joins its paragraphs with newlines, keeping the line breaks a reader sees.
+ */
 export const extractNotesText = (notesXml: string): string => {
   const doc = parseXml(notesXml);
-  const texts: string[] = [];
-  const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_ELEMENT);
-  let node = walker.nextNode();
-  while (node) {
-    if (getLocalName(node) === 't' && node.textContent) {
-      texts.push(node.textContent);
-    }
-    node = walker.nextNode();
-  }
-  return texts.join('');
+  const scope: Document | Element = findNotesBody(doc) ?? doc;
+  return descendantsByLocalName(scope, 'p')
+    .map(p =>
+      descendantsByLocalName(p, 't')
+        .map(t => t.textContent ?? '')
+        .join(''),
+    )
+    .join('\n')
+    .trim();
 };
 
 /**

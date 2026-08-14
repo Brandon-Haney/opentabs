@@ -69,10 +69,15 @@ interface EwaDonor {
   ts: number;
 }
 
-/** True when this frame is the Office Web Apps document frame that hosts the RPC. */
-const isOfficeAppsFrame = (): boolean => {
+/** True when this frame is Excel's own Office Web Apps document frame that hosts the RPC. */
+const isExcelEditorFrame = (): boolean => {
   try {
-    return location.hostname.toLowerCase().endsWith('officeapps.live.com');
+    // Office Web Apps serves each app from `<region>-<app>.officeapps.live.com`
+    // (e.g. `usc-excel.officeapps.live.com`). Scope to Excel's host so this
+    // interceptor never installs in a sibling app's editor (e.g. PowerPoint's),
+    // which shares the officeapps.live.com domain and matches the same frame rule.
+    const host = location.hostname.toLowerCase();
+    return host.endsWith('officeapps.live.com') && host.includes('excel');
   } catch {
     return false;
   }
@@ -270,7 +275,7 @@ definePreScript(({ set, log }) => {
   // In the Office Web Apps document frame the page is not the plugin's own
   // origin — there is no Graph token to capture. Install the RPC donor
   // interceptor instead and return.
-  if (isOfficeAppsFrame()) {
+  if (isExcelEditorFrame()) {
     installEwaDonorInterceptor(log);
     return;
   }

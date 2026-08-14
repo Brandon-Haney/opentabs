@@ -57,10 +57,15 @@ interface PodsDonor {
   ts: number;
 }
 
-/** True when this realm is the cross-origin Office Web Apps editor frame. */
-const isOfficeAppsFrame = (): boolean => {
+/** True when this frame is PowerPoint's own Office Web Apps editor frame. */
+const isPowerPointEditorFrame = (): boolean => {
   try {
-    return location.hostname.toLowerCase().endsWith('officeapps.live.com');
+    // Office Web Apps serves each app from `<region>-<app>.officeapps.live.com`
+    // (e.g. `usc-powerpoint.officeapps.live.com`). Scope to PowerPoint's host so
+    // this interceptor never installs in a sibling app's editor (e.g. Excel's),
+    // which shares the officeapps.live.com domain and matches the same frame rule.
+    const host = location.hostname.toLowerCase();
+    return host.endsWith('officeapps.live.com') && host.includes('powerpoint');
   } catch {
     return false;
   }
@@ -220,7 +225,7 @@ const isTokenEndpointUrl = (url: string): boolean => {
 definePreScript(({ set, log }) => {
   // The editor frame carries the co-authoring protocol but no MSAL or Graph
   // traffic, so it runs only the pods donor interceptor and nothing else.
-  if (isOfficeAppsFrame()) {
+  if (isPowerPointEditorFrame()) {
     installPodsDonorInterceptor(log);
     return;
   }

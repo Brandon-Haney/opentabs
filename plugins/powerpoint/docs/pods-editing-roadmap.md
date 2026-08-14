@@ -156,18 +156,30 @@ from a cold-load HAR:
   genuine cold-load conditions (a real object push against a server-tracked behind base with an
   actual delta), which is not cleanly replicable from a tool.
 
-**Recommended build (capture, don't trigger).** Every reload the editor *already* fetches the
-full edit-form model via the #3 type-3. Extend the **pre-script** (which already intercepts pods
-traffic) to catch that `MergedChanges` response, parse it **in-frame**, and expose a compact
-**shape index** — `{ shapeName → { paragraphId, runRefs, runs:[{id,size}] } }` — through a
-sentinel, exactly like the head. Paragraph ids are **stable within a session** (only run ids
-re-mint per edit), so the cold-load index stays valid for the whole session. Then a tool reads
-the index + the head and constructs the write. This reuses the proven pre-script + sentinel
-pattern and sidesteps the trigger problem entirely.
+**Tried: capture `MergedChanges` from the network — blocked by client-side caching.** A
+pre-script shape-index builder was written (parse the edit-form `MergedChanges` in-frame →
+index paragraphs by text → serve via a sentinel; the sentinel and capture path worked, 27
+pods responses seen). But **`MergedChanges` never flowed on a warm reload** (`mergedSeen: 0`,
+even after advancing the head then reloading). The editor **caches the full model in
+IndexedDB**, which survives page reloads (soft *and* hard), so it only re-fetches the edit-form
+`MergedChanges` on a genuine **cache-cold** load. There is no clean, non-disruptive way to
+force one from a tool (clearing the `officeapps.live.com` cache/IndexedDB would reset the
+co-authoring session). The index builder was reverted rather than shipped — it can't populate
+in normal use.
 
-Then `set_font_size` = read the index → construct (new run + rewrite the paragraph's run-ref,
-identity tokens) → the shipped `podsWrite` dispatch. Also test whether a **partial run update**
-(only the size property) applies, which would further shrink what the index must carry.
+**The promising avenue: read the cached model directly.** The full edit-form model is *already*
+in the editor's **IndexedDB** (that is why the reload is warm). A pre-script step can open that
+IndexedDB in-frame, read the stored document objects, and build the same shape index — no
+network re-fetch, no cache-cold load needed. The next research step is to inspect the editor's
+IndexedDB databases/object-stores in the OOPIF and confirm the objects are stored in a
+parseable form (they may be the raw pods objects, or the editor's own serialization). If
+parseable, the index build proceeds exactly as designed; if opaque, fall back to capturing the
+client's own edit *requests* incrementally (partial coverage) or asking the user for one
+cache-cold reload per session.
+
+Once the index is available, `set_font_size` = read it → construct (new run + rewrite the
+paragraph's run-ref, identity tokens) → the shipped `podsWrite` dispatch. Also test whether a
+**partial run update** (only the size property) applies, which would shrink what the index needs.
 
 ## Still open
 

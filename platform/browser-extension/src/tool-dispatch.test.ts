@@ -69,7 +69,8 @@ const notifyDispatchProgress = (dispatchId: string): void => {
   if (cb) cb();
 };
 
-const { handleToolDispatch, extractBridgeDirective, extractPodsBridgeDirective } = await import('./tool-dispatch.js');
+const { handleToolDispatch, extractBridgeDirective, extractPodsBridgeDirective, extractPodsSetFontSizeDirective } =
+  await import('./tool-dispatch.js');
 const { invalidatePluginCache } = await import('./plugin-storage.js');
 
 /** Helper to build a minimal PluginMeta for tests */
@@ -271,6 +272,51 @@ describe('extractPodsBridgeDirective', () => {
     expect(extractPodsBridgeDirective({ __podsBridge: { ...base, body: 'nope' } })).toBeNull();
     expect(extractPodsBridgeDirective({ __podsBridge: null })).toBeNull();
     expect(extractPodsBridgeDirective(null)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractPodsSetFontSizeDirective — the resize allow-list parser
+// ---------------------------------------------------------------------------
+
+describe('extractPodsSetFontSizeDirective', () => {
+  const base = {
+    frameUrlIncludes: 'powerpoint.officeapps.live.com',
+    donorGlobal: '__otbPptPodsDonor',
+    headSentinel: '__otb_pods_head__',
+    text: 'Workstream',
+    sizePt: 24,
+    openEarlyPostdata: '{"Mode":4,"srs":[[1,{"SlideID":"0#0#Slide","OperationId":1}]]}',
+  };
+
+  test('extracts a well-formed directive and defaults the optional tokens away', () => {
+    if (!extractPodsSetFontSizeDirective) return;
+    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: base })).toEqual(base);
+  });
+
+  test('carries explicit guidToken and headToken when present', () => {
+    if (!extractPodsSetFontSizeDirective) return;
+    const directive = extractPodsSetFontSizeDirective({
+      __podsSetFontSize: { ...base, guidToken: '__G__', headToken: '__H__' },
+    });
+    expect(directive).toEqual({ ...base, guidToken: '__G__', headToken: '__H__' });
+  });
+
+  test('is keyed on __podsSetFontSize, distinct from the other directives', () => {
+    if (!extractPodsSetFontSizeDirective || !extractPodsBridgeDirective) return;
+    expect(extractPodsBridgeDirective({ __podsSetFontSize: base })).toBeNull();
+    expect(extractPodsSetFontSizeDirective({ __podsBridge: {} })).toBeNull();
+  });
+
+  test('rejects a missing or non-positive size and missing fields', () => {
+    if (!extractPodsSetFontSizeDirective) return;
+    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, sizePt: 0 } })).toBeNull();
+    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, sizePt: -4 } })).toBeNull();
+    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, sizePt: 'big' } })).toBeNull();
+    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, text: undefined } })).toBeNull();
+    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, openEarlyPostdata: 5 } })).toBeNull();
+    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: null })).toBeNull();
+    expect(extractPodsSetFontSizeDirective(null)).toBeNull();
   });
 });
 

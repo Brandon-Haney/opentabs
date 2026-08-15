@@ -44,6 +44,7 @@ import { openPresentationTool } from './tools/open-presentation.js';
 import { reauthenticate } from './tools/reauthenticate.js';
 import { renameItem } from './tools/rename-item.js';
 import { searchFiles } from './tools/search-files.js';
+import { setFontSize } from './tools/set-font-size.js';
 import { setPlaceholderText } from './tools/set-placeholder-text.js';
 import { setSlideHiddenTool } from './tools/set-slide-hidden.js';
 import { updateShape } from './tools/update-shape.js';
@@ -85,6 +86,7 @@ class PowerPointPlugin extends OpenTabsPlugin {
     // Slides — structure first, since naming a slot is the usual way in
     getSlideStructure,
     setPlaceholderText,
+    setFontSize,
     listSlideLayouts,
     addSlide,
     deleteSlide,

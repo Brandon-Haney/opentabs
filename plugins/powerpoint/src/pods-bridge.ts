@@ -93,3 +93,62 @@ export const podsWrite = (body: Record<string, unknown>): z.infer<typeof podsWri
   };
   return directive as unknown as z.infer<typeof podsWriteOutputSchema>;
 };
+
+/**
+ * The editor's full-model load, a type-1 request for the first slide's object
+ * graph. The engine sends it in a `postdata` header (as the editor does) to fetch
+ * the live model, which supplies the per-session ids a resize revision must name.
+ */
+const OPEN_EARLY_POSTDATA = JSON.stringify({ Mode: 4, srs: [[1, { SlideID: '0#0#Slide', OperationId: 1 }]] });
+
+/** What the agent receives after the `set_font_size` engine runs. */
+export const podsSetFontSizeOutputSchema = z.object({
+  ok: z.boolean().describe('Whether the replayed POST succeeded at the HTTP level.'),
+  status: z.number().int().describe('HTTP status of the replayed write.'),
+  statusCode: z.number().int().optional().describe('The co-authoring StatusCode — 0 means the resize was applied.'),
+  isConflict: z.boolean().optional().describe('Whether the base revision was superseded before the write applied.'),
+  head: z.string().optional().describe('The co-authoring head the accepted revision was based on.'),
+  retries: z.number().int().optional().describe('Extra attempts a stale-base conflict cost.'),
+  text: z.string().describe('The paragraph text that was resized.'),
+  runId: z.string().describe('The object id of the run that was resized.'),
+  oldSizePt: z.number().nullable().describe('The font size before the change, in points (null if it could not be read).'),
+  newSizePt: z.number().describe('The font size after the change, in points.'),
+});
+
+/** The `__podsSetFontSize` directive the platform's resize engine consumes. */
+interface PodsSetFontSizeDirective {
+  __podsSetFontSize: {
+    frameUrlIncludes: string;
+    donorGlobal: string;
+    headSentinel: string;
+    text: string;
+    sizePt: number;
+    openEarlyPostdata: string;
+    guidToken: string;
+    headToken: string;
+  };
+}
+
+/**
+ * Build the `__podsSetFontSize` directive: resize the run of the paragraph whose
+ * visible text is `text` to `sizePt` points. The engine reads the live model to
+ * resolve the paragraph and its run, constructs the revision, and writes it — the
+ * tool cannot pre-build the body because the ids are per-session. The return is
+ * typed as the output schema for the same reason as {@link podsWrite}: the platform
+ * replaces the directive with the engine's result before the agent sees it.
+ */
+export const podsSetFontSize = (text: string, sizePt: number): z.infer<typeof podsSetFontSizeOutputSchema> => {
+  const directive: PodsSetFontSizeDirective = {
+    __podsSetFontSize: {
+      frameUrlIncludes: FRAME_URL_INCLUDES,
+      donorGlobal: DONOR_GLOBAL,
+      headSentinel: HEAD_SENTINEL,
+      text,
+      sizePt,
+      openEarlyPostdata: OPEN_EARLY_POSTDATA,
+      guidToken: PODS_GUID_TOKEN,
+      headToken: PODS_HEAD_TOKEN,
+    },
+  };
+  return directive as unknown as z.infer<typeof podsSetFontSizeOutputSchema>;
+};

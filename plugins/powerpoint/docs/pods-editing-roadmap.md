@@ -156,30 +156,77 @@ from a cold-load HAR:
   genuine cold-load conditions (a real object push against a server-tracked behind base with an
   actual delta), which is not cleanly replicable from a tool.
 
-**Tried: capture `MergedChanges` from the network — blocked by client-side caching.** A
-pre-script shape-index builder was written (parse the edit-form `MergedChanges` in-frame →
-index paragraphs by text → serve via a sentinel; the sentinel and capture path worked, 27
-pods responses seen). But **`MergedChanges` never flowed on a warm reload** (`mergedSeen: 0`,
-even after advancing the head then reloading). The editor **caches the full model in
-IndexedDB**, which survives page reloads (soft *and* hard), so it only re-fetches the edit-form
-`MergedChanges` on a genuine **cache-cold** load. There is no clean, non-disruptive way to
-force one from a tool (clearing the `officeapps.live.com` cache/IndexedDB would reset the
-co-authoring session). The index builder was reverted rather than shipped — it can't populate
-in normal use.
+**Tried: capture `MergedChanges` from the network.** A pre-script shape-index builder was
+written (parse the edit-form `MergedChanges` in-frame → index paragraphs by text → serve via a
+sentinel; the sentinel and capture path worked, 27 pods responses seen). But **`MergedChanges`
+never flowed on a warm reload** (`mergedSeen: 0`, even after advancing the head then reloading).
+At the time this was attributed to the editor caching the model in IndexedDB. **That
+attribution was wrong** — see the storage inspection below. The index builder was reverted.
 
-**The promising avenue: read the cached model directly.** The full edit-form model is *already*
-in the editor's **IndexedDB** (that is why the reload is warm). A pre-script step can open that
-IndexedDB in-frame, read the stored document objects, and build the same shape index — no
-network re-fetch, no cache-cold load needed. The next research step is to inspect the editor's
-IndexedDB databases/object-stores in the OOPIF and confirm the objects are stored in a
-parseable form (they may be the raw pods objects, or the editor's own serialization). If
-parseable, the index build proceeds exactly as designed; if opaque, fall back to capturing the
-client's own edit *requests* incrementally (partial coverage) or asking the user for one
-cache-cold reload per session.
+**Verified: the edit-form model is not persisted in any client store** (both origins,
+IndexedDB *and* Cache Storage — inspected in-frame via a temporary `__otb_pods_idb__` sentinel
+plus a same-origin read of the WOPI host frame):
 
-Once the index is available, `set_font_size` = read it → construct (new run + rewrite the
-paragraph's run-ref, identity tokens) → the shipped `podsWrite` dispatch. Also test whether a
-**partial run update** (only the size property) applies, which would shrink what the index needs.
+- **Editor origin (`usc-powerpoint.officeapps.live.com`):** IndexedDB holds only Office add-in
+  plumbing (`OSF.Cache`, `OSF.MOS.Acquisitions`, `OSF.TMT.Titles`, `SdxCatalog` manifests), a
+  user-photo cache, sensitivity labels, and *empty* model/telemetry stores (`ALModels_db` and a
+  GUID-named db, both count 0). **Cache Storage is empty.** No document model anywhere.
+- **WOPI host origin (`*.sharepoint.com`):** a `PowerPointDocument` IndexedDB exists, but its
+  one store (`Documents`) holds only **`EUPL_*` / `EUPL_H_*` encrypted rendered previews**
+  (`{devicePixelRatio, encryptedData, iv, euplCacheVersion, lut}`, one normal + one high-res per
+  open deck) — the "fastboot" preview painted instantly on load (`fastboot=true` is in the pods
+  URL), AES-encrypted at rest. **Not the editable object graph.** Cache Storage empty.
+
+So there is **nothing editable cached client-side to read.** The instant-paint on reload is the
+encrypted preview; the real write-form model is an **in-memory runtime construct that streams
+over the network on every session start.** The "read the cached model directly" avenue is
+closed.
+
+**The real read path — CONFIRMED LIVE: the *session-open* response carries the full model.**
+Because nothing editable is cached, the editor loads the whole object graph over pods on every
+fresh session. A temporary response-capture (`__otb_pods_resp__` sentinel, added to the donor
+interceptor) recorded every `/pods` response on a cold load and confirmed it directly. Of 42
+responses, the model is a single **type-1 response** (`{"Responses":[[1,{…}]]}`), **~450 KB**,
+with **`BaseId: 00000000-0000-0000-0000-000000000000|0`** (from-scratch full load). Marker
+counts in it: `393230` (paragraphs) **59**, `1179725` (runs) **28**, `469769250` (text) **59**,
+`469780826` (shape names) **86**, `1074135132` (render shapes) **85**, `LatestRevisionId` 1. The
+other big responses are noise: `RenderedImages` (base64 PNG), `MainMasterResources` (master/layout
+styles). So the session-open type-1 / zero-base response **is** the write-form read.
+
+**Model structure (decoded from the captured body).** Envelope:
+`Responses[[1,{Cells:[{RevisionList:[{BaseId:"0…|0", ObjectGroups:[{Objects:[…]}]}]}]}]]`. Each
+object is `{ClassId, ObjectId:"<guid>|<ctr>", Properties:[id,val,id,val,…]}` (a **flat** id/value
+pair array). `393271` = presentation root (slide refs in props `603998444`/`603995377` as
+`{guid}{ctr},…` lists). `1179649` = master/layout catalog (`ContentMasters` with names "Title
+Slide", "Text Only 1"). The write-form objects: `393230` paragraphs (text `469769250`, run-ref
+list `603987475`), `1179725` runs (size `268442635` half-pt, text `469769250`), `1074135132`
+render shapes (name `469780826`).
+
+**In-frame parser BUILT (uncommitted WIP in `pre-script.ts`).** Reducing 450 KB in-frame beats
+pulling it through the tool boundary in chunks (~200 K tokens of double-escaped JSON). The
+`__otb_pods_resp__` sentinel now has three modes: default = response summaries; `?off=&len=` =
+raw slice of the richest body; **`?parse=1`** = recursive walk collecting every
+`{ClassId,ObjectId,Properties}` → compact index (paragraphs `{objectId,text,runRef}`, runs
+`{objectId,sizeHalfPt,text}`, shapes `{objectId,name}` + class histogram). Summary and chunk
+modes are proven live; `?parse=1` is deployed but not yet read back (blocked — see below).
+
+**BLOCKER — OOPIF pre-script registration degrades under rebuild churn.** The `__frames`
+content script (`world:MAIN`, `allFrames:true`, `*://*.officeapps.live.com/*`) attaches
+UNRELIABLY to a freshly-loaded editor OOPIF, and gets worse with each pre-script rebuild (each
+rebuild re-registers, and Chrome's MAIN-world OOPIF injection is flaky). It worked cleanly early
+(frames 11537/11556/11640 returned live data) but after ~8 rebuilds it stopped attaching, and
+~15 rapid deck reloads pushed `officeapps.live.com` into serving a **404 "Service Unavailable"
+WAC page** (Microsoft-side session throttling) with screenshots failing "image readback". Recipe
+to iterate pods pre-script changes with the least pain: **minimize rebuilds** (develop offline,
+deploy once); after a rebuild, `extension_reload` then reload until the head sentinel returns
+JSON (not a 404 / "Failed to fetch"); if it won't attach, hard-reload the extension from
+`chrome://extensions` and let officeapps cool down for a few minutes before reloading the deck.
+The parser is proven-shaped and will return the index on the next clean attach.
+
+Once the index is available, `set_font_size` = read it → find the paragraph by visible text →
+construct (new run + rewrite the paragraph's run-ref, identity tokens) → the shipped `podsWrite`
+dispatch. Also test whether a **partial run update** (only the size property) applies, which
+would shrink what the index needs.
 
 ## Still open
 

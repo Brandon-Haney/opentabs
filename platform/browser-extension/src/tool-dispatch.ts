@@ -10,6 +10,7 @@ import {
 } from './browser-commands/frame-bridge-rpc.js';
 import { requireStringParam } from './browser-commands/helpers.js';
 import { type PodsBridgeParams, runPodsBridge } from './browser-commands/pods-bridge.js';
+import { type PodsSetFontSizeParams, runPodsSetFontSize } from './browser-commands/pods-set-font-size.js';
 import { MAX_INPUT_SIZE, MAX_SCRIPT_TIMEOUT_MS, SCRIPT_TIMEOUT_MS } from './constants.js';
 import type { DispatchResult } from './dispatch-helpers.js';
 import { dispatchToTargetedTab, dispatchWithTabFallback, resolvePlugin } from './dispatch-helpers.js';
@@ -570,6 +571,90 @@ const resolvePodsBridgeDirective = async (result: DispatchResult, tabId: number)
 };
 
 /**
+ * A `__podsSetFontSize` directive: resize the run of a paragraph identified by its
+ * visible text, in an open deck's co-authoring session. Unlike `__podsBridge`, the
+ * tool cannot pre-build the body — the revision must name live, per-session object
+ * ids — so the engine ({@link runPodsSetFontSize}) reads the editor's model first,
+ * resolves the target, constructs the body, and then writes it.
+ */
+interface PodsSetFontSizeDirective {
+  frameUrlIncludes: string;
+  donorGlobal: string;
+  headSentinel: string;
+  text: string;
+  sizePt: number;
+  openEarlyPostdata: string;
+  guidToken?: string;
+  headToken?: string;
+}
+
+/**
+ * Extract a well-formed `__podsSetFontSize` directive, or null. Keyed on its own
+ * distinct field so it never collides with `__bridge`/`__podsBridge`. Every field
+ * is checked: the directive comes from a reviewed adapter but drives an
+ * authenticated read-and-write against the live session.
+ */
+const extractPodsSetFontSizeDirective = (output: unknown): PodsSetFontSizeDirective | null => {
+  if (!output || typeof output !== 'object') return null;
+  const raw = (output as Record<string, unknown>).__podsSetFontSize;
+  if (!raw || typeof raw !== 'object') return null;
+  const p = raw as Record<string, unknown>;
+  if (
+    typeof p.frameUrlIncludes !== 'string' ||
+    typeof p.donorGlobal !== 'string' ||
+    typeof p.headSentinel !== 'string' ||
+    typeof p.text !== 'string' ||
+    typeof p.sizePt !== 'number' ||
+    !Number.isFinite(p.sizePt) ||
+    p.sizePt <= 0 ||
+    typeof p.openEarlyPostdata !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    frameUrlIncludes: p.frameUrlIncludes,
+    donorGlobal: p.donorGlobal,
+    headSentinel: p.headSentinel,
+    text: p.text,
+    sizePt: p.sizePt,
+    openEarlyPostdata: p.openEarlyPostdata,
+    ...(typeof p.guidToken === 'string' && p.guidToken.length > 0 ? { guidToken: p.guidToken } : {}),
+    ...(typeof p.headToken === 'string' && p.headToken.length > 0 ? { headToken: p.headToken } : {}),
+  };
+};
+
+/**
+ * When a tool result carries a `__podsSetFontSize` directive, run the resize engine
+ * on the resolved tab and replace the output with its result. A no-op when the
+ * marker is absent, so it chains after {@link resolvePodsBridgeDirective}. A write
+ * that did not apply comes back as `failure` and is raised to a dispatch error.
+ */
+const resolvePodsSetFontSizeDirective = async (result: DispatchResult, tabId: number): Promise<DispatchResult> => {
+  if (result.type !== 'success') return result;
+  const directive = extractPodsSetFontSizeDirective(result.output);
+  if (!directive) return result;
+
+  const params: PodsSetFontSizeParams = { tabId, ...directive };
+  try {
+    const fontResult = await runPodsSetFontSize(params);
+    if (fontResult.failure !== undefined) {
+      return {
+        type: 'error',
+        code: JSONRPC_INTERNAL_ERROR,
+        message: fontResult.failure,
+        data: { code: 'PODS_WRITE_FAILED', category: 'internal', retryable: false },
+      };
+    }
+    return { type: 'success', output: fontResult };
+  } catch (err) {
+    if (err instanceof FrameBridgeValidationError) {
+      return { type: 'error', code: JSONRPC_INVALID_PARAMS, message: err.message };
+    }
+    return { type: 'error', code: JSONRPC_INTERNAL_ERROR, message: `set_font_size failed: ${toErrorMessage(err)}` };
+  }
+};
+
+/**
  * Handle tool.dispatch request from MCP server.
  * Finds matching tabs, checks adapter readiness (with fallback to other
  * matching tabs when the best-ranked tab is not ready), executes the tool,
@@ -642,7 +727,8 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
       // chaining them lets a tool return either an EWA `__bridge` or a co-authoring
       // `__podsBridge` directive.
       const bridged = await resolveBridgeDirective(result, tid);
-      return await resolvePodsBridgeDirective(bridged, tid);
+      const podsWritten = await resolvePodsBridgeDirective(bridged, tid);
+      return await resolvePodsSetFontSizeDirective(podsWritten, tid);
     } finally {
       removeProgressListener(tid, dispatchId);
     }
@@ -671,6 +757,7 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
 export {
   extractBridgeDirective,
   extractPodsBridgeDirective,
+  extractPodsSetFontSizeDirective,
   getPluginLink,
   handleToolDispatch,
   notifyDispatchProgress,

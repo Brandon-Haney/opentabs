@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { PODS_GUID_TOKEN, PODS_HEAD_TOKEN, podsWrite } from './pods-bridge.js';
+import { PODS_GUID_TOKEN, PODS_HEAD_TOKEN, podsSetFontSize, podsWrite } from './pods-bridge.js';
 
 describe('podsWrite', () => {
   const body = { Mode: 4, srs: [[3, { Revisions: [{ Id: `${PODS_GUID_TOKEN}|2`, BaseId: PODS_HEAD_TOKEN }] }]] };
@@ -28,5 +28,29 @@ describe('podsWrite', () => {
       expect(token).toMatch(/^__OTB_PODS_[A-Z]+__$/);
       expect(JSON.stringify(token)).toBe(`"${token}"`);
     }
+  });
+});
+
+describe('podsSetFontSize', () => {
+  test('builds a __podsSetFontSize directive with the target, size, and read payload', () => {
+    const directive = podsSetFontSize('Workstream', 24) as unknown as { __podsSetFontSize: Record<string, unknown> };
+    expect(directive.__podsSetFontSize).toEqual({
+      frameUrlIncludes: 'powerpoint.officeapps.live.com',
+      donorGlobal: '__otbPptPodsDonor',
+      headSentinel: '__otb_pods_head__',
+      text: 'Workstream',
+      sizePt: 24,
+      openEarlyPostdata: '{"Mode":4,"srs":[[1,{"SlideID":"0#0#Slide","OperationId":1}]]}',
+      guidToken: PODS_GUID_TOKEN,
+      headToken: PODS_HEAD_TOKEN,
+    });
+  });
+
+  test('carries the caller text and size verbatim', () => {
+    const directive = podsSetFontSize('04/29 - PILOT GO -- NO GO', 10.5) as unknown as {
+      __podsSetFontSize: { text: string; sizePt: number };
+    };
+    expect(directive.__podsSetFontSize.text).toBe('04/29 - PILOT GO -- NO GO');
+    expect(directive.__podsSetFontSize.sizePt).toBe(10.5);
   });
 });

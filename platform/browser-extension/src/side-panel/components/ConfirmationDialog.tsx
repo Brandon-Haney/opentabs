@@ -72,7 +72,7 @@ const ConfirmationDialog = ({ confirmations, onRespond }: ConfirmationDialogProp
               {current.params && Object.keys(current.params).length > 0 && (
                 <details className="mt-2">
                   <summary className="cursor-pointer text-xs">Parameters</summary>
-                  <pre className="mt-1 max-h-40 overflow-auto rounded border border-border bg-card px-2 py-1 font-mono text-xs leading-tight">
+                  <pre className="wrap-anywhere mt-1 max-h-56 overflow-y-auto whitespace-pre-wrap rounded border border-border bg-card px-2 py-1 font-mono text-xs leading-tight">
                     {JSON.stringify(current.params, null, 2)}
                   </pre>
                 </details>

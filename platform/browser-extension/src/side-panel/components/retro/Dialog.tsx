@@ -25,7 +25,7 @@ const DialogContent = ({ className, children, ref, ...props }: ComponentProps<ty
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 fixed top-1/2 left-1/2 z-50 grid w-full max-w-sm -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded border-2 border-border bg-background shadow-md duration-200 data-[state=closed]:animate-out data-[state=open]:animate-in',
+        'data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded border-2 border-border bg-background shadow-md duration-200 data-[state=closed]:animate-out data-[state=open]:animate-in',
         className,
       )}
       {...props}>
@@ -33,7 +33,7 @@ const DialogContent = ({ className, children, ref, ...props }: ComponentProps<ty
         <DialogPrimitive.Title />
         <DialogPrimitive.Description />
       </VisuallyHidden>
-      <div className="relative flex flex-col">{children}</div>
+      <div className="relative flex min-h-0 flex-col">{children}</div>
     </DialogPrimitive.Content>
   </DialogPrimitive.Portal>
 );
@@ -42,7 +42,7 @@ const DialogHeader = ({ className, children, ref, ...props }: ComponentProps<'di
   <div
     ref={ref}
     className={cn(
-      'flex min-h-10 items-center justify-between border-border border-b-2 bg-primary px-4 text-primary-foreground',
+      'flex min-h-10 shrink-0 items-center justify-between border-border border-b-2 bg-primary px-4 text-primary-foreground',
       className,
     )}
     {...props}>
@@ -54,13 +54,13 @@ const DialogHeader = ({ className, children, ref, ...props }: ComponentProps<'di
 );
 
 const DialogBody = ({ className, ref, ...props }: ComponentProps<'div'>) => (
-  <div ref={ref} className={cn('px-4 py-3', className)} {...props} />
+  <div ref={ref} className={cn('min-h-0 overflow-y-auto px-4 py-3', className)} {...props} />
 );
 
 const DialogFooter = ({ className, ref, ...props }: ComponentProps<'div'>) => (
   <div
     ref={ref}
-    className={cn('flex items-center justify-end gap-2 border-border border-t-2 px-4 py-2', className)}
+    className={cn('flex shrink-0 items-center justify-end gap-2 border-border border-t-2 px-4 py-2', className)}
     {...props}
   />
 );

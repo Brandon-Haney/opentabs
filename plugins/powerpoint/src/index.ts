@@ -52,7 +52,6 @@ import { setPlaceholderText } from './tools/set-placeholder-text.js';
 import { setSlideHiddenTool } from './tools/set-slide-hidden.js';
 import { updateShape } from './tools/update-shape.js';
 import { updateSlideNotes } from './tools/update-slide-notes.js';
-import { updateSlideText } from './tools/update-slide-text.js';
 
 class PowerPointPlugin extends OpenTabsPlugin {
   readonly name = 'powerpoint';
@@ -106,7 +105,6 @@ class PowerPointPlugin extends OpenTabsPlugin {
     addShape,
     addImage,
     addTable,
-    updateSlideText,
     updateShape,
     fitText,
     deleteShape,

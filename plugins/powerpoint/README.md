@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-powerpoint
 1. Open [powerpoint.cloud.microsoft](https://powerpoint.cloud.microsoft) in Chrome and log in
 2. Open the OpenTabs side panel — the PowerPoint Online plugin should appear as **ready**
 
-## Tools (40)
+## Tools (39)
 
 ### Account (2)
 
@@ -70,7 +70,7 @@ Batched editing. Open a session once, run many edit tools against an in-memory c
 | `discard_presentation` | Throw away a session without saving | Write |
 | `list_presentation_sessions` | List all open batched edit sessions | Read |
 
-### Slides (15)
+### Slides (14)
 
 | Tool | Description | Type |
 |---|---|---|
@@ -82,7 +82,6 @@ Batched editing. Open a session once, run many edit tools against an in-memory c
 | `add_text_box` | Add a new text box to a slide | Write |
 | `add_shape` | Add a preset shape (rectangle, ellipse, arrow, ...) to a slide | Write |
 | `add_image` | Insert an image onto a slide | Write |
-| `update_slide_text` | Replace text in a slide's first text box | Write |
 | `update_shape` | Edit a shape's text, geometry, rotation, or fill | Write |
 | `update_slide_notes` | Modify speaker notes on a slide | Write |
 | `delete_shape` | Remove a shape from a slide | Write |

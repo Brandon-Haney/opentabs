@@ -775,68 +775,6 @@ const childElementsByName = (parent: Element, localName: string): Element[] => {
 };
 
 /**
- * Replace the text of a slide's first/primary text box with `newText`,
- * one paragraph per `\n`-separated line. The first existing paragraph's
- * `pPr` and the first run's `rPr` are reused as formatting templates so the
- * replacement keeps the original styling. Other text boxes on the slide are
- * left untouched — to edit a specific shape, use `update_shape`.
- */
-export const replaceSlideText = (slideXml: string, newText: string): string => {
-  const doc = parseXml(slideXml);
-
-  // Prefer the first text body that already has a paragraph (an authored text
-  // box); fall back to the first text body on the slide so empty placeholders
-  // (a blank title or body) can still be populated.
-  const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_ELEMENT);
-  let txBody: Element | null = null;
-  let firstTxBody: Element | null = null;
-  let node = walker.nextNode();
-  while (node) {
-    if (isElement(node) && getLocalName(node) === 'txBody') {
-      if (!firstTxBody) firstTxBody = node;
-      if (childElementsByName(node, 'p').length > 0) {
-        txBody = node;
-        break;
-      }
-    }
-    node = walker.nextNode();
-  }
-  txBody = txBody ?? firstTxBody;
-  if (!txBody) return serializeXml(doc);
-
-  // Preserve formatting templates from the first paragraph / first run.
-  let preservedPPr: Element | null = null;
-  let preservedRPr: Element | null = null;
-  const firstP = childElementsByName(txBody, 'p')[0];
-  if (firstP) {
-    const pPr = childElementsByName(firstP, 'pPr')[0];
-    if (pPr) preservedPPr = pPr.cloneNode(true) as Element;
-    const firstR = childElementsByName(firstP, 'r')[0];
-    if (firstR) {
-      const rPr = childElementsByName(firstR, 'rPr')[0];
-      if (rPr) preservedRPr = rPr.cloneNode(true) as Element;
-    }
-  }
-
-  for (const p of childElementsByName(txBody, 'p')) txBody.removeChild(p);
-
-  const lines = newText.length > 0 ? newText.split('\n') : [''];
-  for (const line of lines) {
-    const p = doc.createElementNS(A_NS, 'a:p');
-    if (preservedPPr) p.appendChild(preservedPPr.cloneNode(true));
-    const r = doc.createElementNS(A_NS, 'a:r');
-    if (preservedRPr) r.appendChild(preservedRPr.cloneNode(true));
-    const t = doc.createElementNS(A_NS, 'a:t');
-    t.textContent = line;
-    r.appendChild(t);
-    p.appendChild(r);
-    txBody.appendChild(p);
-  }
-
-  return serializeXml(doc);
-};
-
-/**
  * Replace speaker notes text in a notes XML, one paragraph per `\n`-separated
  * line. Rebuilds the notes body's paragraphs (preserving the first paragraph's
  * `pPr`/`rPr` as templates), creating run/text nodes when the body is empty —

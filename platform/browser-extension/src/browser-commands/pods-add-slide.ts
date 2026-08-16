@@ -122,8 +122,12 @@ export const buildAddSlideBody = (
   const anchorRef = ctx.slideRefs[ctx.slideRefs.length - 1];
 
   // The root, copied with only the slide list changed, then sorted ascending by id
-  // to match the editor's own NewSlideWithLayout write (which sorts; unlike delete,
-  // an add carries no root modified flag).
+  // to match the editor's own NewSlideWithLayout write.
+  //
+  // Deliberately does NOT set the modified flag (134236525) that a delete carries:
+  // the editor omits it here, and adding it was verified live to make the server
+  // accept the revision and then silently drop it. The flag is action-specific, not
+  // a general rule for structural writes.
   const copied: (string | number)[] = [];
   for (let i = 0; i + 1 < ctx.rootProperties.length; i += 2) {
     const key = ctx.rootProperties[i];

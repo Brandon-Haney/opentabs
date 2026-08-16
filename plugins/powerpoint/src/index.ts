@@ -27,6 +27,7 @@ import { getCurrentUser } from './tools/get-current-user.js';
 import { getDownloadUrl } from './tools/get-download-url.js';
 import { getDrive } from './tools/get-drive.js';
 import { getItem } from './tools/get-item.js';
+import { getLiveOutline } from './tools/get-live-outline.js';
 import { getPreviewUrl } from './tools/get-preview-url.js';
 import { getSlideContent } from './tools/get-slide-content.js';
 import { getSlideLayout } from './tools/get-slide-layout.js';
@@ -43,6 +44,7 @@ import { listSlideLayouts } from './tools/list-slide-layouts.js';
 import { listVersions } from './tools/list-versions.js';
 import { moveItem } from './tools/move-item.js';
 import { moveSlide } from './tools/move-slide.js';
+import { openInEditor } from './tools/open-in-editor.js';
 import { openPresentationTool } from './tools/open-presentation.js';
 import { reauthenticate } from './tools/reauthenticate.js';
 import { renameItem } from './tools/rename-item.js';
@@ -80,6 +82,7 @@ class PowerPointPlugin extends OpenTabsPlugin {
     // Presentations
     createPresentation,
     getPreviewUrl,
+    openInEditor,
     // Sessions (batched edits)
     openPresentationTool,
     commitPresentationTool,
@@ -88,6 +91,7 @@ class PowerPointPlugin extends OpenTabsPlugin {
     // Slides — structure first, since naming a slot is the usual way in
     getSlideStructure,
     setPlaceholderText,
+    getLiveOutline,
     setFontSize,
     formatText,
     addSlideLive,

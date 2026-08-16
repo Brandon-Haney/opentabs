@@ -122,6 +122,8 @@ export interface PodsBridgeResult {
   retries?: number;
   /** The parsed pods response envelope. */
   response?: unknown;
+  /** The `ServerError {Code, Source}` pair a rejection carries, when present — the key error-hint lookups use. */
+  serverError?: { code?: number; source?: number };
   /** Present only on a write that did not apply — a human-readable reason. */
   failure?: string;
   /**
@@ -258,6 +260,14 @@ export const runPodsBridge = async (params: PodsBridgeParams): Promise<PodsBridg
       retries: attempt,
       ...(typeof entry?.StatusCode === 'number' ? { statusCode: entry.StatusCode } : {}),
       ...(entry?.IsConflict === true ? { isConflict: true } : {}),
+      ...(entry?.ServerError && typeof entry.ServerError === 'object'
+        ? {
+            serverError: {
+              ...(typeof entry.ServerError.Code === 'number' ? { code: entry.ServerError.Code } : {}),
+              ...(typeof entry.ServerError.Source === 'number' ? { source: entry.ServerError.Source } : {}),
+            },
+          }
+        : {}),
       response: parsed,
       ...(failure ? { failure } : {}),
     };

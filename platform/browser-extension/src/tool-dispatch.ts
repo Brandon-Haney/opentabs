@@ -9,21 +9,16 @@ import {
   toPrepSelections,
 } from './browser-commands/frame-bridge-rpc.js';
 import { requireStringParam } from './browser-commands/helpers.js';
-import { type PodsAddSlideParams, runPodsAddSlide } from './browser-commands/pods-add-slide.js';
+import { PODS_ACTION_VERSION, type PodsActionParams, runPodsAction } from './browser-commands/pods-actions.js';
 import { type PodsBridgeParams, runPodsBridge } from './browser-commands/pods-bridge.js';
-import { type PodsDeleteSlideParams, runPodsDeleteSlide } from './browser-commands/pods-delete-slide.js';
-import {
-  type PodsFormatTextParams,
-  type PodsSetFontSizeParams,
-  runPodsFormatText,
-  runPodsSetFontSize,
-} from './browser-commands/pods-set-font-size.js';
+import { type PodsOpenEditorParams, runPodsOpenEditor } from './browser-commands/pods-open-editor.js';
 import { MAX_INPUT_SIZE, MAX_SCRIPT_TIMEOUT_MS, SCRIPT_TIMEOUT_MS } from './constants.js';
 import type { DispatchResult } from './dispatch-helpers.js';
 import { dispatchToTargetedTab, dispatchWithTabFallback, resolvePlugin } from './dispatch-helpers.js';
 import type { PluginMeta } from './extension-messages.js';
 import { JSONRPC_INTERNAL_ERROR, JSONRPC_INVALID_PARAMS } from './json-rpc-errors.js';
 import { sendToServer } from './messaging.js';
+import { urlMatchesPatterns } from './tab-matching.js';
 
 /**
  * Per-dispatch progress callbacks — keyed by dispatchId, called by background.ts
@@ -513,34 +508,47 @@ interface PodsBridgeDirective {
 }
 
 /**
- * Extract a well-formed `__podsBridge` directive, or null when the output is a
- * plain result or a different directive. Keyed on a distinct `__podsBridge` field
+ * Extraction outcome for `__podsBridge`. `absent` and `malformed` are distinct so
+ * a present-but-invalid directive becomes a loud error instead of passing through
+ * as a raw tool output — the same contract as `__podsAction`.
+ */
+type PodsBridgeExtraction =
+  | { kind: 'absent' }
+  | { kind: 'malformed'; reason: string }
+  | { kind: 'valid'; directive: PodsBridgeDirective };
+
+/**
+ * Extract a `__podsBridge` directive. Keyed on a distinct `__podsBridge` field
  * — never `__bridge` — so the two allow-lists never silently drop each other's
  * fields. Like {@link extractBridgeDirective}, the directive comes from a reviewed
  * adapter but drives an authenticated request, so every field is checked.
  */
-const extractPodsBridgeDirective = (output: unknown): PodsBridgeDirective | null => {
-  if (!output || typeof output !== 'object') return null;
+const extractPodsBridgeDirective = (output: unknown): PodsBridgeExtraction => {
+  if (!output || typeof output !== 'object') return { kind: 'absent' };
   const pods = (output as Record<string, unknown>).__podsBridge;
-  if (!pods || typeof pods !== 'object') return null;
+  if (pods === undefined) return { kind: 'absent' };
+  if (!pods || typeof pods !== 'object') return { kind: 'malformed', reason: '`__podsBridge` is not an object' };
   const p = pods as Record<string, unknown>;
   if (
     typeof p.frameUrlIncludes !== 'string' ||
     typeof p.donorGlobal !== 'string' ||
-    typeof p.headSentinel !== 'string' ||
-    !p.body ||
-    typeof p.body !== 'object' ||
-    Array.isArray(p.body)
+    typeof p.headSentinel !== 'string'
   ) {
-    return null;
+    return { kind: 'malformed', reason: 'frame/donor/sentinel fields must all be strings' };
+  }
+  if (!p.body || typeof p.body !== 'object' || Array.isArray(p.body)) {
+    return { kind: 'malformed', reason: '`body` must be a plain object' };
   }
   return {
-    frameUrlIncludes: p.frameUrlIncludes,
-    donorGlobal: p.donorGlobal,
-    headSentinel: p.headSentinel,
-    body: p.body as Record<string, unknown>,
-    ...(typeof p.guidToken === 'string' && p.guidToken.length > 0 ? { guidToken: p.guidToken } : {}),
-    ...(typeof p.headToken === 'string' && p.headToken.length > 0 ? { headToken: p.headToken } : {}),
+    kind: 'valid',
+    directive: {
+      frameUrlIncludes: p.frameUrlIncludes,
+      donorGlobal: p.donorGlobal,
+      headSentinel: p.headSentinel,
+      body: p.body as Record<string, unknown>,
+      ...(typeof p.guidToken === 'string' && p.guidToken.length > 0 ? { guidToken: p.guidToken } : {}),
+      ...(typeof p.headToken === 'string' && p.headToken.length > 0 ? { headToken: p.headToken } : {}),
+    },
   };
 };
 
@@ -554,8 +562,16 @@ const extractPodsBridgeDirective = (output: unknown): PodsBridgeDirective | null
  */
 const resolvePodsBridgeDirective = async (result: DispatchResult, tabId: number): Promise<DispatchResult> => {
   if (result.type !== 'success') return result;
-  const directive = extractPodsBridgeDirective(result.output);
-  if (!directive) return result;
+  const extraction = extractPodsBridgeDirective(result.output);
+  if (extraction.kind === 'absent') return result;
+  if (extraction.kind === 'malformed') {
+    return {
+      type: 'error',
+      code: JSONRPC_INVALID_PARAMS,
+      message: `Malformed __podsBridge directive: ${extraction.reason}.`,
+    };
+  }
+  const directive = extraction.directive;
 
   const params: PodsBridgeParams = { tabId, ...directive };
   try {
@@ -578,331 +594,269 @@ const resolvePodsBridgeDirective = async (result: DispatchResult, tabId: number)
 };
 
 /**
- * A `__podsSetFontSize` directive: resize the run of a paragraph identified by its
- * visible text, in an open deck's co-authoring session. Unlike `__podsBridge`, the
- * tool cannot pre-build the body — the revision must name live, per-session object
- * ids — so the engine ({@link runPodsSetFontSize}) reads the editor's model first,
- * resolves the target, constructs the body, and then writes it.
+ * Directive markers of the retired per-action pods engines. A plugin build that
+ * predates the `__podsAction` engine still emits these; without recognition they
+ * would pass through as raw tool outputs that read as success while writing
+ * nothing — the silent stale-build no-op. Tombstoned instead: seeing one is a
+ * loud "rebuild the plugin" error.
  */
-interface PodsSetFontSizeDirective {
-  frameUrlIncludes: string;
-  donorGlobal: string;
-  headSentinel: string;
-  text: string;
-  sizePt: number;
-  modelReadBody: string;
-  guidToken?: string;
-  headToken?: string;
-}
+const LEGACY_PODS_MARKERS = ['__podsSetFontSize', '__podsFormatText', '__podsAddSlide', '__podsDeleteSlide'] as const;
 
-/**
- * Extract a well-formed `__podsSetFontSize` directive, or null. Keyed on its own
- * distinct field so it never collides with `__bridge`/`__podsBridge`. Every field
- * is checked: the directive comes from a reviewed adapter but drives an
- * authenticated read-and-write against the live session.
- */
-const extractPodsSetFontSizeDirective = (output: unknown): PodsSetFontSizeDirective | null => {
+/** The legacy pods marker a tool output carries, or null. Exported for tests. */
+const findLegacyPodsMarker = (output: unknown): string | null => {
   if (!output || typeof output !== 'object') return null;
-  const raw = (output as Record<string, unknown>).__podsSetFontSize;
-  if (!raw || typeof raw !== 'object') return null;
-  const p = raw as Record<string, unknown>;
-  if (
-    typeof p.frameUrlIncludes !== 'string' ||
-    typeof p.donorGlobal !== 'string' ||
-    typeof p.headSentinel !== 'string' ||
-    typeof p.text !== 'string' ||
-    typeof p.sizePt !== 'number' ||
-    !Number.isFinite(p.sizePt) ||
-    p.sizePt <= 0 ||
-    typeof p.modelReadBody !== 'string'
-  ) {
-    return null;
+  for (const marker of LEGACY_PODS_MARKERS) {
+    if (marker in (output as Record<string, unknown>)) return marker;
   }
-  return {
-    frameUrlIncludes: p.frameUrlIncludes,
-    donorGlobal: p.donorGlobal,
-    headSentinel: p.headSentinel,
-    text: p.text,
-    sizePt: p.sizePt,
-    modelReadBody: p.modelReadBody,
-    ...(typeof p.guidToken === 'string' && p.guidToken.length > 0 ? { guidToken: p.guidToken } : {}),
-    ...(typeof p.headToken === 'string' && p.headToken.length > 0 ? { headToken: p.headToken } : {}),
-  };
+  return null;
 };
 
 /**
- * When a tool result carries a `__podsSetFontSize` directive, run the resize engine
- * on the resolved tab and replace the output with its result. A no-op when the
- * marker is absent, so it chains after {@link resolvePodsBridgeDirective}. A write
- * that did not apply comes back as `failure` and is raised to a dispatch error.
+ * Fail loudly when a tool result carries a directive from the retired per-action
+ * pods engines: the plugin build is older than this extension, and the fix is a
+ * plugin rebuild (which hot-reloads the adapter), not a debugging session.
  */
-const resolvePodsSetFontSizeDirective = async (result: DispatchResult, tabId: number): Promise<DispatchResult> => {
+const resolveLegacyPodsDirective = (result: DispatchResult): DispatchResult => {
   if (result.type !== 'success') return result;
-  const directive = extractPodsSetFontSizeDirective(result.output);
-  if (!directive) return result;
-
-  const params: PodsSetFontSizeParams = { tabId, ...directive };
-  try {
-    const fontResult = await runPodsSetFontSize(params);
-    if (fontResult.failure !== undefined) {
-      return {
-        type: 'error',
-        code: JSONRPC_INTERNAL_ERROR,
-        message: fontResult.failure,
-        data: { code: 'PODS_WRITE_FAILED', category: 'internal', retryable: false },
-      };
-    }
-    return { type: 'success', output: fontResult };
-  } catch (err) {
-    if (err instanceof FrameBridgeValidationError) {
-      return { type: 'error', code: JSONRPC_INVALID_PARAMS, message: err.message };
-    }
-    return { type: 'error', code: JSONRPC_INTERNAL_ERROR, message: `set_font_size failed: ${toErrorMessage(err)}` };
-  }
-};
-
-/**
- * A `__podsFormatText` directive: change a run's size, bold, italic, underline,
- * colour, and/or font on the paragraph identified by its visible text, live in the
- * open deck. Generalizes `__podsSetFontSize` — the engine reads the model, resolves
- * the run, and writes a run-format revision.
- */
-interface PodsFormatTextDirective {
-  frameUrlIncludes: string;
-  donorGlobal: string;
-  headSentinel: string;
-  text: string;
-  sizePt?: number;
-  bold?: boolean;
-  italic?: boolean;
-  underline?: boolean;
-  colorHex?: string;
-  font?: string;
-  modelReadBody: string;
-  guidToken?: string;
-  headToken?: string;
-}
-
-/**
- * Extract a well-formed `__podsFormatText` directive, or null. Keyed on its own
- * distinct field. At least one of size/bold/italic/underline/color/font must be
- * present, matching the engine's requirement, and every field is type-checked.
- */
-const extractPodsFormatTextDirective = (output: unknown): PodsFormatTextDirective | null => {
-  if (!output || typeof output !== 'object') return null;
-  const raw = (output as Record<string, unknown>).__podsFormatText;
-  if (!raw || typeof raw !== 'object') return null;
-  const p = raw as Record<string, unknown>;
-  if (
-    typeof p.frameUrlIncludes !== 'string' ||
-    typeof p.donorGlobal !== 'string' ||
-    typeof p.headSentinel !== 'string' ||
-    typeof p.text !== 'string' ||
-    typeof p.modelReadBody !== 'string'
-  ) {
-    return null;
-  }
-  const hasSize = typeof p.sizePt === 'number' && Number.isFinite(p.sizePt) && p.sizePt > 0;
-  const hasBold = typeof p.bold === 'boolean';
-  const hasItalic = typeof p.italic === 'boolean';
-  const hasUnderline = typeof p.underline === 'boolean';
-  const hasColor = typeof p.colorHex === 'string' && /^[0-9a-fA-F]{6}$/.test(p.colorHex);
-  const hasFont = typeof p.font === 'string' && p.font.length > 0;
-  if (!hasSize && !hasBold && !hasItalic && !hasUnderline && !hasColor && !hasFont) return null;
+  const marker = findLegacyPodsMarker(result.output);
+  if (!marker) return result;
   return {
-    frameUrlIncludes: p.frameUrlIncludes,
-    donorGlobal: p.donorGlobal,
-    headSentinel: p.headSentinel,
-    text: p.text,
-    modelReadBody: p.modelReadBody,
-    ...(hasSize ? { sizePt: p.sizePt as number } : {}),
-    ...(hasBold ? { bold: p.bold as boolean } : {}),
-    ...(hasItalic ? { italic: p.italic as boolean } : {}),
-    ...(hasUnderline ? { underline: p.underline as boolean } : {}),
-    ...(hasColor ? { colorHex: (p.colorHex as string).toUpperCase() } : {}),
-    ...(hasFont ? { font: p.font as string } : {}),
-    ...(typeof p.guidToken === 'string' && p.guidToken.length > 0 ? { guidToken: p.guidToken } : {}),
-    ...(typeof p.headToken === 'string' && p.headToken.length > 0 ? { headToken: p.headToken } : {}),
+    type: 'error',
+    code: JSONRPC_INVALID_PARAMS,
+    message:
+      `This plugin build emits the retired ${marker} directive, which this extension no longer runs. ` +
+      'Rebuild the plugin (cd plugins/powerpoint && npm run build) so it emits __podsAction, then retry.',
   };
 };
 
 /**
- * When a tool result carries a `__podsFormatText` directive, run the run-format
+ * A `__podsAction` directive: one registered live co-authoring operation — a
+ * formatting or structural write, or a live read — executed by the pods action
+ * engine ({@link runPodsAction}). The directive names the action and carries its
+ * arguments; everything else (the model read, target resolution, revision
+ * construction, confirmation) lives in the engine's per-action specs, so adding an
+ * action never touches this file.
+ */
+interface PodsActionDirective {
+  /** Directive version the plugin was built against; checked against {@link PODS_ACTION_VERSION}. */
+  v: number;
+  action: string;
+  args: Record<string, unknown>;
+  frameUrlIncludes: string;
+  donorGlobal: string;
+  headSentinel: string;
+  modelReadBody: string;
+  dryRun?: boolean;
+  guidToken?: string;
+  headToken?: string;
+  errorHints?: Record<string, string>;
+}
+
+/** Most error-hint entries a directive may carry. */
+const MAX_ERROR_HINTS = 16;
+/** Longest hint text kept, in characters. */
+const MAX_ERROR_HINT_LENGTH = 500;
+
+/**
+ * Extraction outcome. `absent` and `malformed` are distinct on purpose: a result
+ * that carries the marker but fails validation must become a loud error, never
+ * pass through as a raw tool output — the pass-through is exactly the silent
+ * stale-build no-op this design exists to kill.
+ */
+type PodsActionExtraction =
+  | { kind: 'absent' }
+  | { kind: 'malformed'; reason: string }
+  | { kind: 'valid'; directive: PodsActionDirective };
+
+/**
+ * Extract a `__podsAction` directive. Every common field is checked here; the
+ * action-specific `args` object is passed through opaque and validated by the
+ * action's own `parseArgs` in the engine — the per-action allow-list lives with
+ * the action's knowledge, not here.
+ */
+const extractPodsActionDirective = (output: unknown): PodsActionExtraction => {
+  if (!output || typeof output !== 'object') return { kind: 'absent' };
+  const raw = (output as Record<string, unknown>).__podsAction;
+  if (raw === undefined) return { kind: 'absent' };
+  if (!raw || typeof raw !== 'object') return { kind: 'malformed', reason: '`__podsAction` is not an object' };
+  const p = raw as Record<string, unknown>;
+  if (typeof p.v !== 'number' || !Number.isInteger(p.v) || p.v < 1) {
+    return { kind: 'malformed', reason: '`v` must be a positive integer' };
+  }
+  if (typeof p.action !== 'string' || p.action.length === 0) {
+    return { kind: 'malformed', reason: '`action` must be a non-empty string' };
+  }
+  if (p.args !== undefined && (typeof p.args !== 'object' || p.args === null || Array.isArray(p.args))) {
+    return { kind: 'malformed', reason: '`args` must be an object' };
+  }
+  if (
+    typeof p.frameUrlIncludes !== 'string' ||
+    typeof p.donorGlobal !== 'string' ||
+    typeof p.headSentinel !== 'string' ||
+    typeof p.modelReadBody !== 'string'
+  ) {
+    return { kind: 'malformed', reason: 'frame/donor/sentinel/model-read fields must all be strings' };
+  }
+  // A present-but-mistyped dryRun must not silently coerce to a REAL write on a
+  // live deck — that inverts the field's whole purpose.
+  if (p.dryRun !== undefined && typeof p.dryRun !== 'boolean') {
+    return { kind: 'malformed', reason: '`dryRun` must be a boolean when present' };
+  }
+  // Hints are advisory plugin→agent guidance; cap them so the channel cannot be
+  // stuffed with unbounded text that reads as trusted platform output.
+  const errorHints: Record<string, string> = {};
+  if (p.errorHints && typeof p.errorHints === 'object' && !Array.isArray(p.errorHints)) {
+    for (const [key, value] of Object.entries(p.errorHints as Record<string, unknown>)) {
+      if (typeof value !== 'string') continue;
+      errorHints[key] = value.slice(0, MAX_ERROR_HINT_LENGTH);
+      if (Object.keys(errorHints).length >= MAX_ERROR_HINTS) break;
+    }
+  }
+  return {
+    kind: 'valid',
+    directive: {
+      v: p.v,
+      action: p.action,
+      args: (p.args ?? {}) as Record<string, unknown>,
+      frameUrlIncludes: p.frameUrlIncludes,
+      donorGlobal: p.donorGlobal,
+      headSentinel: p.headSentinel,
+      modelReadBody: p.modelReadBody,
+      dryRun: p.dryRun === true,
+      ...(typeof p.guidToken === 'string' && p.guidToken.length > 0 ? { guidToken: p.guidToken } : {}),
+      ...(typeof p.headToken === 'string' && p.headToken.length > 0 ? { headToken: p.headToken } : {}),
+      ...(Object.keys(errorHints).length > 0 ? { errorHints } : {}),
+    },
+  };
+};
+
+/**
+ * When a tool result carries a `__podsAction` directive, run the pods action
  * engine on the resolved tab and replace the output with its result. A no-op when
- * the marker is absent, so it chains after {@link resolvePodsSetFontSizeDirective}.
- * A write that did not apply comes back as `failure` and is raised to a dispatch error.
+ * the marker is absent, so it chains after {@link resolvePodsBridgeDirective}. A
+ * write that did not apply comes back as `failure` and is raised to a dispatch
+ * error; a malformed or too-new directive errors loudly with rebuild instructions.
  */
-const resolvePodsFormatTextDirective = async (result: DispatchResult, tabId: number): Promise<DispatchResult> => {
+const resolvePodsActionDirective = async (result: DispatchResult, tabId: number): Promise<DispatchResult> => {
   if (result.type !== 'success') return result;
-  const directive = extractPodsFormatTextDirective(result.output);
-  if (!directive) return result;
+  const extraction = extractPodsActionDirective(result.output);
+  if (extraction.kind === 'absent') return result;
+  if (extraction.kind === 'malformed') {
+    return {
+      type: 'error',
+      code: JSONRPC_INVALID_PARAMS,
+      message:
+        `Malformed __podsAction directive: ${extraction.reason}. If the plugin was just rebuilt, rebuild the ` +
+        `extension too (npm run build) and reload it from chrome://extensions/ — this build speaks v${PODS_ACTION_VERSION}.`,
+    };
+  }
 
-  const params: PodsFormatTextParams = { tabId, ...directive };
+  const params: PodsActionParams = { tabId, ...extraction.directive };
   try {
-    const formatResult = await runPodsFormatText(params);
-    if (formatResult.failure !== undefined) {
+    const actionResult = await runPodsAction(params);
+    if ('failure' in actionResult && actionResult.failure !== undefined) {
       return {
         type: 'error',
         code: JSONRPC_INTERNAL_ERROR,
-        message: formatResult.failure,
+        message: String(actionResult.failure),
         data: { code: 'PODS_WRITE_FAILED', category: 'internal', retryable: false },
       };
     }
-    return { type: 'success', output: formatResult };
+    return { type: 'success', output: actionResult };
   } catch (err) {
     if (err instanceof FrameBridgeValidationError) {
       return { type: 'error', code: JSONRPC_INVALID_PARAMS, message: err.message };
     }
-    return { type: 'error', code: JSONRPC_INTERNAL_ERROR, message: `format_text failed: ${toErrorMessage(err)}` };
+    return { type: 'error', code: JSONRPC_INTERNAL_ERROR, message: `Pods action failed: ${toErrorMessage(err)}` };
   }
 };
 
+/** Longest editor-session wait an `__podsOpenEditor` directive may request. */
+const MAX_OPEN_EDITOR_WAIT_MS = 180_000;
+
 /**
- * A `__podsAddSlide` directive: insert a new slide into the open deck via the
- * co-authoring channel. The engine reads the live root + a template slide's layout,
- * constructs the `NewSlideWithLayout` revision, and writes it (or, with `dryRun`,
- * returns it unwritten for inspection).
+ * A `__podsOpenEditor` directive: open a deck's web-editor URL in a new tab and
+ * wait for its co-authoring session (editor frame + captured donor) to be live.
+ * The engine allow-lists the URL to Office editor hosts.
  */
-interface PodsAddSlideDirective {
+interface PodsOpenEditorDirective {
+  url: string;
   frameUrlIncludes: string;
   donorGlobal: string;
-  headSentinel: string;
-  modelReadBody: string;
-  dryRun: boolean;
-  guidToken?: string;
-  headToken?: string;
+  waitMs?: number;
 }
 
-/** Extract a well-formed `__podsAddSlide` directive, or null. Keyed on its own distinct field. */
-const extractPodsAddSlideDirective = (output: unknown): PodsAddSlideDirective | null => {
-  if (!output || typeof output !== 'object') return null;
-  const raw = (output as Record<string, unknown>).__podsAddSlide;
-  if (!raw || typeof raw !== 'object') return null;
+/** Extraction outcome for `__podsOpenEditor`, with the same loud-malformed contract as `__podsAction`. */
+type PodsOpenEditorExtraction =
+  | { kind: 'absent' }
+  | { kind: 'malformed'; reason: string }
+  | { kind: 'valid'; directive: PodsOpenEditorDirective };
+
+const extractPodsOpenEditorDirective = (output: unknown): PodsOpenEditorExtraction => {
+  if (!output || typeof output !== 'object') return { kind: 'absent' };
+  const raw = (output as Record<string, unknown>).__podsOpenEditor;
+  if (raw === undefined) return { kind: 'absent' };
+  if (!raw || typeof raw !== 'object') return { kind: 'malformed', reason: '`__podsOpenEditor` is not an object' };
   const p = raw as Record<string, unknown>;
-  if (
-    typeof p.frameUrlIncludes !== 'string' ||
-    typeof p.donorGlobal !== 'string' ||
-    typeof p.headSentinel !== 'string' ||
-    typeof p.modelReadBody !== 'string'
-  ) {
-    return null;
+  if (typeof p.url !== 'string' || p.url.length === 0) {
+    return { kind: 'malformed', reason: '`url` must be a non-empty string' };
   }
+  if (typeof p.frameUrlIncludes !== 'string' || typeof p.donorGlobal !== 'string') {
+    return { kind: 'malformed', reason: '`frameUrlIncludes` and `donorGlobal` must be strings' };
+  }
+  const waitMs =
+    typeof p.waitMs === 'number' && Number.isFinite(p.waitMs) && p.waitMs > 0
+      ? Math.min(p.waitMs, MAX_OPEN_EDITOR_WAIT_MS)
+      : undefined;
   return {
-    frameUrlIncludes: p.frameUrlIncludes,
-    donorGlobal: p.donorGlobal,
-    headSentinel: p.headSentinel,
-    modelReadBody: p.modelReadBody,
-    dryRun: p.dryRun === true,
-    ...(typeof p.guidToken === 'string' && p.guidToken.length > 0 ? { guidToken: p.guidToken } : {}),
-    ...(typeof p.headToken === 'string' && p.headToken.length > 0 ? { headToken: p.headToken } : {}),
+    kind: 'valid',
+    directive: {
+      url: p.url,
+      frameUrlIncludes: p.frameUrlIncludes,
+      donorGlobal: p.donorGlobal,
+      ...(waitMs !== undefined ? { waitMs } : {}),
+    },
   };
 };
 
 /**
- * When a tool result carries a `__podsAddSlide` directive, run the add-slide engine
- * on the resolved tab and replace the output with its result. A no-op when the
- * marker is absent, so it chains after {@link resolvePodsFormatTextDirective}. A
- * write that did not apply comes back as `failure` and is raised to a dispatch error.
+ * When a tool result carries a `__podsOpenEditor` directive, open the deck and
+ * wait for its editor session, replacing the output with the opened tab's id and
+ * readiness. The dispatch tab is not involved — the engine creates its own tab —
+ * so the URL is gated against the DISPATCHING plugin's own URL patterns: a plugin
+ * may only open pages it is already trusted to run on. Without this, any enabled
+ * plugin could spawn foreground navigations to hosts the user never associated
+ * with it.
  */
-const resolvePodsAddSlideDirective = async (result: DispatchResult, tabId: number): Promise<DispatchResult> => {
+const resolvePodsOpenEditorDirective = async (result: DispatchResult, plugin: PluginMeta): Promise<DispatchResult> => {
   if (result.type !== 'success') return result;
-  const directive = extractPodsAddSlideDirective(result.output);
-  if (!directive) return result;
+  const extraction = extractPodsOpenEditorDirective(result.output);
+  if (extraction.kind === 'absent') return result;
+  if (extraction.kind === 'malformed') {
+    return {
+      type: 'error',
+      code: JSONRPC_INVALID_PARAMS,
+      message: `Malformed __podsOpenEditor directive: ${extraction.reason}.`,
+    };
+  }
+  if (!urlMatchesPatterns(extraction.directive.url, plugin.urlPatterns, plugin.excludePatterns)) {
+    return {
+      type: 'error',
+      code: JSONRPC_INVALID_PARAMS,
+      message:
+        `__podsOpenEditor may only open URLs matching the "${plugin.name}" plugin's own URL patterns; ` +
+        `"${extraction.directive.url}" does not.`,
+    };
+  }
 
-  const params: PodsAddSlideParams = { tabId, ...directive };
+  const params: PodsOpenEditorParams = extraction.directive;
   try {
-    const addResult = await runPodsAddSlide(params);
-    if ('failure' in addResult && addResult.failure !== undefined) {
-      return {
-        type: 'error',
-        code: JSONRPC_INTERNAL_ERROR,
-        message: addResult.failure,
-        data: { code: 'PODS_WRITE_FAILED', category: 'internal', retryable: false },
-      };
-    }
-    return { type: 'success', output: addResult };
+    return { type: 'success', output: await runPodsOpenEditor(params) };
   } catch (err) {
     if (err instanceof FrameBridgeValidationError) {
       return { type: 'error', code: JSONRPC_INVALID_PARAMS, message: err.message };
     }
-    return { type: 'error', code: JSONRPC_INTERNAL_ERROR, message: `add_slide failed: ${toErrorMessage(err)}` };
-  }
-};
-
-/**
- * A `__podsDeleteSlide` directive: remove the slide at a 1-based position from the
- * open deck via the co-authoring channel. The engine reads the live root, drops the
- * target reference from the slide list, constructs the `DeleteSlide` revision, and
- * writes it (or, with `dryRun`, returns it plus the ordered slide refs, unwritten).
- */
-interface PodsDeleteSlideDirective {
-  frameUrlIncludes: string;
-  donorGlobal: string;
-  headSentinel: string;
-  modelReadBody: string;
-  slideIndex: number;
-  dryRun: boolean;
-  guidToken?: string;
-  headToken?: string;
-}
-
-/** Extract a well-formed `__podsDeleteSlide` directive, or null. Keyed on its own distinct field. */
-const extractPodsDeleteSlideDirective = (output: unknown): PodsDeleteSlideDirective | null => {
-  if (!output || typeof output !== 'object') return null;
-  const raw = (output as Record<string, unknown>).__podsDeleteSlide;
-  if (!raw || typeof raw !== 'object') return null;
-  const p = raw as Record<string, unknown>;
-  if (
-    typeof p.frameUrlIncludes !== 'string' ||
-    typeof p.donorGlobal !== 'string' ||
-    typeof p.headSentinel !== 'string' ||
-    typeof p.modelReadBody !== 'string' ||
-    typeof p.slideIndex !== 'number' ||
-    !Number.isInteger(p.slideIndex) ||
-    p.slideIndex < 1
-  ) {
-    return null;
-  }
-  return {
-    frameUrlIncludes: p.frameUrlIncludes,
-    donorGlobal: p.donorGlobal,
-    headSentinel: p.headSentinel,
-    modelReadBody: p.modelReadBody,
-    slideIndex: p.slideIndex,
-    dryRun: p.dryRun === true,
-    ...(typeof p.guidToken === 'string' && p.guidToken.length > 0 ? { guidToken: p.guidToken } : {}),
-    ...(typeof p.headToken === 'string' && p.headToken.length > 0 ? { headToken: p.headToken } : {}),
-  };
-};
-
-/**
- * When a tool result carries a `__podsDeleteSlide` directive, run the delete-slide
- * engine on the resolved tab and replace the output with its result. A no-op when
- * the marker is absent, so it chains after {@link resolvePodsAddSlideDirective}. A
- * write that did not apply comes back as `failure` and is raised to a dispatch error.
- */
-const resolvePodsDeleteSlideDirective = async (result: DispatchResult, tabId: number): Promise<DispatchResult> => {
-  if (result.type !== 'success') return result;
-  const directive = extractPodsDeleteSlideDirective(result.output);
-  if (!directive) return result;
-
-  const params: PodsDeleteSlideParams = { tabId, ...directive };
-  try {
-    const deleteResult = await runPodsDeleteSlide(params);
-    if ('failure' in deleteResult && deleteResult.failure !== undefined) {
-      return {
-        type: 'error',
-        code: JSONRPC_INTERNAL_ERROR,
-        message: deleteResult.failure,
-        data: { code: 'PODS_WRITE_FAILED', category: 'internal', retryable: false },
-      };
-    }
-    return { type: 'success', output: deleteResult };
-  } catch (err) {
-    if (err instanceof FrameBridgeValidationError) {
-      return { type: 'error', code: JSONRPC_INVALID_PARAMS, message: err.message };
-    }
-    return { type: 'error', code: JSONRPC_INTERNAL_ERROR, message: `delete_slide failed: ${toErrorMessage(err)}` };
+    return { type: 'error', code: JSONRPC_INTERNAL_ERROR, message: `open_in_editor failed: ${toErrorMessage(err)}` };
   }
 };
 
@@ -978,12 +932,11 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
       // mutually exclusive — each is a no-op unless its own marker is present — so
       // chaining them lets a tool return either an EWA `__bridge` or a co-authoring
       // `__podsBridge` directive.
-      const bridged = await resolveBridgeDirective(result, tid);
+      const legacyChecked = resolveLegacyPodsDirective(result);
+      const bridged = await resolveBridgeDirective(legacyChecked, tid);
       const podsWritten = await resolvePodsBridgeDirective(bridged, tid);
-      const fontSized = await resolvePodsSetFontSizeDirective(podsWritten, tid);
-      const formatted = await resolvePodsFormatTextDirective(fontSized, tid);
-      const added = await resolvePodsAddSlideDirective(formatted, tid);
-      return await resolvePodsDeleteSlideDirective(added, tid);
+      const actioned = await resolvePodsActionDirective(podsWritten, tid);
+      return await resolvePodsOpenEditorDirective(actioned, plugin);
     } finally {
       removeProgressListener(tid, dispatchId);
     }
@@ -1011,11 +964,10 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
 
 export {
   extractBridgeDirective,
-  extractPodsAddSlideDirective,
+  extractPodsActionDirective,
   extractPodsBridgeDirective,
-  extractPodsDeleteSlideDirective,
-  extractPodsFormatTextDirective,
-  extractPodsSetFontSizeDirective,
+  extractPodsOpenEditorDirective,
+  findLegacyPodsMarker,
   getPluginLink,
   handleToolDispatch,
   notifyDispatchProgress,

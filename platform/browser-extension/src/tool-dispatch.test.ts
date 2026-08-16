@@ -73,9 +73,9 @@ const {
   handleToolDispatch,
   extractBridgeDirective,
   extractPodsBridgeDirective,
-  extractPodsSetFontSizeDirective,
-  extractPodsFormatTextDirective,
-  extractPodsDeleteSlideDirective,
+  extractPodsActionDirective,
+  extractPodsOpenEditorDirective,
+  findLegacyPodsMarker,
 } = await import('./tool-dispatch.js');
 const { invalidatePluginCache } = await import('./plugin-storage.js');
 
@@ -250,16 +250,15 @@ describe('extractPodsBridgeDirective', () => {
 
   test('extracts a well-formed directive and defaults the optional tokens away', () => {
     if (!extractPodsBridgeDirective) return;
-    expect(extractPodsBridgeDirective({ __podsBridge: base })).toEqual(base);
+    expect(extractPodsBridgeDirective({ __podsBridge: base })).toEqual({ kind: 'valid', directive: base });
   });
 
   test('carries explicit guidToken and headToken when present', () => {
     if (!extractPodsBridgeDirective) return;
-    const directive = extractPodsBridgeDirective({
+    const extraction = extractPodsBridgeDirective({
       __podsBridge: { ...base, guidToken: '__G__', headToken: '__H__' },
     });
-    expect(directive?.guidToken).toBe('__G__');
-    expect(directive?.headToken).toBe('__H__');
+    expect(extraction).toEqual({ kind: 'valid', directive: { ...base, guidToken: '__G__', headToken: '__H__' } });
   });
 
   test('is keyed on __podsBridge, not __bridge', () => {
@@ -268,166 +267,153 @@ describe('extractPodsBridgeDirective', () => {
     expect(extractBridgeDirective({ __podsBridge: base })).toBeNull();
     expect(
       extractPodsBridgeDirective({ __bridge: { method: 'M', frameUrlIncludes: 'f', harvestUrlIncludes: 'h' } }),
-    ).toBeNull();
+    ).toEqual({ kind: 'absent' });
   });
 
-  test('returns null when required fields are missing or the body is not a plain object', () => {
+  test('reports malformed — never absent — for a present-but-invalid directive', () => {
     if (!extractPodsBridgeDirective) return;
-    expect(extractPodsBridgeDirective({ __podsBridge: { ...base, headSentinel: undefined } })).toBeNull();
-    expect(extractPodsBridgeDirective({ __podsBridge: { ...base, body: [1, 2] } })).toBeNull();
-    expect(extractPodsBridgeDirective({ __podsBridge: { ...base, body: 'nope' } })).toBeNull();
-    expect(extractPodsBridgeDirective({ __podsBridge: null })).toBeNull();
-    expect(extractPodsBridgeDirective(null)).toBeNull();
+    const kinds = [
+      extractPodsBridgeDirective({ __podsBridge: { ...base, headSentinel: undefined } }),
+      extractPodsBridgeDirective({ __podsBridge: { ...base, body: [1, 2] } }),
+      extractPodsBridgeDirective({ __podsBridge: { ...base, body: 'nope' } }),
+      extractPodsBridgeDirective({ __podsBridge: null }),
+    ].map(extraction => extraction.kind);
+    expect(kinds).toEqual(['malformed', 'malformed', 'malformed', 'malformed']);
+    expect(extractPodsBridgeDirective(null)).toEqual({ kind: 'absent' });
   });
 });
 
 // ---------------------------------------------------------------------------
-// extractPodsSetFontSizeDirective — the resize allow-list parser
+// findLegacyPodsMarker — the retired-directive tombstone
 // ---------------------------------------------------------------------------
 
-describe('extractPodsSetFontSizeDirective', () => {
-  const base = {
-    frameUrlIncludes: 'powerpoint.officeapps.live.com',
-    donorGlobal: '__otbPptPodsDonor',
-    headSentinel: '__otb_pods_head__',
-    text: 'Workstream',
-    sizePt: 24,
-    modelReadBody: '{"Mode":4,"srs":[[1,{"SlideID":"0#0#Slide","OperationId":1}]]}',
-  };
-
-  test('extracts a well-formed directive and defaults the optional tokens away', () => {
-    if (!extractPodsSetFontSizeDirective) return;
-    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: base })).toEqual(base);
+describe('findLegacyPodsMarker', () => {
+  test('names each retired per-action marker so a stale plugin build fails loudly', () => {
+    if (!findLegacyPodsMarker) return;
+    for (const marker of ['__podsSetFontSize', '__podsFormatText', '__podsAddSlide', '__podsDeleteSlide']) {
+      expect(findLegacyPodsMarker({ [marker]: { text: 'x' } })).toBe(marker);
+    }
   });
 
-  test('carries explicit guidToken and headToken when present', () => {
-    if (!extractPodsSetFontSizeDirective) return;
-    const directive = extractPodsSetFontSizeDirective({
-      __podsSetFontSize: { ...base, guidToken: '__G__', headToken: '__H__' },
-    });
-    expect(directive).toEqual({ ...base, guidToken: '__G__', headToken: '__H__' });
-  });
-
-  test('is keyed on __podsSetFontSize, distinct from the other directives', () => {
-    if (!extractPodsSetFontSizeDirective || !extractPodsBridgeDirective) return;
-    expect(extractPodsBridgeDirective({ __podsSetFontSize: base })).toBeNull();
-    expect(extractPodsSetFontSizeDirective({ __podsBridge: {} })).toBeNull();
-  });
-
-  test('rejects a missing or non-positive size and missing fields', () => {
-    if (!extractPodsSetFontSizeDirective) return;
-    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, sizePt: 0 } })).toBeNull();
-    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, sizePt: -4 } })).toBeNull();
-    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, sizePt: 'big' } })).toBeNull();
-    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, text: undefined } })).toBeNull();
-    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, modelReadBody: 5 } })).toBeNull();
-    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: null })).toBeNull();
-    expect(extractPodsSetFontSizeDirective(null)).toBeNull();
+  test('ignores plain results and the current directives', () => {
+    if (!findLegacyPodsMarker) return;
+    expect(findLegacyPodsMarker(null)).toBeNull();
+    expect(findLegacyPodsMarker({ ok: true })).toBeNull();
+    expect(findLegacyPodsMarker({ __podsAction: { v: 1 } })).toBeNull();
+    expect(findLegacyPodsMarker({ __podsBridge: {} })).toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-// extractPodsFormatTextDirective — the run-format allow-list parser
+// extractPodsActionDirective — the generic pods-action parser
 // ---------------------------------------------------------------------------
 
-describe('extractPodsFormatTextDirective', () => {
+describe('extractPodsActionDirective', () => {
   const base = {
-    frameUrlIncludes: 'powerpoint.officeapps.live.com',
-    donorGlobal: '__otbPptPodsDonor',
-    headSentinel: '__otb_pods_head__',
-    text: 'Workstream',
-    modelReadBody: '{"Mode":4,"srs":[[1,{"SlideID":"0#0#Slide","OperationId":1}]]}',
-  };
-
-  test('extracts a size-only change', () => {
-    if (!extractPodsFormatTextDirective) return;
-    expect(extractPodsFormatTextDirective({ __podsFormatText: { ...base, sizePt: 24 } })).toEqual({
-      ...base,
-      sizePt: 24,
-    });
-  });
-
-  test('extracts bold and italic booleans, including false', () => {
-    if (!extractPodsFormatTextDirective) return;
-    expect(extractPodsFormatTextDirective({ __podsFormatText: { ...base, bold: true, italic: false } })).toEqual({
-      ...base,
-      bold: true,
-      italic: false,
-    });
-  });
-
-  test('rejects a directive with no size/bold/italic change', () => {
-    if (!extractPodsFormatTextDirective) return;
-    expect(extractPodsFormatTextDirective({ __podsFormatText: base })).toBeNull();
-    expect(extractPodsFormatTextDirective({ __podsFormatText: { ...base, sizePt: 0 } })).toBeNull();
-  });
-
-  test('is keyed on __podsFormatText, distinct from the other directives', () => {
-    if (!extractPodsFormatTextDirective || !extractPodsSetFontSizeDirective) return;
-    expect(extractPodsSetFontSizeDirective({ __podsFormatText: { ...base, bold: true } })).toBeNull();
-    expect(extractPodsFormatTextDirective({ __podsSetFontSize: { ...base, sizePt: 10 } })).toBeNull();
-  });
-
-  test('rejects missing required fields', () => {
-    if (!extractPodsFormatTextDirective) return;
-    expect(extractPodsFormatTextDirective({ __podsFormatText: { ...base, bold: true, text: undefined } })).toBeNull();
-    expect(extractPodsFormatTextDirective({ __podsFormatText: { ...base, bold: true, modelReadBody: 5 } })).toBeNull();
-    expect(extractPodsFormatTextDirective({ __podsFormatText: null })).toBeNull();
-    expect(extractPodsFormatTextDirective(null)).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// extractPodsDeleteSlideDirective — the delete-slide allow-list parser
-// ---------------------------------------------------------------------------
-
-describe('extractPodsDeleteSlideDirective', () => {
-  const base = {
+    v: 1,
+    action: 'format_text',
+    args: { text: 'Workstream', bold: true },
     frameUrlIncludes: 'powerpoint.officeapps.live.com',
     donorGlobal: '__otbPptPodsDonor',
     headSentinel: '__otb_pods_head__',
     modelReadBody: '{"Mode":4,"srs":[[2,{}]]}',
   };
 
-  test('extracts a delete directive with a 1-based slide index, defaulting dryRun to false', () => {
-    if (!extractPodsDeleteSlideDirective) return;
-    expect(extractPodsDeleteSlideDirective({ __podsDeleteSlide: { ...base, slideIndex: 3 } })).toEqual({
-      ...base,
-      slideIndex: 3,
-      dryRun: false,
+  test('extracts a well-formed directive, defaulting dryRun to false', () => {
+    if (!extractPodsActionDirective) return;
+    expect(extractPodsActionDirective({ __podsAction: base })).toEqual({
+      kind: 'valid',
+      directive: { ...base, dryRun: false },
     });
   });
 
-  test('carries dryRun through when set', () => {
-    if (!extractPodsDeleteSlideDirective) return;
-    expect(extractPodsDeleteSlideDirective({ __podsDeleteSlide: { ...base, slideIndex: 1, dryRun: true } })).toEqual({
-      ...base,
-      slideIndex: 1,
-      dryRun: true,
+  test('defaults missing args to an empty object and carries tokens through', () => {
+    if (!extractPodsActionDirective) return;
+    const { args: _args, ...noArgs } = base;
+    const extraction = extractPodsActionDirective({
+      __podsAction: { ...noArgs, guidToken: '__G__', headToken: '__H__' },
+    });
+    expect(extraction).toEqual({
+      kind: 'valid',
+      directive: { ...noArgs, args: {}, dryRun: false, guidToken: '__G__', headToken: '__H__' },
     });
   });
 
-  test('rejects a non-positive or non-integer index', () => {
-    if (!extractPodsDeleteSlideDirective) return;
-    expect(extractPodsDeleteSlideDirective({ __podsDeleteSlide: { ...base, slideIndex: 0 } })).toBeNull();
-    expect(extractPodsDeleteSlideDirective({ __podsDeleteSlide: { ...base, slideIndex: -1 } })).toBeNull();
-    expect(extractPodsDeleteSlideDirective({ __podsDeleteSlide: { ...base, slideIndex: 1.5 } })).toBeNull();
-    expect(extractPodsDeleteSlideDirective({ __podsDeleteSlide: base })).toBeNull();
+  test('keeps string-valued errorHints and drops non-string hint values', () => {
+    if (!extractPodsActionDirective) return;
+    const extraction = extractPodsActionDirective({
+      __podsAction: { ...base, errorHints: { 'se:157/2': 'Read a fresh head.', bogus: 42 } },
+    });
+    expect(extraction).toEqual({
+      kind: 'valid',
+      directive: { ...base, dryRun: false, errorHints: { 'se:157/2': 'Read a fresh head.' } },
+    });
   });
 
-  test('is keyed on __podsDeleteSlide, distinct from the other directives', () => {
-    if (!extractPodsDeleteSlideDirective || !extractPodsFormatTextDirective) return;
-    expect(extractPodsFormatTextDirective({ __podsDeleteSlide: { ...base, slideIndex: 1 } })).toBeNull();
-    expect(extractPodsDeleteSlideDirective({ __podsFormatText: { ...base, slideIndex: 1 } })).toBeNull();
+  test('reports absent for outputs without the marker', () => {
+    if (!extractPodsActionDirective) return;
+    expect(extractPodsActionDirective(null)).toEqual({ kind: 'absent' });
+    expect(extractPodsActionDirective({})).toEqual({ kind: 'absent' });
+    expect(extractPodsActionDirective({ __podsBridge: {} })).toEqual({ kind: 'absent' });
   });
 
-  test('rejects missing required fields', () => {
-    if (!extractPodsDeleteSlideDirective) return;
-    expect(
-      extractPodsDeleteSlideDirective({ __podsDeleteSlide: { ...base, slideIndex: 2, modelReadBody: 5 } }),
-    ).toBeNull();
-    expect(extractPodsDeleteSlideDirective({ __podsDeleteSlide: null })).toBeNull();
-    expect(extractPodsDeleteSlideDirective(null)).toBeNull();
+  test('reports malformed — never absent — when the marker is present but invalid', () => {
+    if (!extractPodsActionDirective) return;
+    const kinds = [
+      extractPodsActionDirective({ __podsAction: null }),
+      extractPodsActionDirective({ __podsAction: { ...base, v: undefined } }),
+      extractPodsActionDirective({ __podsAction: { ...base, v: 0 } }),
+      extractPodsActionDirective({ __podsAction: { ...base, action: '' } }),
+      extractPodsActionDirective({ __podsAction: { ...base, args: [1, 2] } }),
+      extractPodsActionDirective({ __podsAction: { ...base, modelReadBody: 5 } }),
+    ].map(extraction => extraction.kind);
+    expect(kinds).toEqual(['malformed', 'malformed', 'malformed', 'malformed', 'malformed', 'malformed']);
+  });
+
+  test('is keyed on __podsAction, distinct from __podsBridge', () => {
+    if (!extractPodsActionDirective || !extractPodsBridgeDirective) return;
+    expect(extractPodsBridgeDirective({ __podsAction: base })).toEqual({ kind: 'absent' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractPodsOpenEditorDirective — the open-in-editor parser
+// ---------------------------------------------------------------------------
+
+describe('extractPodsOpenEditorDirective', () => {
+  const base = {
+    url: 'https://contoso-my.sharepoint.com/:p:/r/personal/user/Documents/deck.pptx',
+    frameUrlIncludes: 'powerpoint.officeapps.live.com',
+    donorGlobal: '__otbPptPodsDonor',
+  };
+
+  test('extracts a well-formed directive', () => {
+    if (!extractPodsOpenEditorDirective) return;
+    expect(extractPodsOpenEditorDirective({ __podsOpenEditor: base })).toEqual({
+      kind: 'valid',
+      directive: base,
+    });
+  });
+
+  test('caps waitMs and drops a non-positive one', () => {
+    if (!extractPodsOpenEditorDirective) return;
+    expect(extractPodsOpenEditorDirective({ __podsOpenEditor: { ...base, waitMs: 999_999 } })).toEqual({
+      kind: 'valid',
+      directive: { ...base, waitMs: 180_000 },
+    });
+    expect(extractPodsOpenEditorDirective({ __podsOpenEditor: { ...base, waitMs: -5 } })).toEqual({
+      kind: 'valid',
+      directive: base,
+    });
+  });
+
+  test('reports absent without the marker and malformed with an invalid one', () => {
+    if (!extractPodsOpenEditorDirective) return;
+    expect(extractPodsOpenEditorDirective(null)).toEqual({ kind: 'absent' });
+    expect(extractPodsOpenEditorDirective({})).toEqual({ kind: 'absent' });
+    expect(extractPodsOpenEditorDirective({ __podsOpenEditor: null }).kind).toBe('malformed');
+    expect(extractPodsOpenEditorDirective({ __podsOpenEditor: { ...base, url: '' } }).kind).toBe('malformed');
+    expect(extractPodsOpenEditorDirective({ __podsOpenEditor: { ...base, donorGlobal: 7 } }).kind).toBe('malformed');
   });
 });
 

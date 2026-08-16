@@ -5,13 +5,23 @@ import { describe, expect, test } from 'vitest';
   tabs: { onRemoved: { addListener: () => {} } },
 };
 
-const { buildSetFontSizeBody, buildRunFormatBody } = await import('./pods-set-font-size.js');
+const { buildRunFormatBody, formatTextAction, resolveRunFormatTarget, setFontSizeAction } = await import(
+  './pods-action-run-format.js'
+);
 const { FrameBridgeValidationError } = await import('./frame-bridge-rpc.js');
 
-import type { ResolvedTarget } from './pods-set-font-size.js';
+import type { ResolvedTarget } from './pods-action-run-format.js';
+import type { PodsMint } from './pods-actions.js';
+import type { PodsModel } from './pods-model.js';
 
 const GUID = '__OTB_PODS_GUID__';
 const HEAD = '__OTB_PODS_HEAD__';
+const mint: PodsMint = {
+  guidToken: GUID,
+  headToken: HEAD,
+  seed: 'a1b2c3d4-0000-0000-0000-000000000000',
+  actionTime: '2',
+};
 
 /** A single-run "Workstream" paragraph resolved from the model, à la the live read. */
 const target = (): ResolvedTarget => ({
@@ -35,6 +45,33 @@ const target = (): ResolvedTarget => ({
       sizeHalfPt: '22',
       bold: 'false',
       italic: null,
+    },
+  ],
+});
+
+/** The same target expressed as a live-model fixture, for resolve tests. */
+const model = (): PodsModel => ({
+  totalObjects: 5,
+  objects: [
+    {
+      classId: 393271,
+      objectId: '23069e19-9218-5ae4-9815-d8ceaade97df|4',
+      properties: [
+        536889540,
+        '{b3ab583c-77cd-428d-9371-02c2ea7c058b}{2}',
+        603986975,
+        '{d55934be-57c9-4c97-8e07-bf34a0bb3f76}{58}',
+      ],
+    },
+    {
+      classId: 393230,
+      objectId: '9182af9a-7890-4cb4-8497-a2086b1e730f|248',
+      properties: [469769250, 'Workstream', 603987475, '{e6b8a11d-1fe8-49e2-b5d9-28e6e5a5d082}{7}', 335562753, '103'],
+    },
+    {
+      classId: 1179725,
+      objectId: 'e6b8a11d-1fe8-49e2-b5d9-28e6e5a5d082|7',
+      properties: [134224900, 'false', 268442635, '22', 469780527, 'Aptos', 469780760, '@FFFFFF,0,'],
     },
   ],
 });
@@ -65,9 +102,9 @@ const propValue = (properties: (string | number)[], id: number): string | number
   return undefined;
 };
 
-describe('buildSetFontSizeBody', () => {
+describe('buildRunFormatBody (size change)', () => {
   test('builds the proven type-3 shape with identity tokens in every slot', () => {
-    const body = buildSetFontSizeBody(target(), 36, GUID, HEAD);
+    const body = buildRunFormatBody(target(), { sizeHalfPt: 36 }, GUID, HEAD);
     expect(body.Mode).toBe(4);
 
     const { discriminator, inner, revision, group, action, paragraph, run } = revisionOf(body);
@@ -84,7 +121,7 @@ describe('buildSetFontSizeBody', () => {
   });
 
   test('the new run copies props verbatim but with the new size', () => {
-    const { run } = revisionOf(buildSetFontSizeBody(target(), 36, GUID, HEAD));
+    const { run } = revisionOf(buildRunFormatBody(target(), { sizeHalfPt: 36 }, GUID, HEAD));
     expect(run.ObjectId).toBe(`${GUID}|1`);
     expect(propValue(run.Properties, 268442635)).toBe('36');
     // Every other run property is carried through unchanged.
@@ -94,7 +131,7 @@ describe('buildSetFontSizeBody', () => {
   });
 
   test('the paragraph is resubmitted with its run-ref pointing at the new run', () => {
-    const { paragraph } = revisionOf(buildSetFontSizeBody(target(), 36, GUID, HEAD));
+    const { paragraph } = revisionOf(buildRunFormatBody(target(), { sizeHalfPt: 36 }, GUID, HEAD));
     expect(paragraph.ObjectId).toBe('9182af9a-7890-4cb4-8497-a2086b1e730f|248');
     expect(propValue(paragraph.Properties, 603987475)).toBe(`{${GUID}}{1}`);
     // Text and other paragraph properties are unchanged.
@@ -103,7 +140,7 @@ describe('buildSetFontSizeBody', () => {
   });
 
   test('run and paragraph properties are sorted ascending by id, matching the proven write', () => {
-    const { paragraph, run } = revisionOf(buildSetFontSizeBody(target(), 36, GUID, HEAD));
+    const { paragraph, run } = revisionOf(buildRunFormatBody(target(), { sizeHalfPt: 36 }, GUID, HEAD));
     const ids = (properties: (string | number)[]): number[] => {
       const out: number[] = [];
       for (let i = 0; i < properties.length; i += 2) out.push(Number(properties[i]));
@@ -116,7 +153,7 @@ describe('buildSetFontSizeBody', () => {
   });
 
   test('the action descriptor names SetFontSize', () => {
-    const { action } = revisionOf(buildSetFontSizeBody(target(), 36, GUID, HEAD));
+    const { action } = revisionOf(buildRunFormatBody(target(), { sizeHalfPt: 36 }, GUID, HEAD));
     expect(action.ObjectId).toBe('b3ab583c-77cd-428d-9371-02c2ea7c058b|1');
     expect(propValue(action.Properties, 469780989)).toBe('SetFontSize');
   });
@@ -131,7 +168,7 @@ describe('buildSetFontSizeBody', () => {
       bold: null,
       italic: null,
     });
-    expect(() => buildSetFontSizeBody(multi, 36, GUID, HEAD)).toThrow(FrameBridgeValidationError);
+    expect(() => buildRunFormatBody(multi, { sizeHalfPt: 36 }, GUID, HEAD)).toThrow(FrameBridgeValidationError);
   });
 
   test('only the matched run reference is rewritten in a multi-part list', () => {
@@ -139,7 +176,7 @@ describe('buildSetFontSizeBody', () => {
     t.runRef = '{keep-a}{1},{e6b8a11d-1fe8-49e2-b5d9-28e6e5a5d082}{7},{keep-b}{2}';
     t.paragraphProperties = [469769250, 'Workstream', 603987475, t.runRef];
     // {keep-a}/{keep-b} are not resolved 1179725 runs, so textRuns stays length 1.
-    const { paragraph } = revisionOf(buildSetFontSizeBody(t, 36, GUID, HEAD));
+    const { paragraph } = revisionOf(buildRunFormatBody(t, { sizeHalfPt: 36 }, GUID, HEAD));
     expect(propValue(paragraph.Properties, 603987475)).toBe(`{keep-a}{1},{${GUID}}{1},{keep-b}{2}`);
   });
 });
@@ -202,10 +239,48 @@ describe('buildRunFormatBody', () => {
   test('rejects an empty change set', () => {
     expect(() => buildRunFormatBody(target(), {}, GUID, HEAD)).toThrow(FrameBridgeValidationError);
   });
+});
 
-  test('set_font_size remains a size-only special case of the general builder', () => {
-    const viaWrapper = buildSetFontSizeBody(target(), 48, GUID, HEAD);
-    const viaGeneral = buildRunFormatBody(target(), { sizeHalfPt: 48 }, GUID, HEAD);
-    expect(viaWrapper).toEqual(viaGeneral);
+describe('resolveRunFormatTarget', () => {
+  test('resolves the paragraph and its run from a live-model fixture', () => {
+    const resolved = resolveRunFormatTarget(model(), 'Workstream');
+    expect(resolved.cellId).toBe('23069e19-9218-5ae4-9815-d8ceaade97df|3');
+    expect(resolved.actionDescId).toBe('b3ab583c-77cd-428d-9371-02c2ea7c058b|1');
+    expect(resolved.paragraphId).toBe('9182af9a-7890-4cb4-8497-a2086b1e730f|248');
+    expect(resolved.textRuns).toHaveLength(1);
+    expect(resolved.textRuns[0]?.sizeHalfPt).toBe('22');
+  });
+
+  test('an unmatched text errors with nearby-text samples', () => {
+    expect(() => resolveRunFormatTarget(model(), 'Not There')).toThrow(/Workstream/);
+  });
+});
+
+describe('action specs', () => {
+  test('set_font_size is the size-only special case of format_text', () => {
+    const sizeArgs = setFontSizeAction.parseArgs({ text: 'Workstream', sizePt: 24 });
+    const formatArgs = formatTextAction.parseArgs({ text: 'Workstream', sizePt: 24 });
+    expect(setFontSizeAction.build(target(), sizeArgs, mint)).toEqual(
+      formatTextAction.build(target(), formatArgs, mint),
+    );
+  });
+
+  test('format_text parseArgs is an allow-list: unknown fields do not survive', () => {
+    const args = formatTextAction.parseArgs({ text: 'Workstream', bold: true, evil: 'x' });
+    expect(args).toEqual({ text: 'Workstream', changes: { bold: true }, requested: { bold: true } });
+  });
+
+  test('format_text parseArgs rejects an empty change set and set_font_size a bad size', () => {
+    expect(() => formatTextAction.parseArgs({ text: 'Workstream' })).toThrow(FrameBridgeValidationError);
+    expect(() => setFontSizeAction.parseArgs({ text: 'Workstream', sizePt: 0 })).toThrow(FrameBridgeValidationError);
+  });
+
+  test('isApplied is true only when the run reflects every requested change', () => {
+    const args = formatTextAction.parseArgs({ text: 'Workstream', sizePt: 11 });
+    const first = resolveRunFormatTarget(model(), 'Workstream');
+    // The fixture run is already 22 half-points (11pt), so a size-11 request reads as applied.
+    expect(formatTextAction.isApplied(model(), first, args)).toBe(true);
+    const bolder = formatTextAction.parseArgs({ text: 'Workstream', bold: true });
+    expect(formatTextAction.isApplied(model(), first, bolder)).toBe(false);
   });
 });

@@ -2,11 +2,32 @@ import { describe, expect, test } from 'vitest';
 import {
   PODS_GUID_TOKEN,
   PODS_HEAD_TOKEN,
+  type PodsActionDirective,
+  podsAddSlide,
   podsDeleteSlide,
   podsFormatText,
+  podsOpenEditor,
+  podsReadOutline,
   podsSetFontSize,
   podsWrite,
 } from './pods-bridge.js';
+
+const MODEL_READ_BODY =
+  '{"Mode":4,"srs":[[2,{"OperationId":1,"DependentOn":0,"ExpectedLatestRevisionId":"00000000-0000-0000-0000-000000000000|0","SlideId":null,"Sequence":0,"LocalRenderingParams":null}]]}';
+
+/** The common `__podsAction` envelope every action builder must emit. */
+const commonAction = {
+  v: 1,
+  frameUrlIncludes: 'powerpoint.officeapps.live.com',
+  donorGlobal: '__otbPptPodsDonor',
+  headSentinel: '__otb_pods_head__',
+  modelReadBody: MODEL_READ_BODY,
+  guidToken: PODS_GUID_TOKEN,
+  headToken: PODS_HEAD_TOKEN,
+};
+
+const actionOf = (directive: unknown): PodsActionDirective['__podsAction'] =>
+  (directive as unknown as PodsActionDirective).__podsAction;
 
 describe('podsWrite', () => {
   const body = { Mode: 4, srs: [[3, { Revisions: [{ Id: `${PODS_GUID_TOKEN}|2`, BaseId: PODS_HEAD_TOKEN }] }]] };
@@ -38,79 +59,66 @@ describe('podsWrite', () => {
   });
 });
 
-describe('podsSetFontSize', () => {
-  test('builds a __podsSetFontSize directive with the target, size, and read payload', () => {
-    const directive = podsSetFontSize('Workstream', 24) as unknown as { __podsSetFontSize: Record<string, unknown> };
-    expect(directive.__podsSetFontSize).toEqual({
-      frameUrlIncludes: 'powerpoint.officeapps.live.com',
-      donorGlobal: '__otbPptPodsDonor',
-      headSentinel: '__otb_pods_head__',
-      text: 'Workstream',
-      sizePt: 24,
-      modelReadBody:
-        '{"Mode":4,"srs":[[2,{"OperationId":1,"DependentOn":0,"ExpectedLatestRevisionId":"00000000-0000-0000-0000-000000000000|0","SlideId":null,"Sequence":0,"LocalRenderingParams":null}]]}',
-      guidToken: PODS_GUID_TOKEN,
-      headToken: PODS_HEAD_TOKEN,
+describe('pods action directives', () => {
+  test('podsSetFontSize names the set_font_size action with the target and size as args', () => {
+    const action = actionOf(podsSetFontSize('Workstream', 24));
+    expect(action).toMatchObject({
+      ...commonAction,
+      action: 'set_font_size',
+      args: { text: 'Workstream', sizePt: 24 },
     });
+    expect(action.errorHints).toBeDefined();
   });
 
-  test('carries the caller text and size verbatim', () => {
-    const directive = podsSetFontSize('04/29 - PILOT GO -- NO GO', 10.5) as unknown as {
-      __podsSetFontSize: { text: string; sizePt: number };
-    };
-    expect(directive.__podsSetFontSize.text).toBe('04/29 - PILOT GO -- NO GO');
-    expect(directive.__podsSetFontSize.sizePt).toBe(10.5);
+  test('podsFormatText carries only the requested changes in args', () => {
+    const action = actionOf(podsFormatText('Title', { sizePt: 28, bold: true }));
+    expect(action.action).toBe('format_text');
+    expect(action.args).toEqual({ text: 'Title', sizePt: 28, bold: true });
+    expect('italic' in action.args).toBe(false);
+  });
+
+  test('podsAddSlide has no args and carries dryRun at the directive level', () => {
+    expect(actionOf(podsAddSlide())).toMatchObject({ action: 'add_slide', args: {}, dryRun: false });
+    expect(actionOf(podsAddSlide(true)).dryRun).toBe(true);
+  });
+
+  test('podsDeleteSlide carries the 1-based index and dryRun', () => {
+    const action = actionOf(podsDeleteSlide(3));
+    expect(action).toMatchObject({ action: 'delete_slide', args: { slideIndex: 3 }, dryRun: false });
+    expect(actionOf(podsDeleteSlide(2, true)).dryRun).toBe(true);
+  });
+
+  test('podsReadOutline is a plain read with no args and no dryRun', () => {
+    const action = actionOf(podsReadOutline());
+    expect(action).toMatchObject({ action: 'read_outline', args: {} });
+    expect('dryRun' in action).toBe(false);
+  });
+
+  test('every action declares contract v1 and passes the decoded error hints through', () => {
+    for (const directive of [podsSetFontSize('t', 10), podsAddSlide(), podsDeleteSlide(1), podsReadOutline()]) {
+      const action = actionOf(directive);
+      expect(action.v).toBe(1);
+      expect(Object.keys(action.errorHints).length).toBeGreaterThan(0);
+    }
   });
 });
 
-describe('podsFormatText', () => {
-  test('builds a __podsFormatText directive with only the requested changes present', () => {
-    const directive = podsFormatText('Workstream', { bold: true, italic: false }) as unknown as {
-      __podsFormatText: Record<string, unknown>;
+describe('podsOpenEditor', () => {
+  test('builds a __podsOpenEditor directive with the URL and session markers', () => {
+    const directive = podsOpenEditor('https://contoso-my.sharepoint.com/:p:/r/x.pptx') as unknown as {
+      __podsOpenEditor: Record<string, unknown>;
     };
-    expect(directive.__podsFormatText).toEqual({
+    expect(directive.__podsOpenEditor).toEqual({
+      url: 'https://contoso-my.sharepoint.com/:p:/r/x.pptx',
       frameUrlIncludes: 'powerpoint.officeapps.live.com',
       donorGlobal: '__otbPptPodsDonor',
-      headSentinel: '__otb_pods_head__',
-      text: 'Workstream',
-      bold: true,
-      italic: false,
-      modelReadBody:
-        '{"Mode":4,"srs":[[2,{"OperationId":1,"DependentOn":0,"ExpectedLatestRevisionId":"00000000-0000-0000-0000-000000000000|0","SlideId":null,"Sequence":0,"LocalRenderingParams":null}]]}',
-      guidToken: PODS_GUID_TOKEN,
-      headToken: PODS_HEAD_TOKEN,
     });
   });
 
-  test('omits change keys that were not requested', () => {
-    const directive = podsFormatText('Title', { sizePt: 28 }) as unknown as {
-      __podsFormatText: Record<string, unknown>;
+  test('carries an explicit wait through in milliseconds', () => {
+    const directive = podsOpenEditor('https://contoso-my.sharepoint.com/:p:/r/x.pptx', 90_000) as unknown as {
+      __podsOpenEditor: { waitMs?: number };
     };
-    expect(directive.__podsFormatText.sizePt).toBe(28);
-    expect('bold' in directive.__podsFormatText).toBe(false);
-    expect('italic' in directive.__podsFormatText).toBe(false);
-  });
-});
-
-describe('podsDeleteSlide', () => {
-  test('builds a __podsDeleteSlide directive carrying the 1-based index', () => {
-    const directive = podsDeleteSlide(3) as unknown as { __podsDeleteSlide: Record<string, unknown> };
-    expect(directive.__podsDeleteSlide).toEqual({
-      frameUrlIncludes: 'powerpoint.officeapps.live.com',
-      donorGlobal: '__otbPptPodsDonor',
-      headSentinel: '__otb_pods_head__',
-      modelReadBody:
-        '{"Mode":4,"srs":[[2,{"OperationId":1,"DependentOn":0,"ExpectedLatestRevisionId":"00000000-0000-0000-0000-000000000000|0","SlideId":null,"Sequence":0,"LocalRenderingParams":null}]]}',
-      slideIndex: 3,
-      dryRun: false,
-      guidToken: PODS_GUID_TOKEN,
-      headToken: PODS_HEAD_TOKEN,
-    });
-  });
-
-  test('carries dry_run through', () => {
-    const directive = podsDeleteSlide(2, true) as unknown as { __podsDeleteSlide: Record<string, unknown> };
-    expect(directive.__podsDeleteSlide.slideIndex).toBe(2);
-    expect(directive.__podsDeleteSlide.dryRun).toBe(true);
+    expect(directive.__podsOpenEditor.waitMs).toBe(90_000);
   });
 });

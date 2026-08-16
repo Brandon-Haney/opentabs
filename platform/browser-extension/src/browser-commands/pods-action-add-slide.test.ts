@@ -4,10 +4,11 @@ import { describe, expect, test } from 'vitest';
   tabs: { onRemoved: { addListener: () => {} } },
 };
 
-const { buildAddSlideBody } = await import('./pods-add-slide.js');
+const { addSlideAction, buildAddSlideBody, resolveAddSlideContext } = await import('./pods-action-add-slide.js');
 const { FrameBridgeValidationError } = await import('./frame-bridge-rpc.js');
 
-import type { AddSlideContext } from './pods-add-slide.js';
+import type { AddSlideContext } from './pods-action-add-slide.js';
+import type { PodsModel } from './pods-model.js';
 
 const GUID = '__OTB_PODS_GUID__';
 const HEAD = '__OTB_PODS_HEAD__';
@@ -29,6 +30,19 @@ const ctx = (): AddSlideContext => ({
   slideRefs: ['{d55934be-57c9-4c97-8e07-bf34a0bb3f76}{58}', '{d55934be-57c9-4c97-8e07-bf34a0bb3f76}{59}'],
   master: '2147483648',
   layout: '2147483656',
+});
+
+/** The same context expressed as a live-model fixture, for resolve tests. */
+const model = (): PodsModel => ({
+  totalObjects: 3,
+  objects: [
+    { classId: 393271, objectId: ctx().rootObjectId, properties: ctx().rootProperties },
+    {
+      classId: 393227,
+      objectId: 'd55934be-57c9-4c97-8e07-bf34a0bb3f76|58',
+      properties: [335562835, '2147483648', 335562836, '2147483656'],
+    },
+  ],
 });
 
 interface Obj {
@@ -87,6 +101,13 @@ describe('buildAddSlideBody', () => {
     expect(ids).toEqual([...ids].sort((a, b) => a - b));
   });
 
+  test('does NOT set the root modified flag — the editor omits it on an add', () => {
+    // Verified live: setting 134236525 on an add makes the server accept the
+    // revision and silently drop it. The flag is delete-specific mimicry.
+    const { root } = revisionOf(buildAddSlideBody(ctx(), GUID, HEAD, ACTION_JSON, '111', '222'));
+    expect(propValue(root.Properties, 134236525)).toBeUndefined();
+  });
+
   test('the new slide object carries the templated master/layout ids and fresh creation ids', () => {
     const { slide } = revisionOf(buildAddSlideBody(ctx(), GUID, HEAD, ACTION_JSON, '111', '222'));
     expect(slide.ObjectId).toBe(`${GUID}|1`);
@@ -131,5 +152,53 @@ describe('buildAddSlideBody', () => {
     const bad = ctx();
     bad.rootProperties = [603986975, bad.slideList];
     expect(() => buildAddSlideBody(bad, GUID, HEAD, ACTION_JSON, '111', '222')).toThrow(FrameBridgeValidationError);
+  });
+});
+
+describe('addSlideAction spec', () => {
+  test('resolves the root and a template slide from a live-model fixture', () => {
+    const resolved = resolveAddSlideContext(model());
+    expect(resolved).toEqual(ctx());
+  });
+
+  test('throws when no slide carries master/layout ids to template from', () => {
+    const bare: PodsModel = { totalObjects: 1, objects: [model().objects[0] as PodsModel['objects'][number]] };
+    expect(() => resolveAddSlideContext(bare)).toThrow(FrameBridgeValidationError);
+  });
+
+  test('build derives creation ids and the action descriptor from the mint, deterministically', () => {
+    const mint = { guidToken: GUID, headToken: HEAD, seed: 'a1b2c3d4-0000-0000-0000-000000000000', actionTime: '7' };
+    const first = addSlideAction.build(ctx(), {}, mint);
+    expect(addSlideAction.build(ctx(), {}, mint)).toEqual(first);
+    const { action, slide } = revisionOf(first);
+    expect(String(propValue(action.Properties, 469780658))).toContain('"ActionTime":"7"');
+    expect(propValue(slide.Properties, 335562805)).toBeDefined();
+  });
+
+  const withSlideList = (slideList: string): PodsModel => {
+    const changed = model();
+    const root = changed.objects[0] as PodsModel['objects'][number];
+    root.properties = [...root.properties];
+    root.properties[root.properties.indexOf(603986975) + 1] = slideList;
+    return changed;
+  };
+
+  test('isApplied only when the live slide list carries a reference the first resolve did not know', () => {
+    const first = resolveAddSlideContext(model());
+    expect(addSlideAction.isApplied(model(), first, {})).toBe(false);
+    expect(addSlideAction.isApplied(withSlideList(`${ctx().slideList},{new}{1}`), first, {})).toBe(true);
+  });
+
+  test('isApplied survives a co-author deleting a slide in the confirmation window', () => {
+    // Our add landed AND a co-author deleted a slide: the count is back to the
+    // first-resolved count, but the new reference is present — a count comparison
+    // would falsely report the add as dropped and invite a duplicate.
+    const first = resolveAddSlideContext(model());
+    const [keep] = ctx().slideRefs;
+    expect(addSlideAction.isApplied(withSlideList(`${keep},{new}{1}`), first, {})).toBe(true);
+  });
+
+  test('an add is declared non-idempotent — an unconfirmed write must never be re-issued', () => {
+    expect(addSlideAction.idempotent).toBe(false);
   });
 });

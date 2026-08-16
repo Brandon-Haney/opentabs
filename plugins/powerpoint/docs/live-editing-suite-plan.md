@@ -5,11 +5,16 @@ The product plan for rounding out AI presentation editing. Companion to
 (the decoded wire catalog); this doc is the forward plan: what we keep, what we
 retire, the target architecture, and the build sequence.
 
-**Status (2026-08-16): planning.** Four pods live tools are shipped and proven
-(`set_font_size`, `format_text`, `add_slide_live`, `delete_slide_live`); the
-2026-08-15 HAR decoded nearly the whole action catalog; the remaining work is
-engine scale-out, five captures, and staged retirement of the closed-file edit
-path.
+**Status (2026-08-16): M0 and M1 complete.** M0 shipped the hygiene pass
+(`update_slide_text` retired, the root-modified-flag WIP resolved, the
+replay-depth guard pinned by tests). M1 shipped pods engine v2: the five
+sibling directives collapsed into one `__podsAction` registry with a shared
+live-model read and declarative target resolution, plus `get_live_outline`
+(live reads) and `open_in_editor` (the closed-deck enabler) — adversarially
+reviewed and live-verified on the test deck (outline read; a format write
+set-and-reverted, with the accepted-but-dropped head-freeze failure correctly
+caught by confirmation and recovered via tab reload). Next: M2, the `set_text`
+edit-scope decode.
 
 ## Product decisions (locked 2026-08-16)
 

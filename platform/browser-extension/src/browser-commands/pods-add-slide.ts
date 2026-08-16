@@ -9,12 +9,10 @@
  *    inserted into its slide-list property (`603986975`). **Every other root
  *    property is copied through unchanged**, so existing slides cannot be scrambled.
  *  - A new `393227` slide object is created carrying the deck's master id
- *    (`335562835`) and a layout id (`335562836`) copied from an existing slide,
- *    plus fresh creation ids — and, when the model exposes one, the layout-object
- *    reference (`536889506`). That reference is what drives placeholder
- *    materialization: templating from a slide that carries it yields a laid-out
- *    slide, while templating from a materialized slide (which no longer exposes it)
- *    appends a blank slide.
+ *    (`335562835`) and layout id (`335562836`) copied from an existing slide, fresh
+ *    creation ids, and its anchor (`536889506`) — the slide it is inserted after,
+ *    derived from the live slide list. The anchor appears only on the written slide
+ *    object, never in the read model, so it cannot be copied off an existing slide.
  *  - A `131140` action descriptor names the action `NewSlideWithLayout`.
  *
  * The engine reads the LIVE model in the editor frame (a type-2 poll from the zero
@@ -26,7 +24,13 @@
 
 import { FrameBridgeValidationError } from './frame-bridge-rpc.js';
 import { BRIDGE_REPLAY_DEPTH_GLOBAL, FORBIDDEN_REPLAY_HEADERS } from './frame-fetch.js';
-import { type PodsBridgeParams, type PodsBridgeResult, runPodsBridge, sortPropertiesById } from './pods-bridge.js';
+import {
+  freshAfterFirst,
+  type PodsBridgeParams,
+  type PodsBridgeResult,
+  runPodsWriteConfirmed,
+  sortPropertiesById,
+} from './pods-bridge.js';
 
 const CLASS_PRESENTATION = 393271;
 const CLASS_SLIDE = 393227;
@@ -34,10 +38,20 @@ const CLASS_SLIDE = 393227;
 const PROP_SLIDE_LIST = 603986975;
 /** Root property whose guid seeds the action descriptor id. */
 const PROP_ACTION_CTX = 536889540;
-/** Slide (393227) property ids: master id, layout id, layout-object reference. */
+/** Slide (393227) property ids: master id, layout id. */
 const PROP_MASTER = 335562835;
 const PROP_LAYOUT = 335562836;
-const PROP_LAYOUT_REF = 536889506;
+/**
+ * The slide the new slide is inserted AFTER — its anchor position in the deck.
+ *
+ * Verified against three captured inserts: this value always equals the slide-list
+ * entry immediately preceding the new slide's own entry, including one insert at
+ * position 2 of 4 (so it tracks position, not a layout). The editor emits it on
+ * every insert; it appears only on the written slide object and never in the read
+ * model, so it must be derived from the live slide list rather than copied off an
+ * existing slide.
+ */
+const PROP_ANCHOR_SLIDE = 536889506;
 /** Slide (393227) creation-id property ids. */
 const PROP_CREATE_A = 335562805;
 const PROP_CREATE_B = 335562806;
@@ -67,10 +81,11 @@ export interface AddSlideContext {
   rootProperties: (string | number)[];
   /** The root's current slide-list value (`603986975`). */
   slideList: string;
-  /** Master id, layout id, and layout-object reference copied from an existing slide. */
+  /** The slide references parsed from the slide list, in deck order. */
+  slideRefs: string[];
+  /** Master id and layout id copied from an existing slide. */
   master: string;
   layout: string;
-  layoutRef: string;
 }
 
 /**
@@ -100,9 +115,11 @@ export const buildAddSlideBody = (
   }
   const actionDescId = `${actionMatch[1]}|1`;
 
-  // The new slide's own reference token, appended to the root's slide list.
+  // The new slide's own reference token, appended to the root's slide list. The
+  // slide it lands after is its anchor.
   const newSlideRef = `{${guidToken}}{1}`;
   const newSlideList = ctx.slideList.length > 0 ? `${ctx.slideList},${newSlideRef}` : newSlideRef;
+  const anchorRef = ctx.slideRefs[ctx.slideRefs.length - 1];
 
   // The root, copied with only the slide list changed, then sorted ascending by id
   // to match the editor's own NewSlideWithLayout write (which sorts; unlike delete,
@@ -135,8 +152,10 @@ export const buildAddSlideBody = (
         ctx.master,
         PROP_LAYOUT,
         ctx.layout,
-        // The layout-object reference is included only when the model exposes one.
-        ...(ctx.layoutRef.length > 0 ? [PROP_LAYOUT_REF, ctx.layoutRef] : []),
+        // Anchor the new slide after the deck's current last slide — an append.
+        // The editor emits this on every insert; omitting it is what left an added
+        // slide without its layout's placeholders.
+        ...(anchorRef ? [PROP_ANCHOR_SLIDE, anchorRef] : []),
       ],
     },
   ];
@@ -222,7 +241,6 @@ const resolveAddSlideContext = async (params: PodsAddSlideParams): Promise<AddSl
       propSlideList: number,
       propMaster: number,
       propLayout: number,
-      propLayoutRef: number,
     ): Promise<ResolveResult> => {
       const donor = (globalThis as Record<string, unknown>)[donorName] as
         | { url?: string; headers?: Record<string, string> }
@@ -292,9 +310,9 @@ const resolveAddSlideContext = async (params: PodsAddSlideParams): Promise<AddSl
       const slideList = prop(presentation.properties, propSlideList);
       if (slideList === undefined) return { error: 'Presentation root has no slide-list property (603986975).' };
 
-      // A template slide: an existing 393227 that carries a master and layout id.
-      // The layout-object reference (536889506) is present only on freshly-created
-      // slides, not on materialized ones, so it is optional here.
+      // A template slide: an existing 393227 that carries a master and layout id,
+      // which the new slide inherits. The anchor is NOT read from here — it is a
+      // position, derived from the slide list below.
       const template = objects.find(
         o =>
           o.classId === classSlide &&
@@ -310,9 +328,9 @@ const resolveAddSlideContext = async (params: PodsAddSlideParams): Promise<AddSl
           rootObjectId: presentation.objectId,
           rootProperties: presentation.properties,
           slideList,
+          slideRefs: slideList.split(',').filter(Boolean),
           master: prop(template.properties, propMaster) as string,
           layout: prop(template.properties, propLayout) as string,
-          layoutRef: prop(template.properties, propLayoutRef) ?? '',
         },
       };
     },
@@ -326,7 +344,6 @@ const resolveAddSlideContext = async (params: PodsAddSlideParams): Promise<AddSl
       PROP_SLIDE_LIST,
       PROP_MASTER,
       PROP_LAYOUT,
-      PROP_LAYOUT_REF,
     ],
   });
 
@@ -395,16 +412,28 @@ export const runPodsAddSlide = async (params: PodsAddSlideParams): Promise<PodsA
     };
   }
 
+  // Re-derive the revision on every attempt: a retry follows a conflict, so the
+  // slide list (which this revision resubmits whole) has moved, and the anchor must
+  // be the deck's current last slide rather than the one read before the first try.
+  const nextContext = freshAfterFirst(ctx, () => resolveAddSlideContext(params));
   const bridgeParams: PodsBridgeParams = {
     tabId: params.tabId,
     frameUrlIncludes: params.frameUrlIncludes,
     donorGlobal: params.donorGlobal,
     headSentinel: params.headSentinel,
-    body,
+    body: async () =>
+      buildAddSlideBody(await nextContext(), guidToken, headToken, actionDescriptorJson, createIdA, createIdB),
     guidToken,
     headToken,
   };
-  const result = await runPodsBridge(bridgeParams);
+  // Confirm against the document rather than the response: the slide list must have
+  // grown. An add is not idempotent — retrying one that already applied would append
+  // a second slide — so an unconfirmed write is reported, never re-issued.
+  const result = await runPodsWriteConfirmed(bridgeParams, {
+    readState: () => resolveAddSlideContext(params),
+    isApplied: state => state.slideList.split(',').filter(Boolean).length > slideCountBefore,
+    idempotent: false,
+  });
 
   return {
     ...result,

@@ -29,7 +29,13 @@
 
 import { FrameBridgeValidationError } from './frame-bridge-rpc.js';
 import { BRIDGE_REPLAY_DEPTH_GLOBAL, FORBIDDEN_REPLAY_HEADERS } from './frame-fetch.js';
-import { type PodsBridgeParams, type PodsBridgeResult, runPodsBridge, sortPropertiesById } from './pods-bridge.js';
+import {
+  freshAfterFirst,
+  type PodsBridgeParams,
+  type PodsBridgeResult,
+  runPodsWriteConfirmed,
+  sortPropertiesById,
+} from './pods-bridge.js';
 
 /** Pods ClassIds the resolver keys on. */
 const CLASS_PRESENTATION = 393271;
@@ -90,6 +96,12 @@ const overrideForRunProp = (propId: number, changes: RunFormatChanges): string |
   return undefined;
 };
 
+/** Read a run property's current wire value from a flat `[id, value, …]` list. */
+const readRunProp = (properties: (string | number)[], id: number): string | undefined => {
+  for (let i = 0; i + 1 < properties.length; i += 2) if (properties[i] === id) return String(properties[i + 1]);
+  return undefined;
+};
+
 /** The run property ids a change set targets — used to append any the run does not already carry. */
 const requestedRunProps = (changes: RunFormatChanges): number[] => {
   const ids: number[] = [];
@@ -101,6 +113,17 @@ const requestedRunProps = (changes: RunFormatChanges): number[] => {
   if (changes.font !== undefined) ids.push(...PROP_FONT_FACES);
   return ids;
 };
+
+/**
+ * True when a run already carries every property value a change set asked for —
+ * the post-write check that the format actually landed on the document, rather
+ * than merely being accepted by the server.
+ */
+const runReflectsChanges = (run: ResolvedRun, changes: RunFormatChanges): boolean =>
+  requestedRunProps(changes).every(propId => {
+    const expected = overrideForRunProp(propId, changes);
+    return expected === undefined || readRunProp(run.properties, propId) === expected;
+  });
 
 const DEFAULT_GUID_TOKEN = '__OTB_PODS_GUID__';
 const DEFAULT_HEAD_TOKEN = '__OTB_PODS_HEAD__';
@@ -512,18 +535,27 @@ export const runPodsSetFontSize = async (params: PodsSetFontSizeParams): Promise
   const target = await resolvePodsTarget(params);
 
   const newSizeHalfPt = Math.round(params.sizePt * 2);
-  const body = buildSetFontSizeBody(target, newSizeHalfPt, guidToken, headToken);
 
+  // Re-resolve the target on every attempt: the revision names a specific run
+  // object, and a retry follows a conflict, by which point that run may have been
+  // replaced. Resolving by the paragraph's visible text re-finds it either way.
+  const nextTarget = freshAfterFirst(target, () => resolvePodsTarget(params));
   const bridgeParams: PodsBridgeParams = {
     tabId: params.tabId,
     frameUrlIncludes: params.frameUrlIncludes,
     donorGlobal: params.donorGlobal,
     headSentinel: params.headSentinel,
-    body,
+    body: async () => buildSetFontSizeBody(await nextTarget(), newSizeHalfPt, guidToken, headToken),
     guidToken,
     headToken,
   };
-  const result = await runPodsBridge(bridgeParams);
+  // Confirm against the document: the run must actually carry the new size. A
+  // resize is idempotent, so an unconfirmed write is safely re-issued.
+  const result = await runPodsWriteConfirmed(bridgeParams, {
+    readState: () => resolvePodsTarget(params),
+    isApplied: state => state.textRuns[0]?.sizeHalfPt === String(newSizeHalfPt),
+    idempotent: true,
+  });
 
   const oldHalfPt = target.textRuns[0]?.sizeHalfPt;
   return {
@@ -535,14 +567,25 @@ export const runPodsSetFontSize = async (params: PodsSetFontSizeParams): Promise
   };
 };
 
-/** What `format_text` returns: the write result, the run's prior formatting, and what was applied. */
+/** What `format_text` returns: the write result, the run's prior formatting, and what was requested. */
 export interface PodsFormatTextResult extends PodsBridgeResult {
   text: string;
   runId: string;
   /** The run's formatting before the write (null where the run carried no such property). */
   before: { sizePt: number | null; bold: boolean | null; italic: boolean | null };
-  /** The changes requested, echoed for confirmation. */
-  applied: { sizePt?: number; bold?: boolean; italic?: boolean; underline?: boolean; colorHex?: string; font?: string };
+  /**
+   * The changes that were asked for, echoed back. This is the request, not proof of
+   * the outcome — `applied` (from {@link PodsBridgeResult}) is what says whether the
+   * document actually changed.
+   */
+  requested: {
+    sizePt?: number;
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean;
+    colorHex?: string;
+    font?: string;
+  };
 }
 
 /** Parse a run's `"true"`/`"false"` flag string to a boolean, or null when the property was absent. */
@@ -566,18 +609,29 @@ export const runPodsFormatText = async (params: PodsFormatTextParams): Promise<P
     ...(params.colorHex !== undefined ? { colorHex: params.colorHex } : {}),
     ...(params.font !== undefined ? { font: params.font } : {}),
   };
-  const body = buildRunFormatBody(target, changes, guidToken, headToken);
-
+  // Re-resolve the target on every attempt, for the reason given in
+  // `runPodsSetFontSize`: the revision names a run object that a conflicting edit
+  // may already have replaced.
+  const nextTarget = freshAfterFirst(target, () => resolvePodsTarget(params));
   const bridgeParams: PodsBridgeParams = {
     tabId: params.tabId,
     frameUrlIncludes: params.frameUrlIncludes,
     donorGlobal: params.donorGlobal,
     headSentinel: params.headSentinel,
-    body,
+    body: async () => buildRunFormatBody(await nextTarget(), changes, guidToken, headToken),
     guidToken,
     headToken,
   };
-  const result = await runPodsBridge(bridgeParams);
+  // Confirm against the document: the run must carry every requested property.
+  // Formatting is idempotent, so an unconfirmed write is safely re-issued.
+  const result = await runPodsWriteConfirmed(bridgeParams, {
+    readState: () => resolvePodsTarget(params),
+    isApplied: state => {
+      const written = state.textRuns[0];
+      return written !== undefined && runReflectsChanges(written, changes);
+    },
+    idempotent: true,
+  });
 
   const run = target.textRuns[0];
   return {
@@ -589,7 +643,7 @@ export const runPodsFormatText = async (params: PodsFormatTextParams): Promise<P
       bold: flagToBool(run?.bold ?? null),
       italic: flagToBool(run?.italic ?? null),
     },
-    applied: {
+    requested: {
       ...(params.sizePt !== undefined ? { sizePt: params.sizePt } : {}),
       ...(params.bold !== undefined ? { bold: params.bold } : {}),
       ...(params.italic !== undefined ? { italic: params.italic } : {}),

@@ -26,9 +26,9 @@ const ctx = (): AddSlideContext => ({
     '[]',
   ],
   slideList: '{d55934be-57c9-4c97-8e07-bf34a0bb3f76}{58},{d55934be-57c9-4c97-8e07-bf34a0bb3f76}{59}',
+  slideRefs: ['{d55934be-57c9-4c97-8e07-bf34a0bb3f76}{58}', '{d55934be-57c9-4c97-8e07-bf34a0bb3f76}{59}'],
   master: '2147483648',
   layout: '2147483656',
-  layoutRef: '{34f15414-4327-4694-8808-73fe3d8b686c}{68}',
 });
 
 interface Obj {
@@ -87,14 +87,31 @@ describe('buildAddSlideBody', () => {
     expect(ids).toEqual([...ids].sort((a, b) => a - b));
   });
 
-  test('the new slide object carries the templated master/layout refs and fresh creation ids', () => {
+  test('the new slide object carries the templated master/layout ids and fresh creation ids', () => {
     const { slide } = revisionOf(buildAddSlideBody(ctx(), GUID, HEAD, ACTION_JSON, '111', '222'));
     expect(slide.ObjectId).toBe(`${GUID}|1`);
     expect(propValue(slide.Properties, 335562835)).toBe('2147483648');
     expect(propValue(slide.Properties, 335562836)).toBe('2147483656');
-    expect(propValue(slide.Properties, 536889506)).toBe('{34f15414-4327-4694-8808-73fe3d8b686c}{68}');
     expect(propValue(slide.Properties, 335562805)).toBe('111');
     expect(propValue(slide.Properties, 335562806)).toBe('222');
+  });
+
+  test('the new slide is anchored to the deck last slide, so it appends in place', () => {
+    // 536889506 is the slide the new one is inserted AFTER — verified against three
+    // captured inserts, where it always equals the entry preceding the new slide.
+    // It never appears in the read model, so it is derived from the live slide list.
+    const { slide, root } = revisionOf(buildAddSlideBody(ctx(), GUID, HEAD, ACTION_JSON, '111', '222'));
+    expect(propValue(slide.Properties, 536889506)).toBe('{d55934be-57c9-4c97-8e07-bf34a0bb3f76}{59}');
+    // Consistency: the anchor is the entry immediately before the new ref in the list.
+    const refs = String(propValue(root.Properties, 603986975)).split(',');
+    expect(refs[refs.length - 2]).toBe(propValue(slide.Properties, 536889506));
+    expect(refs[refs.length - 1]).toBe(`{${GUID}}{1}`);
+  });
+
+  test('a deck with no slides yet omits the anchor rather than emitting an empty one', () => {
+    const empty = { ...ctx(), slideList: '', slideRefs: [] };
+    const { slide } = revisionOf(buildAddSlideBody(empty, GUID, HEAD, ACTION_JSON, '111', '222'));
+    expect(propValue(slide.Properties, 536889506)).toBeUndefined();
   });
 
   test('the action descriptor names NewSlideWithLayout', () => {

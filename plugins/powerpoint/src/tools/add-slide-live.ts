@@ -8,9 +8,9 @@ export const addSlideLive = defineTool({
   description:
     'Insert a new slide into the deck while it is OPEN in the browser, via the live co-authoring channel — the ' +
     'only way to add a slide without closing the deck (Graph refuses writes under the co-authoring lock). The new ' +
-    'slide is appended to the end, templated from an existing slide’s master and layout. Whether it comes through ' +
-    'laid-out or blank depends on the template slide carrying a layout-object reference. Pass `dry_run: true` to ' +
-    'construct and return the revision WITHOUT writing it, for inspection. The deck must be open and active in the browser.',
+    'slide is appended to the end, inheriting the master and layout of an existing slide and anchored after the ' +
+    'deck’s current last slide. Pass `dry_run: true` to construct and return the revision WITHOUT writing it, for ' +
+    'inspection. The deck must be open and active in the browser.',
   summary: 'Add a slide to the open deck (co-authoring)',
   icon: 'plus-square',
   group: 'Slides',

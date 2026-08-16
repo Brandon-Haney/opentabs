@@ -57,6 +57,39 @@ export const sortPropertiesById = (properties: (string | number)[]): (string | n
   return pairs.flat();
 };
 
+/**
+ * The revision to write, or a factory that re-derives it.
+ *
+ * A factory is invoked before **every** attempt, so a retry rebuilds the revision
+ * against the document as it is now rather than replaying a snapshot taken before
+ * the first try. That distinction is load-bearing: a structural revision resubmits
+ * the *entire* slide list, so replaying a stale copy would silently erase a change
+ * a co-author made in between. A factory must also re-locate its target by stable
+ * identity (a slide's reference, a paragraph's text) rather than by position, since
+ * positions shift underneath a concurrent edit.
+ *
+ * A plain object is correct only for a revision with nothing to re-derive — the raw
+ * `__podsBridge` path, where the caller supplies the body verbatim.
+ */
+export type PodsRevisionSource = Record<string, unknown> | (() => Promise<Record<string, unknown>>);
+
+/**
+ * Wrap an already-resolved value so the first attempt reuses it and every later
+ * attempt re-resolves. Saves a redundant read on the common single-attempt path
+ * without letting a retry reuse stale state.
+ */
+export const freshAfterFirst = <T>(first: T, resolve: () => Promise<T>): (() => Promise<T>) => {
+  let initial: T | undefined = first;
+  return async () => {
+    if (initial !== undefined) {
+      const value = initial;
+      initial = undefined;
+      return value;
+    }
+    return resolve();
+  };
+};
+
 /** A `__podsBridge` directive, validated. */
 export interface PodsBridgeParams {
   tabId: number;
@@ -66,8 +99,8 @@ export interface PodsBridgeParams {
   donorGlobal: string;
   /** URL marker the pre-script answers in-frame with `{ head, ts }` — the current co-authoring head. */
   headSentinel: string;
-  /** The `{Mode,srs}` revision body, with the identity tokens embedded. */
-  body: Record<string, unknown>;
+  /** The `{Mode,srs}` revision body (with identity tokens embedded), or a factory re-derived per attempt. */
+  body: PodsRevisionSource;
   /** Token standing in for the minted GUID (default {@link DEFAULT_GUID_TOKEN}). */
   guidToken?: string;
   /** Token standing in for the read head (default {@link DEFAULT_HEAD_TOKEN}). */
@@ -91,6 +124,16 @@ export interface PodsBridgeResult {
   response?: unknown;
   /** Present only on a write that did not apply — a human-readable reason. */
   failure?: string;
+  /**
+   * Whether the change was observed in the document after the write. Set only when
+   * the caller supplied a {@link PodsWriteConfirmation}. `StatusCode: 0` means the
+   * server *accepted* the revision, which is not the same as applying it — a
+   * revision the server considers a no-op is accepted and silently dropped. Only
+   * `applied: true` proves the document changed.
+   */
+  applied?: boolean;
+  /** How many confirmation reads were issued before the change was observed (or given up on). */
+  confirmationReads?: number;
 }
 
 /** The `{StatusCode, IsConflict, ServerError?}` object a pods response carries under `Responses[0][1]`. */
@@ -169,15 +212,17 @@ const readHead = async (params: PodsBridgeParams): Promise<string> => {
 /**
  * Read the head, mint a GUID, substitute both into the body, and POST it inside
  * the editor frame. Retries a conflict (stale base) up to {@link MAX_CONFLICT_RETRIES}
- * times, each time re-reading the now-current head and minting a fresh GUID.
+ * times, each time re-deriving the body, re-reading the now-current head, and
+ * minting a fresh GUID — a conflict means the document moved, so replaying the
+ * original revision would write against a document that no longer matches it.
  */
 export const runPodsBridge = async (params: PodsBridgeParams): Promise<PodsBridgeResult> => {
   const guidToken = params.guidToken ?? DEFAULT_GUID_TOKEN;
   const headToken = params.headToken ?? DEFAULT_HEAD_TOKEN;
-  const bodyJson = JSON.stringify(params.body);
 
   let result: PodsBridgeResult | undefined;
   for (let attempt = 0; attempt <= MAX_CONFLICT_RETRIES; attempt++) {
+    const bodyJson = JSON.stringify(typeof params.body === 'function' ? await params.body() : params.body);
     const head = await readHead(params);
     const guid = crypto.randomUUID();
     const finalBody = substituteIdentity(bodyJson, guidToken, guid, headToken, head);
@@ -223,4 +268,124 @@ export const runPodsBridge = async (params: PodsBridgeParams): Promise<PodsBridg
   }
   // Unreachable: the loop returns on the final attempt. Satisfies the type checker.
   return result as PodsBridgeResult;
+};
+
+/**
+ * How a caller proves a write actually changed the document.
+ *
+ * `StatusCode: 0` only means the server accepted the revision. A revision the
+ * server treats as a no-op — one whose object properties do not match the shape it
+ * expects — is accepted and then silently dropped, so judging success on the
+ * response alone reports a write that never happened. Confirmation closes that gap
+ * by re-reading the document and looking for the change.
+ */
+export interface PodsWriteConfirmation<TState> {
+  /** Re-read the live state the write was meant to change. */
+  readState: () => Promise<TState>;
+  /** True when `state` shows the intended change. */
+  isApplied: (state: TState) => boolean;
+  /**
+   * Whether re-issuing this exact write is harmless if it turns out to have
+   * already applied.
+   *
+   * This is a safety gate, not a tuning knob. The live read lags the write, so an
+   * unconfirmed result is ambiguous: the write may have been dropped, or it may
+   * have applied and simply not surfaced yet. Re-issuing an idempotent write
+   * (setting bold, setting a size) costs nothing either way. Re-issuing a
+   * structural one would act twice — a retried slide delete removes a *second*
+   * slide. So a non-idempotent write is never retried on an unconfirmed result; it
+   * is reported, and the caller decides.
+   */
+  idempotent: boolean;
+  /** Confirmation reads before concluding the change is not there (default {@link DEFAULT_CONFIRMATION_READS}). */
+  reads?: number;
+  /** Delay between confirmation reads, ms (default {@link CONFIRMATION_READ_DELAY_MS}). */
+  delayMs?: number;
+}
+
+/**
+ * Confirmation reads issued before a write is declared unapplied. The live model
+ * trails an accepted write briefly, so a single immediate read false-negatives.
+ */
+const DEFAULT_CONFIRMATION_READS = 3;
+/** Delay between confirmation reads. Short enough to stay well inside a service-worker turn. */
+const CONFIRMATION_READ_DELAY_MS = 400;
+/**
+ * Extra write attempts for an idempotent write whose change never showed up. One
+ * is enough: a write that is accepted twice and still invisible is not a timing
+ * problem, and looping would just delay a clear failure.
+ */
+const MAX_UNCONFIRMED_REWRITES = 1;
+
+const delay = (ms: number): Promise<void> =>
+  new Promise(resolve => {
+    setTimeout(resolve, ms);
+  });
+
+/**
+ * Poll the document until the change appears, or the read budget runs out. Reads
+ * immediately first — a fresh editor usually shows the change at once — then backs
+ * off. A read that throws counts as "not yet": a transient frame error must not be
+ * mistaken for a failed write.
+ */
+const confirmApplied = async <TState>(
+  confirmation: PodsWriteConfirmation<TState>,
+): Promise<{ applied: boolean; reads: number }> => {
+  const budget = confirmation.reads ?? DEFAULT_CONFIRMATION_READS;
+  const gap = confirmation.delayMs ?? CONFIRMATION_READ_DELAY_MS;
+  for (let read = 1; read <= budget; read++) {
+    if (read > 1) await delay(gap);
+    try {
+      if (confirmation.isApplied(await confirmation.readState())) return { applied: true, reads: read };
+    } catch {
+      // Treat a failed read as inconclusive and keep looking.
+    }
+  }
+  return { applied: false, reads: budget };
+};
+
+/**
+ * Run a pods write and confirm it actually changed the document.
+ *
+ * Wraps {@link runPodsBridge} — which handles the head read, identity mint, POST,
+ * and stale-base retry — with the check the response cannot give: re-read the
+ * document and look for the change. An accepted-but-dropped write comes back as a
+ * `failure` rather than a false success, so a caller never reports an edit that did
+ * not happen.
+ *
+ * An idempotent write whose change never appears is re-issued once against a fresh
+ * head; a structural one is not, for the reason documented on
+ * {@link PodsWriteConfirmation.idempotent}.
+ */
+export const runPodsWriteConfirmed = async <TState>(
+  params: PodsBridgeParams,
+  confirmation: PodsWriteConfirmation<TState>,
+): Promise<PodsBridgeResult> => {
+  let last: PodsBridgeResult | undefined;
+  for (let attempt = 0; attempt <= MAX_UNCONFIRMED_REWRITES; attempt++) {
+    const result = await runPodsBridge(params);
+    // A write the server actively refused needs no confirmation — it is already a
+    // failure, with a more specific reason than confirmation could produce.
+    if (result.failure !== undefined) return result;
+
+    const { applied, reads } = await confirmApplied(confirmation);
+    last = { ...result, applied, confirmationReads: reads };
+    if (applied) return last;
+
+    if (!confirmation.idempotent) {
+      return {
+        ...last,
+        failure:
+          'pods write was accepted (StatusCode 0) but the change is not in the document. It was not retried ' +
+          'automatically because re-issuing this write would apply it twice if it did land. Re-read the ' +
+          'document before trying again.',
+      };
+    }
+  }
+  return {
+    ...(last as PodsBridgeResult),
+    failure:
+      'pods write was accepted (StatusCode 0) but the change never appeared in the document, across ' +
+      `${MAX_UNCONFIRMED_REWRITES + 1} attempts.`,
+  };
 };

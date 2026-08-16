@@ -47,7 +47,11 @@ export const podsWriteOutputSchema = z.object({
     .number()
     .int()
     .optional()
-    .describe('The co-authoring StatusCode — 0 means the revision was accepted and applied.'),
+    .describe(
+      'The co-authoring StatusCode — 0 means the server ACCEPTED the revision. Acceptance is not application: ' +
+        'a revision the server treats as a no-op is accepted and dropped. This raw path does not confirm the ' +
+        'document changed; re-read to be certain.',
+    ),
   isConflict: z.boolean().optional().describe('Whether the base revision was superseded before the write applied.'),
   head: z.string().optional().describe('The co-authoring head the accepted revision was based on.'),
   retries: z
@@ -123,10 +127,19 @@ const MODEL_READ_BODY = JSON.stringify({
 export const podsSetFontSizeOutputSchema = z.object({
   ok: z.boolean().describe('Whether the replayed POST succeeded at the HTTP level.'),
   status: z.number().int().describe('HTTP status of the replayed write.'),
-  statusCode: z.number().int().optional().describe('The co-authoring StatusCode — 0 means the resize was applied.'),
+  statusCode: z
+    .number()
+    .int()
+    .optional()
+    .describe('The co-authoring StatusCode — 0 means the server ACCEPTED the revision, not that it applied it.'),
   isConflict: z.boolean().optional().describe('Whether the base revision was superseded before the write applied.'),
   head: z.string().optional().describe('The co-authoring head the accepted revision was based on.'),
   retries: z.number().int().optional().describe('Extra attempts a stale-base conflict cost.'),
+  applied: z
+    .boolean()
+    .optional()
+    .describe('Whether the new size was OBSERVED on the run after the write — the real proof it landed.'),
+  confirmationReads: z.number().int().optional().describe('How many confirmation reads the check took.'),
   text: z.string().describe('The paragraph text that was resized.'),
   runId: z.string().describe('The object id of the run that was resized.'),
   oldSizePt: z.number().nullable().describe('The font size before the change, in points (null if it could not be read).'),
@@ -179,6 +192,11 @@ export const podsFormatTextOutputSchema = z.object({
   isConflict: z.boolean().optional().describe('Whether the base revision was superseded before the write applied.'),
   head: z.string().optional().describe('The co-authoring head the accepted revision was based on.'),
   retries: z.number().int().optional().describe('Extra attempts a stale-base conflict cost.'),
+  applied: z
+    .boolean()
+    .optional()
+    .describe('Whether the change was OBSERVED in the document after the write — the real proof it landed.'),
+  confirmationReads: z.number().int().optional().describe('How many confirmation reads the check took.'),
   text: z.string().describe('The paragraph text that was formatted.'),
   runId: z.string().describe('The object id of the run that was formatted.'),
   before: z
@@ -188,7 +206,7 @@ export const podsFormatTextOutputSchema = z.object({
       italic: z.boolean().nullable(),
     })
     .describe('The run formatting before the change (null where the run carried no such property).'),
-  applied: z
+  requested: z
     .object({
       sizePt: z.number().optional(),
       bold: z.boolean().optional(),
@@ -197,7 +215,7 @@ export const podsFormatTextOutputSchema = z.object({
       colorHex: z.string().optional(),
       font: z.string().optional(),
     })
-    .describe('The changes requested, echoed for confirmation.'),
+    .describe('The changes asked for, echoed back. This is the request — `applied` is the proof of outcome.'),
 });
 
 /** The `__podsFormatText` directive the platform's run-format engine consumes. */
@@ -255,10 +273,19 @@ export const podsFormatText = (
 export const podsAddSlideOutputSchema = z.object({
   ok: z.boolean().optional().describe('Whether the replayed POST succeeded at the HTTP level.'),
   status: z.number().int().optional().describe('HTTP status of the replayed write.'),
-  statusCode: z.number().int().optional().describe('The co-authoring StatusCode — 0 means the slide was added.'),
+  statusCode: z
+    .number()
+    .int()
+    .optional()
+    .describe('The co-authoring StatusCode — 0 means the server ACCEPTED the revision, not that it applied it.'),
   isConflict: z.boolean().optional(),
   head: z.string().optional(),
   retries: z.number().int().optional(),
+  applied: z
+    .boolean()
+    .optional()
+    .describe('Whether the slide list was OBSERVED to grow after the write — the real proof the slide was added.'),
+  confirmationReads: z.number().int().optional().describe('How many confirmation reads the check took.'),
   layout: z.string().optional().describe('The layout id the new slide was built from.'),
   slideCountBefore: z.number().int().optional().describe('Slide count before the add.'),
   dryRun: z.boolean().optional().describe('True when this was a dry run (constructed but not written).'),
@@ -305,10 +332,19 @@ export const podsAddSlide = (dryRun = false): z.infer<typeof podsAddSlideOutputS
 export const podsDeleteSlideOutputSchema = z.object({
   ok: z.boolean().optional().describe('Whether the replayed POST succeeded at the HTTP level.'),
   status: z.number().int().optional().describe('HTTP status of the replayed write.'),
-  statusCode: z.number().int().optional().describe('The co-authoring StatusCode — 0 means the slide was deleted.'),
+  statusCode: z
+    .number()
+    .int()
+    .optional()
+    .describe('The co-authoring StatusCode — 0 means the server ACCEPTED the revision, not that it applied it.'),
   isConflict: z.boolean().optional(),
   head: z.string().optional(),
   retries: z.number().int().optional(),
+  applied: z
+    .boolean()
+    .optional()
+    .describe("Whether the slide's reference was OBSERVED to be gone after the write — the real proof it was deleted."),
+  confirmationReads: z.number().int().optional().describe('How many confirmation reads the check took.'),
   slideIndex: z.number().int().optional().describe('The 1-based position that was deleted.'),
   removedRef: z.string().optional().describe('The reference of the removed slide.'),
   slideCountBefore: z.number().int().optional().describe('Slide count before the delete.'),

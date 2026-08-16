@@ -25,7 +25,13 @@
 
 import { FrameBridgeValidationError } from './frame-bridge-rpc.js';
 import { BRIDGE_REPLAY_DEPTH_GLOBAL, FORBIDDEN_REPLAY_HEADERS } from './frame-fetch.js';
-import { type PodsBridgeParams, type PodsBridgeResult, runPodsBridge, sortPropertiesById } from './pods-bridge.js';
+import {
+  freshAfterFirst,
+  type PodsBridgeParams,
+  type PodsBridgeResult,
+  runPodsWriteConfirmed,
+  sortPropertiesById,
+} from './pods-bridge.js';
 
 const CLASS_PRESENTATION = 393271;
 /** Root property holding the ordered slide list (`{guid}{ctr},…`). Removing the target ref here is the whole root change. */
@@ -370,16 +376,38 @@ export const runPodsDeleteSlide = async (
     };
   }
 
+  // Re-derive the revision on every attempt, and re-locate the slide by its
+  // REFERENCE rather than its index: a retry follows a conflict, meaning the
+  // document moved, and position 3 after a co-author's edit is not the slide the
+  // caller asked to delete. Identity survives that; position does not.
+  const nextContext = freshAfterFirst(ctx, () => resolveDeleteSlideContext(params));
   const bridgeParams: PodsBridgeParams = {
     tabId: params.tabId,
     frameUrlIncludes: params.frameUrlIncludes,
     donorGlobal: params.donorGlobal,
     headSentinel: params.headSentinel,
-    body,
+    body: async () => {
+      const current = await nextContext();
+      const index = current.slideRefs.indexOf(removedRef);
+      if (index === -1) {
+        throw new FrameBridgeValidationError(
+          `Slide ${removedRef} is no longer in the deck — it was removed by someone else while this delete was in flight.`,
+        );
+      }
+      return buildDeleteSlideBody(current, index + 1, guidToken, headToken, actionDescriptorJson);
+    },
     guidToken,
     headToken,
   };
-  const result = await runPodsBridge(bridgeParams);
+  // Confirm against the document rather than the response: the slide's reference
+  // must be gone from the live slide list. A delete is not idempotent — retrying
+  // one that already applied would remove a second slide — so an unconfirmed write
+  // is reported, never re-issued.
+  const result = await runPodsWriteConfirmed(bridgeParams, {
+    readState: () => resolveDeleteSlideContext(params),
+    isApplied: state => !state.slideRefs.includes(removedRef),
+    idempotent: false,
+  });
 
   return {
     ...result,

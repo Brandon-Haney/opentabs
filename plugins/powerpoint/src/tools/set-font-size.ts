@@ -7,7 +7,7 @@ export const setFontSize = defineTool({
   displayName: 'Set Font Size',
   description:
     'Change the font size of text on the open slide, targeting it by its exact visible text. This writes into the ' +
-    "live co-authoring session, so the change appears in the open editor within a few seconds — it is the only way " +
+    'live co-authoring session, so the change appears in the open editor within a few seconds — it is the only way ' +
     'to edit a deck while it is open (Graph refuses writes under the co-authoring lock). The `text` must match one ' +
     "paragraph's visible text exactly; paragraphs with mixed formatting (multiple runs) are not yet supported. The " +
     'deck must be open and active in the browser so the editor has an authenticated co-authoring session.',

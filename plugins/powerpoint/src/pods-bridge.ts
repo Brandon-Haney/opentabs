@@ -142,7 +142,10 @@ export const podsSetFontSizeOutputSchema = z.object({
   confirmationReads: z.number().int().optional().describe('How many confirmation reads the check took.'),
   text: z.string().describe('The paragraph text that was resized.'),
   runId: z.string().describe('The object id of the run that was resized.'),
-  oldSizePt: z.number().nullable().describe('The font size before the change, in points (null if it could not be read).'),
+  oldSizePt: z
+    .number()
+    .nullable()
+    .describe('The font size before the change, in points (null if it could not be read).'),
   newSizePt: z.number().describe('The font size after the change, in points.'),
 });
 

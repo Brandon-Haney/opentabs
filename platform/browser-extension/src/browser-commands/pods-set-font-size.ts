@@ -29,7 +29,7 @@
 
 import { FrameBridgeValidationError } from './frame-bridge-rpc.js';
 import { BRIDGE_REPLAY_DEPTH_GLOBAL, FORBIDDEN_REPLAY_HEADERS } from './frame-fetch.js';
-import { type PodsBridgeParams, type PodsBridgeResult, runPodsBridge } from './pods-bridge.js';
+import { type PodsBridgeParams, type PodsBridgeResult, runPodsBridge, sortPropertiesById } from './pods-bridge.js';
 
 /** Pods ClassIds the resolver keys on. */
 const CLASS_PRESENTATION = 393271;
@@ -169,26 +169,6 @@ export interface ResolvedTarget {
   /** The text runs the paragraph references, in order. */
   textRuns: ResolvedRun[];
 }
-
-/**
- * Sort a flat `[id, value, id, value, …]` property list ascending by id.
- *
- * The one write proven to apply cleanly emitted paragraph and run properties in
- * strictly-ascending id order, whereas the model's own read returns them
- * unsorted. `Properties` deserializes to a keyed id→value map so order is very
- * likely irrelevant, but matching the proven serialization removes the only
- * variable a live write has not yet exercised, at no cost.
- */
-const sortPropertiesById = (properties: (string | number)[]): (string | number)[] => {
-  const pairs: [string | number, string | number][] = [];
-  for (let i = 0; i + 1 < properties.length; i += 2) {
-    const key = properties[i];
-    const value = properties[i + 1];
-    if (key !== undefined && value !== undefined) pairs.push([key, value]);
-  }
-  pairs.sort((a, b) => Number(a[0]) - Number(b[0]));
-  return pairs.flat();
-};
 
 /**
  * Build the type-3 run-format revision body with identity placeholders.

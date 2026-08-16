@@ -75,6 +75,7 @@ const {
   extractPodsBridgeDirective,
   extractPodsSetFontSizeDirective,
   extractPodsFormatTextDirective,
+  extractPodsDeleteSlideDirective,
 } = await import('./tool-dispatch.js');
 const { invalidatePluginCache } = await import('./plugin-storage.js');
 
@@ -373,6 +374,60 @@ describe('extractPodsFormatTextDirective', () => {
     expect(extractPodsFormatTextDirective({ __podsFormatText: { ...base, bold: true, modelReadBody: 5 } })).toBeNull();
     expect(extractPodsFormatTextDirective({ __podsFormatText: null })).toBeNull();
     expect(extractPodsFormatTextDirective(null)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractPodsDeleteSlideDirective — the delete-slide allow-list parser
+// ---------------------------------------------------------------------------
+
+describe('extractPodsDeleteSlideDirective', () => {
+  const base = {
+    frameUrlIncludes: 'powerpoint.officeapps.live.com',
+    donorGlobal: '__otbPptPodsDonor',
+    headSentinel: '__otb_pods_head__',
+    modelReadBody: '{"Mode":4,"srs":[[2,{}]]}',
+  };
+
+  test('extracts a delete directive with a 1-based slide index, defaulting dryRun to false', () => {
+    if (!extractPodsDeleteSlideDirective) return;
+    expect(extractPodsDeleteSlideDirective({ __podsDeleteSlide: { ...base, slideIndex: 3 } })).toEqual({
+      ...base,
+      slideIndex: 3,
+      dryRun: false,
+    });
+  });
+
+  test('carries dryRun through when set', () => {
+    if (!extractPodsDeleteSlideDirective) return;
+    expect(extractPodsDeleteSlideDirective({ __podsDeleteSlide: { ...base, slideIndex: 1, dryRun: true } })).toEqual({
+      ...base,
+      slideIndex: 1,
+      dryRun: true,
+    });
+  });
+
+  test('rejects a non-positive or non-integer index', () => {
+    if (!extractPodsDeleteSlideDirective) return;
+    expect(extractPodsDeleteSlideDirective({ __podsDeleteSlide: { ...base, slideIndex: 0 } })).toBeNull();
+    expect(extractPodsDeleteSlideDirective({ __podsDeleteSlide: { ...base, slideIndex: -1 } })).toBeNull();
+    expect(extractPodsDeleteSlideDirective({ __podsDeleteSlide: { ...base, slideIndex: 1.5 } })).toBeNull();
+    expect(extractPodsDeleteSlideDirective({ __podsDeleteSlide: base })).toBeNull();
+  });
+
+  test('is keyed on __podsDeleteSlide, distinct from the other directives', () => {
+    if (!extractPodsDeleteSlideDirective || !extractPodsFormatTextDirective) return;
+    expect(extractPodsFormatTextDirective({ __podsDeleteSlide: { ...base, slideIndex: 1 } })).toBeNull();
+    expect(extractPodsDeleteSlideDirective({ __podsFormatText: { ...base, slideIndex: 1 } })).toBeNull();
+  });
+
+  test('rejects missing required fields', () => {
+    if (!extractPodsDeleteSlideDirective) return;
+    expect(
+      extractPodsDeleteSlideDirective({ __podsDeleteSlide: { ...base, slideIndex: 2, modelReadBody: 5 } }),
+    ).toBeNull();
+    expect(extractPodsDeleteSlideDirective({ __podsDeleteSlide: null })).toBeNull();
+    expect(extractPodsDeleteSlideDirective(null)).toBeNull();
   });
 });
 

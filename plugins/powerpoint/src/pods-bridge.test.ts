@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'vitest';
-import { PODS_GUID_TOKEN, PODS_HEAD_TOKEN, podsFormatText, podsSetFontSize, podsWrite } from './pods-bridge.js';
+import {
+  PODS_GUID_TOKEN,
+  PODS_HEAD_TOKEN,
+  podsDeleteSlide,
+  podsFormatText,
+  podsSetFontSize,
+  podsWrite,
+} from './pods-bridge.js';
 
 describe('podsWrite', () => {
   const body = { Mode: 4, srs: [[3, { Revisions: [{ Id: `${PODS_GUID_TOKEN}|2`, BaseId: PODS_HEAD_TOKEN }] }]] };
@@ -82,5 +89,28 @@ describe('podsFormatText', () => {
     expect(directive.__podsFormatText.sizePt).toBe(28);
     expect('bold' in directive.__podsFormatText).toBe(false);
     expect('italic' in directive.__podsFormatText).toBe(false);
+  });
+});
+
+describe('podsDeleteSlide', () => {
+  test('builds a __podsDeleteSlide directive carrying the 1-based index', () => {
+    const directive = podsDeleteSlide(3) as unknown as { __podsDeleteSlide: Record<string, unknown> };
+    expect(directive.__podsDeleteSlide).toEqual({
+      frameUrlIncludes: 'powerpoint.officeapps.live.com',
+      donorGlobal: '__otbPptPodsDonor',
+      headSentinel: '__otb_pods_head__',
+      modelReadBody:
+        '{"Mode":4,"srs":[[2,{"OperationId":1,"DependentOn":0,"ExpectedLatestRevisionId":"00000000-0000-0000-0000-000000000000|0","SlideId":null,"Sequence":0,"LocalRenderingParams":null}]]}',
+      slideIndex: 3,
+      dryRun: false,
+      guidToken: PODS_GUID_TOKEN,
+      headToken: PODS_HEAD_TOKEN,
+    });
+  });
+
+  test('carries dry_run through', () => {
+    const directive = podsDeleteSlide(2, true) as unknown as { __podsDeleteSlide: Record<string, unknown> };
+    expect(directive.__podsDeleteSlide.slideIndex).toBe(2);
+    expect(directive.__podsDeleteSlide.dryRun).toBe(true);
   });
 });

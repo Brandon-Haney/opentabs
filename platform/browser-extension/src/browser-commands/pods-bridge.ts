@@ -39,6 +39,24 @@ const DEFAULT_HEAD_TOKEN = '__OTB_PODS_HEAD__';
  */
 const MAX_CONFLICT_RETRIES = 3;
 
+/**
+ * Sort a flat `[id, value, …]` pods property list ascending by id, preserving each
+ * pair. The editor writes every object's properties sorted this way; a model-read
+ * snapshot returns them unordered, so a constructed write must re-sort to match —
+ * for some writes (e.g. a slide-list delete) the server silently ignores the change
+ * otherwise. Shared by every pods write builder.
+ */
+export const sortPropertiesById = (properties: (string | number)[]): (string | number)[] => {
+  const pairs: [string | number, string | number][] = [];
+  for (let i = 0; i + 1 < properties.length; i += 2) {
+    const key = properties[i];
+    const value = properties[i + 1];
+    if (key !== undefined && value !== undefined) pairs.push([key, value]);
+  }
+  pairs.sort((a, b) => Number(a[0]) - Number(b[0]));
+  return pairs.flat();
+};
+
 /** A `__podsBridge` directive, validated. */
 export interface PodsBridgeParams {
   tabId: number;

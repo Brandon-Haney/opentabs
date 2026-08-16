@@ -80,6 +80,13 @@ describe('buildAddSlideBody', () => {
     expect(propValue(root.Properties, 469780797)).toBe('[]');
   });
 
+  test('writes the root properties sorted ascending, matching the editor NewSlideWithLayout', () => {
+    const { root } = revisionOf(buildAddSlideBody(ctx(), GUID, HEAD, ACTION_JSON, '111', '222'));
+    const ids: number[] = [];
+    for (let i = 0; i < root.Properties.length; i += 2) ids.push(Number(root.Properties[i]));
+    expect(ids).toEqual([...ids].sort((a, b) => a - b));
+  });
+
   test('the new slide object carries the templated master/layout refs and fresh creation ids', () => {
     const { slide } = revisionOf(buildAddSlideBody(ctx(), GUID, HEAD, ACTION_JSON, '111', '222'));
     expect(slide.ObjectId).toBe(`${GUID}|1`);

@@ -300,3 +300,57 @@ export const podsAddSlide = (dryRun = false): z.infer<typeof podsAddSlideOutputS
   };
   return directive as unknown as z.infer<typeof podsAddSlideOutputSchema>;
 };
+
+/** What the agent receives after the `delete_slide` engine runs (write result, or a dry-run body). */
+export const podsDeleteSlideOutputSchema = z.object({
+  ok: z.boolean().optional().describe('Whether the replayed POST succeeded at the HTTP level.'),
+  status: z.number().int().optional().describe('HTTP status of the replayed write.'),
+  statusCode: z.number().int().optional().describe('The co-authoring StatusCode — 0 means the slide was deleted.'),
+  isConflict: z.boolean().optional(),
+  head: z.string().optional(),
+  retries: z.number().int().optional(),
+  slideIndex: z.number().int().optional().describe('The 1-based position that was deleted.'),
+  removedRef: z.string().optional().describe('The reference of the removed slide.'),
+  slideCountBefore: z.number().int().optional().describe('Slide count before the delete.'),
+  dryRun: z.boolean().optional().describe('True when this was a dry run (constructed but not written).'),
+  rootObjectId: z.string().optional(),
+  slideRefs: z.array(z.string()).optional().describe('The ordered slide references, so index N can be confirmed.'),
+  body: z.unknown().optional().describe('The constructed revision (dry run only), for inspection.'),
+});
+
+/** The `__podsDeleteSlide` directive the platform's delete-slide engine consumes. */
+interface PodsDeleteSlideDirective {
+  __podsDeleteSlide: {
+    frameUrlIncludes: string;
+    donorGlobal: string;
+    headSentinel: string;
+    modelReadBody: string;
+    slideIndex: number;
+    dryRun: boolean;
+    guidToken: string;
+    headToken: string;
+  };
+}
+
+/**
+ * Build the `__podsDeleteSlide` directive: remove the slide at 1-based position
+ * `slideIndex` from the open deck live. The engine reads the live root, drops the
+ * target reference from the slide list, constructs the `DeleteSlide` revision, and
+ * writes it. With `dryRun`, it constructs and returns the revision (plus the ordered
+ * slide references) without writing, so a caller can confirm which slide index N is.
+ */
+export const podsDeleteSlide = (slideIndex: number, dryRun = false): z.infer<typeof podsDeleteSlideOutputSchema> => {
+  const directive: PodsDeleteSlideDirective = {
+    __podsDeleteSlide: {
+      frameUrlIncludes: FRAME_URL_INCLUDES,
+      donorGlobal: DONOR_GLOBAL,
+      headSentinel: HEAD_SENTINEL,
+      modelReadBody: MODEL_READ_BODY,
+      slideIndex,
+      dryRun,
+      guidToken: PODS_GUID_TOKEN,
+      headToken: PODS_HEAD_TOKEN,
+    },
+  };
+  return directive as unknown as z.infer<typeof podsDeleteSlideOutputSchema>;
+};

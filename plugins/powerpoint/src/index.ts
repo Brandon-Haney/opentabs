@@ -16,6 +16,7 @@ import { deleteItem } from './tools/delete-item.js';
 import { deletePermission } from './tools/delete-permission.js';
 import { deleteShape } from './tools/delete-shape.js';
 import { deleteSlide } from './tools/delete-slide.js';
+import { deleteSlideLive } from './tools/delete-slide-live.js';
 import { discardPresentationTool } from './tools/discard-presentation.js';
 import { duplicateShape } from './tools/duplicate-shape.js';
 import { duplicateSlide as duplicateSlideTool } from './tools/duplicate-slide.js';
@@ -91,6 +92,7 @@ class PowerPointPlugin extends OpenTabsPlugin {
     setFontSize,
     formatText,
     addSlideLive,
+    deleteSlideLive,
     listSlideLayouts,
     addSlide,
     deleteSlide,

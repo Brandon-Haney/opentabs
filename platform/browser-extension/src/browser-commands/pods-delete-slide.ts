@@ -1,25 +1,24 @@
 /**
- * Pods `add_slide` engine — insert a new slide into an OPEN deck, live.
+ * Pods `delete_slide` engine — remove a slide from an OPEN deck, live.
  *
- * Adding a slide is a co-authoring revision on the `/pods/PowerPoint.ashx` channel,
- * the same transport as {@link runPodsSetFontSize}. Decoded from a clean single-add
- * capture, the transformation is small and well-scoped, which is what makes it safe:
+ * Deleting a slide is a co-authoring revision on the `/pods/PowerPoint.ashx`
+ * channel, the exact inverse of {@link runPodsAddSlide}. Decoded from a clean
+ * single-delete capture, the transformation is small and well-scoped:
  *
- *  - The presentation root (`393271`) is resubmitted with the new slide's reference
- *    inserted into its slide-list property (`603986975`). **Every other root
- *    property is copied through unchanged**, so existing slides cannot be scrambled.
- *  - A new `393227` slide object is created carrying the deck's master id
- *    (`335562835`) and a layout id (`335562836`) copied from an existing slide,
- *    plus fresh creation ids — and, when the model exposes one, the layout-object
- *    reference (`536889506`). That reference is what drives placeholder
- *    materialization: templating from a slide that carries it yields a laid-out
- *    slide, while templating from a materialized slide (which no longer exposes it)
- *    appends a blank slide.
- *  - A `131140` action descriptor names the action `NewSlideWithLayout`.
+ *  - The presentation root (`393271`) is resubmitted with the target slide's
+ *    reference **removed** from its slide-list property (`603986975`). **Every
+ *    other root property is copied through unchanged**, so the surviving slides
+ *    cannot be scrambled.
+ *  - A `131140` action descriptor names the action `DeleteSlide`.
+ *
+ * There is no slide object in the revision — the server reclaims the now-orphaned
+ * slide from the reference removal. Slides are addressed by their 1-based position
+ * in the slide list, which is the deck's visual order, so deleting position N
+ * removes the Nth slide.
  *
  * The engine reads the LIVE model in the editor frame (a type-2 poll from the zero
- * base, so it reflects co-authoring edits), resolves the root and a template slide
- * there, returns only the small slice needed, and constructs the revision in the
+ * base, so it reflects co-authoring edits), resolves the root and its ordered slide
+ * list there, returns only that small slice, and constructs the revision in the
  * service worker with identity placeholders — handing it to {@link runPodsBridge}
  * for the head read, GUID mint, substitution, POST, and conflict retry.
  */
@@ -29,66 +28,79 @@ import { BRIDGE_REPLAY_DEPTH_GLOBAL, FORBIDDEN_REPLAY_HEADERS } from './frame-fe
 import { type PodsBridgeParams, type PodsBridgeResult, runPodsBridge, sortPropertiesById } from './pods-bridge.js';
 
 const CLASS_PRESENTATION = 393271;
-const CLASS_SLIDE = 393227;
-/** Root property holding the ordered slide list (`{guid}{ctr},…`). Inserting the new slide here is the whole root change. */
+/** Root property holding the ordered slide list (`{guid}{ctr},…`). Removing the target ref here is the whole root change. */
 const PROP_SLIDE_LIST = 603986975;
 /** Root property whose guid seeds the action descriptor id. */
 const PROP_ACTION_CTX = 536889540;
-/** Slide (393227) property ids: master id, layout id, layout-object reference. */
-const PROP_MASTER = 335562835;
-const PROP_LAYOUT = 335562836;
-const PROP_LAYOUT_REF = 536889506;
-/** Slide (393227) creation-id property ids. */
-const PROP_CREATE_A = 335562805;
-const PROP_CREATE_B = 335562806;
+/**
+ * Root "modified" flag. The editor sets this to `"true"` on every structural
+ * slide-list write, but it is absent from the read-model snapshot — so a verbatim
+ * copy of the root omits it. Without it (and without sorting the properties, as the
+ * editor does) the server accepts the revision but does not apply the slide-list
+ * change. Decoded by diffing a real DeleteSlide capture against a failed attempt.
+ */
+const PROP_ROOT_MODIFIED_FLAG = 134236525;
+
+/** The client sequence hint the co-authoring channel carries on a write. Not server-validated (a fresh guid makes each revision unique). */
+const REVISION_SEQUENCE = 24;
 
 const DEFAULT_GUID_TOKEN = '__OTB_PODS_GUID__';
 const DEFAULT_HEAD_TOKEN = '__OTB_PODS_HEAD__';
 
-/** Directive parameters for an `add_slide` write. Unlike text ops, it targets no text. */
-export interface PodsAddSlideParams {
+/** Directive parameters for a `delete_slide` write. */
+export interface PodsDeleteSlideParams {
   tabId: number;
   frameUrlIncludes: string;
   donorGlobal: string;
   headSentinel: string;
   /** The `{Mode:4,srs:[[2,…]]}` live-model poll body (type-2, zero base). */
   modelReadBody: string;
+  /** 1-based position of the slide to delete, in the deck's slide order. */
+  slideIndex: number;
   guidToken?: string;
   headToken?: string;
   /** When true, resolve and construct the revision but do NOT write it — returns the body for inspection. */
   dryRun?: boolean;
 }
 
-/** The live objects an `add_slide` write needs, read from the editor's model. */
-export interface AddSlideContext {
+/** The live objects a `delete_slide` write needs, read from the editor's model. */
+export interface DeleteSlideContext {
   /** The presentation root's object id (`<guid>|<ctr>`). */
   rootObjectId: string;
   /** The root's full property list, copied so the resubmit changes only the slide list. */
   rootProperties: (string | number)[];
   /** The root's current slide-list value (`603986975`). */
   slideList: string;
-  /** Master id, layout id, and layout-object reference copied from an existing slide. */
-  master: string;
-  layout: string;
-  layoutRef: string;
+  /** The slide references parsed from the slide list, in deck order. */
+  slideRefs: string[];
 }
 
+/** Read a property value from a flat `[id, value, …]` list. */
+const readProp = (properties: (string | number)[], id: number): string | undefined => {
+  for (let i = 0; i + 1 < properties.length; i += 2) if (properties[i] === id) return String(properties[i + 1]);
+  return undefined;
+};
+
 /**
- * Build the `NewSlideWithLayout` revision body with identity placeholders.
+ * Build the `DeleteSlide` revision body with identity placeholders.
  *
- * Pure and deterministic for unit testing. The new slide's reference is appended to
- * the root's slide list, so it lands at the end of the deck; the root is otherwise a
- * verbatim copy. The two creation ids are derived from the minted GUID so each added
- * slide is distinct.
+ * Pure and deterministic for unit testing. The target slide's reference is removed
+ * from the root's slide list; the root is otherwise a verbatim copy, which is what
+ * protects the surviving slides. Throws if the index is out of range.
  */
-export const buildAddSlideBody = (
-  ctx: AddSlideContext,
+export const buildDeleteSlideBody = (
+  ctx: DeleteSlideContext,
+  slideIndex: number,
   guidToken: string,
   headToken: string,
   actionDescriptorJson: string,
-  createIdA: string,
-  createIdB: string,
 ): Record<string, unknown> => {
+  if (!Number.isInteger(slideIndex) || slideIndex < 1 || slideIndex > ctx.slideRefs.length) {
+    throw new FrameBridgeValidationError(
+      `delete_slide index ${slideIndex} is out of range; the deck has ${ctx.slideRefs.length} slide(s).`,
+    );
+  }
+
   const rootGuid = ctx.rootObjectId.split('|')[0] ?? ctx.rootObjectId;
   const cellId = `${rootGuid}|3`;
 
@@ -100,45 +112,31 @@ export const buildAddSlideBody = (
   }
   const actionDescId = `${actionMatch[1]}|1`;
 
-  // The new slide's own reference token, appended to the root's slide list.
-  const newSlideRef = `{${guidToken}}{1}`;
-  const newSlideList = ctx.slideList.length > 0 ? `${ctx.slideList},${newSlideRef}` : newSlideRef;
+  // The slide list with the target reference dropped.
+  const newSlideList = ctx.slideRefs.filter((_, i) => i !== slideIndex - 1).join(',');
 
-  // The root, copied with only the slide list changed, then sorted ascending by id
-  // to match the editor's own NewSlideWithLayout write (which sorts; unlike delete,
-  // an add carries no root modified flag).
+  // The root, copied with only the slide list changed, plus the modified flag the
+  // editor sets on a structural write, then sorted ascending by id to match the
+  // editor's own DeleteSlide exactly (both are required for the write to apply).
+  let hasModifiedFlag = false;
   const copied: (string | number)[] = [];
   for (let i = 0; i + 1 < ctx.rootProperties.length; i += 2) {
     const key = ctx.rootProperties[i];
     const value = ctx.rootProperties[i + 1];
     if (key === undefined || value === undefined) continue;
-    copied.push(key, key === PROP_SLIDE_LIST ? newSlideList : value);
+    if (key === PROP_ROOT_MODIFIED_FLAG) hasModifiedFlag = true;
+    copied.push(key, key === PROP_SLIDE_LIST ? newSlideList : key === PROP_ROOT_MODIFIED_FLAG ? 'true' : value);
   }
+  if (!hasModifiedFlag) copied.push(PROP_ROOT_MODIFIED_FLAG, 'true');
   const newRootProperties = sortPropertiesById(copied);
 
   const objects = [
     {
       ObjectId: actionDescId,
       ClassId: 131140,
-      Properties: [134236193, 'true', 335562934, '1', 469780658, actionDescriptorJson, 469780989, 'NewSlideWithLayout'],
+      Properties: [134236193, 'true', 335562934, '1', 469780658, actionDescriptorJson, 469780989, 'DeleteSlide'],
     },
     { ObjectId: ctx.rootObjectId, ClassId: CLASS_PRESENTATION, Properties: newRootProperties },
-    {
-      ObjectId: `${guidToken}|1`,
-      ClassId: CLASS_SLIDE,
-      Properties: [
-        PROP_CREATE_A,
-        createIdA,
-        PROP_CREATE_B,
-        createIdB,
-        PROP_MASTER,
-        ctx.master,
-        PROP_LAYOUT,
-        ctx.layout,
-        // The layout-object reference is included only when the model exposes one.
-        ...(ctx.layoutRef.length > 0 ? [PROP_LAYOUT_REF, ctx.layoutRef] : []),
-      ],
-    },
   ];
 
   const revision = {
@@ -164,7 +162,7 @@ export const buildAddSlideBody = (
           DependentOn: 0,
           Revisions: [revision],
           ExpectedLatestId: headToken,
-          Sequence: 23,
+          Sequence: REVISION_SEQUENCE,
           PutOnlyCall: false,
           LocalRenderingParams: null,
         },
@@ -173,22 +171,16 @@ export const buildAddSlideBody = (
   };
 };
 
-/** Read a property value from a flat `[id, value, …]` list. */
-const readProp = (properties: (string | number)[], id: number): string | undefined => {
-  for (let i = 0; i + 1 < properties.length; i += 2) if (properties[i] === id) return String(properties[i + 1]);
-  return undefined;
-};
-
-/** In-frame result: an error, or the resolved add-slide context. */
-type ResolveResult = { error: string } | { context: AddSlideContext };
+/** In-frame result: an error, or the resolved delete-slide context. */
+type ResolveResult = { error: string } | { context: DeleteSlideContext };
 
 /**
- * Read the live model in the editor frame and resolve the presentation root and a
- * template slide's layout references, returning only that small slice. Runs a
- * type-2 poll from the zero base so the model reflects live co-authoring edits, and
- * rebuilds the current document latest-wins per object id.
+ * Read the live model in the editor frame and resolve the presentation root and its
+ * ordered slide list, returning only that small slice. Runs a type-2 poll from the
+ * zero base so the model reflects live co-authoring edits, and rebuilds the current
+ * document latest-wins per object id.
  */
-const resolveAddSlideContext = async (params: PodsAddSlideParams): Promise<AddSlideContext> => {
+const resolveDeleteSlideContext = async (params: PodsDeleteSlideParams): Promise<DeleteSlideContext> => {
   const frameProbe = await chrome.scripting.executeScript({
     target: { tabId: params.tabId, allFrames: true },
     world: 'MAIN',
@@ -218,11 +210,7 @@ const resolveAddSlideContext = async (params: PodsAddSlideParams): Promise<AddSl
       depthGlobal: string,
       forbidden: string[],
       classPresentation: number,
-      classSlide: number,
       propSlideList: number,
-      propMaster: number,
-      propLayout: number,
-      propLayoutRef: number,
     ): Promise<ResolveResult> => {
       const donor = (globalThis as Record<string, unknown>)[donorName] as
         | { url?: string; headers?: Record<string, string> }
@@ -291,28 +279,14 @@ const resolveAddSlideContext = async (params: PodsAddSlideParams): Promise<AddSl
       if (!presentation) return { error: 'Live model carried no presentation root (ClassId 393271).' };
       const slideList = prop(presentation.properties, propSlideList);
       if (slideList === undefined) return { error: 'Presentation root has no slide-list property (603986975).' };
-
-      // A template slide: an existing 393227 that carries a master and layout id.
-      // The layout-object reference (536889506) is present only on freshly-created
-      // slides, not on materialized ones, so it is optional here.
-      const template = objects.find(
-        o =>
-          o.classId === classSlide &&
-          prop(o.properties, propMaster) !== undefined &&
-          prop(o.properties, propLayout) !== undefined,
-      );
-      if (!template) {
-        return { error: 'No existing slide (393227) with master/layout ids found to template the new slide.' };
-      }
+      const slideRefs = slideList.split(',').filter(Boolean);
 
       return {
         context: {
           rootObjectId: presentation.objectId,
           rootProperties: presentation.properties,
           slideList,
-          master: prop(template.properties, propMaster) as string,
-          layout: prop(template.properties, propLayout) as string,
-          layoutRef: prop(template.properties, propLayoutRef) ?? '',
+          slideRefs,
         },
       };
     },
@@ -322,75 +296,76 @@ const resolveAddSlideContext = async (params: PodsAddSlideParams): Promise<AddSl
       BRIDGE_REPLAY_DEPTH_GLOBAL,
       [...FORBIDDEN_REPLAY_HEADERS],
       CLASS_PRESENTATION,
-      CLASS_SLIDE,
       PROP_SLIDE_LIST,
-      PROP_MASTER,
-      PROP_LAYOUT,
-      PROP_LAYOUT_REF,
     ],
   });
 
   const result = results[0]?.result as ResolveResult | undefined;
-  if (!result) throw new FrameBridgeValidationError(`Add-slide resolve returned no result for tab ${params.tabId}.`);
+  if (!result) throw new FrameBridgeValidationError(`Delete-slide resolve returned no result for tab ${params.tabId}.`);
   if ('error' in result) throw new FrameBridgeValidationError(result.error);
   return result.context;
 };
 
-/** What `add_slide` returns: the write result plus the layout it templated from. */
-export interface PodsAddSlideResult extends PodsBridgeResult {
-  /** The layout id the new slide was built from. */
-  layout: string;
-  /** The number of slide entries in the root's slide list before the add. */
+/** What `delete_slide` returns: the write result plus which slide was removed. */
+export interface PodsDeleteSlideResult extends PodsBridgeResult {
+  /** The 1-based position that was deleted. */
+  slideIndex: number;
+  /** The reference of the removed slide. */
+  removedRef: string;
+  /** The number of slides before the delete. */
   slideCountBefore: number;
 }
 
 /** A dry-run result: the constructed revision with identity tokens, not written. */
-export interface PodsAddSlideDryRun {
+export interface PodsDeleteSlideDryRun {
   dryRun: true;
-  layout: string;
-  master: string;
+  slideIndex: number;
+  removedRef: string;
   slideCountBefore: number;
   rootObjectId: string;
+  /** The ordered slide references, so the caller can confirm which slide index N addresses. */
+  slideRefs: string[];
   /** The revision body with `__OTB_PODS_GUID__`/`__OTB_PODS_HEAD__` placeholders, for inspection/verification. */
   body: Record<string, unknown>;
 }
 
-/** A stable-per-call creation id derived from a hex guid, so each added slide is distinct. */
-const creationIdFrom = (guid: string, salt: number): string => {
-  const hex = guid.replace(/-/g, '').slice(0, 8);
-  return String((Number.parseInt(hex, 16) ^ salt) >>> 0);
-};
-
 /**
- * Resolve the live root and a template slide, construct the `NewSlideWithLayout`
- * revision, and write it. Appends the new slide to the end of the deck.
+ * Resolve the live root and its slide list, construct the `DeleteSlide` revision for
+ * the slide at the given 1-based index, and write it.
  */
-export const runPodsAddSlide = async (params: PodsAddSlideParams): Promise<PodsAddSlideResult | PodsAddSlideDryRun> => {
+export const runPodsDeleteSlide = async (
+  params: PodsDeleteSlideParams,
+): Promise<PodsDeleteSlideResult | PodsDeleteSlideDryRun> => {
   const guidToken = params.guidToken ?? DEFAULT_GUID_TOKEN;
   const headToken = params.headToken ?? DEFAULT_HEAD_TOKEN;
-  const ctx = await resolveAddSlideContext(params);
+  const ctx = await resolveDeleteSlideContext(params);
 
-  // Creation ids and action metadata are minted per call. The GUID token is
-  // substituted by the engine, so derive the creation ids from a fresh GUID here.
-  const seed = crypto.randomUUID();
-  const createIdA = creationIdFrom(seed, 0);
-  const createIdB = creationIdFrom(seed, 0x51ed);
+  const slideCountBefore = ctx.slideRefs.length;
+  if (params.slideIndex < 1 || params.slideIndex > slideCountBefore) {
+    throw new FrameBridgeValidationError(
+      `delete_slide index ${params.slideIndex} is out of range; the deck has ${slideCountBefore} slide(s).`,
+    );
+  }
+  const removedRef = ctx.slideRefs[params.slideIndex - 1] ?? '';
+
+  // The action id is per-call metadata, minted from a fresh guid (the guid token is
+  // still an unsubstituted placeholder here, so it cannot seed it).
+  const seed = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
   const actionDescriptorJson = JSON.stringify({
-    ActionId: creationIdFrom(seed, 0xac1),
-    ActionName: 'NewSlideWithLayout',
+    ActionId: String((Number.parseInt(seed, 16) || 0) >>> 0),
+    ActionName: 'DeleteSlide',
     ActionTime: String(Date.now()),
   });
-
-  const body = buildAddSlideBody(ctx, guidToken, headToken, actionDescriptorJson, createIdA, createIdB);
-  const slideCountBefore = ctx.slideList.split(',').filter(Boolean).length;
+  const body = buildDeleteSlideBody(ctx, params.slideIndex, guidToken, headToken, actionDescriptorJson);
 
   if (params.dryRun) {
     return {
       dryRun: true,
-      layout: ctx.layout,
-      master: ctx.master,
+      slideIndex: params.slideIndex,
+      removedRef,
       slideCountBefore,
       rootObjectId: ctx.rootObjectId,
+      slideRefs: ctx.slideRefs,
       body,
     };
   }
@@ -408,7 +383,8 @@ export const runPodsAddSlide = async (params: PodsAddSlideParams): Promise<PodsA
 
   return {
     ...result,
-    layout: ctx.layout,
+    slideIndex: params.slideIndex,
+    removedRef,
     slideCountBefore,
   };
 };

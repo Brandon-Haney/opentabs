@@ -60,6 +60,18 @@ const PODS_PATH = '/pods/PowerPoint.ashx';
  */
 const PODS_HEAD_SENTINEL = '__otb_pods_head__';
 /**
+ * URL marker for the last-write read channel. An in-frame `fetch` whose URL
+ * contains this marker is answered locally with the most recent type-3 (write)
+ * `/pods` request the editor issued — the full `{Mode,srs:[[3,…]]}` revision
+ * envelope, captured verbatim. This is the in-frame equivalent of a HAR for a
+ * single write: it lets a decode read exactly what the editor's own edit looks
+ * like (e.g. how it deletes a slide) without a manual DevTools export. Type-2
+ * polls do not overwrite it, so it survives until the editor makes its next write.
+ * The value is a request the editor already made in this frame; reading it is
+ * strictly less powerful than the replay `browser_fetch_in_frame` already allows.
+ */
+const PODS_LAST_WRITE_SENTINEL = '__otb_pods_lastwrite__';
+/**
  * Depth counter `browser.fetchInFrame` raises around a replay it issues into this
  * frame. Our own replayed `/pods` POST goes through this same patched `fetch`/XHR,
  * so without this guard `stashDonor` would re-capture our replay as the freshest
@@ -131,6 +143,11 @@ const installPodsDonorInterceptor = (log: { info(message: string): void }): void
   // sentinel in the fetch patch below.
   let latestHead: { head: string; ts: number } | null = null;
 
+  // The most recent type-3 (write) request the editor issued, kept so a decode
+  // can read exactly what the editor's own edit looks like. Polls (type-2) do not
+  // overwrite it. Closure-scoped; surfaced only through the read sentinel below.
+  let lastWrite: PodsDonor | null = null;
+
   /**
    * A type-2 `/pods` request is a poll whose body carries the client's current
    * head as `ExpectedLatestRevisionId`. That is the only place the head appears —
@@ -146,6 +163,20 @@ const installPodsDonorInterceptor = (log: { info(message: string): void }): void
       }
     } catch {
       /* non-JSON or unexpected shape — leave the last known head in place */
+    }
+  };
+
+  /**
+   * A type-3 `/pods` request is a write (a `Revisions[]` envelope). Retain the
+   * freshest one so a decode can read the editor's own edit; polls (type-2) call
+   * this too but only writes are kept.
+   */
+  const captureWrite = (url: string, method: string, headers: Record<string, string>, body: string): void => {
+    try {
+      const parsed = JSON.parse(body) as { srs?: [number, unknown][] };
+      if (parsed.srs?.[0]?.[0] === 3) lastWrite = { url, method, headers, body, ts: Date.now() };
+    } catch {
+      /* non-JSON or unexpected shape — leave the last known write in place */
     }
   };
 
@@ -166,6 +197,7 @@ const installPodsDonorInterceptor = (log: { info(message: string): void }): void
     if (!absolute.includes(PODS_PATH) || method.toUpperCase() !== 'POST') return;
     g[PODS_DONOR_GLOBAL] = { url: absolute, method, headers, body, ts: Date.now() };
     captureHead(body);
+    captureWrite(absolute, method, headers, body);
   };
 
   if (!g.fetch[PODS_FETCH_MARKER]) {
@@ -178,6 +210,14 @@ const installPodsDonorInterceptor = (log: { info(message: string): void }): void
         // `fetch`, so the head never has to cross the frame boundary as raw traffic.
         if (url.includes(PODS_HEAD_SENTINEL)) {
           return new Response(JSON.stringify(latestHead), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        // Read sentinel: answer an in-frame last-write-read request with the most
+        // recent type-3 write the editor made, so a decode can inspect it locally.
+        if (url.includes(PODS_LAST_WRITE_SENTINEL)) {
+          return new Response(JSON.stringify(lastWrite), {
             status: 200,
             headers: { 'content-type': 'application/json' },
           });

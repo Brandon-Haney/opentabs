@@ -11,6 +11,7 @@ import {
 import { requireStringParam } from './browser-commands/helpers.js';
 import { type PodsAddSlideParams, runPodsAddSlide } from './browser-commands/pods-add-slide.js';
 import { type PodsBridgeParams, runPodsBridge } from './browser-commands/pods-bridge.js';
+import { type PodsDeleteSlideParams, runPodsDeleteSlide } from './browser-commands/pods-delete-slide.js';
 import {
   type PodsFormatTextParams,
   type PodsSetFontSizeParams,
@@ -829,6 +830,83 @@ const resolvePodsAddSlideDirective = async (result: DispatchResult, tabId: numbe
 };
 
 /**
+ * A `__podsDeleteSlide` directive: remove the slide at a 1-based position from the
+ * open deck via the co-authoring channel. The engine reads the live root, drops the
+ * target reference from the slide list, constructs the `DeleteSlide` revision, and
+ * writes it (or, with `dryRun`, returns it plus the ordered slide refs, unwritten).
+ */
+interface PodsDeleteSlideDirective {
+  frameUrlIncludes: string;
+  donorGlobal: string;
+  headSentinel: string;
+  modelReadBody: string;
+  slideIndex: number;
+  dryRun: boolean;
+  guidToken?: string;
+  headToken?: string;
+}
+
+/** Extract a well-formed `__podsDeleteSlide` directive, or null. Keyed on its own distinct field. */
+const extractPodsDeleteSlideDirective = (output: unknown): PodsDeleteSlideDirective | null => {
+  if (!output || typeof output !== 'object') return null;
+  const raw = (output as Record<string, unknown>).__podsDeleteSlide;
+  if (!raw || typeof raw !== 'object') return null;
+  const p = raw as Record<string, unknown>;
+  if (
+    typeof p.frameUrlIncludes !== 'string' ||
+    typeof p.donorGlobal !== 'string' ||
+    typeof p.headSentinel !== 'string' ||
+    typeof p.modelReadBody !== 'string' ||
+    typeof p.slideIndex !== 'number' ||
+    !Number.isInteger(p.slideIndex) ||
+    p.slideIndex < 1
+  ) {
+    return null;
+  }
+  return {
+    frameUrlIncludes: p.frameUrlIncludes,
+    donorGlobal: p.donorGlobal,
+    headSentinel: p.headSentinel,
+    modelReadBody: p.modelReadBody,
+    slideIndex: p.slideIndex,
+    dryRun: p.dryRun === true,
+    ...(typeof p.guidToken === 'string' && p.guidToken.length > 0 ? { guidToken: p.guidToken } : {}),
+    ...(typeof p.headToken === 'string' && p.headToken.length > 0 ? { headToken: p.headToken } : {}),
+  };
+};
+
+/**
+ * When a tool result carries a `__podsDeleteSlide` directive, run the delete-slide
+ * engine on the resolved tab and replace the output with its result. A no-op when
+ * the marker is absent, so it chains after {@link resolvePodsAddSlideDirective}. A
+ * write that did not apply comes back as `failure` and is raised to a dispatch error.
+ */
+const resolvePodsDeleteSlideDirective = async (result: DispatchResult, tabId: number): Promise<DispatchResult> => {
+  if (result.type !== 'success') return result;
+  const directive = extractPodsDeleteSlideDirective(result.output);
+  if (!directive) return result;
+
+  const params: PodsDeleteSlideParams = { tabId, ...directive };
+  try {
+    const deleteResult = await runPodsDeleteSlide(params);
+    if ('failure' in deleteResult && deleteResult.failure !== undefined) {
+      return {
+        type: 'error',
+        code: JSONRPC_INTERNAL_ERROR,
+        message: deleteResult.failure,
+        data: { code: 'PODS_WRITE_FAILED', category: 'internal', retryable: false },
+      };
+    }
+    return { type: 'success', output: deleteResult };
+  } catch (err) {
+    if (err instanceof FrameBridgeValidationError) {
+      return { type: 'error', code: JSONRPC_INVALID_PARAMS, message: err.message };
+    }
+    return { type: 'error', code: JSONRPC_INTERNAL_ERROR, message: `delete_slide failed: ${toErrorMessage(err)}` };
+  }
+};
+
+/**
  * Handle tool.dispatch request from MCP server.
  * Finds matching tabs, checks adapter readiness (with fallback to other
  * matching tabs when the best-ranked tab is not ready), executes the tool,
@@ -904,7 +982,8 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
       const podsWritten = await resolvePodsBridgeDirective(bridged, tid);
       const fontSized = await resolvePodsSetFontSizeDirective(podsWritten, tid);
       const formatted = await resolvePodsFormatTextDirective(fontSized, tid);
-      return await resolvePodsAddSlideDirective(formatted, tid);
+      const added = await resolvePodsAddSlideDirective(formatted, tid);
+      return await resolvePodsDeleteSlideDirective(added, tid);
     } finally {
       removeProgressListener(tid, dispatchId);
     }
@@ -934,6 +1013,7 @@ export {
   extractBridgeDirective,
   extractPodsAddSlideDirective,
   extractPodsBridgeDirective,
+  extractPodsDeleteSlideDirective,
   extractPodsFormatTextDirective,
   extractPodsSetFontSizeDirective,
   getPluginLink,

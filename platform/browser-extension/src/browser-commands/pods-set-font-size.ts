@@ -7,13 +7,16 @@
  * paragraph, its run, the slide's storage cell) that only exist in the running
  * editor. This engine reads them on demand:
  *
- *  1. In the editor frame, replay the editor's own full-model load
- *     (`?openEarly=true`, the `{Mode:4,srs:[[1,{SlideID}]]}` payload in a `postdata`
- *     header, session creds from the frame-local donor). It returns the whole slide
- *     object graph — a type-1 response with `BaseId 00000000-…|0`.
- *  2. Parse that graph *inside the frame* and return only the target paragraph and
- *     its run, so a ~450 KB model never crosses the process boundary (it would be
- *     cut at {@link MAX_FRAME_FETCH_RESPONSE} and fail to parse).
+ *  1. In the editor frame, read the LIVE model: a type-2 poll from the zero base
+ *     (session creds from the frame-local donor) returns the full current
+ *     RevisionList — the load base plus every co-authoring revision since. This
+ *     reflects edits already made this session; the older `openEarly` snapshot did
+ *     not, so edits resolved against it landed on stale object ids and never
+ *     rendered.
+ *  2. Rebuild the current document latest-wins per object id and resolve the target
+ *     *inside the frame*, returning only the target paragraph and its run, so a
+ *     multi-megabyte model never crosses the process boundary (it would be cut at
+ *     {@link MAX_FRAME_FETCH_RESPONSE} and fail to parse).
  *  3. In the service worker, build the type-1 write body — a copy of the run with
  *     `268442635` (font size, half-points) changed, the paragraph with its run-ref
  *     rewritten to point at the new run, and a `SetFontSize` action descriptor —
@@ -32,27 +35,111 @@ import { type PodsBridgeParams, type PodsBridgeResult, runPodsBridge } from './p
 const CLASS_PRESENTATION = 393271;
 const CLASS_PARAGRAPH = 393230;
 const CLASS_RUN = 1179725;
-/** Pods property ids: paragraph text, paragraph run-reference list, run font size (half-points), presentation's action-context reference. */
+/** Pods property ids: paragraph text, paragraph run-reference list, presentation's action-context reference. */
 const PROP_TEXT = 469769250;
 const PROP_RUN_REF = 603987475;
-const PROP_FONT_SIZE = 268442635;
 const PROP_ACTION_CTX = 536889540;
+/** Run (1179725) format property ids, decoded from captured SetFontSize/Bold/SetItalic/Font/SetFontColor writes. */
+const PROP_FONT_SIZE = 268442635;
+const PROP_BOLD = 134224900;
+const PROP_ITALIC = 134224901;
+const PROP_UNDERLINE = 134224902;
+/** Font colour: a display string `@RRGGBB,,` and its BGR-integer mirror, always written together. */
+const PROP_COLOR_STR = 469780760;
+const PROP_COLOR_BGR = 335551500;
+/** Font family: the typeface name is written to all four face slots (typeface, latin, EA, CS). */
+const PROP_FONT_FACES = [469769226, 469780527, 469780528, 469780529];
+
+/**
+ * The run-level format changes a single `format_text` write can apply. Only the
+ * keys that are set change; the rest of the run is copied through untouched.
+ * Bold/italic/underline are the `true`/`false` string flags the run carries; size
+ * is in half-points; `colorHex` is 6-digit `RRGGBB`; `font` is a family name.
+ */
+export interface RunFormatChanges {
+  sizeHalfPt?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  colorHex?: string;
+  font?: string;
+}
+
+/** `RRGGBB` → the BGR integer PowerPoint stores alongside the `@RRGGBB,,` display colour. */
+const hexToBgrInt = (hex: string): number => {
+  const r = Number.parseInt(hex.slice(0, 2), 16);
+  const g = Number.parseInt(hex.slice(2, 4), 16);
+  const b = Number.parseInt(hex.slice(4, 6), 16);
+  return (b << 16) | (g << 8) | r;
+};
+
+/**
+ * The new wire value for a run property under the requested changes, or undefined
+ * when this change set does not touch that property. One place maps a property id
+ * to its override so the copy loop and the append pass agree. Colour and font each
+ * span several properties that all derive from a single requested value.
+ */
+const overrideForRunProp = (propId: number, changes: RunFormatChanges): string | undefined => {
+  if (propId === PROP_FONT_SIZE && changes.sizeHalfPt !== undefined) return String(changes.sizeHalfPt);
+  if (propId === PROP_BOLD && changes.bold !== undefined) return changes.bold ? 'true' : 'false';
+  if (propId === PROP_ITALIC && changes.italic !== undefined) return changes.italic ? 'true' : 'false';
+  if (propId === PROP_UNDERLINE && changes.underline !== undefined) return changes.underline ? 'true' : 'false';
+  if (propId === PROP_COLOR_STR && changes.colorHex !== undefined) return `@${changes.colorHex},,`;
+  if (propId === PROP_COLOR_BGR && changes.colorHex !== undefined) return String(hexToBgrInt(changes.colorHex));
+  if (PROP_FONT_FACES.includes(propId) && changes.font !== undefined) return changes.font;
+  return undefined;
+};
+
+/** The run property ids a change set targets — used to append any the run does not already carry. */
+const requestedRunProps = (changes: RunFormatChanges): number[] => {
+  const ids: number[] = [];
+  if (changes.sizeHalfPt !== undefined) ids.push(PROP_FONT_SIZE);
+  if (changes.bold !== undefined) ids.push(PROP_BOLD);
+  if (changes.italic !== undefined) ids.push(PROP_ITALIC);
+  if (changes.underline !== undefined) ids.push(PROP_UNDERLINE);
+  if (changes.colorHex !== undefined) ids.push(PROP_COLOR_STR, PROP_COLOR_BGR);
+  if (changes.font !== undefined) ids.push(...PROP_FONT_FACES);
+  return ids;
+};
 
 const DEFAULT_GUID_TOKEN = '__OTB_PODS_GUID__';
 const DEFAULT_HEAD_TOKEN = '__OTB_PODS_HEAD__';
 
-/** Directive parameters for a `set_font_size` write, validated in `tool-dispatch`. */
-export interface PodsSetFontSizeParams {
+/** The inputs every run-level pods edit needs to locate its target in the live model. */
+export interface PodsResolveParams {
   tabId: number;
   frameUrlIncludes: string;
   donorGlobal: string;
-  headSentinel: string;
   /** Exact visible text of the target paragraph (matched against `PROP_TEXT`). */
   text: string;
+  /** The `{Mode:4,srs:[[2,…]]}` live-model poll body (type-2, zero base), sent as the read request body. */
+  modelReadBody: string;
+}
+
+/** Directive parameters for a `set_font_size` write, validated in `tool-dispatch`. */
+export interface PodsSetFontSizeParams extends PodsResolveParams {
+  headSentinel: string;
   /** New font size in points. */
   sizePt: number;
-  /** The `{Mode:4,srs:[[1,…]]}` full-model request payload, carried in the `postdata` header. */
-  openEarlyPostdata: string;
+  guidToken?: string;
+  headToken?: string;
+}
+
+/** Directive parameters for a `format_text` write, validated in `tool-dispatch`. */
+export interface PodsFormatTextParams extends PodsResolveParams {
+  headSentinel: string;
+  /** New size in points, if changing size. */
+  sizePt?: number;
+  /** New bold state, if changing bold. */
+  bold?: boolean;
+  /** New italic state, if changing italic. */
+  italic?: boolean;
+  /** New underline state, if changing underline. */
+  underline?: boolean;
+  /** New font colour as 6-digit hex `RRGGBB`, if changing colour. */
+  colorHex?: string;
+  /** New font family name, if changing font. */
+  font?: string;
   guidToken?: string;
   headToken?: string;
 }
@@ -63,7 +150,10 @@ interface ResolvedRun {
   ref: string;
   objectId: string;
   properties: (string | number)[];
+  /** The run's current formatting, read for before/after reporting. Strings as they appear on the wire. */
   sizeHalfPt: string | null;
+  bold: string | null;
+  italic: string | null;
 }
 
 /** The live objects a `set_font_size` write needs, read from the editor's model. */
@@ -101,34 +191,54 @@ const sortPropertiesById = (properties: (string | number)[]): (string | number)[
 };
 
 /**
- * Build the type-1 `set_font_size` revision body with identity placeholders.
+ * Build the type-3 run-format revision body with identity placeholders.
  *
- * Pure and deterministic so it can be unit-tested against a captured, proven write.
- * The new run copies the target run's properties verbatim (font, colour, weight,
- * and its references to existing style objects) with only the size changed, so no
- * formatting is lost; the paragraph is resubmitted with its run-reference rewritten
- * to swap the old run for `{GUID}{1}`, so the run is not orphaned.
+ * Generalizes the proven `SetFontSize` write: the revision is really "merge this
+ * modified copy of the run into its paragraph", so the same shape applies any run
+ * property change, not just size. The new run copies the target run's properties
+ * verbatim (font, colour, weight, and its references to existing style objects),
+ * overriding only the properties named in `changes` — and appending any the run
+ * did not already carry (e.g. a bold flag on a run that had never been bolded), so
+ * turning a format on works even from a default run. The paragraph is resubmitted
+ * with its run-reference rewritten to swap the old run for `{GUID}{1}`, so the run
+ * is not orphaned. Pure and deterministic, for unit testing against a captured write.
  */
-export const buildSetFontSizeBody = (
+export const buildRunFormatBody = (
   target: ResolvedTarget,
-  newSizeHalfPt: number,
+  changes: RunFormatChanges,
   guidToken: string,
   headToken: string,
 ): Record<string, unknown> => {
   const [run, ...extraRuns] = target.textRuns;
   if (!run || extraRuns.length > 0) {
     throw new FrameBridgeValidationError(
-      `set_font_size resizes single-run text; "${target.paragraphId}" has ${target.textRuns.length} formatting runs. ` +
-        'Resizing multi-run text is not supported yet.',
+      `format_text formats single-run text; "${target.paragraphId}" has ${target.textRuns.length} formatting runs. ` +
+        'Formatting multi-run text is not supported yet.',
+    );
+  }
+  const requested = requestedRunProps(changes);
+  if (requested.length === 0) {
+    throw new FrameBridgeValidationError(
+      'format_text needs at least one property to change (size, bold, italic, underline, color, or font).',
     );
   }
 
+  const seen = new Set<number>();
   const newRunProperties: (string | number)[] = [];
   for (let i = 0; i + 1 < run.properties.length; i += 2) {
     const key = run.properties[i];
     const value = run.properties[i + 1];
     if (key === undefined || value === undefined) continue;
-    newRunProperties.push(key, key === PROP_FONT_SIZE ? String(newSizeHalfPt) : value);
+    const override = typeof key === 'number' ? overrideForRunProp(key, changes) : undefined;
+    if (typeof key === 'number') seen.add(key);
+    newRunProperties.push(key, override ?? value);
+  }
+  // Add any requested property the run did not already carry, so a format can be
+  // turned on from a run that never had that property set.
+  for (const propId of requested) {
+    if (seen.has(propId)) continue;
+    const value = overrideForRunProp(propId, changes);
+    if (value !== undefined) newRunProperties.push(propId, value);
   }
 
   const rewrittenRef = target.runRef
@@ -187,16 +297,26 @@ export const buildSetFontSizeBody = (
   };
 };
 
+/** Size-only run-format build — the original `set_font_size` write, now a thin wrapper. */
+export const buildSetFontSizeBody = (
+  target: ResolvedTarget,
+  newSizeHalfPt: number,
+  guidToken: string,
+  headToken: string,
+): Record<string, unknown> => buildRunFormatBody(target, { sizeHalfPt: newSizeHalfPt }, guidToken, headToken);
+
 /** In-frame result: either an error string or the resolved target. */
 type ResolveResult = { error: string } | { target: ResolvedTarget };
 
 /**
- * Replay the editor's full-model load in the editor frame and resolve the target
- * paragraph and its runs, returning only that small slice. Everything runs in the
- * frame's MAIN world so the request is same-origin and the multi-megabyte model is
- * parsed and discarded there.
+ * Read the LIVE model in the editor frame and resolve the target paragraph and its
+ * runs, returning only that small slice. Runs a type-2 poll from the zero base
+ * (`modelReadBody`) so the model includes every co-authoring revision, then rebuilds
+ * the current document latest-wins per object id. Everything runs in the frame's
+ * MAIN world so the request is same-origin and the multi-megabyte model is parsed
+ * and discarded there.
  */
-const resolvePodsTarget = async (params: PodsSetFontSizeParams): Promise<ResolvedTarget> => {
+const resolvePodsTarget = async (params: PodsResolveParams): Promise<ResolvedTarget> => {
   const frameProbe = await chrome.scripting.executeScript({
     target: { tabId: params.tabId, allFrames: true },
     world: 'MAIN',
@@ -222,7 +342,7 @@ const resolvePodsTarget = async (params: PodsSetFontSizeParams): Promise<Resolve
     world: 'MAIN',
     func: async (
       donorName: string,
-      postdata: string,
+      modelReadBody: string,
       targetText: string,
       depthGlobal: string,
       forbidden: string[],
@@ -233,6 +353,8 @@ const resolvePodsTarget = async (params: PodsSetFontSizeParams): Promise<Resolve
       propRunRef: number,
       propFontSize: number,
       propActionCtx: number,
+      propBold: number,
+      propItalic: number,
     ): Promise<ResolveResult> => {
       const donor = (globalThis as Record<string, unknown>)[donorName] as
         | { url?: string; headers?: Record<string, string> }
@@ -243,23 +365,17 @@ const resolvePodsTarget = async (params: PodsSetFontSizeParams): Promise<Resolve
         };
       }
 
-      let openEarlyUrl: string;
-      try {
-        const parsed = new URL(donor.url);
-        parsed.search = '?openEarly=true';
-        openEarlyUrl = parsed.href;
-      } catch {
-        return { error: `Donor URL is not absolute: ${String(donor.url).slice(0, 120)}` };
-      }
-
       const forbiddenSet = new Set(forbidden);
       const headers: Record<string, string> = {};
       if (donor.headers && typeof donor.headers === 'object') {
         for (const [name, value] of Object.entries(donor.headers)) {
-          if (typeof value === 'string' && !forbiddenSet.has(name.toLowerCase())) headers[name] = value;
+          // Strip any leftover `postdata` header: the model-read payload rides in
+          // the request body here, and a stale postdata header would override it.
+          if (typeof value === 'string' && !forbiddenSet.has(name.toLowerCase()) && name.toLowerCase() !== 'postdata') {
+            headers[name] = value;
+          }
         }
       }
-      headers.postdata = postdata;
 
       const scope = globalThis as unknown as Record<string, number | undefined>;
       let text: string;
@@ -267,47 +383,50 @@ const resolvePodsTarget = async (params: PodsSetFontSizeParams): Promise<Resolve
         scope[depthGlobal] = (scope[depthGlobal] ?? 0) + 1;
         let response: Response;
         try {
-          response = await fetch(openEarlyUrl, { method: 'POST', headers, credentials: 'include', body: '' });
+          // A type-2 poll from the zero base: the server returns the full current
+          // RevisionList (the load base plus every co-authoring revision since), so
+          // the model reflects live edits — unlike the frozen openEarly snapshot.
+          response = await fetch(donor.url, { method: 'POST', headers, credentials: 'include', body: modelReadBody });
         } finally {
           scope[depthGlobal] = (scope[depthGlobal] ?? 1) - 1;
         }
         text = await response.text();
       } catch (err) {
-        return { error: `Full-model read failed: ${err instanceof Error ? err.message : String(err)}` };
+        return { error: `Live-model read failed: ${err instanceof Error ? err.message : String(err)}` };
       }
 
       let root: unknown;
       try {
         root = JSON.parse(text);
       } catch {
-        return { error: `Full-model response was not JSON: ${text.slice(0, 120)}` };
+        return { error: `Live-model response was not JSON: ${text.slice(0, 120)}` };
       }
 
-      // Collect every {ClassId, ObjectId, Properties} object across the whole graph.
-      const objects: { classId: number; objectId: string; properties: (string | number)[] }[] = [];
-      const stack: unknown[] = [root];
-      while (stack.length) {
-        const node = stack.pop();
+      // Walk the RevisionList in document order (oldest revision first), collecting
+      // every {ClassId, ObjectId, Properties}. The same object id recurs across the
+      // revisions that touched it; keeping the LAST occurrence per id (Map.set
+      // overwrites) rebuilds the current document latest-wins — the way the editor
+      // applies the deltas onto its base.
+      const byId = new Map<string, { classId: number; objectId: string; properties: (string | number)[] }>();
+      const walk = (node: unknown): void => {
         if (Array.isArray(node)) {
-          for (const child of node) stack.push(child);
-          continue;
+          for (const child of node) walk(child);
+          return;
         }
         if (node && typeof node === 'object') {
           const obj = node as Record<string, unknown>;
           if (typeof obj.ClassId === 'number' && typeof obj.ObjectId === 'string' && Array.isArray(obj.Properties)) {
-            objects.push({
+            byId.set(obj.ObjectId, {
               classId: obj.ClassId,
               objectId: obj.ObjectId,
               properties: obj.Properties as (string | number)[],
             });
           }
-          for (const value of Object.values(obj)) {
-            if (value && typeof value === 'object') stack.push(value);
-          }
+          for (const value of Object.values(obj)) walk(value);
         }
-      }
-
-      const byId = new Map(objects.map(o => [o.objectId, o]));
+      };
+      walk(root);
+      const objects = [...byId.values()];
       const prop = (properties: (string | number)[], id: number): string | undefined => {
         for (let i = 0; i + 1 < properties.length; i += 2) if (properties[i] === id) return String(properties[i + 1]);
         return undefined;
@@ -353,6 +472,8 @@ const resolvePodsTarget = async (params: PodsSetFontSizeParams): Promise<Resolve
             objectId: run.objectId,
             properties: run.properties,
             sizeHalfPt: prop(run.properties, propFontSize) ?? null,
+            bold: prop(run.properties, propBold) ?? null,
+            italic: prop(run.properties, propItalic) ?? null,
           });
         }
       }
@@ -370,7 +491,7 @@ const resolvePodsTarget = async (params: PodsSetFontSizeParams): Promise<Resolve
     },
     args: [
       params.donorGlobal,
-      params.openEarlyPostdata,
+      params.modelReadBody,
       params.text,
       BRIDGE_REPLAY_DEPTH_GLOBAL,
       [...FORBIDDEN_REPLAY_HEADERS],
@@ -381,6 +502,8 @@ const resolvePodsTarget = async (params: PodsSetFontSizeParams): Promise<Resolve
       PROP_RUN_REF,
       PROP_FONT_SIZE,
       PROP_ACTION_CTX,
+      PROP_BOLD,
+      PROP_ITALIC,
     ],
   });
 
@@ -429,5 +552,70 @@ export const runPodsSetFontSize = async (params: PodsSetFontSizeParams): Promise
     runId: target.textRuns[0]?.objectId ?? '',
     oldSizePt: oldHalfPt ? Number(oldHalfPt) / 2 : null,
     newSizePt: params.sizePt,
+  };
+};
+
+/** What `format_text` returns: the write result, the run's prior formatting, and what was applied. */
+export interface PodsFormatTextResult extends PodsBridgeResult {
+  text: string;
+  runId: string;
+  /** The run's formatting before the write (null where the run carried no such property). */
+  before: { sizePt: number | null; bold: boolean | null; italic: boolean | null };
+  /** The changes requested, echoed for confirmation. */
+  applied: { sizePt?: number; bold?: boolean; italic?: boolean; underline?: boolean; colorHex?: string; font?: string };
+}
+
+/** Parse a run's `"true"`/`"false"` flag string to a boolean, or null when the property was absent. */
+const flagToBool = (value: string | null): boolean | null => (value === null ? null : value === 'true');
+
+/**
+ * Resolve the target run, build a run-format revision from the requested changes,
+ * and write it. Reports the run's prior formatting (read off the resolved run) so
+ * the caller sees the before/after without a second read.
+ */
+export const runPodsFormatText = async (params: PodsFormatTextParams): Promise<PodsFormatTextResult> => {
+  const guidToken = params.guidToken ?? DEFAULT_GUID_TOKEN;
+  const headToken = params.headToken ?? DEFAULT_HEAD_TOKEN;
+  const target = await resolvePodsTarget(params);
+
+  const changes: RunFormatChanges = {
+    ...(params.sizePt !== undefined ? { sizeHalfPt: Math.round(params.sizePt * 2) } : {}),
+    ...(params.bold !== undefined ? { bold: params.bold } : {}),
+    ...(params.italic !== undefined ? { italic: params.italic } : {}),
+    ...(params.underline !== undefined ? { underline: params.underline } : {}),
+    ...(params.colorHex !== undefined ? { colorHex: params.colorHex } : {}),
+    ...(params.font !== undefined ? { font: params.font } : {}),
+  };
+  const body = buildRunFormatBody(target, changes, guidToken, headToken);
+
+  const bridgeParams: PodsBridgeParams = {
+    tabId: params.tabId,
+    frameUrlIncludes: params.frameUrlIncludes,
+    donorGlobal: params.donorGlobal,
+    headSentinel: params.headSentinel,
+    body,
+    guidToken,
+    headToken,
+  };
+  const result = await runPodsBridge(bridgeParams);
+
+  const run = target.textRuns[0];
+  return {
+    ...result,
+    text: params.text,
+    runId: run?.objectId ?? '',
+    before: {
+      sizePt: run?.sizeHalfPt ? Number(run.sizeHalfPt) / 2 : null,
+      bold: flagToBool(run?.bold ?? null),
+      italic: flagToBool(run?.italic ?? null),
+    },
+    applied: {
+      ...(params.sizePt !== undefined ? { sizePt: params.sizePt } : {}),
+      ...(params.bold !== undefined ? { bold: params.bold } : {}),
+      ...(params.italic !== undefined ? { italic: params.italic } : {}),
+      ...(params.underline !== undefined ? { underline: params.underline } : {}),
+      ...(params.colorHex !== undefined ? { colorHex: params.colorHex } : {}),
+      ...(params.font !== undefined ? { font: params.font } : {}),
+    },
   };
 };

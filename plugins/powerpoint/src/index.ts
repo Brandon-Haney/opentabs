@@ -4,6 +4,7 @@ import { isAuthenticated, isPowerPointTab, isSharePoint, waitForAuth } from './p
 import { addImage } from './tools/add-image.js';
 import { addShape } from './tools/add-shape.js';
 import { addSlide } from './tools/add-slide.js';
+import { addSlideLive } from './tools/add-slide-live.js';
 import { addTable } from './tools/add-table.js';
 import { addTextBox } from './tools/add-text-box.js';
 import { commitPresentationTool } from './tools/commit-presentation.js';
@@ -19,6 +20,7 @@ import { discardPresentationTool } from './tools/discard-presentation.js';
 import { duplicateShape } from './tools/duplicate-shape.js';
 import { duplicateSlide as duplicateSlideTool } from './tools/duplicate-slide.js';
 import { fitText } from './tools/fit-text.js';
+import { formatText } from './tools/format-text.js';
 import { getComments } from './tools/get-comments.js';
 import { getCurrentUser } from './tools/get-current-user.js';
 import { getDownloadUrl } from './tools/get-download-url.js';
@@ -87,6 +89,8 @@ class PowerPointPlugin extends OpenTabsPlugin {
     getSlideStructure,
     setPlaceholderText,
     setFontSize,
+    formatText,
+    addSlideLive,
     listSlideLayouts,
     addSlide,
     deleteSlide,

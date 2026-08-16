@@ -95,11 +95,29 @@ export const podsWrite = (body: Record<string, unknown>): z.infer<typeof podsWri
 };
 
 /**
- * The editor's full-model load, a type-1 request for the first slide's object
- * graph. The engine sends it in a `postdata` header (as the editor does) to fetch
- * the live model, which supplies the per-session ids a resize revision must name.
+ * The live-model read: a type-2 poll from the zero base. The server answers with
+ * the full current `RevisionList` — the load-time base plus every co-authoring
+ * revision since — so the engine resolves targets against the LIVE document, not
+ * the frozen `openEarly` load snapshot (which is what made edits land on stale
+ * object ids and never render). The engine sends this as the request body of the
+ * in-frame replay and reconstructs the current model latest-wins per object id.
  */
-const OPEN_EARLY_POSTDATA = JSON.stringify({ Mode: 4, srs: [[1, { SlideID: '0#0#Slide', OperationId: 1 }]] });
+const MODEL_READ_BODY = JSON.stringify({
+  Mode: 4,
+  srs: [
+    [
+      2,
+      {
+        OperationId: 1,
+        DependentOn: 0,
+        ExpectedLatestRevisionId: '00000000-0000-0000-0000-000000000000|0',
+        SlideId: null,
+        Sequence: 0,
+        LocalRenderingParams: null,
+      },
+    ],
+  ],
+});
 
 /** What the agent receives after the `set_font_size` engine runs. */
 export const podsSetFontSizeOutputSchema = z.object({
@@ -123,7 +141,7 @@ interface PodsSetFontSizeDirective {
     headSentinel: string;
     text: string;
     sizePt: number;
-    openEarlyPostdata: string;
+    modelReadBody: string;
     guidToken: string;
     headToken: string;
   };
@@ -145,10 +163,140 @@ export const podsSetFontSize = (text: string, sizePt: number): z.infer<typeof po
       headSentinel: HEAD_SENTINEL,
       text,
       sizePt,
-      openEarlyPostdata: OPEN_EARLY_POSTDATA,
+      modelReadBody: MODEL_READ_BODY,
       guidToken: PODS_GUID_TOKEN,
       headToken: PODS_HEAD_TOKEN,
     },
   };
   return directive as unknown as z.infer<typeof podsSetFontSizeOutputSchema>;
+};
+
+/** What the agent receives after the `format_text` engine runs. */
+export const podsFormatTextOutputSchema = z.object({
+  ok: z.boolean().describe('Whether the replayed POST succeeded at the HTTP level.'),
+  status: z.number().int().describe('HTTP status of the replayed write.'),
+  statusCode: z.number().int().optional().describe('The co-authoring StatusCode — 0 means the change was applied.'),
+  isConflict: z.boolean().optional().describe('Whether the base revision was superseded before the write applied.'),
+  head: z.string().optional().describe('The co-authoring head the accepted revision was based on.'),
+  retries: z.number().int().optional().describe('Extra attempts a stale-base conflict cost.'),
+  text: z.string().describe('The paragraph text that was formatted.'),
+  runId: z.string().describe('The object id of the run that was formatted.'),
+  before: z
+    .object({
+      sizePt: z.number().nullable(),
+      bold: z.boolean().nullable(),
+      italic: z.boolean().nullable(),
+    })
+    .describe('The run formatting before the change (null where the run carried no such property).'),
+  applied: z
+    .object({
+      sizePt: z.number().optional(),
+      bold: z.boolean().optional(),
+      italic: z.boolean().optional(),
+      underline: z.boolean().optional(),
+      colorHex: z.string().optional(),
+      font: z.string().optional(),
+    })
+    .describe('The changes requested, echoed for confirmation.'),
+});
+
+/** The `__podsFormatText` directive the platform's run-format engine consumes. */
+interface PodsFormatTextDirective {
+  __podsFormatText: {
+    frameUrlIncludes: string;
+    donorGlobal: string;
+    headSentinel: string;
+    text: string;
+    sizePt?: number;
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean;
+    colorHex?: string;
+    font?: string;
+    modelReadBody: string;
+    guidToken: string;
+    headToken: string;
+  };
+}
+
+/**
+ * Build the `__podsFormatText` directive: change the run formatting (size, bold,
+ * italic, underline, colour, and/or font) of the paragraph whose visible text is
+ * `text`, live in the open deck. Generalizes {@link podsSetFontSize}; only the
+ * provided attributes change. The return is typed as the output schema for the same
+ * reason as {@link podsWrite}: the platform replaces the directive with the engine's
+ * result before the agent sees it.
+ */
+export const podsFormatText = (
+  text: string,
+  changes: { sizePt?: number; bold?: boolean; italic?: boolean; underline?: boolean; colorHex?: string; font?: string },
+): z.infer<typeof podsFormatTextOutputSchema> => {
+  const directive: PodsFormatTextDirective = {
+    __podsFormatText: {
+      frameUrlIncludes: FRAME_URL_INCLUDES,
+      donorGlobal: DONOR_GLOBAL,
+      headSentinel: HEAD_SENTINEL,
+      text,
+      ...(changes.sizePt !== undefined ? { sizePt: changes.sizePt } : {}),
+      ...(changes.bold !== undefined ? { bold: changes.bold } : {}),
+      ...(changes.italic !== undefined ? { italic: changes.italic } : {}),
+      ...(changes.underline !== undefined ? { underline: changes.underline } : {}),
+      ...(changes.colorHex !== undefined ? { colorHex: changes.colorHex } : {}),
+      ...(changes.font !== undefined ? { font: changes.font } : {}),
+      modelReadBody: MODEL_READ_BODY,
+      guidToken: PODS_GUID_TOKEN,
+      headToken: PODS_HEAD_TOKEN,
+    },
+  };
+  return directive as unknown as z.infer<typeof podsFormatTextOutputSchema>;
+};
+
+/** What the agent receives after the `add_slide` engine runs (write result, or a dry-run body). */
+export const podsAddSlideOutputSchema = z.object({
+  ok: z.boolean().optional().describe('Whether the replayed POST succeeded at the HTTP level.'),
+  status: z.number().int().optional().describe('HTTP status of the replayed write.'),
+  statusCode: z.number().int().optional().describe('The co-authoring StatusCode — 0 means the slide was added.'),
+  isConflict: z.boolean().optional(),
+  head: z.string().optional(),
+  retries: z.number().int().optional(),
+  layout: z.string().optional().describe('The layout id the new slide was built from.'),
+  slideCountBefore: z.number().int().optional().describe('Slide count before the add.'),
+  dryRun: z.boolean().optional().describe('True when this was a dry run (constructed but not written).'),
+  rootObjectId: z.string().optional(),
+  master: z.string().optional(),
+  body: z.unknown().optional().describe('The constructed revision (dry run only), for inspection.'),
+});
+
+/** The `__podsAddSlide` directive the platform's add-slide engine consumes. */
+interface PodsAddSlideDirective {
+  __podsAddSlide: {
+    frameUrlIncludes: string;
+    donorGlobal: string;
+    headSentinel: string;
+    modelReadBody: string;
+    dryRun: boolean;
+    guidToken: string;
+    headToken: string;
+  };
+}
+
+/**
+ * Build the `__podsAddSlide` directive: insert a new slide into the open deck live.
+ * The engine reads the live root and a template slide's layout, constructs the
+ * `NewSlideWithLayout` revision, and writes it. With `dryRun`, it constructs and
+ * returns the revision without writing, so a caller can verify it first.
+ */
+export const podsAddSlide = (dryRun = false): z.infer<typeof podsAddSlideOutputSchema> => {
+  const directive: PodsAddSlideDirective = {
+    __podsAddSlide: {
+      frameUrlIncludes: FRAME_URL_INCLUDES,
+      donorGlobal: DONOR_GLOBAL,
+      headSentinel: HEAD_SENTINEL,
+      modelReadBody: MODEL_READ_BODY,
+      dryRun,
+      guidToken: PODS_GUID_TOKEN,
+      headToken: PODS_HEAD_TOKEN,
+    },
+  };
+  return directive as unknown as z.infer<typeof podsAddSlideOutputSchema>;
 };

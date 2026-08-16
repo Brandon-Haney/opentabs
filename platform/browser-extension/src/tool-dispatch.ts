@@ -9,8 +9,14 @@ import {
   toPrepSelections,
 } from './browser-commands/frame-bridge-rpc.js';
 import { requireStringParam } from './browser-commands/helpers.js';
+import { type PodsAddSlideParams, runPodsAddSlide } from './browser-commands/pods-add-slide.js';
 import { type PodsBridgeParams, runPodsBridge } from './browser-commands/pods-bridge.js';
-import { type PodsSetFontSizeParams, runPodsSetFontSize } from './browser-commands/pods-set-font-size.js';
+import {
+  type PodsFormatTextParams,
+  type PodsSetFontSizeParams,
+  runPodsFormatText,
+  runPodsSetFontSize,
+} from './browser-commands/pods-set-font-size.js';
 import { MAX_INPUT_SIZE, MAX_SCRIPT_TIMEOUT_MS, SCRIPT_TIMEOUT_MS } from './constants.js';
 import type { DispatchResult } from './dispatch-helpers.js';
 import { dispatchToTargetedTab, dispatchWithTabFallback, resolvePlugin } from './dispatch-helpers.js';
@@ -583,7 +589,7 @@ interface PodsSetFontSizeDirective {
   headSentinel: string;
   text: string;
   sizePt: number;
-  openEarlyPostdata: string;
+  modelReadBody: string;
   guidToken?: string;
   headToken?: string;
 }
@@ -607,7 +613,7 @@ const extractPodsSetFontSizeDirective = (output: unknown): PodsSetFontSizeDirect
     typeof p.sizePt !== 'number' ||
     !Number.isFinite(p.sizePt) ||
     p.sizePt <= 0 ||
-    typeof p.openEarlyPostdata !== 'string'
+    typeof p.modelReadBody !== 'string'
   ) {
     return null;
   }
@@ -617,7 +623,7 @@ const extractPodsSetFontSizeDirective = (output: unknown): PodsSetFontSizeDirect
     headSentinel: p.headSentinel,
     text: p.text,
     sizePt: p.sizePt,
-    openEarlyPostdata: p.openEarlyPostdata,
+    modelReadBody: p.modelReadBody,
     ...(typeof p.guidToken === 'string' && p.guidToken.length > 0 ? { guidToken: p.guidToken } : {}),
     ...(typeof p.headToken === 'string' && p.headToken.length > 0 ? { headToken: p.headToken } : {}),
   };
@@ -651,6 +657,174 @@ const resolvePodsSetFontSizeDirective = async (result: DispatchResult, tabId: nu
       return { type: 'error', code: JSONRPC_INVALID_PARAMS, message: err.message };
     }
     return { type: 'error', code: JSONRPC_INTERNAL_ERROR, message: `set_font_size failed: ${toErrorMessage(err)}` };
+  }
+};
+
+/**
+ * A `__podsFormatText` directive: change a run's size, bold, italic, underline,
+ * colour, and/or font on the paragraph identified by its visible text, live in the
+ * open deck. Generalizes `__podsSetFontSize` — the engine reads the model, resolves
+ * the run, and writes a run-format revision.
+ */
+interface PodsFormatTextDirective {
+  frameUrlIncludes: string;
+  donorGlobal: string;
+  headSentinel: string;
+  text: string;
+  sizePt?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  colorHex?: string;
+  font?: string;
+  modelReadBody: string;
+  guidToken?: string;
+  headToken?: string;
+}
+
+/**
+ * Extract a well-formed `__podsFormatText` directive, or null. Keyed on its own
+ * distinct field. At least one of size/bold/italic/underline/color/font must be
+ * present, matching the engine's requirement, and every field is type-checked.
+ */
+const extractPodsFormatTextDirective = (output: unknown): PodsFormatTextDirective | null => {
+  if (!output || typeof output !== 'object') return null;
+  const raw = (output as Record<string, unknown>).__podsFormatText;
+  if (!raw || typeof raw !== 'object') return null;
+  const p = raw as Record<string, unknown>;
+  if (
+    typeof p.frameUrlIncludes !== 'string' ||
+    typeof p.donorGlobal !== 'string' ||
+    typeof p.headSentinel !== 'string' ||
+    typeof p.text !== 'string' ||
+    typeof p.modelReadBody !== 'string'
+  ) {
+    return null;
+  }
+  const hasSize = typeof p.sizePt === 'number' && Number.isFinite(p.sizePt) && p.sizePt > 0;
+  const hasBold = typeof p.bold === 'boolean';
+  const hasItalic = typeof p.italic === 'boolean';
+  const hasUnderline = typeof p.underline === 'boolean';
+  const hasColor = typeof p.colorHex === 'string' && /^[0-9a-fA-F]{6}$/.test(p.colorHex);
+  const hasFont = typeof p.font === 'string' && p.font.length > 0;
+  if (!hasSize && !hasBold && !hasItalic && !hasUnderline && !hasColor && !hasFont) return null;
+  return {
+    frameUrlIncludes: p.frameUrlIncludes,
+    donorGlobal: p.donorGlobal,
+    headSentinel: p.headSentinel,
+    text: p.text,
+    modelReadBody: p.modelReadBody,
+    ...(hasSize ? { sizePt: p.sizePt as number } : {}),
+    ...(hasBold ? { bold: p.bold as boolean } : {}),
+    ...(hasItalic ? { italic: p.italic as boolean } : {}),
+    ...(hasUnderline ? { underline: p.underline as boolean } : {}),
+    ...(hasColor ? { colorHex: (p.colorHex as string).toUpperCase() } : {}),
+    ...(hasFont ? { font: p.font as string } : {}),
+    ...(typeof p.guidToken === 'string' && p.guidToken.length > 0 ? { guidToken: p.guidToken } : {}),
+    ...(typeof p.headToken === 'string' && p.headToken.length > 0 ? { headToken: p.headToken } : {}),
+  };
+};
+
+/**
+ * When a tool result carries a `__podsFormatText` directive, run the run-format
+ * engine on the resolved tab and replace the output with its result. A no-op when
+ * the marker is absent, so it chains after {@link resolvePodsSetFontSizeDirective}.
+ * A write that did not apply comes back as `failure` and is raised to a dispatch error.
+ */
+const resolvePodsFormatTextDirective = async (result: DispatchResult, tabId: number): Promise<DispatchResult> => {
+  if (result.type !== 'success') return result;
+  const directive = extractPodsFormatTextDirective(result.output);
+  if (!directive) return result;
+
+  const params: PodsFormatTextParams = { tabId, ...directive };
+  try {
+    const formatResult = await runPodsFormatText(params);
+    if (formatResult.failure !== undefined) {
+      return {
+        type: 'error',
+        code: JSONRPC_INTERNAL_ERROR,
+        message: formatResult.failure,
+        data: { code: 'PODS_WRITE_FAILED', category: 'internal', retryable: false },
+      };
+    }
+    return { type: 'success', output: formatResult };
+  } catch (err) {
+    if (err instanceof FrameBridgeValidationError) {
+      return { type: 'error', code: JSONRPC_INVALID_PARAMS, message: err.message };
+    }
+    return { type: 'error', code: JSONRPC_INTERNAL_ERROR, message: `format_text failed: ${toErrorMessage(err)}` };
+  }
+};
+
+/**
+ * A `__podsAddSlide` directive: insert a new slide into the open deck via the
+ * co-authoring channel. The engine reads the live root + a template slide's layout,
+ * constructs the `NewSlideWithLayout` revision, and writes it (or, with `dryRun`,
+ * returns it unwritten for inspection).
+ */
+interface PodsAddSlideDirective {
+  frameUrlIncludes: string;
+  donorGlobal: string;
+  headSentinel: string;
+  modelReadBody: string;
+  dryRun: boolean;
+  guidToken?: string;
+  headToken?: string;
+}
+
+/** Extract a well-formed `__podsAddSlide` directive, or null. Keyed on its own distinct field. */
+const extractPodsAddSlideDirective = (output: unknown): PodsAddSlideDirective | null => {
+  if (!output || typeof output !== 'object') return null;
+  const raw = (output as Record<string, unknown>).__podsAddSlide;
+  if (!raw || typeof raw !== 'object') return null;
+  const p = raw as Record<string, unknown>;
+  if (
+    typeof p.frameUrlIncludes !== 'string' ||
+    typeof p.donorGlobal !== 'string' ||
+    typeof p.headSentinel !== 'string' ||
+    typeof p.modelReadBody !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    frameUrlIncludes: p.frameUrlIncludes,
+    donorGlobal: p.donorGlobal,
+    headSentinel: p.headSentinel,
+    modelReadBody: p.modelReadBody,
+    dryRun: p.dryRun === true,
+    ...(typeof p.guidToken === 'string' && p.guidToken.length > 0 ? { guidToken: p.guidToken } : {}),
+    ...(typeof p.headToken === 'string' && p.headToken.length > 0 ? { headToken: p.headToken } : {}),
+  };
+};
+
+/**
+ * When a tool result carries a `__podsAddSlide` directive, run the add-slide engine
+ * on the resolved tab and replace the output with its result. A no-op when the
+ * marker is absent, so it chains after {@link resolvePodsFormatTextDirective}. A
+ * write that did not apply comes back as `failure` and is raised to a dispatch error.
+ */
+const resolvePodsAddSlideDirective = async (result: DispatchResult, tabId: number): Promise<DispatchResult> => {
+  if (result.type !== 'success') return result;
+  const directive = extractPodsAddSlideDirective(result.output);
+  if (!directive) return result;
+
+  const params: PodsAddSlideParams = { tabId, ...directive };
+  try {
+    const addResult = await runPodsAddSlide(params);
+    if ('failure' in addResult && addResult.failure !== undefined) {
+      return {
+        type: 'error',
+        code: JSONRPC_INTERNAL_ERROR,
+        message: addResult.failure,
+        data: { code: 'PODS_WRITE_FAILED', category: 'internal', retryable: false },
+      };
+    }
+    return { type: 'success', output: addResult };
+  } catch (err) {
+    if (err instanceof FrameBridgeValidationError) {
+      return { type: 'error', code: JSONRPC_INVALID_PARAMS, message: err.message };
+    }
+    return { type: 'error', code: JSONRPC_INTERNAL_ERROR, message: `add_slide failed: ${toErrorMessage(err)}` };
   }
 };
 
@@ -728,7 +902,9 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
       // `__podsBridge` directive.
       const bridged = await resolveBridgeDirective(result, tid);
       const podsWritten = await resolvePodsBridgeDirective(bridged, tid);
-      return await resolvePodsSetFontSizeDirective(podsWritten, tid);
+      const fontSized = await resolvePodsSetFontSizeDirective(podsWritten, tid);
+      const formatted = await resolvePodsFormatTextDirective(fontSized, tid);
+      return await resolvePodsAddSlideDirective(formatted, tid);
     } finally {
       removeProgressListener(tid, dispatchId);
     }
@@ -756,7 +932,9 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
 
 export {
   extractBridgeDirective,
+  extractPodsAddSlideDirective,
   extractPodsBridgeDirective,
+  extractPodsFormatTextDirective,
   extractPodsSetFontSizeDirective,
   getPluginLink,
   handleToolDispatch,

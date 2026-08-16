@@ -69,8 +69,13 @@ const notifyDispatchProgress = (dispatchId: string): void => {
   if (cb) cb();
 };
 
-const { handleToolDispatch, extractBridgeDirective, extractPodsBridgeDirective, extractPodsSetFontSizeDirective } =
-  await import('./tool-dispatch.js');
+const {
+  handleToolDispatch,
+  extractBridgeDirective,
+  extractPodsBridgeDirective,
+  extractPodsSetFontSizeDirective,
+  extractPodsFormatTextDirective,
+} = await import('./tool-dispatch.js');
 const { invalidatePluginCache } = await import('./plugin-storage.js');
 
 /** Helper to build a minimal PluginMeta for tests */
@@ -286,7 +291,7 @@ describe('extractPodsSetFontSizeDirective', () => {
     headSentinel: '__otb_pods_head__',
     text: 'Workstream',
     sizePt: 24,
-    openEarlyPostdata: '{"Mode":4,"srs":[[1,{"SlideID":"0#0#Slide","OperationId":1}]]}',
+    modelReadBody: '{"Mode":4,"srs":[[1,{"SlideID":"0#0#Slide","OperationId":1}]]}',
   };
 
   test('extracts a well-formed directive and defaults the optional tokens away', () => {
@@ -314,9 +319,60 @@ describe('extractPodsSetFontSizeDirective', () => {
     expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, sizePt: -4 } })).toBeNull();
     expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, sizePt: 'big' } })).toBeNull();
     expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, text: undefined } })).toBeNull();
-    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, openEarlyPostdata: 5 } })).toBeNull();
+    expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: { ...base, modelReadBody: 5 } })).toBeNull();
     expect(extractPodsSetFontSizeDirective({ __podsSetFontSize: null })).toBeNull();
     expect(extractPodsSetFontSizeDirective(null)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractPodsFormatTextDirective — the run-format allow-list parser
+// ---------------------------------------------------------------------------
+
+describe('extractPodsFormatTextDirective', () => {
+  const base = {
+    frameUrlIncludes: 'powerpoint.officeapps.live.com',
+    donorGlobal: '__otbPptPodsDonor',
+    headSentinel: '__otb_pods_head__',
+    text: 'Workstream',
+    modelReadBody: '{"Mode":4,"srs":[[1,{"SlideID":"0#0#Slide","OperationId":1}]]}',
+  };
+
+  test('extracts a size-only change', () => {
+    if (!extractPodsFormatTextDirective) return;
+    expect(extractPodsFormatTextDirective({ __podsFormatText: { ...base, sizePt: 24 } })).toEqual({
+      ...base,
+      sizePt: 24,
+    });
+  });
+
+  test('extracts bold and italic booleans, including false', () => {
+    if (!extractPodsFormatTextDirective) return;
+    expect(extractPodsFormatTextDirective({ __podsFormatText: { ...base, bold: true, italic: false } })).toEqual({
+      ...base,
+      bold: true,
+      italic: false,
+    });
+  });
+
+  test('rejects a directive with no size/bold/italic change', () => {
+    if (!extractPodsFormatTextDirective) return;
+    expect(extractPodsFormatTextDirective({ __podsFormatText: base })).toBeNull();
+    expect(extractPodsFormatTextDirective({ __podsFormatText: { ...base, sizePt: 0 } })).toBeNull();
+  });
+
+  test('is keyed on __podsFormatText, distinct from the other directives', () => {
+    if (!extractPodsFormatTextDirective || !extractPodsSetFontSizeDirective) return;
+    expect(extractPodsSetFontSizeDirective({ __podsFormatText: { ...base, bold: true } })).toBeNull();
+    expect(extractPodsFormatTextDirective({ __podsSetFontSize: { ...base, sizePt: 10 } })).toBeNull();
+  });
+
+  test('rejects missing required fields', () => {
+    if (!extractPodsFormatTextDirective) return;
+    expect(extractPodsFormatTextDirective({ __podsFormatText: { ...base, bold: true, text: undefined } })).toBeNull();
+    expect(extractPodsFormatTextDirective({ __podsFormatText: { ...base, bold: true, modelReadBody: 5 } })).toBeNull();
+    expect(extractPodsFormatTextDirective({ __podsFormatText: null })).toBeNull();
+    expect(extractPodsFormatTextDirective(null)).toBeNull();
   });
 });
 

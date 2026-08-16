@@ -5,7 +5,7 @@ import { describe, expect, test } from 'vitest';
   tabs: { onRemoved: { addListener: () => {} } },
 };
 
-const { buildSetFontSizeBody } = await import('./pods-set-font-size.js');
+const { buildSetFontSizeBody, buildRunFormatBody } = await import('./pods-set-font-size.js');
 const { FrameBridgeValidationError } = await import('./frame-bridge-rpc.js');
 
 import type { ResolvedTarget } from './pods-set-font-size.js';
@@ -33,6 +33,8 @@ const target = (): ResolvedTarget => ({
       objectId: 'e6b8a11d-1fe8-49e2-b5d9-28e6e5a5d082|7',
       properties: [134224900, 'false', 268442635, '22', 469780527, 'Aptos', 469780760, '@FFFFFF,0,'],
       sizeHalfPt: '22',
+      bold: 'false',
+      italic: null,
     },
   ],
 });
@@ -126,6 +128,8 @@ describe('buildSetFontSizeBody', () => {
       objectId: 'e6b8a11d-1fe8-49e2-b5d9-28e6e5a5d082|8',
       properties: [268442635, '22'],
       sizeHalfPt: '22',
+      bold: null,
+      italic: null,
     });
     expect(() => buildSetFontSizeBody(multi, 36, GUID, HEAD)).toThrow(FrameBridgeValidationError);
   });
@@ -137,5 +141,71 @@ describe('buildSetFontSizeBody', () => {
     // {keep-a}/{keep-b} are not resolved 1179725 runs, so textRuns stays length 1.
     const { paragraph } = revisionOf(buildSetFontSizeBody(t, 36, GUID, HEAD));
     expect(propValue(paragraph.Properties, 603987475)).toBe(`{keep-a}{1},{${GUID}}{1},{keep-b}{2}`);
+  });
+});
+
+describe('buildRunFormatBody', () => {
+  test('overrides bold on a run that already carries a bold property', () => {
+    // The fixture run has bold=false (134224900). Turning it on overrides in place.
+    const { run } = revisionOf(buildRunFormatBody(target(), { bold: true }, GUID, HEAD));
+    expect(propValue(run.Properties, 134224900)).toBe('true');
+    // Size and other properties are untouched.
+    expect(propValue(run.Properties, 268442635)).toBe('22');
+    expect(propValue(run.Properties, 469780527)).toBe('Aptos');
+  });
+
+  test('appends italic on a run that had no italic property', () => {
+    // The fixture run has no italic (134224901). Turning it on appends it.
+    const { run } = revisionOf(buildRunFormatBody(target(), { italic: true }, GUID, HEAD));
+    expect(propValue(run.Properties, 134224901)).toBe('true');
+  });
+
+  test('applies size, bold, and italic together in one revision', () => {
+    const { run } = revisionOf(buildRunFormatBody(target(), { sizeHalfPt: 48, bold: true, italic: false }, GUID, HEAD));
+    expect(propValue(run.Properties, 268442635)).toBe('48');
+    expect(propValue(run.Properties, 134224900)).toBe('true');
+    expect(propValue(run.Properties, 134224901)).toBe('false');
+  });
+
+  test('keeps the properties sorted ascending by id even after appending', () => {
+    const { run } = revisionOf(buildRunFormatBody(target(), { italic: true }, GUID, HEAD));
+    const ids: number[] = [];
+    for (let i = 0; i < run.Properties.length; i += 2) ids.push(Number(run.Properties[i]));
+    expect(ids).toEqual([...ids].sort((a, b) => a - b));
+  });
+
+  test('sets font color as both the display string and its BGR-integer mirror', () => {
+    // Red FF0000 → "@FF0000,," and BGR int 255 (matches the captured SetFontColor write).
+    const { run } = revisionOf(buildRunFormatBody(target(), { colorHex: 'FF0000' }, GUID, HEAD));
+    expect(propValue(run.Properties, 469780760)).toBe('@FF0000,,');
+    expect(propValue(run.Properties, 335551500)).toBe('255');
+  });
+
+  test('BGR mirror packs blue and green into the high bytes', () => {
+    // 00FF80 → r=0,g=255,b=128 → (128<<16)|(255<<8)|0 = 8454144+65280 = 8519424
+    const { run } = revisionOf(buildRunFormatBody(target(), { colorHex: '00FF80' }, GUID, HEAD));
+    expect(propValue(run.Properties, 335551500)).toBe(String((128 << 16) | (255 << 8) | 0));
+  });
+
+  test('writes the font family to all four typeface slots', () => {
+    const { run } = revisionOf(buildRunFormatBody(target(), { font: 'Georgia' }, GUID, HEAD));
+    for (const face of [469769226, 469780527, 469780528, 469780529]) {
+      expect(propValue(run.Properties, face)).toBe('Georgia');
+    }
+  });
+
+  test('sets underline as a true/false flag', () => {
+    const { run } = revisionOf(buildRunFormatBody(target(), { underline: true }, GUID, HEAD));
+    expect(propValue(run.Properties, 134224902)).toBe('true');
+  });
+
+  test('rejects an empty change set', () => {
+    expect(() => buildRunFormatBody(target(), {}, GUID, HEAD)).toThrow(FrameBridgeValidationError);
+  });
+
+  test('set_font_size remains a size-only special case of the general builder', () => {
+    const viaWrapper = buildSetFontSizeBody(target(), 48, GUID, HEAD);
+    const viaGeneral = buildRunFormatBody(target(), { sizeHalfPt: 48 }, GUID, HEAD);
+    expect(viaWrapper).toEqual(viaGeneral);
   });
 });

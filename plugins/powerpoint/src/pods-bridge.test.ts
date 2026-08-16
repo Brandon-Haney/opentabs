@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { PODS_GUID_TOKEN, PODS_HEAD_TOKEN, podsSetFontSize, podsWrite } from './pods-bridge.js';
+import { PODS_GUID_TOKEN, PODS_HEAD_TOKEN, podsFormatText, podsSetFontSize, podsWrite } from './pods-bridge.js';
 
 describe('podsWrite', () => {
   const body = { Mode: 4, srs: [[3, { Revisions: [{ Id: `${PODS_GUID_TOKEN}|2`, BaseId: PODS_HEAD_TOKEN }] }]] };
@@ -40,7 +40,8 @@ describe('podsSetFontSize', () => {
       headSentinel: '__otb_pods_head__',
       text: 'Workstream',
       sizePt: 24,
-      openEarlyPostdata: '{"Mode":4,"srs":[[1,{"SlideID":"0#0#Slide","OperationId":1}]]}',
+      modelReadBody:
+        '{"Mode":4,"srs":[[2,{"OperationId":1,"DependentOn":0,"ExpectedLatestRevisionId":"00000000-0000-0000-0000-000000000000|0","SlideId":null,"Sequence":0,"LocalRenderingParams":null}]]}',
       guidToken: PODS_GUID_TOKEN,
       headToken: PODS_HEAD_TOKEN,
     });
@@ -52,5 +53,34 @@ describe('podsSetFontSize', () => {
     };
     expect(directive.__podsSetFontSize.text).toBe('04/29 - PILOT GO -- NO GO');
     expect(directive.__podsSetFontSize.sizePt).toBe(10.5);
+  });
+});
+
+describe('podsFormatText', () => {
+  test('builds a __podsFormatText directive with only the requested changes present', () => {
+    const directive = podsFormatText('Workstream', { bold: true, italic: false }) as unknown as {
+      __podsFormatText: Record<string, unknown>;
+    };
+    expect(directive.__podsFormatText).toEqual({
+      frameUrlIncludes: 'powerpoint.officeapps.live.com',
+      donorGlobal: '__otbPptPodsDonor',
+      headSentinel: '__otb_pods_head__',
+      text: 'Workstream',
+      bold: true,
+      italic: false,
+      modelReadBody:
+        '{"Mode":4,"srs":[[2,{"OperationId":1,"DependentOn":0,"ExpectedLatestRevisionId":"00000000-0000-0000-0000-000000000000|0","SlideId":null,"Sequence":0,"LocalRenderingParams":null}]]}',
+      guidToken: PODS_GUID_TOKEN,
+      headToken: PODS_HEAD_TOKEN,
+    });
+  });
+
+  test('omits change keys that were not requested', () => {
+    const directive = podsFormatText('Title', { sizePt: 28 }) as unknown as {
+      __podsFormatText: Record<string, unknown>;
+    };
+    expect(directive.__podsFormatText.sizePt).toBe(28);
+    expect('bold' in directive.__podsFormatText).toBe(false);
+    expect('italic' in directive.__podsFormatText).toBe(false);
   });
 });

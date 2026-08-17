@@ -280,6 +280,25 @@ export const podsFormatText = (
     ...(changes.font !== undefined ? { font: changes.font } : {}),
   });
 
+/** What the agent receives after the `align_text` engine runs. */
+export const podsAlignTextOutputSchema = z.object({
+  ...podsActionResultShape,
+  text: z.string().describe('The paragraph text that was aligned.'),
+  paragraphId: z.string().describe('The object id of the paragraph that was rewritten.'),
+  alignment: z.string().describe('The alignment that was written.'),
+  alignmentBefore: z
+    .string()
+    .nullable()
+    .describe('The explicit alignment before the change, null when the paragraph inherited it.'),
+});
+
+/**
+ * Build the `align_text` action directive: set the horizontal alignment of the
+ * paragraph whose visible text is `text`, live in the open deck.
+ */
+export const podsAlignText = (text: string, alignment: string): z.infer<typeof podsAlignTextOutputSchema> =>
+  podsAction('align_text', { text, alignment });
+
 /** What the agent receives after the `set_text` engine runs. */
 export const podsSetTextOutputSchema = z.object({
   ...podsActionResultShape,

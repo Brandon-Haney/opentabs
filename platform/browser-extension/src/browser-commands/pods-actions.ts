@@ -18,6 +18,7 @@
 
 import { FrameBridgeValidationError } from './frame-bridge-rpc.js';
 import { addSlideAction } from './pods-action-add-slide.js';
+import { alignTextAction } from './pods-action-align-text.js';
 import { deleteSlideAction } from './pods-action-delete-slide.js';
 import { moveSlideAction } from './pods-action-move-slide.js';
 import { readOutlineAction } from './pods-action-read-outline.js';
@@ -107,6 +108,7 @@ export interface PodsReadActionSpec<TArgs> {
 const PODS_ACTIONS: Record<string, PodsWriteActionSpec<unknown, unknown> | PodsReadActionSpec<unknown>> = {
   set_font_size: setFontSizeAction,
   format_text: formatTextAction,
+  align_text: alignTextAction,
   set_text: setTextAction,
   add_slide: addSlideAction,
   delete_slide: deleteSlideAction,

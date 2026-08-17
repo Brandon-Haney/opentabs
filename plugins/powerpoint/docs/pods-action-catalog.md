@@ -39,7 +39,7 @@ harder build (rewrites the object graph) · · captured, not yet analysed.
 ## Paragraph formatting (paragraph `393230`)
 | Action | Build | Wire |
 | --- | --- | --- |
-| `CenterTextJustify` / `RightTextJustify` / `LeftTextJustify` | ◑ | paragraph `335551550` + `335551620` (1=left, 2=center, 3=right, 4=justify). Paragraph-only — no new run, run-ref unchanged. Smallest write (~1.5 KB). |
+| `CenterTextJustify` / `RightTextJustify` / `LeftTextJustify` | ✅ (`align_text`) | paragraph `335551550` + `335551620` (1=left, 2=center, 3=right, 4=justify), both set to the code. Paragraph-only — no new run, run-ref unchanged; smallest write (~1.5 KB). Live-verified 2026-08-17 with a center→right→center round trip (the revert's before-state read back the intermediate value, proving application). |
 | `PandoraLineSpacing` | ◑ | paragraph line-spacing props (~1.4 KB). **Line spacing IS live-writable** — earlier "not supported" was the Graph limitation, not pods. |
 | `ToggleBulletsList` | ◑ | paragraph + `393229`/`393234` list objects |
 | `ToggleNumberedList` | ◑ | paragraph + numbering objects |

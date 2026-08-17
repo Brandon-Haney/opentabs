@@ -2,6 +2,7 @@ import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import { isAuthenticated, isPowerPointTab, isSharePoint, waitForAuth } from './powerpoint-api.js';
 import { addImage } from './tools/add-image.js';
+import { alignText } from './tools/align-text.js';
 import { addShape } from './tools/add-shape.js';
 import { addSlide } from './tools/add-slide.js';
 import { addSlideLive } from './tools/add-slide-live.js';
@@ -98,6 +99,7 @@ class PowerPointPlugin extends OpenTabsPlugin {
     setText,
     setFontSize,
     formatText,
+    alignText,
     addSlideLive,
     deleteSlideLive,
     moveSlideLive,

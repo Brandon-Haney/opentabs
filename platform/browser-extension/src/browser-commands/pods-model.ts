@@ -45,6 +45,15 @@ export interface PodsModel {
   objects: PodsObject[];
   /** Objects in the live model before the class filter. */
   totalObjects: number;
+  /**
+   * The co-authoring head as the model response reported it (`LatestRevisionId`).
+   * A model read always reflects the CURRENT server stream — including this
+   * engine's own preceding write — so this head stays fresh even when the
+   * editor's poll-fed head sentinel is frozen (a solo, idle editor stops
+   * polling, and a write based on a head the engine's own previous write
+   * superseded is accepted-then-dropped). Absent when the response carried none.
+   */
+  latestRevisionId?: string;
 }
 
 /** Well-known pods ClassIds. */
@@ -138,7 +147,9 @@ export interface ReadPodsModelParams {
 }
 
 /** In-frame result of the model read. */
-type InFrameModelResult = { error: string } | { objects: PodsObject[]; totalObjects: number };
+type InFrameModelResult =
+  | { error: string }
+  | { objects: PodsObject[]; totalObjects: number; latestRevisionId?: string };
 
 /**
  * Locate the editor frame that holds the donor.
@@ -275,6 +286,9 @@ export const readPodsModel = async (params: ReadPodsModelParams): Promise<PodsMo
         string,
         { classId: number; objectId: string; properties: (string | number)[]; cellId?: string }
       >();
+      // The response's reported co-authoring head. Captured during the same walk;
+      // when several nodes carry one, the LAST in document order wins (newest).
+      let latestRevisionId: string | undefined;
       const walk = (node: unknown, cellId: string | undefined): void => {
         if (Array.isArray(node)) {
           for (const child of node) walk(child, cellId);
@@ -282,6 +296,9 @@ export const readPodsModel = async (params: ReadPodsModelParams): Promise<PodsMo
         }
         if (node && typeof node === 'object') {
           const obj = node as Record<string, unknown>;
+          if (typeof obj.LatestRevisionId === 'string' && obj.LatestRevisionId.includes('|')) {
+            latestRevisionId = obj.LatestRevisionId;
+          }
           const nextCellId =
             typeof obj.CellId === 'string' && obj.CellId.length > 0 && Array.isArray(obj.ObjectGroups)
               ? obj.CellId
@@ -301,7 +318,11 @@ export const readPodsModel = async (params: ReadPodsModelParams): Promise<PodsMo
 
       const keepSet = new Set(keep);
       const objects = [...byId.values()].filter(o => keepSet.has(o.classId));
-      return { objects, totalObjects: byId.size };
+      return {
+        objects,
+        totalObjects: byId.size,
+        ...(latestRevisionId !== undefined ? { latestRevisionId } : {}),
+      };
     },
     args: [
       params.donorGlobal,
@@ -315,5 +336,9 @@ export const readPodsModel = async (params: ReadPodsModelParams): Promise<PodsMo
   const result = results[0]?.result as InFrameModelResult | undefined;
   if (!result) throw new FrameBridgeValidationError(`Live-model read returned no result for tab ${params.tabId}.`);
   if ('error' in result) throw new FrameBridgeValidationError(result.error);
-  return { objects: result.objects, totalObjects: result.totalObjects };
+  return {
+    objects: result.objects,
+    totalObjects: result.totalObjects,
+    ...(result.latestRevisionId !== undefined ? { latestRevisionId: result.latestRevisionId } : {}),
+  };
 };

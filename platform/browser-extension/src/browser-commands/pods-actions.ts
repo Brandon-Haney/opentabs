@@ -190,14 +190,22 @@ export const runPodsAction = async (
   }
 
   const args = spec.parseArgs(params.args);
-  const readModel = (): Promise<PodsModel> =>
-    readPodsModel({
+  // Every model read refreshes this snapshot, so the head the write is based on
+  // always comes from the most recent look at the live stream — which includes
+  // this engine's own previous write, unlike the poll-fed sentinel, which a solo
+  // idle editor freezes (turning back-to-back writes into accepted-then-dropped
+  // no-ops until the deck tab was reloaded).
+  let lastModel: PodsModel | undefined;
+  const readModel = async (): Promise<PodsModel> => {
+    lastModel = await readPodsModel({
       tabId: params.tabId,
       frameUrlIncludes: params.frameUrlIncludes,
       donorGlobal: params.donorGlobal,
       modelReadBody: params.modelReadBody,
       classFilter: spec.classFilter,
     });
+    return lastModel;
+  };
 
   const model = await readModel();
   if (spec.kind === 'read') {
@@ -240,6 +248,7 @@ export const runPodsAction = async (
       body: async () => spec.build(await nextCtx(), args, mint),
       guidToken,
       headToken,
+      headSource: async () => lastModel?.latestRevisionId ?? null,
     },
     {
       readState: readModel,

@@ -364,6 +364,10 @@ export const podsReadOutlineOutputSchema = z.object({
   shapes: z.array(z.string()).describe('Shape names in the live model (e.g. "Title 1").'),
   shapeTotal: z.number().int().describe('Shapes in the live model before capping.'),
   totalObjects: z.number().int().describe('Objects in the live model before class filtering.'),
+  latestRevisionId: z
+    .string()
+    .optional()
+    .describe('The co-authoring head the model response reported, when present.'),
 });
 
 /** Build the `read_outline` action directive: the live deck reduced to text, formatting, and structure. */

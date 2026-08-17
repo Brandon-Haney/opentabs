@@ -122,6 +122,15 @@ describe('runPodsAction', () => {
     expect(confirmation.idempotent).toBe(false);
   });
 
+  it('supplies the model-reported head as the bridge headSource, so a frozen sentinel is never load-bearing', async () => {
+    mockRead.mockResolvedValue({ ...model(), latestRevisionId: 'model-head|7' });
+    mockWrite.mockResolvedValue(acceptedResult());
+    await runPodsAction({ ...baseParams, action: 'delete_slide', args: { slideIndex: 1 } });
+    const bridgeParams = mockWrite.mock.calls[0]?.[0] as { headSource?: () => Promise<string | null> };
+    expect(bridgeParams.headSource).toBeTypeOf('function');
+    await expect(bridgeParams.headSource?.()).resolves.toBe('model-head|7');
+  });
+
   it('invalid args are rejected by the action own parser before any read', async () => {
     await expect(runPodsAction({ ...baseParams, action: 'delete_slide', args: { slideIndex: 0 } })).rejects.toThrow(
       FrameBridgeValidationError,

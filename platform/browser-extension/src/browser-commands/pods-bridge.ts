@@ -105,6 +105,17 @@ export interface PodsBridgeParams {
   guidToken?: string;
   /** Token standing in for the read head (default {@link DEFAULT_HEAD_TOKEN}). */
   headToken?: string;
+  /**
+   * Preferred source for the current co-authoring head, consulted before the
+   * in-frame sentinel on every attempt. The sentinel is fed by the editor's own
+   * polls, and a solo idle editor stops polling — freezing the sentinel at a head
+   * this engine's own previous write has already superseded, which turns the next
+   * write into an accepted-then-dropped no-op. A caller that reads the live model
+   * anyway (the action engine does, before every attempt) can supply the head the
+   * model response reported instead, which always reflects the current stream.
+   * A `null`/empty result falls back to the sentinel.
+   */
+  headSource?: () => Promise<string | null>;
 }
 
 /** Result of a pods write. `failure` is set (and raised to a dispatch error) when the write did not apply. */
@@ -184,12 +195,17 @@ export const substituteIdentity = (
 ): string => bodyJson.split(guidToken).join(guid).split(headToken).join(head);
 
 /**
- * Read the current co-authoring head from the editor's in-frame sentinel. Tagged
- * with `donorGlobal` so it targets the exact frame that holds the live session (a
- * nested Office editor has sibling frames on the same host) and fails fast with a
- * clear message when no session is present.
+ * Read the current co-authoring head: the caller's {@link PodsBridgeParams.headSource}
+ * when it yields one, else the editor's in-frame sentinel. The sentinel read is
+ * tagged with `donorGlobal` so it targets the exact frame that holds the live
+ * session (a nested Office editor has sibling frames on the same host) and fails
+ * fast with a clear message when no session is present.
  */
 const readHead = async (params: PodsBridgeParams): Promise<string> => {
+  if (params.headSource) {
+    const sourced = await params.headSource();
+    if (typeof sourced === 'string' && sourced.length > 0) return sourced;
+  }
   const url = `https://opentabs.invalid/${params.headSentinel}`;
   const res = await fetchInFrame(params.tabId, params.frameUrlIncludes, {
     headers: {},

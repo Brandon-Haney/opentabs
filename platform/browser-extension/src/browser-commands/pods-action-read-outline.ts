@@ -110,6 +110,7 @@ export const reduceOutline = (model: PodsModel): Record<string, unknown> => {
     shapes: allShapes.slice(0, MAX_SHAPES),
     shapeTotal: allShapes.length,
     totalObjects: model.totalObjects,
+    ...(model.latestRevisionId !== undefined ? { latestRevisionId: model.latestRevisionId } : {}),
   };
 };
 

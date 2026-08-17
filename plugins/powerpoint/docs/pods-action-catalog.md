@@ -43,8 +43,8 @@ harder build (rewrites the object graph) · · captured, not yet analysed.
 ## Text content
 | Action | Build | Wire |
 | --- | --- | --- |
-| `Typing` | ○ | paragraph `393230` text `469769250` + run structure. Text-length changes affect run char ranges. |
-| `BackspaceCharacter` | ○ | inverse of typing |
+| `Typing` | ✅ (`set_text`) | Far simpler than feared: an action descriptor (3-prop form, no ActionId json) plus the paragraph `393230` resubmitted with its FULL property list, text `469769250` carrying the paragraph's entire new text, properties sorted ascending. NO run object is written — the run-refs (`603987475`, end-mark `536886591`) keep pointing at the existing runs, which keep supplying the formatting. The flag props (`134236461/462/479`) and `469780757` `{"Lines":[…]}` are ordinary paragraph properties present in the read model, copied verbatim. Proven live 2026-08-16 (set + revert, both `applied:true`, survived a session reload). Single-run paragraphs only; multi-run needs per-range bookkeeping the capture does not exercise. Sequence 37. |
+| `BackspaceCharacter` | superseded | inverse of typing — subsumed by the `Typing`/`set_text` whole-text replacement |
 
 ## Shapes / text boxes (shape `1074135132`)
 | Action | Build | Wire |

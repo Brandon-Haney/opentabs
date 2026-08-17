@@ -280,6 +280,25 @@ export const podsFormatText = (
     ...(changes.font !== undefined ? { font: changes.font } : {}),
   });
 
+/** What the agent receives after the `set_text` engine runs. */
+export const podsSetTextOutputSchema = z.object({
+  ...podsActionResultShape,
+  text: z.string().describe('The paragraph text that was replaced.'),
+  newText: z.string().describe('The replacement text that was written.'),
+  paragraphId: z.string().describe('The object id of the paragraph that was rewritten.'),
+  runId: z.string().optional().describe('The run that keeps supplying the formatting.'),
+  dryRun: z.boolean().optional().describe('True when this was a dry run (constructed but not written).'),
+  body: z.unknown().optional().describe('The constructed revision (dry run only), for inspection.'),
+});
+
+/**
+ * Build the `set_text` action directive: replace the text of the paragraph whose
+ * current visible text is `text` with `newText`, live in the open deck. The
+ * paragraph keeps its formatting — the write rewrites the text, not the runs.
+ */
+export const podsSetText = (text: string, newText: string, dryRun = false): z.infer<typeof podsSetTextOutputSchema> =>
+  podsAction('set_text', { text, newText }, dryRun);
+
 /** What the agent receives after the `add_slide` engine runs (write result, or a dry-run body). */
 export const podsAddSlideOutputSchema = z.object({
   ...podsActionResultShape,

@@ -21,6 +21,7 @@ import { addSlideAction } from './pods-action-add-slide.js';
 import { deleteSlideAction } from './pods-action-delete-slide.js';
 import { readOutlineAction } from './pods-action-read-outline.js';
 import { formatTextAction, setFontSizeAction } from './pods-action-run-format.js';
+import { setTextAction } from './pods-action-set-text.js';
 import { freshAfterFirst, type PodsBridgeResult, runPodsWriteConfirmed } from './pods-bridge.js';
 import { type PodsModel, readPodsModel } from './pods-model.js';
 
@@ -103,6 +104,7 @@ export interface PodsReadActionSpec<TArgs> {
 const PODS_ACTIONS: Record<string, PodsWriteActionSpec<unknown, unknown> | PodsReadActionSpec<unknown>> = {
   set_font_size: setFontSizeAction,
   format_text: formatTextAction,
+  set_text: setTextAction,
   add_slide: addSlideAction,
   delete_slide: deleteSlideAction,
   read_outline: readOutlineAction,

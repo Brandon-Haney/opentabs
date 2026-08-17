@@ -13,8 +13,20 @@ live-model read and declarative target resolution, plus `get_live_outline`
 (live reads) and `open_in_editor` (the closed-deck enabler) — adversarially
 reviewed and live-verified on the test deck (outline read; a format write
 set-and-reverted, with the accepted-but-dropped head-freeze failure correctly
-caught by confirmation and recovered via tab reload). Next: M2, the `set_text`
-edit-scope decode.
+caught by confirmation and recovered via tab reload). **M2 (`set_text`) is also
+complete**: the Typing decode collapsed — the editor's own write is just the
+paragraph resubmitted with its full property list and the new text in
+`469769250`, no run object at all — and `set_text` shipped as a v2 action,
+live-proven with a set-and-revert on the test deck (single-run paragraphs,
+single-line text; multi-run and paragraph-split are the remaining text scope).
+Next: M3, formatting completion.
+
+An engine-hardening item M1/M2's live runs surfaced: a second write issued
+seconds after a confirmed first write on an idle editor rides a frozen head and
+is accepted-then-dropped (caught by confirmation every time, recovered by a
+deck-tab reload). The engine should learn a write cooldown — wait for the head
+sentinel to advance past its own last write before POSTing the next — so
+back-to-back edits stop needing the reload recovery.
 
 ## Product decisions (locked 2026-08-16)
 

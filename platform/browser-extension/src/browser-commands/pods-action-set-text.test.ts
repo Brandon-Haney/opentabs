@@ -115,7 +115,7 @@ describe('buildSetTextBody', () => {
     expect(action.Properties).toEqual([134236193, 'true', 335562934, '1', 469780989, 'Typing']);
   });
 
-  test('a multi-run paragraph is rejected rather than mangled', () => {
+  test('a multi-run paragraph is rejected — a constructed run collapse crashes the live editor client', () => {
     const multi = target();
     multi.textRuns.push({
       ref: '{other}{1}',
@@ -126,6 +126,12 @@ describe('buildSetTextBody', () => {
       italic: null,
     });
     expect(() => buildSetTextBody(multi, 'Replaced', GUID, HEAD)).toThrow(FrameBridgeValidationError);
+  });
+
+  test('a paragraph with no resolvable runs is rejected — it is not editable text', () => {
+    const bare = target();
+    bare.textRuns = [];
+    expect(() => buildSetTextBody(bare, 'Replaced', GUID, HEAD)).toThrow(FrameBridgeValidationError);
   });
 });
 

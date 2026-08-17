@@ -37,9 +37,16 @@ export interface SetTextArgs {
  * Pure and deterministic for unit testing. The paragraph is resubmitted with
  * every property copied verbatim except the text, then sorted ascending by id —
  * matching the editor's own Typing write, whose paragraph carries the full
- * current property list with the new text in `469769250`. The run references
- * (`603987475`, and the end-mark `536886591`) are among the verbatim copies, so
- * the existing run keeps supplying the formatting.
+ * current property list with the new text in `469769250`.
+ *
+ * Strictly single-run: the run references are copied verbatim, so the existing
+ * run keeps supplying the formatting. A multi-run paragraph is REJECTED, not
+ * collapsed — collapsing the run-ref list to one run was tried live and the
+ * server ACCEPTED it, but the open editor client crashed on its in-memory model
+ * disagreeing ("Sorry, we ran into a problem"), and the crashed session's
+ * unsaved revisions were then discarded on reload. A write that can destabilize
+ * a co-author's editor is disqualified outright; multi-run replacement waits for
+ * a capture of the editor's own select-all-and-retype revision.
  */
 export const buildSetTextBody = (
   target: ResolvedTarget,
@@ -51,7 +58,7 @@ export const buildSetTextBody = (
   if (!run || extraRuns.length > 0) {
     throw new FrameBridgeValidationError(
       `set_text replaces single-run text; "${target.paragraphId}" has ${target.textRuns.length} formatting runs. ` +
-        'Replacing multi-run text is not supported yet.',
+        'Replacing multi-run text is not supported: a constructed run collapse crashes the live editor client.',
     );
   }
 

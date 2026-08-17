@@ -15,13 +15,13 @@ harder build (rewrites the object graph) · · captured, not yet analysed.
 | `NewSlideWithoutDialog` | 35,582 | ○ | New slide with placeholders inlined (`131073`×21). |
 | `DuplicateSlide` | 471,791 | ○ | Inlines the whole source slide object graph. Big. |
 | `DeleteSlide` | 2,285 | ✅ (`delete_slide_live`) | Rewrites the presentation root minus the removed slide ref. Live-verified. |
-| `MoveSlideById` | ~9,000 | ◑ BUILD NEXT | **Slide reorder — captured live 2026-08-16.** Same mechanism as add/delete: resubmit the root `393271` with the ordered slide list `603986975` REORDERED. NO `134236525` modified flag (like add, unlike delete). The root carries several parallel ref lists (`603986975` order, `603998444` children, `603995377`/`603998458` single refs) — verify at build whether reordering only `603986975` suffices or the parallels must move too. Buildable on the existing structural engine, no new decode. Single revision, Sequence 28. Exemplar: `scratchpad/actions/MoveSlideById_editor_capture.md`. |
+| `MoveSlideById` | ~9,000 | ✅ (`move_slide_live`) | **Slide reorder.** Same mechanism as add/delete: resubmit the root `393271` with the ordered slide list `603986975` REORDERED. NO `134236525` modified flag (like add, unlike delete). Live-verified 2026-08-17: reordering ONLY `603986975` suffices — the parallel ref lists (`603998444` children, `603995377`/`603998458` single refs) are copied verbatim and the server reconciles them. Exemplar: `scratchpad/actions/MoveSlideById_editor_capture.md`. |
 | `ChangeLayout` | ~9,877 | ○ | Reassigns a slide's layout. |
 
 ## Slide-level formatting (slide `393227`)
 | Action | Build | Wire |
 | --- | --- | --- |
-| `FormatBackgroundSolidFill` | ◑ | **Slide background color — captured live 2026-08-16.** Resubmit the target SLIDE object (`393227`) with `469780561` = `"#RRGGBB,,,"` + `469780621` structured json (`{RGBColor, Alpha:100, ThemeColor:-1}`) + `469780963` fill-mode. The big `469780520` theme/color-scheme blob is copied verbatim (don't synthesize). Single revision, Sequence 47. Exemplar: `scratchpad/actions/FormatBackgroundSolidFill_editor_capture.md`. |
+| `FormatBackgroundSolidFill` | ✅ (`set_slide_background`) | **Slide background color.** Resubmit the target SLIDE object (`393227`) with `469780561` = `"#RRGGBB,,,"` + `469780621` structured json (`{RGBColor, Alpha:100, ThemeColor:-1}`) + `469780560` = `""` + `469780963` fill-mode, in the SLIDE's own cell. The big `469780520` theme/color-scheme blob is copied verbatim (don't synthesize). Live-verified 2026-08-17. Exemplar: `scratchpad/actions/FormatBackgroundSolidFill_editor_capture.md`. |
 
 ## Character formatting (run `1179725` — extends `format_text`)
 | Action | Build | Wire |
@@ -71,6 +71,27 @@ harder build (rewrites the object graph) · · captured, not yet analysed.
 | `ApplyTableStyle` | ◑ | table style GUID |
 | `ApplyTableStyleOption` | ◑ | header/band toggles |
 | `PowerPointCellShadingColor` | ◑ | cell `393252` fill |
+
+## Protocol reliability (decoded live 2026-08-17)
+
+**`Sequence` is a retransmit key, not telemetry.** The service dedupes writes on `(session, Sequence)`:
+a POST repeating an earlier write's Sequence is answered `StatusCode 0` from the earlier acknowledgement
+and silently dropped — byte-identical symptom to a stale-head drop. This was THE "second write fails"
+root cause: every builder carried its capture's constant Sequence, so within one editor session the first
+write applied and every later one was treated as a retransmit. (It also explains user keystrokes vanishing
+after our writes — the editor's own counter reaching a number we had burned.) The engine now mints a
+unique per-write Sequence (floor 100,000 — far above the editor's own counter, so the two ranges can never
+collide), fresh per conflict retry. Verified live: seven consecutive structural+format writes, zero drops,
+zero reloads. Builders keep their captured constants for exemplar fidelity; the engine overrides them.
+
+**The revision stream compacts mid-session.** After enough revisions the service checkpoints the document
+and discards history; from then on the type-2 zero-base model read is refused with `StatusCode 124` /
+`ServerError 157` and an EMPTY `RevisionList` (same 157 code as a stale write base — distinguish by the
+empty list on a read). Nothing in the old session can serve full-state reads again. Incremental polls
+still work, which is why the editor itself is unaffected. Recovery (automated in the action engine):
+reload the deck tab, wait for the fresh co-authoring session, re-read — a fresh session's load
+establishes a new readable base. Safe mid-co-authoring: every accepted revision is already persisted
+(the checkpoint IS a save).
 
 ## The recurring pattern
 Almost every "modify existing text/shape" action is the proven `SetFontSize` shape: resolve the target

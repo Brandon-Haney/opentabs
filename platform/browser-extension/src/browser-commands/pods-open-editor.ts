@@ -96,6 +96,42 @@ const probeEditorSession = async (tabId: number, frameUrlIncludes: string, donor
   }
 };
 
+/** How long to wait for the editor session to return after a recovery reload. */
+const RELOAD_WAIT_MS = 60_000;
+
+/**
+ * Reload the deck tab and wait for a fresh co-authoring session.
+ *
+ * The recovery for a compacted revision stream: once the server checkpoints and
+ * discards history, no read in the old session can reconstruct full state — but
+ * a fresh session's load establishes a new base that zero-base reads resolve
+ * against. Reloading mid-co-authoring is safe: every accepted revision is
+ * already persisted server-side, so nothing is lost but the view position.
+ *
+ * The first probe is delayed one interval so the navigation has torn the old
+ * frame down — probing too early can see the OLD session's donor and report
+ * ready against a frame that is about to die.
+ */
+export const reloadEditorSession = async (
+  tabId: number,
+  frameUrlIncludes: string,
+  donorGlobal: string,
+  waitMs: number = RELOAD_WAIT_MS,
+): Promise<void> => {
+  await chrome.tabs.reload(tabId);
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    await delay(PROBE_INTERVAL_MS);
+    if (await probeEditorSession(tabId, frameUrlIncludes, donorGlobal)) return;
+    if (Date.now() >= deadline) {
+      throw new FrameBridgeValidationError(
+        `The editor session did not come back within ${Math.round(waitMs / 1000)}s of reloading tab ${tabId}. ` +
+          'Open and activate the deck, then retry.',
+      );
+    }
+  }
+};
+
 /** Open the deck URL in a new active tab and wait for its co-authoring session. */
 export const runPodsOpenEditor = async (params: PodsOpenEditorParams): Promise<PodsOpenEditorResult> => {
   const parsed = assertAllowedEditorUrl(params.url);

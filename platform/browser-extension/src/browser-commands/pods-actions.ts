@@ -19,11 +19,14 @@
 import { FrameBridgeValidationError } from './frame-bridge-rpc.js';
 import { addSlideAction } from './pods-action-add-slide.js';
 import { deleteSlideAction } from './pods-action-delete-slide.js';
+import { moveSlideAction } from './pods-action-move-slide.js';
 import { readOutlineAction } from './pods-action-read-outline.js';
 import { formatTextAction, setFontSizeAction } from './pods-action-run-format.js';
 import { setTextAction } from './pods-action-set-text.js';
+import { slideBackgroundAction } from './pods-action-slide-background.js';
 import { freshAfterFirst, type PodsBridgeResult, runPodsWriteConfirmed } from './pods-bridge.js';
-import { type PodsModel, readPodsModel } from './pods-model.js';
+import { type PodsModel, PodsStreamCompactedError, readPodsModel } from './pods-model.js';
+import { reloadEditorSession } from './pods-open-editor.js';
 
 /**
  * The highest `__podsAction` directive version this engine understands. A plugin
@@ -107,6 +110,8 @@ const PODS_ACTIONS: Record<string, PodsWriteActionSpec<unknown, unknown> | PodsR
   set_text: setTextAction,
   add_slide: addSlideAction,
   delete_slide: deleteSlideAction,
+  move_slide: moveSlideAction,
+  set_slide_background: slideBackgroundAction,
   read_outline: readOutlineAction,
 };
 
@@ -207,7 +212,19 @@ export const runPodsAction = async (
     return lastModel;
   };
 
-  const model = await readModel();
+  // A compacted stream (the server checkpointed and discarded revision history)
+  // makes full-state reads unanswerable for the rest of the session. A fresh
+  // session reads fine, so recover once — reload the deck tab, wait for the new
+  // co-authoring session, and re-read — instead of erroring until a human
+  // reloads by hand.
+  let model: PodsModel;
+  try {
+    model = await readModel();
+  } catch (err) {
+    if (!(err instanceof PodsStreamCompactedError)) throw err;
+    await reloadEditorSession(params.tabId, params.frameUrlIncludes, params.donorGlobal);
+    model = await readModel();
+  }
   if (spec.kind === 'read') {
     return { action: params.action, ...spec.read(model, args) };
   }
@@ -249,6 +266,7 @@ export const runPodsAction = async (
       guidToken,
       headToken,
       headSource: async () => lastModel?.latestRevisionId ?? null,
+      mintSequence: true,
     },
     {
       readState: readModel,

@@ -44,6 +44,7 @@ import { listSlideLayouts } from './tools/list-slide-layouts.js';
 import { listVersions } from './tools/list-versions.js';
 import { moveItem } from './tools/move-item.js';
 import { moveSlide } from './tools/move-slide.js';
+import { moveSlideLive } from './tools/move-slide-live.js';
 import { openInEditor } from './tools/open-in-editor.js';
 import { openPresentationTool } from './tools/open-presentation.js';
 import { reauthenticate } from './tools/reauthenticate.js';
@@ -52,6 +53,7 @@ import { searchFiles } from './tools/search-files.js';
 import { setFontSize } from './tools/set-font-size.js';
 import { setText } from './tools/set-text.js';
 import { setPlaceholderText } from './tools/set-placeholder-text.js';
+import { setSlideBackground } from './tools/set-slide-background.js';
 import { setSlideHiddenTool } from './tools/set-slide-hidden.js';
 import { updateShape } from './tools/update-shape.js';
 import { updateSlideNotes } from './tools/update-slide-notes.js';
@@ -98,6 +100,8 @@ class PowerPointPlugin extends OpenTabsPlugin {
     formatText,
     addSlideLive,
     deleteSlideLive,
+    moveSlideLive,
+    setSlideBackground,
     listSlideLayouts,
     addSlide,
     deleteSlide,

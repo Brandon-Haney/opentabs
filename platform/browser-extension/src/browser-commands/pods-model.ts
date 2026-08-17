@@ -23,6 +23,18 @@
 import { FrameBridgeValidationError } from './frame-bridge-rpc.js';
 import { BRIDGE_REPLAY_DEPTH_GLOBAL, FORBIDDEN_REPLAY_HEADERS } from './frame-fetch.js';
 
+/**
+ * The live revision stream has been compacted server-side: the service
+ * checkpointed the document and discarded the revision history, so a zero-base
+ * read now references a base that no longer exists and is refused with
+ * ServerError 157 and an empty `RevisionList`. Nothing in the OLD session can
+ * reconstruct full state after this — only a fresh editor session, whose load
+ * establishes a new readable base. Callers recover by reloading the deck tab
+ * (safe mid-co-authoring: every accepted revision is already persisted) and
+ * retrying the read.
+ */
+export class PodsStreamCompactedError extends FrameBridgeValidationError {}
+
 /** One object of the live model: a `{ClassId, ObjectId, Properties}` triple, latest-wins. */
 export interface PodsObject {
   classId: number;
@@ -148,7 +160,7 @@ export interface ReadPodsModelParams {
 
 /** In-frame result of the model read. */
 type InFrameModelResult =
-  | { error: string }
+  | { error: string; compactedStream?: boolean }
   | { objects: PodsObject[]; totalObjects: number; latestRevisionId?: string };
 
 /**
@@ -275,6 +287,22 @@ export const readPodsModel = async (params: ReadPodsModelParams): Promise<PodsMo
         return { error: `Live-model response was not JSON: ${text.slice(0, 120)}` };
       }
 
+      // A refused read carries its refusal inside an HTTP 200 payload. ServerError
+      // 157 on a zero-base read means the stream was compacted: the server
+      // checkpointed and discarded the history the read asked for.
+      const responses = (root as { Responses?: unknown }).Responses;
+      if (Array.isArray(responses) && Array.isArray(responses[0])) {
+        const entry = responses[0][1] as { StatusCode?: number; ServerError?: { Code?: number } } | undefined;
+        if (entry && typeof entry.StatusCode === 'number' && entry.StatusCode !== 0) {
+          return {
+            error:
+              `Live-model read was refused (StatusCode ${entry.StatusCode}` +
+              `${entry.ServerError?.Code !== undefined ? `, ServerError ${entry.ServerError.Code}` : ''}).`,
+            ...(entry.ServerError?.Code === 157 ? { compactedStream: true } : {}),
+          };
+        }
+      }
+
       // Walk the RevisionList in document order (oldest revision first), collecting
       // every {ClassId, ObjectId, Properties}. The same object id recurs across the
       // revisions that touched it; keeping the LAST occurrence per id (Map.set
@@ -335,7 +363,15 @@ export const readPodsModel = async (params: ReadPodsModelParams): Promise<PodsMo
 
   const result = results[0]?.result as InFrameModelResult | undefined;
   if (!result) throw new FrameBridgeValidationError(`Live-model read returned no result for tab ${params.tabId}.`);
-  if ('error' in result) throw new FrameBridgeValidationError(result.error);
+  if ('error' in result) {
+    if (result.compactedStream) {
+      throw new PodsStreamCompactedError(
+        'The live revision stream was compacted server-side, so this session can no longer serve full-state ' +
+          `reads (${result.error}). Reload the deck tab to start a fresh session, then retry.`,
+      );
+    }
+    throw new FrameBridgeValidationError(result.error);
+  }
   return {
     objects: result.objects,
     totalObjects: result.totalObjects,

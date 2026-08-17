@@ -338,6 +338,59 @@ export const podsDeleteSlideOutputSchema = z.object({
 export const podsDeleteSlide = (slideIndex: number, dryRun = false): z.infer<typeof podsDeleteSlideOutputSchema> =>
   podsAction('delete_slide', { slideIndex }, dryRun);
 
+/** What the agent receives after the `move_slide` engine runs (write result, or a dry-run body). */
+export const podsMoveSlideOutputSchema = z.object({
+  ...podsActionResultShape,
+  fromIndex: z.number().int().optional().describe('The 1-based position the slide moved from.'),
+  toIndex: z.number().int().optional().describe('The 1-based position the slide occupies after the move.'),
+  movedRef: z.string().optional().describe('The reference of the moved slide.'),
+  slideCountBefore: z.number().int().optional().describe('Slide count when the move was resolved.'),
+  dryRun: z.boolean().optional().describe('True when this was a dry run (constructed but not written).'),
+  rootObjectId: z.string().optional(),
+  slideRefs: z.array(z.string()).optional().describe('The ordered slide references, so index N can be confirmed.'),
+  body: z.unknown().optional().describe('The constructed revision (dry run only), for inspection.'),
+});
+
+/**
+ * Build the `move_slide` action directive: move the slide at 1-based position
+ * `fromIndex` so it sits at `toIndex`, live in the open deck. With `dryRun`, the
+ * engine constructs and returns the revision (plus the ordered slide references)
+ * without writing.
+ */
+export const podsMoveSlide = (
+  fromIndex: number,
+  toIndex: number,
+  dryRun = false,
+): z.infer<typeof podsMoveSlideOutputSchema> => podsAction('move_slide', { fromIndex, toIndex }, dryRun);
+
+/** What the agent receives after the `set_slide_background` engine runs (write result, or a dry-run body). */
+export const podsSetSlideBackgroundOutputSchema = z.object({
+  ...podsActionResultShape,
+  slideIndex: z.number().int().optional().describe('The 1-based position of the slide whose background changed.'),
+  slideRef: z.string().optional().describe('The reference of the target slide.'),
+  colorHex: z.string().optional().describe('The RRGGBB fill colour that was written.'),
+  colorBefore: z
+    .string()
+    .nullable()
+    .optional()
+    .describe('The fill before the change (`#RRGGBB,,,` wire form), null when none was set.'),
+  dryRun: z.boolean().optional().describe('True when this was a dry run (constructed but not written).'),
+  slideObjectId: z.string().optional(),
+  body: z.unknown().optional().describe('The constructed revision (dry run only), for inspection.'),
+});
+
+/**
+ * Build the `set_slide_background` action directive: a solid background fill on
+ * the slide at 1-based position `slideIndex`, live in the open deck. With
+ * `dryRun`, the engine constructs and returns the revision without writing.
+ */
+export const podsSetSlideBackground = (
+  slideIndex: number,
+  colorHex: string,
+  dryRun = false,
+): z.infer<typeof podsSetSlideBackgroundOutputSchema> =>
+  podsAction('set_slide_background', { slideIndex, colorHex }, dryRun);
+
 /** What the agent receives after the `read_outline` engine action runs. */
 export const podsReadOutlineOutputSchema = z.object({
   action: z.string().optional().describe('The engine action that ran.'),

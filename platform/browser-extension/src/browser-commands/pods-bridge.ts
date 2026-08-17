@@ -40,6 +40,53 @@ const DEFAULT_HEAD_TOKEN = '__OTB_PODS_HEAD__';
 const MAX_CONFLICT_RETRIES = 3;
 
 /**
+ * Where minted `Sequence` numbers start. The service treats a write repeating an
+ * earlier write's `(session, Sequence)` pair as a client retransmit: it answers
+ * `StatusCode 0` from the earlier acknowledgement and silently drops the revision
+ * (verified live 2026-08-17 — back-to-back adds with the builder's constant
+ * Sequence were accepted-then-dropped deterministically, and applied once the
+ * number was unique). The editor's own counter starts near zero and advances one
+ * per user action, so minted numbers sit far above it — colliding with the
+ * EDITOR's side of the dedupe would silently drop the user's own edit instead.
+ */
+const SEQUENCE_FLOOR = 100_000;
+/** Milliseconds per minted-sequence step, and the wrap that keeps the number a small int (~100 days). */
+const SEQUENCE_CLOCK_MS = 1000;
+const SEQUENCE_CLOCK_WRAP_MS = 8_640_000_000;
+
+let lastMintedSequence = 0;
+
+/**
+ * A per-write `Sequence` number: unique within the session, monotonic within this
+ * service worker, and re-seeded from the clock after a worker restart so numbers
+ * are not re-issued across restarts either.
+ */
+const mintPodsSequence = (): number => {
+  const clockFloor = SEQUENCE_FLOOR + Math.floor((Date.now() % SEQUENCE_CLOCK_WRAP_MS) / SEQUENCE_CLOCK_MS);
+  lastMintedSequence = Math.max(lastMintedSequence + 1, clockFloor);
+  return lastMintedSequence;
+};
+
+/**
+ * The body with every type-3 (write) request's `Sequence` replaced by a minted
+ * per-write number. Builders carry the captured constant for byte-fidelity with
+ * their exemplars; the engine owns uniqueness, exactly as it owns the GUID and
+ * head. Non-write entries and malformed shapes pass through untouched.
+ */
+const withMintedSequence = (body: Record<string, unknown>, sequence: number): Record<string, unknown> => {
+  const srs = body.srs;
+  if (!Array.isArray(srs)) return body;
+  return {
+    ...body,
+    srs: srs.map(entry =>
+      Array.isArray(entry) && entry[0] === 3 && entry[1] !== null && typeof entry[1] === 'object'
+        ? [entry[0], { ...(entry[1] as Record<string, unknown>), Sequence: sequence }]
+        : entry,
+    ),
+  };
+};
+
+/**
  * Sort a flat `[id, value, …]` pods property list ascending by id, preserving each
  * pair. The editor writes every object's properties sorted this way; a model-read
  * snapshot returns them unordered, so a constructed write must re-sort to match —
@@ -116,6 +163,14 @@ export interface PodsBridgeParams {
    * A `null`/empty result falls back to the sentinel.
    */
   headSource?: () => Promise<string | null>;
+  /**
+   * Replace each write request's `Sequence` with a minted per-write number. The
+   * service dedupes on `(session, Sequence)` — a repeat is acknowledged with
+   * `StatusCode 0` and silently dropped as a presumed retransmit — so every
+   * engine-built write sets this. The raw directive path leaves it off: its
+   * callers supply bodies verbatim for byte-precise decode work.
+   */
+  mintSequence?: boolean;
 }
 
 /** Result of a pods write. `failure` is set (and raised to a dispatch error) when the write did not apply. */
@@ -240,7 +295,11 @@ export const runPodsBridge = async (params: PodsBridgeParams): Promise<PodsBridg
 
   let result: PodsBridgeResult | undefined;
   for (let attempt = 0; attempt <= MAX_CONFLICT_RETRIES; attempt++) {
-    const bodyJson = JSON.stringify(typeof params.body === 'function' ? await params.body() : params.body);
+    const derived = typeof params.body === 'function' ? await params.body() : params.body;
+    // A fresh number per attempt: a conflict retry is a NEW revision (fresh guid,
+    // fresh base), so presenting it under the previous attempt's number would
+    // make the service drop it as a retransmit.
+    const bodyJson = JSON.stringify(params.mintSequence ? withMintedSequence(derived, mintPodsSequence()) : derived);
     const head = await readHead(params);
     const guid = crypto.randomUUID();
     const finalBody = substituteIdentity(bodyJson, guidToken, guid, headToken, head);

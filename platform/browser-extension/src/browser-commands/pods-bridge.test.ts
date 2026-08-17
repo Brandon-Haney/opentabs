@@ -290,6 +290,70 @@ describe('runPodsWriteConfirmed', () => {
   });
 });
 
+describe('sequence minting', () => {
+  const writeBody = () => ({
+    Mode: 4,
+    srs: [
+      [2, { Sequence: 0 }],
+      [3, { Revisions: [], Sequence: 24 }],
+    ],
+  });
+  const sentSequences = (postBodies: string[]): number[] =>
+    postBodies.map(raw => {
+      const srs = (JSON.parse(raw) as { srs: [number, { Sequence: number }][] }).srs;
+      const write = srs.find(entry => entry[0] === 3);
+      if (!write) throw new Error('no write entry');
+      return write[1].Sequence;
+    });
+
+  test('mintSequence replaces the write Sequence with a unique number per write, leaving reads alone', async () => {
+    const { postBodies } = wire('h|1', [podsBody({ StatusCode: 0 })]);
+    await runPodsBridge({ ...params(writeBody()), mintSequence: true });
+    await runPodsBridge({ ...params(writeBody()), mintSequence: true });
+
+    const [first, second] = sentSequences(postBodies);
+    // The service dedupes on (session, Sequence): a repeated number is ACKed with
+    // StatusCode 0 and silently dropped as a retransmit, so uniqueness is the point.
+    expect(first).not.toBe(24);
+    expect(second).not.toBe(24);
+    expect(first).toBeGreaterThanOrEqual(100_000);
+    expect(second).not.toBe(first);
+    // The type-2 read entry keeps its own Sequence untouched.
+    const reads = postBodies.map(raw => (JSON.parse(raw) as { srs: [number, { Sequence: number }][] }).srs[0]?.[1]);
+    expect(reads.every(entry => entry?.Sequence === 0)).toBe(true);
+  });
+
+  test('a conflict retry gets its own fresh Sequence — a retry is a new revision, not a retransmit', async () => {
+    let head = 'head-a|1';
+    const postBodies: string[] = [];
+    fetchInFrame.mockImplementation(async (_t: number, _f: string, request: { url?: string; body?: string }) => {
+      if (request.url?.includes('__otb_pods_head__'))
+        return { frameId: 7, status: 200, ok: true, body: JSON.stringify({ head }) };
+      postBodies.push(request.body ?? '');
+      const conflicted = head === 'head-a|1';
+      head = 'head-b|1';
+      return {
+        frameId: 7,
+        status: 200,
+        ok: true,
+        body: podsBody({ StatusCode: conflicted ? 124 : 0, IsConflict: conflicted }),
+      };
+    });
+
+    const result = await runPodsBridge({ ...params(writeBody()), mintSequence: true });
+
+    expect(result.failure).toBeUndefined();
+    const [first, second] = sentSequences(postBodies);
+    expect(second).not.toBe(first);
+  });
+
+  test('without mintSequence the body is sent verbatim — the raw decode path stays byte-precise', async () => {
+    const { postBodies } = wire('h|1', [podsBody({ StatusCode: 0 })]);
+    await runPodsBridge(params(writeBody()));
+    expect(sentSequences(postBodies)).toEqual([24]);
+  });
+});
+
 describe('freshAfterFirst', () => {
   test('returns the supplied value once, then re-resolves on every later call', async () => {
     let resolved = 0;

@@ -12,10 +12,15 @@ vi.mock('./pods-bridge.js', async importOriginal => {
   const mod = await importOriginal<typeof import('./pods-bridge.js')>();
   return { ...mod, runPodsWriteConfirmed: vi.fn() };
 });
+vi.mock('./pods-open-editor.js', async importOriginal => {
+  const mod = await importOriginal<typeof import('./pods-open-editor.js')>();
+  return { ...mod, reloadEditorSession: vi.fn() };
+});
 
 const { findErrorHint, PODS_ACTION_VERSION, runPodsAction } = await import('./pods-actions.js');
 const { FrameBridgeValidationError } = await import('./frame-bridge-rpc.js');
-const { readPodsModel } = await import('./pods-model.js');
+const { PodsStreamCompactedError, readPodsModel } = await import('./pods-model.js');
+const { reloadEditorSession } = await import('./pods-open-editor.js');
 const { runPodsWriteConfirmed } = await import('./pods-bridge.js');
 
 import type { PodsBridgeResult, PodsWriteConfirmation } from './pods-bridge.js';
@@ -23,6 +28,7 @@ import type { PodsModel } from './pods-model.js';
 
 const mockRead = vi.mocked(readPodsModel);
 const mockWrite = vi.mocked(runPodsWriteConfirmed);
+const mockReload = vi.mocked(reloadEditorSession);
 
 const REF_A = '{d55934be-57c9-4c97-8e07-bf34a0bb3f76}{58}';
 const REF_B = '{d55934be-57c9-4c97-8e07-bf34a0bb3f76}{59}';
@@ -78,6 +84,7 @@ const acceptedResult = (extra?: Partial<PodsBridgeResult>): PodsBridgeResult => 
 beforeEach(() => {
   mockRead.mockReset();
   mockWrite.mockReset();
+  mockReload.mockReset();
   mockRead.mockResolvedValue(model());
 });
 
@@ -129,6 +136,32 @@ describe('runPodsAction', () => {
     const bridgeParams = mockWrite.mock.calls[0]?.[0] as { headSource?: () => Promise<string | null> };
     expect(bridgeParams.headSource).toBeTypeOf('function');
     await expect(bridgeParams.headSource?.()).resolves.toBe('model-head|7');
+  });
+
+  it('a compacted stream recovers once: reload the deck tab, then re-read and continue', async () => {
+    mockRead.mockRejectedValueOnce(new PodsStreamCompactedError('stream compacted')).mockResolvedValueOnce(model());
+    const result = await runPodsAction({ ...baseParams, action: 'read_outline', args: {} });
+    expect(result).toMatchObject({ action: 'read_outline', slideCount: 2 });
+    expect(mockReload).toHaveBeenCalledExactlyOnceWith(
+      baseParams.tabId,
+      baseParams.frameUrlIncludes,
+      baseParams.donorGlobal,
+    );
+    expect(mockRead).toHaveBeenCalledTimes(2);
+  });
+
+  it('a stream still compacted after the recovery reload surfaces the error rather than looping', async () => {
+    mockRead.mockRejectedValue(new PodsStreamCompactedError('stream compacted'));
+    await expect(runPodsAction({ ...baseParams, action: 'read_outline', args: {} })).rejects.toBeInstanceOf(
+      PodsStreamCompactedError,
+    );
+    expect(mockReload).toHaveBeenCalledTimes(1);
+  });
+
+  it('a non-compaction read failure is NOT answered with a tab reload', async () => {
+    mockRead.mockRejectedValue(new FrameBridgeValidationError('no editor frame'));
+    await expect(runPodsAction({ ...baseParams, action: 'read_outline', args: {} })).rejects.toThrow(/no editor frame/);
+    expect(mockReload).not.toHaveBeenCalled();
   });
 
   it('invalid args are rejected by the action own parser before any read', async () => {

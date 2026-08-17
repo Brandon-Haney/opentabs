@@ -21,12 +21,20 @@ live-proven with a set-and-revert on the test deck (single-run paragraphs,
 single-line text; multi-run and paragraph-split are the remaining text scope).
 Next: M3, formatting completion.
 
-An engine-hardening item M1/M2's live runs surfaced: a second write issued
-seconds after a confirmed first write on an idle editor rides a frozen head and
-is accepted-then-dropped (caught by confirmation every time, recovered by a
-deck-tab reload). The engine should learn a write cooldown — wait for the head
-sentinel to advance past its own last write before POSTing the next — so
-back-to-back edits stop needing the reload recovery.
+**SOLVED (2026-08-17): the "second write drops" failure.** The root cause was
+neither the frozen head nor client incorporation lag: the service dedupes
+writes on `(session, Sequence)`, and every builder carried its capture's
+constant Sequence — so within one session the first write applied and every
+later one was acknowledged as a presumed retransmit and silently dropped. The
+engine now mints a unique per-write Sequence (floor 100,000, above the
+editor's own counter; fresh per conflict retry), and consecutive writes apply
+reliably — verified live with seven back-to-back structural and format writes,
+zero drops. A second mid-session failure mode was decoded the same day: the
+server compacts (checkpoints) the revision stream, after which zero-base model
+reads are refused with ServerError 157 and an empty RevisionList for the rest
+of the session; the engine auto-recovers by reloading the deck tab and
+re-reading against the fresh session's base. Both are documented in
+[[pods-action-catalog.md]] under "Protocol reliability".
 
 ## Product decisions (locked 2026-08-16)
 
@@ -194,8 +202,11 @@ lands on — it is deliberately before new capability.
   smaller writes than anything shipped.
 
 **M4 — Slide structure completion.**
-- `move_slide` live — the one structural capture still missing (drag a slide in
-  the thumbnail pane; action name unknown).
+- ~~`move_slide` live~~ **SHIPPED 2026-08-17** as `move_slide_live`
+  (`MoveSlideById`, captured 2026-08-16): the root's ordered slide list
+  reordered, everything else verbatim — live-verified that the parallel ref
+  lists need no client-side maintenance. `set_slide_background`
+  (`FormatBackgroundSolidFill`) shipped the same day.
 - `duplicate_slide` live (`DuplicateSlide`, ~470 KB exemplar — large but
   captured), `change_layout` live (`ChangeLayout`), `set_slide_hidden` live
   (needs capture).
@@ -218,7 +229,10 @@ lands on — it is deliberately before new capability.
   comments read side already parses the package parts).
 - Charts, sections, transitions: captures + decode, priority on demand.
 - Batching: multiple actions in one revision envelope (the FSSHTTP envelope is
-  inherently multi-action) once multi-edit tool calls justify it.
+  inherently multi-action, and the editor's own multi-run deletes chain
+  revisions intra-POST). With the Sequence fix, consecutive single-action
+  writes are already reliable — batching is now about atomicity and round-trip
+  economy for multi-edit reviews, not reliability.
 
 **M7 — Retirement complete.** Session model deleted, `_live` suffixes dropped
 (the pods tools take the canonical names — breaking rename, all call sites are

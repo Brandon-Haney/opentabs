@@ -173,7 +173,10 @@ export const resolveRunFormatTarget = (model: PodsModel, text: string): Resolved
   }
 
   return {
-    cellId: cellIdOf(root),
+    // The TARGET's own storage cell: cells are per slide, and a revision naming
+    // the wrong cell is accepted and silently dropped. The root-derived cell is
+    // only the fallback for a model read that carried no enclosing cell ids.
+    cellId: paragraph.cellId ?? cellIdOf(root),
     actionDescId: actionDescIdOf(root),
     paragraphId: paragraph.objectId,
     paragraphProperties: paragraph.properties,

@@ -11,8 +11,9 @@ export const setText = defineTool({
     'co-authoring session, so the change appears in the open editor within seconds; it edits the deck in place ' +
     'while it is open. The `text` must match one paragraph exactly (use `get_live_outline` to see the current ' +
     'text); paragraphs with mixed formatting (multiple runs) and multi-line replacements are not supported yet. ' +
-    'Pass `dry_run: true` to construct and return the revision without writing it. The deck must be open and ' +
-    'active in the browser.',
+    'Works on text that is really on a slide — an EMPTY placeholder’s prompt text ("Click to add title") cannot ' +
+    'be filled this way; the server drops such writes. Pass `dry_run: true` to construct and return the revision ' +
+    'without writing it. The deck must be open and active in the browser.',
   summary: 'Replace slide text by its current content, keeping the formatting',
   icon: 'pencil',
   group: 'Slides',

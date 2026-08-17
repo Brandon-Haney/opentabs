@@ -29,6 +29,15 @@ export interface PodsObject {
   objectId: string;
   /** Flat `[id, value, id, value, …]` pair list, exactly as the wire carries it. */
   properties: (string | number)[];
+  /**
+   * The storage cell the object was read from — the nearest enclosing revision's
+   * `CellId`. Cells are PER SLIDE: a write must name the cell its target object
+   * lives in, or the server accepts the revision and silently drops it (verified
+   * live: writes to a freshly added slide's placeholders were dropped while the
+   * body named the first slide's cell). Absent when the response carried no
+   * enclosing cell id, in which case callers fall back to the root-derived cell.
+   */
+  cellId?: string;
 }
 
 /** The filtered live model plus honesty counts, so a partial view is never mistaken for the whole. */
@@ -259,26 +268,36 @@ export const readPodsModel = async (params: ReadPodsModelParams): Promise<PodsMo
       // every {ClassId, ObjectId, Properties}. The same object id recurs across the
       // revisions that touched it; keeping the LAST occurrence per id (Map.set
       // overwrites) rebuilds the current document latest-wins — the way the editor
-      // applies the deltas onto its base.
-      const byId = new Map<string, { classId: number; objectId: string; properties: (string | number)[] }>();
-      const walk = (node: unknown): void => {
+      // applies the deltas onto its base. Each object is tagged with the nearest
+      // enclosing revision's CellId: cells are per slide, and a write must name its
+      // target's own cell to apply.
+      const byId = new Map<
+        string,
+        { classId: number; objectId: string; properties: (string | number)[]; cellId?: string }
+      >();
+      const walk = (node: unknown, cellId: string | undefined): void => {
         if (Array.isArray(node)) {
-          for (const child of node) walk(child);
+          for (const child of node) walk(child, cellId);
           return;
         }
         if (node && typeof node === 'object') {
           const obj = node as Record<string, unknown>;
+          const nextCellId =
+            typeof obj.CellId === 'string' && obj.CellId.length > 0 && Array.isArray(obj.ObjectGroups)
+              ? obj.CellId
+              : cellId;
           if (typeof obj.ClassId === 'number' && typeof obj.ObjectId === 'string' && Array.isArray(obj.Properties)) {
             byId.set(obj.ObjectId, {
               classId: obj.ClassId,
               objectId: obj.ObjectId,
               properties: obj.Properties as (string | number)[],
+              ...(nextCellId !== undefined ? { cellId: nextCellId } : {}),
             });
           }
-          for (const value of Object.values(obj)) walk(value);
+          for (const value of Object.values(obj)) walk(value, nextCellId);
         }
       };
-      walk(root);
+      walk(root, undefined);
 
       const keepSet = new Set(keep);
       const objects = [...byId.values()].filter(o => keepSet.has(o.classId));

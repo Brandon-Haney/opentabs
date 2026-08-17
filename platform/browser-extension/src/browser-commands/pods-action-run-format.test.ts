@@ -254,6 +254,16 @@ describe('resolveRunFormatTarget', () => {
   test('an unmatched text errors with nearby-text samples', () => {
     expect(() => resolveRunFormatTarget(model(), 'Not There')).toThrow(/Workstream/);
   });
+
+  test('the target cell is the PARAGRAPH own cell when the model carries one — cells are per slide', () => {
+    const perCell = model();
+    const paragraph = perCell.objects.find(o => o.classId === 393230);
+    if (!paragraph) throw new Error('fixture paragraph missing');
+    paragraph.cellId = 'fc911c25-6600-4b0b-83e0-9cb6749138d4|3';
+    expect(resolveRunFormatTarget(perCell, 'Workstream').cellId).toBe('fc911c25-6600-4b0b-83e0-9cb6749138d4|3');
+    // Without a per-object cell, the root-derived cell remains the fallback.
+    expect(resolveRunFormatTarget(model(), 'Workstream').cellId).toBe('23069e19-9218-5ae4-9815-d8ceaade97df|3');
+  });
 });
 
 describe('action specs', () => {

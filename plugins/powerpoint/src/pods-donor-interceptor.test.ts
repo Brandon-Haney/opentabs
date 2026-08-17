@@ -5,6 +5,7 @@ import {
   PODS_DONOR_GLOBAL,
   PODS_HEAD_SENTINEL,
   PODS_LAST_WRITE_SENTINEL,
+  PODS_WRITE_LOG_SENTINEL,
   type PodsDonor,
 } from './pods-donor-interceptor.js';
 
@@ -12,6 +13,7 @@ const PODS_URL = 'https://usc-powerpoint.officeapps.live.com/pods/PowerPoint.ash
 
 const pollBody = (head: string): string => JSON.stringify({ Mode: 4, srs: [[2, { ExpectedLatestRevisionId: head }]] });
 const writeBody = JSON.stringify({ Mode: 4, srs: [[3, { Revisions: [] }]] });
+const writeN = (n: number): string => JSON.stringify({ Mode: 4, srs: [[3, { Revisions: [], marker: n }]] });
 
 interface TestGlobals {
   [PODS_DONOR_GLOBAL]?: PodsDonor;
@@ -100,6 +102,30 @@ describe('installPodsDonorInterceptor', () => {
 
     expect(g[PODS_DONOR_GLOBAL]).toMatchObject({ body: pollBody('ccc|1') });
     await expect(readSentinel(PODS_LAST_WRITE_SENTINEL)).resolves.toMatchObject({ body: writeBody });
+  });
+
+  it('the write-log sentinel returns a burst of writes newest-first, where last-write keeps only one', async () => {
+    install();
+
+    for (const n of [1, 2, 3]) await globalThis.fetch(PODS_URL, { method: 'POST', body: writeN(n) });
+
+    // Single-slot last-write: only the newest survives.
+    await expect(readSentinel(PODS_LAST_WRITE_SENTINEL)).resolves.toMatchObject({ body: writeN(3) });
+    // Write-log ring buffer: the whole burst, newest first.
+    const log = (await readSentinel(PODS_WRITE_LOG_SENTINEL)) as { body: string }[];
+    expect(log.map(w => w.body)).toEqual([writeN(3), writeN(2), writeN(1)]);
+  });
+
+  it('the write-log ring buffer is capped, dropping the oldest writes', async () => {
+    install();
+
+    // WRITE_LOG_CAP is 12; push 15 and expect the newest 12 (15..4), newest first.
+    for (let n = 1; n <= 15; n++) await globalThis.fetch(PODS_URL, { method: 'POST', body: writeN(n) });
+
+    const log = (await readSentinel(PODS_WRITE_LOG_SENTINEL)) as { body: string }[];
+    expect(log).toHaveLength(12);
+    expect(log[0]?.body).toBe(writeN(15));
+    expect(log[11]?.body).toBe(writeN(4));
   });
 
   it('captures via the XHR path and honours the replay guard there too', () => {

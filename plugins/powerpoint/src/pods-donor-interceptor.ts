@@ -46,6 +46,17 @@ export const PODS_HEAD_SENTINEL = '__otb_pods_head__';
  */
 export const PODS_LAST_WRITE_SENTINEL = '__otb_pods_lastwrite__';
 /**
+ * URL marker for the write-log read channel — the ring-buffer form of
+ * {@link PODS_LAST_WRITE_SENTINEL}. An in-frame `fetch` whose URL contains this
+ * marker is answered locally with the last {@link WRITE_LOG_CAP} type-3 (write)
+ * requests the editor issued, newest first, so a BURST of user edits can be
+ * decoded together — the single-slot last-write channel keeps only the most
+ * recent, silently losing every earlier edit in a batch.
+ */
+export const PODS_WRITE_LOG_SENTINEL = '__otb_pods_writelog__';
+/** How many recent writes the write-log ring buffer retains. */
+const WRITE_LOG_CAP = 12;
+/**
  * Depth counter `browser.fetchInFrame` raises around a replay it issues into this
  * frame. Our own replayed `/pods` POST goes through this same patched `fetch`/XHR,
  * so without this guard `stashDonor` would re-capture our replay as the freshest
@@ -122,6 +133,11 @@ export const installPodsDonorInterceptor = (log: { info(message: string): void }
   // overwrite it. Closure-scoped; surfaced only through the read sentinel below.
   let lastWrite: PodsDonor | null = null;
 
+  // A ring buffer of the last WRITE_LOG_CAP type-3 writes, newest last. A burst of
+  // user edits overwrites `lastWrite` down to one; this retains the whole burst so
+  // a decode can read them all. Surfaced only through the write-log sentinel below.
+  const writeLog: PodsDonor[] = [];
+
   /**
    * A type-2 `/pods` request is a poll whose body carries the client's current
    * head as `ExpectedLatestRevisionId`. That is the only place the head appears —
@@ -148,7 +164,12 @@ export const installPodsDonorInterceptor = (log: { info(message: string): void }
   const captureWrite = (url: string, method: string, headers: Record<string, string>, body: string): void => {
     try {
       const parsed = JSON.parse(body) as { srs?: [number, unknown][] };
-      if (parsed.srs?.[0]?.[0] === 3) lastWrite = { url, method, headers, body, ts: Date.now() };
+      if (parsed.srs?.[0]?.[0] === 3) {
+        const write: PodsDonor = { url, method, headers, body, ts: Date.now() };
+        lastWrite = write;
+        writeLog.push(write);
+        if (writeLog.length > WRITE_LOG_CAP) writeLog.shift();
+      }
     } catch {
       /* non-JSON or unexpected shape — leave the last known write in place */
     }
@@ -184,6 +205,16 @@ export const installPodsDonorInterceptor = (log: { info(message: string): void }
         // `fetch`, so the head never has to cross the frame boundary as raw traffic.
         if (url.includes(PODS_HEAD_SENTINEL)) {
           return new Response(JSON.stringify(latestHead), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        // Read sentinel: answer an in-frame write-log request with the recent
+        // burst of type-3 writes, newest first, so a batch of user edits decodes
+        // together. Checked before the single last-write sentinel because the
+        // last-write marker is a substring-free distinct string.
+        if (url.includes(PODS_WRITE_LOG_SENTINEL)) {
+          return new Response(JSON.stringify([...writeLog].reverse()), {
             status: 200,
             headers: { 'content-type': 'application/json' },
           });

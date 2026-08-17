@@ -14,14 +14,20 @@ harder build (rewrites the object graph) · · captured, not yet analysed.
 | `NewSlideWithLayout` | 2,577 | ○ | Rewrites the presentation root (`393271`) slide-list props `603998444`+`603986975`, adds a new `393227` slide object referencing an existing layout (`536889506` → layout id, `335562835/836` → master/layout ids). Server materializes the rest. |
 | `NewSlideWithoutDialog` | 35,582 | ○ | New slide with placeholders inlined (`131073`×21). |
 | `DuplicateSlide` | 471,791 | ○ | Inlines the whole source slide object graph. Big. |
-| `DeleteSlide` | 2,285 | ◑ | Rewrites the presentation root minus the removed slide ref. |
+| `DeleteSlide` | 2,285 | ✅ (`delete_slide_live`) | Rewrites the presentation root minus the removed slide ref. Live-verified. |
+| `MoveSlideById` | ~9,000 | ◑ BUILD NEXT | **Slide reorder — captured live 2026-08-16.** Same mechanism as add/delete: resubmit the root `393271` with the ordered slide list `603986975` REORDERED. NO `134236525` modified flag (like add, unlike delete). The root carries several parallel ref lists (`603986975` order, `603998444` children, `603995377`/`603998458` single refs) — verify at build whether reordering only `603986975` suffices or the parallels must move too. Buildable on the existing structural engine, no new decode. Single revision, Sequence 28. Exemplar: `scratchpad/actions/MoveSlideById_editor_capture.md`. |
 | `ChangeLayout` | ~9,877 | ○ | Reassigns a slide's layout. |
+
+## Slide-level formatting (slide `393227`)
+| Action | Build | Wire |
+| --- | --- | --- |
+| `FormatBackgroundSolidFill` | ◑ | **Slide background color — captured live 2026-08-16.** Resubmit the target SLIDE object (`393227`) with `469780561` = `"#RRGGBB,,,"` + `469780621` structured json (`{RGBColor, Alpha:100, ThemeColor:-1}`) + `469780963` fill-mode. The big `469780520` theme/color-scheme blob is copied verbatim (don't synthesize). Single revision, Sequence 47. Exemplar: `scratchpad/actions/FormatBackgroundSolidFill_editor_capture.md`. |
 
 ## Character formatting (run `1179725` — extends `format_text`)
 | Action | Build | Wire |
 | --- | --- | --- |
 | `SetFontSize` | ✅ | run `268442635` (half-pt) |
-| `Bold` | ✅ | run `134224900` |
+| `Bold` | ✅ | run `134224900` — CONFIRMED against the editor's own bold capture (2026-08-16): the editor writes run `134224900:"true"` (and mirrors it on the shape), matching `format_text` exactly. |
 | `SetItalic` | ✅ | run `134224901` |
 | `Underline` | ◑ | run `134224902` |
 | `Font` (family) | ◑ | run `469769226` + `469780527/528/529` (typeface) |

@@ -18,7 +18,7 @@ import { FrameBridgeValidationError } from './frame-bridge-rpc.js';
 import { type ResolvedTarget, resolveRunFormatTarget } from './pods-action-run-format.js';
 import type { PodsMint, PodsWriteActionSpec } from './pods-actions.js';
 import { sortPropertiesById } from './pods-bridge.js';
-import { CLASS_PARAGRAPH, CLASS_RUN, type PodsModel, PROP_TEXT, readProp } from './pods-model.js';
+import { CLASS_PARAGRAPH, CLASS_RUN, type PodsModel, PROP_RUN_REF, PROP_TEXT, readProp } from './pods-model.js';
 
 /** The client sequence hint the captured Typing write carried. Not server-validated. */
 const REVISION_SEQUENCE = 37;
@@ -39,14 +39,20 @@ export interface SetTextArgs {
  * matching the editor's own Typing write, whose paragraph carries the full
  * current property list with the new text in `469769250`.
  *
- * Strictly single-run: the run references are copied verbatim, so the existing
- * run keeps supplying the formatting. A multi-run paragraph is REJECTED, not
- * collapsed — collapsing the run-ref list to one run was tried live and the
- * server ACCEPTED it, but the open editor client crashed on its in-memory model
- * disagreeing ("Sorry, we ran into a problem"), and the crashed session's
- * unsaved revisions were then discarded on reload. A write that can destabilize
- * a co-author's editor is disqualified outright; multi-run replacement waits for
- * a capture of the editor's own select-all-and-retype revision.
+ * When the run carries its OWN text property, the write must keep it in step:
+ * a paragraph whose text diverges from its run's makes the editor reconcile by
+ * splitting in a second run and re-generating deleted text under the user
+ * (observed live). The proven mechanism for changing a run is the run-format
+ * shape — mint a replacement run and rewrite the paragraph's run-reference — so
+ * such a write carries a new run with the text patched, exactly like
+ * `format_text` but for the text property. A run with no text property (the
+ * common case for pre-existing deck text) keeps the paragraph-only Typing shape.
+ *
+ * Strictly single-run: a multi-run paragraph is REJECTED. A constructed run
+ * collapse was tried live — the server accepted it and the editor client
+ * crashed. The editor's own captured deletion shows multi-run edits need
+ * chained revisions plus a full shape resubmit (see the action catalog), which
+ * is not built yet.
  */
 export const buildSetTextBody = (
   target: ResolvedTarget,
@@ -61,13 +67,31 @@ export const buildSetTextBody = (
         'Replacing multi-run text is not supported: a constructed run collapse crashes the live editor client.',
     );
   }
+  const runCarriesText = readProp(run.properties, PROP_TEXT) !== undefined;
 
   const newParagraphProperties: (string | number)[] = [];
   for (let i = 0; i + 1 < target.paragraphProperties.length; i += 2) {
     const key = target.paragraphProperties[i];
     const value = target.paragraphProperties[i + 1];
     if (key === undefined || value === undefined) continue;
-    newParagraphProperties.push(key, key === PROP_TEXT ? newText : value);
+    if (key === PROP_TEXT) {
+      newParagraphProperties.push(key, newText);
+    } else if (key === PROP_RUN_REF && runCarriesText) {
+      // The replacement run takes over the reference, exactly as in run-format.
+      newParagraphProperties.push(key, `{${guidToken}}{1}`);
+    } else {
+      newParagraphProperties.push(key, value);
+    }
+  }
+
+  const newRunProperties: (string | number)[] = [];
+  if (runCarriesText) {
+    for (let i = 0; i + 1 < run.properties.length; i += 2) {
+      const key = run.properties[i];
+      const value = run.properties[i + 1];
+      if (key === undefined || value === undefined) continue;
+      newRunProperties.push(key, key === PROP_TEXT ? newText : value);
+    }
   }
 
   const objects = [
@@ -77,6 +101,9 @@ export const buildSetTextBody = (
       Properties: [134236193, 'true', 335562934, '1', 469780989, 'Typing'],
     },
     { ObjectId: target.paragraphId, ClassId: CLASS_PARAGRAPH, Properties: sortPropertiesById(newParagraphProperties) },
+    ...(runCarriesText
+      ? [{ ObjectId: `${guidToken}|1`, ClassId: CLASS_RUN, Properties: sortPropertiesById(newRunProperties) }]
+      : []),
   ];
 
   const revision = {

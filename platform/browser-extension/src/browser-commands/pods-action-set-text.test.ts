@@ -115,6 +115,35 @@ describe('buildSetTextBody', () => {
     expect(action.Properties).toEqual([134236193, 'true', 335562934, '1', 469780989, 'Typing']);
   });
 
+  test('a run carrying its OWN text is replaced format-style, keeping run and paragraph text in step', () => {
+    // A paragraph/run text divergence makes the editor split runs and resurrect
+    // deleted text (observed live), so the run's text must move with the write.
+    const withRunText = target();
+    withRunText.textRuns = [
+      {
+        ref: '{cfc16549-02d7-4fbe-85bd-3d047593bf17}{222}',
+        objectId: 'cfc16549-02d7-4fbe-85bd-3d047593bf17|222',
+        properties: [268442635, '22', 469769250, 'Testing'],
+        sizeHalfPt: '22',
+        bold: null,
+        italic: null,
+      },
+    ];
+    const body = buildSetTextBody(withRunText, 'Replaced', GUID, HEAD);
+    const group = ((body.srs as [number, Record<string, unknown>][])[0]?.[1].Revisions as Record<string, unknown>[])[0]
+      ?.ObjectGroups as { Objects: Obj[] }[];
+    const objects = group[0]?.Objects ?? [];
+    expect(objects).toHaveLength(3);
+    const [, paragraph, run] = objects;
+    if (!paragraph || !run) throw new Error('expected paragraph and run');
+    // The replacement run takes the reference and carries the new text; formatting props survive.
+    expect(propValue(paragraph.Properties, 603987475)).toBe(`{${GUID}}{1}`);
+    expect(run.ObjectId).toBe(`${GUID}|1`);
+    expect(propValue(run.Properties, 469769250)).toBe('Replaced');
+    expect(propValue(run.Properties, 268442635)).toBe('22');
+    expect(propValue(paragraph.Properties, 469769250)).toBe('Replaced');
+  });
+
   test('a multi-run paragraph is rejected — a constructed run collapse crashes the live editor client', () => {
     const multi = target();
     multi.textRuns.push({

@@ -5,7 +5,7 @@ _user_ of the tools needs; this file records what was learned reverse-engineerin
 site, what has been ruled out, and what is still open — so a later session can resume
 without re-deriving any of it.
 
-Last worked: **2026-08-12**. Tool count: **31**.
+Last worked: **2026-08-17**. Tool count: **31**.
 
 ---
 
@@ -161,7 +161,11 @@ Mechanism mapped, `set_printer_compatibility` shipped with `withdraw_printers`,
 X1, X1E, P1S and P1P, which no tool can restore. Brandon decided on 2026-08-12
 not to pursue it — no bug report, no re-slice. Do not reopen it unprompted.
 
-### B — peer benchmarking · endpoint and metric surface mapped
+### B — peer benchmarking · dropped 2026-08-17
+
+Brandon's call: not worth building. The findings below are kept because they
+were the reason, and because they are worth knowing before anyone proposes it
+again.
 
 **Search is `search-service/search/design`**, taking `keyword`, `limit` and
 `offset`, returning `{total, hits[], suggest}`. Two wrong guesses first:
@@ -169,34 +173,25 @@ not to pursue it — no bug report, no re-slice. Do not reopen it unprompted.
 empty search box, and `select/collection/design/v2` is a 404. A keyword search
 for `unifi` reports 1,397 models.
 
-**B2 is answered by the same response, and the answer is the pessimistic one.**
-Per hit, public: `printCount`, `downloadCount`, `likeCount`, `collectionCount`,
-`commentCount`, `shareCount`, `createTime`, `tags`, `license`, `modelSource`,
-`isExclusive`, `isStaffPicked`, `boostCnt`, and MakerWorld's own `hotScore` /
-`designScore` / relevance `score`. The creator object carries `handle`, `uid`,
-`fanCount` and lifetime `downloadCount` / `likeCount`.
+**What a rival exposes, per hit:** `printCount`, `downloadCount`, `likeCount`,
+`collectionCount`, `commentCount`, `shareCount`, `createTime`, `tags`,
+`license`, `modelSource`, `isExclusive`, `isStaffPicked`, `boostCnt`, and
+MakerWorld's own `hotScore` / `designScore` / relevance `score`. The creator
+object carries `handle`, `uid`, `fanCount` and lifetime `downloadCount` /
+`likeCount`.
 
-Absent: **impressions, views and points**. So a peer tool can compare
-*outcomes* but never *funnels* — there is no way to learn a competitor's
-click-through rate, which is exactly the metric `diagnose_listing` leans on.
-Peer work is therefore "how do my prints compare in this niche", not "is my
-card working harder than theirs". Design B5 accordingly.
+**Absent: impressions, views and points.** That is the whole reason this was
+dropped. A peer tool could compare *outcomes* but never *funnels*, so it could
+never answer the question worth asking — whether a rival's card is working
+harder than yours. The metric `diagnose_listing` is built on does not exist for
+anyone but you.
 
 `readCount` is present but zero on every hit seen, and `bc` (720, 3880) does not
 track any visible counter — both unexplained, neither worth chasing.
 
-Remaining:
-
-1. Establish whether the endpoint takes a sort parameter. Relevance order is
-   the wrong ranking for "who is winning this niche"; without sort, B5 has to
-   pull a page and rank locally.
-2. Check whether a competitor's `instances[].extention.modelInfo` is readable,
-   which would expose their printer coverage and print times.
-3. Build the tool.
-
-**Rate-limit probing is off the table** — Brandon ruled it out on 2026-08-12,
-so the request gate keeps its conservative guesses rather than being tuned
-against a measured ceiling. Prefer few, wide requests over many narrow ones.
+Rate-limit probing was dropped alongside it. The request gate keeps conservative
+guesses rather than being tuned against a measured ceiling; prefer few, wide
+requests over many narrow ones.
 
 ### C — comment and rating replies · not started, needs UI captures
 
@@ -225,6 +220,19 @@ can be reconstructed retroactively and nothing needs snapshotting.
    Tag changes move impressions over weeks, so it should refuse or caveat windows
    shorter than ~14 days rather than reporting noise.
 
+### E — uploading from disk · blocked on a platform feature
+
+`upload_model` can only take base64 through the tool call or an https URL.
+MakerWorld sends `connect-src 'self' https:` with `block-all-mixed-content`, so
+the page cannot fetch a loopback URL and the `local_file_grant` route that works
+elsewhere is dead here. Base64 is practical to a few megabytes, which most 3MFs
+exceed.
+
+The fix is the platform-level extension fetch relay, which would read the file
+in the extension and hand the bytes to the adapter, out of the page's CSP reach.
+That is not plugin work and is tracked at the platform level, but this plugin is
+the reason it matters, and nothing here improves until it lands.
+
 ---
 
 ## Live experiments
@@ -237,9 +245,10 @@ Two natural experiments started **2026-08-12**. Re-measure **2026-08-26** (+14d)
 | `1513324` GPU adapter | +4 tags (`sff`, `itx`, `graphics card`, `fractal design`); printers 7 → 12 | improvement |
 | `1490785` XG mount | printers churned, ended at 8; tags unchanged | neutral to negative |
 
-`1513324` also has draft `9198222` pending review which keeps it at 12 by withdrawing
-A1 and A1 mini — stale input on a `set_printer_compatibility` call. Re-running with
-the full derived 13 would take it to 14. Marginal, on a throwaway model.
+Draft `9198222` on `1513324` cleared review before 2026-08-17. It was submitted
+with a stale printer list, so the published count needs reading rather than
+assuming — fold that into the re-measure rather than making it a separate
+errand.
 
 ---
 

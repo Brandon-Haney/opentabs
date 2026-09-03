@@ -23,7 +23,7 @@ import {
   guidOf,
   type PodsModel,
   PROP_ACTION_CTX,
-  PROP_SLIDE_LIST,
+  PROP_ORDERED_CHILDREN,
   readProp,
   slideRefsOf,
 } from './pods-model.js';
@@ -106,7 +106,7 @@ export const buildDeleteSlideBody = (
     const value = ctx.rootProperties[i + 1];
     if (key === undefined || value === undefined) continue;
     if (key === PROP_ROOT_MODIFIED_FLAG) hasModifiedFlag = true;
-    copied.push(key, key === PROP_SLIDE_LIST ? newSlideList : key === PROP_ROOT_MODIFIED_FLAG ? 'true' : value);
+    copied.push(key, key === PROP_ORDERED_CHILDREN ? newSlideList : key === PROP_ROOT_MODIFIED_FLAG ? 'true' : value);
   }
   if (!hasModifiedFlag) copied.push(PROP_ROOT_MODIFIED_FLAG, 'true');
   const newRootProperties = sortPropertiesById(copied);

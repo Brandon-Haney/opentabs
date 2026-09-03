@@ -25,7 +25,7 @@ import {
   cellIdOf,
   findPresentationRoot,
   type PodsModel,
-  PROP_SLIDE_LIST,
+  PROP_ORDERED_CHILDREN,
   slideRefsOf,
 } from './pods-model.js';
 
@@ -99,7 +99,7 @@ export const buildMoveSlideBody = (
     const key = ctx.rootProperties[i];
     const value = ctx.rootProperties[i + 1];
     if (key === undefined || value === undefined) continue;
-    copied.push(key, key === PROP_SLIDE_LIST ? newSlideList : value);
+    copied.push(key, key === PROP_ORDERED_CHILDREN ? newSlideList : value);
   }
   const newRootProperties = sortPropertiesById(copied);
 

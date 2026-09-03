@@ -81,12 +81,11 @@ export const CLASS_RENDER_SHAPE = 1074135132;
 export const PROP_TEXT = 469769250;
 export const PROP_RUN_REF = 603987475;
 /**
- * An object's ordered children (`{guid}{ctr},…`): the presentation root's
- * slides, a text body's paragraphs.
+ * An object's ordered children (`{guid}{ctr},…`). One property serves every
+ * level of the graph: on the presentation root it is the slide list, on a text
+ * body the paragraphs it holds.
  */
 export const PROP_ORDERED_CHILDREN = 603986975;
-/** The presentation root's ordered slide list — its ordered children. */
-export const PROP_SLIDE_LIST = PROP_ORDERED_CHILDREN;
 /** An object's content references: a slide's shapes, a shape's text body. */
 export const PROP_CONTENT_REFS = 603986976;
 export const PROP_ACTION_CTX = 536889540;
@@ -133,7 +132,7 @@ export const findPresentationRoot = (model: PodsModel): PodsObject => {
 
 /** The root's ordered slide reference list, or a validation error when the root lacks it. */
 export const slideRefsOf = (root: PodsObject): { slideList: string; slideRefs: string[] } => {
-  const slideList = readProp(root.properties, PROP_SLIDE_LIST);
+  const slideList = readProp(root.properties, PROP_ORDERED_CHILDREN);
   if (slideList === undefined) {
     throw new FrameBridgeValidationError('Presentation root has no slide-list property (603986975).');
   }

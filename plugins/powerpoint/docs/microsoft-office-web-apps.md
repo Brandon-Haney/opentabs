@@ -46,6 +46,45 @@ cannot do what a person does — edit a file they have open. Transport B is the 
 way. Guard every Transport-A write with an `If-Match` on the eTag the read
 observed (Graph enforces it — verified 412 on mismatch).
 
+## The direction: co-authoring is the write path, everywhere
+
+**Decided 2026-09-03, and it applies to every Microsoft web app this repo
+touches, not just PowerPoint.** Document content is written through the app's
+own co-authoring channel. The whole-file Graph PUT is legacy: it stays only
+where no live path has been proven yet, and each app retires it as its live
+path lands.
+
+The reasoning is the table above, and it does not vary by app. A whole-file PUT
+cannot edit a file anyone has open, because the WOPI lock refuses it outright.
+When it does succeed it replaces every part of the document, including slides,
+sheets or paragraphs a colleague is editing at that moment — it wins by
+overwriting rather than by merging. And it cannot do the ordinary thing a person
+does, which is to change a file that is open in front of them. A co-authoring
+revision has none of those properties: the server merges it against everyone
+else's work, exactly as it merges the editor's own.
+
+So the target state per app is the same shape — Graph keeps metadata (file
+management, sharing, search, thumbnails, versions) and closed-file reads, while
+every content write goes live — and only the distance to it differs:
+
+| App | Live channel | Where it stands |
+| --- | --- | --- |
+| PowerPoint | `/pods/PowerPoint.ashx` revisions | **Proven.** Live tools shipped; the staged tools are retiring as their live counterparts land. |
+| Excel | EWA RPC in the editor frame | **Proven.** Stays deliberately hybrid: Graph's Workbook API is a real, supported, closed-file API, so the rule here is that anything touching an OPEN workbook, or anything Graph cannot express, goes through the bridge. |
+| Word | unproven | **Research first.** Its WOPI context reports `IsPragueDocument`, which points at Fluid — binary ops over a socket rather than replayable JSON posts. Until someone captures that channel and confirms it can be replayed, the staged path is all Word has, and removing it would leave nothing. Do not retire it on principle. |
+| OneNote | WAC `ObjectModel` command bus | **Different mechanism again.** Graph is unusable (the SharePoint token carries no `Notes.*` scope), reads come from the page cache, and the editor frame exposes a command bus rather than a revision wire. |
+
+Two rules follow, and they are what keep this from being a slogan:
+
+1. **Capability never regresses.** A staged tool is deleted when its live
+   counterpart ships and is verified, not before. "We prefer co-authoring" is
+   never a reason to leave a user with no way to do something.
+2. **While a staged write still exists, guard it.** Every whole-file PUT carries
+   an `If-Match` on the eTag its read observed, so a concurrent write loses the
+   race loudly with a 412 instead of being silently overwritten. This matters
+   most for a PUT that retries: a replay after a hidden success will happily
+   overwrite whatever landed in between unless the eTag stops it.
+
 ## Auth: the token is minted once, on a cold load
 
 - The page mints a **Microsoft Graph** token only on a **cold page load**. Capture
@@ -172,7 +211,7 @@ The action self-labels: the `ClassId: 131140` object carries a literal
 action shows everything byte-identical except four slots — the revision `Id`, its
 `BaseId`, and the action's `ActionId`/`ActionTime`. So capture one real request per
 action and patch those four; do not reverse-engineer the object graph. See
-[the pods wire is copy-an-exemplar](#the-pods-wire-is-copy-an-exemplar).
+[copy an exemplar for the object graph](#copy-an-exemplar-for-the-object-graph-read-the-bundle-for-everything-else).
 
 ## The donor / replay pattern (using captured auth safely)
 
@@ -201,15 +240,39 @@ Two gotchas that will eat an afternoon:
   frame that actually *holds* it, not the first URL match. (`browser_fetch_in_frame`
   now does this automatically when `donorGlobal` is set.)
 
-## The pods wire is copy-an-exemplar
+## Copy an exemplar for the object graph, read the bundle for everything else
 
-The instinct is to decode the numeric `ClassId`/property enums from the client
-bundle and *construct* a revision. **For the pods co-authoring wire that is the
-wrong tool, and it costs a day to learn.** ~7 MB of client JS across ~30 bundles
-contains **none** of the wire field names (`ObjectGroups`, `ExpectedLatestId`, …),
-and the WASM is only text layout — the request graph is assembled by native/opaque
-code you cannot read. You do not need to. The wire is a **copy-an-exemplar**
-protocol:
+**Correction (2026-09-03): an earlier version of this guide said the client JS
+contains none of the wire field names and that you cannot read the request
+graph. Both claims are false, and acting on them costs the reader the whole
+static-analysis route.** `ObjectGroups`, `ExpectedLatestId`, `BaseId`, `CellId`,
+`IsFolderCell`, `PutOnlyCall` and `RootObjectDescriptors` all appear verbatim in
+`ppteditDS.core3.js`, alongside the revision class itself and the ClassId
+literals. The bundles also yield the full command table and the property-id
+registry — see "The client's own catalogs" in [[pods-action-catalog.md]].
+
+What *is* true is narrower, and it is the part worth keeping. There is **no
+per-action revision builder anywhere in the client**. `SerializedRevision` takes
+a differ, walks two snapshots of the document graph, and serializes whichever
+objects came back dirty, each with its complete property bag. No action id
+reaches it and nothing switches on one; undo runs the same differ with the
+arguments swapped. So no table exists — in the bundle or anywhere else — saying
+which objects a given action's revision must carry. That single fact is why
+exemplars still matter:
+
+- **Read the bundle** for what an action is called, what a property id means and
+  what type it holds, and which object type a handler targets. All of it is
+  static, free, and needs no capture.
+- **Capture an exemplar** for the object graph: which objects an action creates
+  or dirties, and the surrounding properties a constructed write must preserve.
+  That is a runtime fact about document state, and it is the only thing a
+  capture is still required for.
+
+The bound on that remaining work is small. PowerPoint only ever calls
+`createInstance` with seventeen distinct ClassIds across every bundle, so the
+structural surface is finite and mostly already proven.
+
+With that framing, the exemplar procedure is:
 
 1. **Capture one real request per action.** Every write self-labels via the
    `ClassId: 131140` object's `ActionName` (`NewSlideWithoutDialog`, `DuplicateSlide`,
@@ -230,10 +293,11 @@ viewport coordinate (selector-based clicks cannot cross the frame boundary).
 `Ctrl+Z` undoes cleanly, so a drive → capture → undo → screenshot-verify loop is
 safe on a real deck.
 
-**Know which transport you are on.** Bundle extraction *is* the right tool for the
-*other* Office channel — Excel's EWA `Command` codes live in the bundle as named
-constants, decoded exactly this way (see `excel-online` and the EWA command
-catalog). The pods *envelope* is the exception: copy it, do not try to build it.
+**Know which transport you are on.** Excel's EWA `Command` codes live in its
+bundle as named constants (see `excel-online` and the EWA command catalog), and
+PowerPoint's pods vocabulary is equally readable — the difference is only that
+pods has no per-action object table to read, so its object graph comes from an
+exemplar while its names and property semantics come from the bundle.
 Its **property semantics**, however, *are* decodable — from labelled captures, not
 the bundle. See below.
 

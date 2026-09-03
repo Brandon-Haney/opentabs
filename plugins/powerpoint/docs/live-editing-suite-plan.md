@@ -86,6 +86,9 @@ once, and the first of them is built and live-verified.
    **not supported for edits** and will be retired: even If-Match-guarded, a
    full-file PUT replaces slides other people may be working on, and it is
    blocked (HTTP 423) the entire time anyone has the deck open anyway.
+   **Generalized 2026-09-03 to every Microsoft web app** — see "The direction:
+   co-authoring is the write path, everywhere" in [[microsoft-office-web-apps.md]]
+   for where each app stands and the two rules that govern retirement.
 2. **The "closed deck" story is *open it, then edit*.** When a target deck is
    not open in any tab, the flow is: open the deck in a browser tab (a new
    `open_in_editor` tool), wait for the editor frame + donor to be live, then

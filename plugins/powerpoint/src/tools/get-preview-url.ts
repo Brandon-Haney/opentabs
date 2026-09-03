@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { driveIdInput } from './schemas.js';
 import { api, requireDriveId } from '../powerpoint-api.js';
+import { driveIdInput } from './schemas.js';
 
 export const getPreviewUrl = defineTool({
   name: 'get_preview_url',
@@ -20,9 +20,12 @@ export const getPreviewUrl = defineTool({
   }),
   handle: async params => {
     const driveId = await requireDriveId(params.drive_id);
+    // `/preview` is a POST only because it takes options; it reads the item
+    // and changes nothing, so replaying it is safe.
     const data = await api<{ getUrl?: string }>(`/drives/${driveId}/items/${params.item_id}/preview`, {
       method: 'POST',
       body: {},
+      retryNonIdempotent: true,
     });
     return { url: data.getUrl ?? '' };
   },

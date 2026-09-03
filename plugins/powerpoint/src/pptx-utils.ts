@@ -8,7 +8,7 @@
  */
 
 import { ToolError } from '@opentabs-dev/plugin-sdk';
-import { GRAPH_BASE, requireAuth } from './powerpoint-api.js';
+import { fetchDownloadUrl, graphFetch, requireAuth } from './powerpoint-api.js';
 import {
   deleteSession,
   listSessions,
@@ -431,19 +431,6 @@ export const writeSlideXml = (entries: Map<string, Uint8Array>, slideFile: strin
 // --- Download/Upload helpers ---
 
 /**
- * Guidance for HTTP 423 from Graph `/content`. The file is held by a WOPI
- * co-authoring lock — almost always because it is open in the PowerPoint web
- * editor in this very browser. Graph cannot overwrite a locked file, so the
- * only path is to close the editor (or wait for the lock to lapse) and retry.
- *
- * The lock outlives the editor tab: the server keeps the co-authoring session
- * alive for several minutes after the last client disconnects, and no request
- * shortens that. Measured at roughly four minutes.
- */
-const FILE_LOCKED_MESSAGE =
-  'The presentation is locked because it is open in the PowerPoint web editor (or another co-authoring session), so Microsoft Graph cannot save changes to it. Close the editor tab and retry — the server holds the lock for a few minutes after the last editor disconnects, so expect to wait rather than to retry immediately. Any pending session edits are preserved.';
-
-/**
  * Guidance after `editPresentation` runs out of attempts. Distinct from the
  * lock case: the file is writable, someone else is simply saving it faster than
  * a read-modify-write round trip can complete.
@@ -467,19 +454,14 @@ interface ItemMetadata {
 
 /** Fetch item metadata from the Graph API. Used both for downloads and eTag verification. */
 const fetchItemMetadata = async (driveId: string, itemId: string, token: string): Promise<ItemMetadata> => {
-  const resp = await fetch(`${GRAPH_BASE}/drives/${driveId}/items/${itemId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!resp.ok) throw ToolError.internal(`Failed to get item metadata: ${resp.status}`);
-  return (await resp.json()) as ItemMetadata;
+  const response = await graphFetch(`/drives/${driveId}/items/${itemId}`, { token });
+  return (await response.json()) as ItemMetadata;
 };
 
 /** Fetch the PPTX bytes via a pre-authenticated download URL. */
 const fetchPptxBytes = async (downloadUrl: string): Promise<Blob> => {
-  const resp = await fetch(downloadUrl, { signal: AbortSignal.timeout(60_000) });
-  if (!resp.ok) throw ToolError.internal(`Failed to download PPTX: ${resp.status}`);
-  return resp.blob();
+  const response = await fetchDownloadUrl(downloadUrl, { timeoutMs: 60_000 });
+  return response.blob();
 };
 
 /** A package as it stood on the server, paired with the version it was read at. */
@@ -503,11 +485,29 @@ const readPackage = async (driveId: string, itemId: string, token: string): Prom
 };
 
 /**
+ * Appended to a save failure whose outcome is unknown — the PUT may have landed
+ * before the failure was reported — so the caller looks before replaying it.
+ */
+const SAVE_OUTCOME_UNKNOWN_HINT =
+  'The save may or may not have been applied — inspect the deck (get_slides / get_live_outline) before retrying.';
+
+/** Error codes after which the PUT may already have been applied server-side. */
+const SAVE_OUTCOME_UNKNOWN_CODES: ReadonlySet<string> = new Set(['UPSTREAM_UNAVAILABLE', 'NETWORK_ERROR', 'TIMEOUT']);
+
+/**
  * Write the package back, refusing to overwrite a newer version.
  *
  * Returns `false` when the precondition failed — the file moved on since it was
  * read, and this save would have discarded whatever changed. Every other failure
  * throws, because only the lost-update case has a sensible recovery.
+ *
+ * The PUT is deliberately not replayed on a transient failure (no
+ * `retryNonIdempotent`): had the first attempt landed behind a front-door 500,
+ * the replay would answer 412 with the same `If-Match`, read here as "someone
+ * else saved", and `editPresentation` would re-read the deck and apply the edit
+ * a second time. Only a front-door refusal, which proves the PUT never executed,
+ * is replayed. A failure whose outcome is unknown therefore surfaces with a hint
+ * to inspect the deck first.
  */
 const savePackage = async (
   driveId: string,
@@ -517,26 +517,30 @@ const savePackage = async (
   etag: string | undefined,
 ): Promise<boolean> => {
   const blob = await writeZip(entries);
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': PPTX_CONTENT_TYPE,
-  };
-  if (etag) headers['If-Match'] = etag;
-
-  const resp = await fetch(`${GRAPH_BASE}/drives/${driveId}/items/${itemId}/content`, {
-    method: 'PUT',
-    headers,
-    body: blob,
-    signal: AbortSignal.timeout(60_000),
-  });
-
-  if (resp.status === 412) return false;
-  if (resp.status === 423) throw ToolError.validation(FILE_LOCKED_MESSAGE);
-  if (!resp.ok) {
-    const errorBody = (await resp.text().catch(() => '')).substring(0, 512);
-    throw ToolError.internal(`Failed to upload PPTX: ${resp.status} — ${errorBody}`);
+  let response: Response;
+  try {
+    response = await graphFetch(`/drives/${driveId}/items/${itemId}/content`, {
+      method: 'PUT',
+      body: blob,
+      contentType: PPTX_CONTENT_TYPE,
+      ...(etag ? { headers: { 'If-Match': etag } } : {}),
+      timeoutMs: 60_000,
+      token,
+      allowPreconditionFailed: true,
+    });
+  } catch (err: unknown) {
+    if (err instanceof ToolError && SAVE_OUTCOME_UNKNOWN_CODES.has(err.code)) {
+      throw new ToolError(`${err.message} ${SAVE_OUTCOME_UNKNOWN_HINT}`, err.code, {
+        category: err.category,
+        retryable: err.retryable,
+        retryAfterMs: err.retryAfterMs,
+      });
+    }
+    throw err;
   }
-  return true;
+  // Neither outcome reads the driveItem Graph echoes back.
+  void response.body?.cancel().catch(() => undefined);
+  return response.status !== 412;
 };
 
 /**

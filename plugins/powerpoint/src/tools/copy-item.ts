@@ -1,7 +1,7 @@
 import { defineTool, stripUndefined } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { driveIdInput } from './schemas.js';
 import { api, requireDriveId } from '../powerpoint-api.js';
+import { driveIdInput } from './schemas.js';
 
 export const copyItem = defineTool({
   name: 'copy_item',

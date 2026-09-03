@@ -7,12 +7,14 @@ export const formatText = defineTool({
   displayName: 'Format Text',
   description:
     'Change the formatting of text on the open slide — font size, bold, italic, underline, color, and/or font ' +
-    'family — targeting it by its exact visible text. This writes into the live co-authoring session, so the ' +
-    'change appears in the open editor within a few seconds; it edits the deck in place while it is open (Graph ' +
-    'refuses writes under the co-authoring lock). Pass at least one formatting field. The `text` must match one ' +
-    'paragraph exactly; paragraphs with mixed formatting (multiple runs) are not yet supported. The deck must be ' +
-    'open and active in the browser.',
-  summary: 'Format slide text (size/bold/italic/underline/color/font) by its content',
+    'family. Name the paragraph with `text`, and optionally narrow the change to part of it with `match`, the ' +
+    'way a person selects a few words before clicking Bold; without `match` the whole paragraph changes. Text ' +
+    'outside the match keeps the formatting it had, and a match spanning differently formatted words keeps each ' +
+    'of their fonts and colors while applying what you asked for. This writes into the live co-authoring ' +
+    'session, so the change appears in the open editor within a few seconds; it edits the deck in place while ' +
+    'it is open (Graph refuses writes under the co-authoring lock). Pass at least one formatting field. Use ' +
+    '`get_live_outline` to see the exact paragraph text. The deck must be open and active in the browser.',
+  summary: 'Format slide text, or part of it, by its content',
   icon: 'type',
   group: 'Slides',
   input: z
@@ -21,6 +23,21 @@ export const formatText = defineTool({
         .string()
         .min(1)
         .describe('The exact visible text of the paragraph to format, e.g. "Workstream" or a slide title.'),
+      match: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          'Format only this part of the paragraph — a substring of `text`, e.g. "Q3" to bold one word of a sentence. Omit to format the whole paragraph.',
+        ),
+      occurrence: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe(
+          'Which occurrence of `match` to format when it appears more than once, counting from 1. Defaults to the first.',
+        ),
       size_pt: z.number().positive().optional().describe('New font size in points.'),
       bold: z.boolean().optional().describe('Set bold on or off.'),
       italic: z.boolean().optional().describe('Set italic on or off.'),
@@ -44,12 +61,16 @@ export const formatText = defineTool({
     ),
   output: podsFormatTextOutputSchema,
   handle: async params =>
-    podsFormatText(params.text, {
-      sizePt: params.size_pt,
-      bold: params.bold,
-      italic: params.italic,
-      underline: params.underline,
-      colorHex: params.color?.replace('#', '').toUpperCase(),
-      font: params.font,
-    }),
+    podsFormatText(
+      params.text,
+      {
+        sizePt: params.size_pt,
+        bold: params.bold,
+        italic: params.italic,
+        underline: params.underline,
+        colorHex: params.color?.replace('#', '').toUpperCase(),
+        font: params.font,
+      },
+      { match: params.match, occurrence: params.occurrence },
+    ),
 });

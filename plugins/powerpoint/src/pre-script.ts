@@ -1,5 +1,7 @@
 import { definePreScript } from '@opentabs-dev/plugin-sdk/pre-script';
+import { bearerTokenExpiry } from './jwt-claims.js';
 import { installPodsDonorInterceptor, isPowerPointEditorFrame } from './pods-donor-interceptor.js';
+import { parseReloadMarker } from './reload-marker-parse.js';
 
 /**
  * Pre-script for the PowerPoint plugin.
@@ -19,6 +21,10 @@ import { installPodsDonorInterceptor, isPowerPointEditorFrame } from './pods-don
  * direct `graph.microsoft.com` request, covering the standalone
  * `powerpoint.cloud.microsoft` app. Capturing the minted token is
  * format-agnostic: it works regardless of how MSAL keys or encrypts its cache.
+ *
+ * It also captures the Office reload marker (`wdrldr` and friends) from the
+ * top-level URL before the page can strip it, so `onActivate` can log the
+ * reload.
  *
  * In the officeapps.live.com editor frame it instead installs the pods donor
  * interceptor (see `pods-donor-interceptor.ts`) and nothing else.
@@ -56,6 +62,11 @@ const XHR_PATCHED_MARKER = Symbol.for('opentabs.powerpoint.xhr.patched');
  * captured token for its lifetime. The adapter reads the same key.
  */
 const LS_TOKEN_KEY = '__opentabs_powerpoint_graph_token';
+/**
+ * How long to trust a Graph Bearer token sniffed off a request header when it is
+ * not a readable JWT and so carries no expiry of its own.
+ */
+const OPAQUE_BEARER_TTL_SEC = 600;
 
 const parseUrl = (url: string): URL | null => {
   try {
@@ -80,6 +91,15 @@ definePreScript(({ set, log }) => {
     return;
   }
 
+  // Office appends `wdrldr`/`wdrldc`/`wdrldsc` when it reloads the document and
+  // may strip them again via replaceState once the page boots, so the marker is
+  // captured now, at document_start, for the adapter's onActivate to report.
+  const reloadMarker = parseReloadMarker(location.search, Date.now());
+  if (reloadMarker) {
+    set('reloadMarker', reloadMarker);
+    log.info('[powerpoint] Office reload marker captured', reloadMarker.reason);
+  }
+
   const g = globalThis as {
     fetch: typeof fetch & { [FETCH_PATCHED_MARKER]?: true };
     XMLHttpRequest: typeof XMLHttpRequest & { [XHR_PATCHED_MARKER]?: true };
@@ -95,6 +115,14 @@ definePreScript(({ set, log }) => {
       /* storage unavailable — the in-page namespace still works for this load */
     }
   };
+
+  /**
+   * Stash a Bearer token sniffed off a Graph request header. The header carries
+   * no expiry, so the JWT's own `exp` claim is the token's lifetime; an opaque
+   * token is trusted for a short window only.
+   */
+  const stashBearer = (token: string): void =>
+    stash(token, bearerTokenExpiry(token, Math.floor(Date.now() / 1000), OPAQUE_BEARER_TTL_SEC));
 
   const extractBearer = (headers: HeadersInit | undefined): string | undefined => {
     if (headers instanceof Headers) {
@@ -163,8 +191,7 @@ definePreScript(({ set, log }) => {
         const header =
           extractBearer(init?.headers) ?? (input instanceof Request ? extractBearer(input.headers) : undefined);
         if (header?.startsWith('Bearer ') && header.length > 'Bearer '.length) {
-          // No expiry available from a request header; trust it for a short window.
-          stash(header.slice('Bearer '.length), Math.floor(Date.now() / 1000) + 600);
+          stashBearer(header.slice('Bearer '.length));
         }
       }
 
@@ -229,7 +256,7 @@ definePreScript(({ set, log }) => {
 
           // Secondary path: outbound Graph request carrying a Bearer header.
           if (isGraphUrl(state.url) && state.bearer?.startsWith('Bearer ')) {
-            stash(state.bearer.slice('Bearer '.length), Math.floor(Date.now() / 1000) + 600);
+            stashBearer(state.bearer.slice('Bearer '.length));
           }
 
           // Primary path: AAD token-endpoint response body.

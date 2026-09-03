@@ -1,13 +1,14 @@
 import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
-import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
-import { isAuthenticated, isPowerPointTab, isSharePoint, waitForAuth } from './powerpoint-api.js';
+import { getCurrentUrl, OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
+import { isAuthenticated, isPowerPointTab, isSharePoint, readReloadMarker, waitForAuth } from './powerpoint-api.js';
+import { reportReloadMarker } from './reload-marker.js';
 import { addImage } from './tools/add-image.js';
-import { alignText } from './tools/align-text.js';
 import { addShape } from './tools/add-shape.js';
 import { addSlide } from './tools/add-slide.js';
 import { addSlideLive } from './tools/add-slide-live.js';
 import { addTable } from './tools/add-table.js';
 import { addTextBox } from './tools/add-text-box.js';
+import { alignText } from './tools/align-text.js';
 import { commitPresentationTool } from './tools/commit-presentation.js';
 import { copyItem } from './tools/copy-item.js';
 import { createFolder } from './tools/create-folder.js';
@@ -18,6 +19,7 @@ import { deletePermission } from './tools/delete-permission.js';
 import { deleteShape } from './tools/delete-shape.js';
 import { deleteSlide } from './tools/delete-slide.js';
 import { deleteSlideLive } from './tools/delete-slide-live.js';
+import { diagnose } from './tools/diagnose.js';
 import { discardPresentationTool } from './tools/discard-presentation.js';
 import { duplicateShape } from './tools/duplicate-shape.js';
 import { duplicateSlide as duplicateSlideTool } from './tools/duplicate-slide.js';
@@ -52,10 +54,10 @@ import { reauthenticate } from './tools/reauthenticate.js';
 import { renameItem } from './tools/rename-item.js';
 import { searchFiles } from './tools/search-files.js';
 import { setFontSize } from './tools/set-font-size.js';
-import { setText } from './tools/set-text.js';
 import { setPlaceholderText } from './tools/set-placeholder-text.js';
 import { setSlideBackground } from './tools/set-slide-background.js';
 import { setSlideHiddenTool } from './tools/set-slide-hidden.js';
+import { setText } from './tools/set-text.js';
 import { updateShape } from './tools/update-shape.js';
 import { updateSlideNotes } from './tools/update-slide-notes.js';
 
@@ -69,6 +71,7 @@ class PowerPointPlugin extends OpenTabsPlugin {
     // Account
     getCurrentUser,
     reauthenticate,
+    diagnose,
     getDrive,
     // Files
     listChildren,
@@ -131,6 +134,16 @@ class PowerPointPlugin extends OpenTabsPlugin {
     // Versions
     listVersions,
   ];
+
+  /**
+   * Records an Office-initiated document reload in the plugin log, once per
+   * document, so a tool failure can be correlated with the reload that
+   * preceded it.
+   */
+  override onActivate(): void {
+    const marker = readReloadMarker();
+    if (marker) reportReloadMarker(marker, new URL(getCurrentUrl()).origin);
+  }
 
   async isReady(): Promise<boolean> {
     if (!isPowerPointTab()) return false;

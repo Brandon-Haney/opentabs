@@ -231,16 +231,36 @@ export const podsSetFontSizeOutputSchema = z.object({
 });
 
 /**
- * Build the `set_font_size` action directive: resize the run of the paragraph
- * whose visible text is `text` to `sizePt` points.
+ * How a caller narrows a text action to part of a paragraph: a substring of it,
+ * and which occurrence when the substring repeats. Omitted, the action applies to
+ * the whole paragraph.
  */
-export const podsSetFontSize = (text: string, sizePt: number): z.infer<typeof podsSetFontSizeOutputSchema> =>
-  podsAction('set_font_size', { text, sizePt });
+export interface TextMatch {
+  match?: string;
+  occurrence?: number;
+}
+
+/** The match arguments, dropped entirely when the caller named no substring. */
+const matchArgs = (target: TextMatch): Record<string, unknown> =>
+  target.match === undefined
+    ? {}
+    : { match: target.match, ...(target.occurrence !== undefined ? { occurrence: target.occurrence } : {}) };
+
+/**
+ * Build the `set_font_size` action directive: resize the paragraph whose visible
+ * text is `text` to `sizePt` points, or just the part of it named by `match`.
+ */
+export const podsSetFontSize = (
+  text: string,
+  sizePt: number,
+  target: TextMatch = {},
+): z.infer<typeof podsSetFontSizeOutputSchema> => podsAction('set_font_size', { text, sizePt, ...matchArgs(target) });
 
 /** What the agent receives after the `format_text` engine runs. */
 export const podsFormatTextOutputSchema = z.object({
   ...podsActionResultShape,
   text: z.string().describe('The paragraph text that was formatted.'),
+  formatted: z.string().describe('The stretch of that paragraph the change was applied to.'),
   runId: z.string().describe('The object id of the run that was formatted.'),
   before: z
     .object({
@@ -264,14 +284,17 @@ export const podsFormatTextOutputSchema = z.object({
 /**
  * Build the `format_text` action directive: change the run formatting (size, bold,
  * italic, underline, colour, and/or font) of the paragraph whose visible text is
- * `text`, live in the open deck. Only the provided attributes change.
+ * `text`, live in the open deck. Only the provided attributes change, and only the
+ * part of the paragraph named by `target.match` when one is given.
  */
 export const podsFormatText = (
   text: string,
   changes: { sizePt?: number; bold?: boolean; italic?: boolean; underline?: boolean; colorHex?: string; font?: string },
+  target: TextMatch = {},
 ): z.infer<typeof podsFormatTextOutputSchema> =>
   podsAction('format_text', {
     text,
+    ...matchArgs(target),
     ...(changes.sizePt !== undefined ? { sizePt: changes.sizePt } : {}),
     ...(changes.bold !== undefined ? { bold: changes.bold } : {}),
     ...(changes.italic !== undefined ? { italic: changes.italic } : {}),
@@ -419,6 +442,7 @@ export const podsReadOutlineOutputSchema = z.object({
     .array(
       z.object({
         text: z.string(),
+        shape: z.string().nullable().describe('Name of the shape holding the paragraph, e.g. "Title 1".'),
         runs: z.array(
           z.object({
             sizePt: z.number().nullable(),
@@ -431,7 +455,9 @@ export const podsReadOutlineOutputSchema = z.object({
         ),
       }),
     )
-    .describe('Live paragraphs with per-run formatting (null where a run carries no such property).'),
+    .describe(
+      'Live paragraphs, each with the shape it belongs to and its per-run formatting (null where a run carries no such property).',
+    ),
   paragraphTotal: z.number().int().describe('Paragraphs in the live model before capping — compare to array length.'),
   shapes: z.array(z.string()).describe('Shape names in the live model (e.g. "Title 1").'),
   shapeTotal: z.number().int().describe('Shapes in the live model before capping.'),

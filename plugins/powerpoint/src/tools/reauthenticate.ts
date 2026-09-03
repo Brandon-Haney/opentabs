@@ -1,5 +1,6 @@
 import { clearAuthCache, defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
+import { isAnonymousLinkPage } from '../page-identity.js';
 import { isSharePointPresentation } from '../powerpoint-api.js';
 
 /** localStorage key the pre-script mirrors the captured Graph token to. */
@@ -48,6 +49,17 @@ export const reauthenticate = defineTool({
         status: 'skipped' as const,
         message:
           'This tab is not a SharePoint/OneDrive presentation — reauthenticate has no effect here. If you are seeing AUTH_ERROR on a standalone powerpoint.cloud.microsoft tab, sign in to Microsoft 365 in this browser session.',
+      };
+    }
+
+    // An anonymous sharing link has no Microsoft 365 sign-in behind it: there is
+    // no MSAL state to clear, and a reload would only drop the live editor
+    // session — the one transport that works on such a page.
+    if (isAnonymousLinkPage()) {
+      return {
+        status: 'skipped' as const,
+        message:
+          'This presentation is open through an anonymous sharing link, so the page has no Microsoft 365 sign-in to refresh — Microsoft Graph is unavailable here by design. Use the live tools (get_live_outline, set_text, format_text, …), which work through the editor session.',
       };
     }
 

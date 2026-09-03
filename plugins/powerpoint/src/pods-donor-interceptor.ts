@@ -41,21 +41,52 @@ export const PODS_HEAD_SENTINEL = '__otb_pods_head__';
  * single write: it lets a decode read exactly what the editor's own edit looks
  * like (e.g. how it deletes a slide) without a manual DevTools export. Type-2
  * polls do not overwrite it, so it survives until the editor makes its next write.
- * The value is a request the editor already made in this frame; reading it is
- * strictly less powerful than the replay `browser_fetch_in_frame` already allows.
+ * The record carries the request's url, method, body and time — never its
+ * session headers, which stay in the frame-local donor: a decode needs only the
+ * body, and the sentinel's answer leaves the frame as a tool result.
  */
 export const PODS_LAST_WRITE_SENTINEL = '__otb_pods_lastwrite__';
 /**
  * URL marker for the write-log read channel — the ring-buffer form of
- * {@link PODS_LAST_WRITE_SENTINEL}. An in-frame `fetch` whose URL contains this
- * marker is answered locally with the last {@link WRITE_LOG_CAP} type-3 (write)
- * requests the editor issued, newest first, so a BURST of user edits can be
- * decoded together — the single-slot last-write channel keeps only the most
- * recent, silently losing every earlier edit in a batch.
+ * {@link PODS_LAST_WRITE_SENTINEL}, holding a whole session of edits so a burst
+ * of gestures can be decoded together (the single-slot last-write channel keeps
+ * only the most recent, silently losing every earlier edit in a batch).
+ *
+ * It answers in two forms, because one captured write can be hundreds of
+ * kilobytes and the reply has to cross the frame boundary as a tool result:
+ *
+ * - no query → a MANIFEST: `{cap, count, dropped, totalBytes, entries}` where each
+ *   entry is `{index, ts, bytes, action, method, url}`, newest first. It carries no
+ *   bodies, so it is small enough to always come back whole — the index of what was
+ *   captured, with each write's self-declared action name.
+ * - `?entry=<index>` → one full {@link PodsWriteRecord}, the body included.
+ *
+ * Read the manifest first, then pull the entries worth decoding. `dropped` counts
+ * writes evicted by either cap, so a burst that outgrew the buffer says so instead
+ * of quietly reporting a partial session.
  */
 export const PODS_WRITE_LOG_SENTINEL = '__otb_pods_writelog__';
-/** How many recent writes the write-log ring buffer retains. */
-const WRITE_LOG_CAP = 12;
+/**
+ * How many recent writes the ring buffer retains. Sized for a decode session
+ * rather than a single gesture: one UI action can emit several revisions, and the
+ * editor interleaves its own autosave writes, so a handful of gestures easily
+ * spends a dozen slots.
+ */
+const WRITE_LOG_CAP = 60;
+/**
+ * Ceiling on the bytes the ring buffer holds, evicting oldest-first. A single
+ * write can be very large (a captured `DuplicateSlide` ran to ~470 KB), so a
+ * count-only cap could pin tens of megabytes of strings inside the editor frame.
+ */
+const WRITE_LOG_MAX_BYTES = 24_000_000;
+/**
+ * Property id carrying a write's action name on its `ClassId 131140` descriptor
+ * object (`"NewSlideWithLayout"`, `"RightTextJustify"`, …). Every write
+ * self-labels with it, which is what makes a manifest entry identifiable without
+ * its body. Matched textually: the properties travel as a flat `[id, value, …]`
+ * array, so the id is followed directly by its quoted value.
+ */
+const ACTION_NAME_PATTERN = /469780989,"([^"]{1,120})"/;
 /**
  * Depth counter `browser.fetchInFrame` raises around a replay it issues into this
  * frame. Our own replayed `/pods` POST goes through this same patched `fetch`/XHR,
@@ -75,6 +106,40 @@ export interface PodsDonor {
   headers: Record<string, string>;
   body: string;
   ts: number;
+}
+
+/**
+ * One write the editor issued, as the last-write and write-log sentinels report
+ * it: the request without its session headers, so a decode read never carries
+ * the co-authoring credentials out of the frame.
+ */
+export interface PodsWriteRecord {
+  url: string;
+  method: string;
+  body: string;
+  ts: number;
+}
+
+/** One write as the write-log manifest describes it: everything but the body. */
+export interface PodsWriteLogEntry {
+  /** Position in the manifest, newest first. Pass it back as `?entry=<index>`. */
+  index: number;
+  ts: number;
+  bytes: number;
+  /** The write's self-declared action name, or null when it carries none. */
+  action: string | null;
+  method: string;
+  url: string;
+}
+
+/** The write-log manifest: what was captured, without the bodies. */
+export interface PodsWriteLogManifest {
+  cap: number;
+  count: number;
+  /** Writes evicted by either cap since the frame loaded — non-zero means the session outgrew the buffer. */
+  dropped: number;
+  totalBytes: number;
+  entries: PodsWriteLogEntry[];
 }
 
 /** True when this frame is PowerPoint's own Office Web Apps editor frame. */
@@ -131,12 +196,16 @@ export const installPodsDonorInterceptor = (log: { info(message: string): void }
   // The most recent type-3 (write) request the editor issued, kept so a decode
   // can read exactly what the editor's own edit looks like. Polls (type-2) do not
   // overwrite it. Closure-scoped; surfaced only through the read sentinel below.
-  let lastWrite: PodsDonor | null = null;
+  let lastWrite: PodsWriteRecord | null = null;
 
   // A ring buffer of the last WRITE_LOG_CAP type-3 writes, newest last. A burst of
   // user edits overwrites `lastWrite` down to one; this retains the whole burst so
   // a decode can read them all. Surfaced only through the write-log sentinel below.
-  const writeLog: PodsDonor[] = [];
+  const writeLog: PodsWriteRecord[] = [];
+  // Bytes currently held and writes evicted, so the manifest can report an
+  // overflowing session instead of silently presenting a partial one.
+  let writeLogBytes = 0;
+  let droppedWrites = 0;
 
   /**
    * A type-2 `/pods` request is a poll whose body carries the client's current
@@ -159,21 +228,49 @@ export const installPodsDonorInterceptor = (log: { info(message: string): void }
   /**
    * A type-3 `/pods` request is a write (a `Revisions[]` envelope). Retain the
    * freshest one so a decode can read the editor's own edit; polls (type-2) call
-   * this too but only writes are kept.
+   * this too but only writes are kept. The record omits the request's session
+   * headers — they stay in the donor global, which never leaves the frame.
    */
-  const captureWrite = (url: string, method: string, headers: Record<string, string>, body: string): void => {
+  const captureWrite = (url: string, method: string, body: string): void => {
     try {
       const parsed = JSON.parse(body) as { srs?: [number, unknown][] };
-      if (parsed.srs?.[0]?.[0] === 3) {
-        const write: PodsDonor = { url, method, headers, body, ts: Date.now() };
-        lastWrite = write;
-        writeLog.push(write);
-        if (writeLog.length > WRITE_LOG_CAP) writeLog.shift();
+      if (parsed.srs?.[0]?.[0] !== 3) return;
+      const write: PodsWriteRecord = { url, method, body, ts: Date.now() };
+      lastWrite = write;
+      writeLog.push(write);
+      writeLogBytes += body.length;
+      // Evict oldest-first until within both caps. A single write larger than the
+      // byte ceiling is still kept: the buffer never empties itself to satisfy it,
+      // because a lone oversized write is exactly what a decode came for.
+      while (writeLog.length > WRITE_LOG_CAP || (writeLog.length > 1 && writeLogBytes > WRITE_LOG_MAX_BYTES)) {
+        const evicted = writeLog.shift();
+        if (evicted === undefined) break;
+        writeLogBytes -= evicted.body.length;
+        droppedWrites += 1;
       }
     } catch {
       /* non-JSON or unexpected shape — leave the last known write in place */
     }
   };
+
+  /** The manifest of captured writes, newest first — the index, without the bodies. */
+  const writeLogManifest = (): PodsWriteLogManifest => ({
+    cap: WRITE_LOG_CAP,
+    count: writeLog.length,
+    dropped: droppedWrites,
+    totalBytes: writeLogBytes,
+    entries: [...writeLog].reverse().map((write, index) => ({
+      index,
+      ts: write.ts,
+      bytes: write.body.length,
+      action: ACTION_NAME_PATTERN.exec(write.body)?.[1] ?? null,
+      method: write.method,
+      url: write.url,
+    })),
+  });
+
+  /** One captured write by manifest index (newest first), or null when out of range. */
+  const writeLogEntry = (index: number): PodsWriteRecord | null => writeLog[writeLog.length - 1 - index] ?? null;
 
   const stashDonor = (url: string, method: string, headers: Record<string, string>, body: string): void => {
     // Skip capture while one of our own in-frame replays is in flight, so a
@@ -192,7 +289,7 @@ export const installPodsDonorInterceptor = (log: { info(message: string): void }
     if (!absolute.includes(PODS_PATH) || method.toUpperCase() !== 'POST') return;
     g[PODS_DONOR_GLOBAL] = { url: absolute, method, headers, body, ts: Date.now() };
     captureHead(body);
-    captureWrite(absolute, method, headers, body);
+    captureWrite(absolute, method, body);
   };
 
   if (!g.fetch[PODS_FETCH_MARKER]) {
@@ -209,12 +306,15 @@ export const installPodsDonorInterceptor = (log: { info(message: string): void }
             headers: { 'content-type': 'application/json' },
           });
         }
-        // Read sentinel: answer an in-frame write-log request with the recent
-        // burst of type-3 writes, newest first, so a batch of user edits decodes
-        // together. Checked before the single last-write sentinel because the
-        // last-write marker is a substring-free distinct string.
+        // Read sentinel: answer an in-frame write-log request with the manifest of
+        // captured writes, or — with `?entry=<index>` — one write in full. Two forms
+        // because a whole burst of bodies would not survive the reply size limit,
+        // while the manifest always does. Checked before the single last-write
+        // sentinel because the two markers are distinct strings.
         if (url.includes(PODS_WRITE_LOG_SENTINEL)) {
-          return new Response(JSON.stringify([...writeLog].reverse()), {
+          const requested = /[?&]entry=(\d+)/.exec(url);
+          const payload = requested ? writeLogEntry(Number(requested[1])) : writeLogManifest();
+          return new Response(JSON.stringify(payload), {
             status: 200,
             headers: { 'content-type': 'application/json' },
           });

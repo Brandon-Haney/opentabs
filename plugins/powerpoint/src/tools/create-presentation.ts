@@ -1,7 +1,7 @@
-import { defineTool, parseRetryAfterMs, ToolError } from '@opentabs-dev/plugin-sdk';
+import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { BLANK_PPTX_BASE64 } from '../blank-pptx.js';
-import { GRAPH_BASE, requireAuth } from '../powerpoint-api.js';
+import { graphFetch, requireAuth } from '../powerpoint-api.js';
 import { driveItemSchema, mapDriveItem, type RawDriveItem } from './schemas.js';
 
 const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
@@ -34,39 +34,18 @@ export const createPresentation = defineTool({
     const { token, driveId } = await requireAuth();
     const parentPath = params.folder_id ? `items/${params.folder_id}` : 'root';
 
-    // Use raw fetch because the api() helper only supports JSON request bodies.
-    // This endpoint requires a binary PUT with the PPTX Content-Type.
-    const url = `${GRAPH_BASE}/drives/${driveId}/${parentPath}:/${encodeURIComponent(name)}:/content`;
-
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': PPTX_MIME,
-        },
-        body: new Blob([blankPptxBuffer()], { type: PPTX_MIME }),
-        signal: AbortSignal.timeout(30_000),
-      });
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'TimeoutError')
-        throw ToolError.timeout('Timed out creating presentation');
-      throw ToolError.internal(`Network error: ${err instanceof Error ? err.message : String(err)}`);
-    }
-
-    if (!response.ok) {
-      const errorBody = (await response.text().catch(() => '')).substring(0, 512);
-      if (response.status === 429) {
-        const retryAfter = response.headers.get('Retry-After');
-        const retryMs = retryAfter !== null ? parseRetryAfterMs(retryAfter) : undefined;
-        throw ToolError.rateLimited(`Rate limited: ${errorBody}`, retryMs);
-      }
-      if (response.status === 401 || response.status === 403) throw ToolError.auth(`Auth error: ${errorBody}`);
-      if (response.status === 409) throw ToolError.validation(`Conflict — file may already exist: ${errorBody}`);
-      throw ToolError.internal(`Failed to create presentation (${response.status}): ${errorBody}`);
-    }
-
+    // Replaying this PUT is safe: a content PUT to a path replaces by default,
+    // so a second attempt after a hidden success writes the same blank bytes to
+    // the same file. Sending `@microsoft.graph.conflictBehavior=rename` would
+    // make every replay create another file and would require dropping
+    // `retryNonIdempotent`.
+    const response = await graphFetch(`/drives/${driveId}/${parentPath}:/${encodeURIComponent(name)}:/content`, {
+      method: 'PUT',
+      body: new Blob([blankPptxBuffer()], { type: PPTX_MIME }),
+      contentType: PPTX_MIME,
+      token,
+      retryNonIdempotent: true,
+    });
     const data = (await response.json()) as RawDriveItem;
     return { item: mapDriveItem(data) };
   },

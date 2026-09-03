@@ -61,9 +61,12 @@ export const openInEditor = defineTool({
       // pre-script match patterns cover it, while the raw Doc.aspx webUrl form is
       // rewritten client-side too late for document_start injection.
       const driveId = await requireDriveId(params.drive_id);
+      // createLink returns the existing link when one already exists, so a
+      // replay after a hidden success creates nothing new.
       const link = await api<{ link?: { webUrl?: string } }>(`/drives/${driveId}/items/${params.item_id}/createLink`, {
         method: 'POST',
         body: { type: 'edit', scope: 'existingAccess' },
+        retryNonIdempotent: true,
       });
       url = link.link?.webUrl;
       if (!url) {

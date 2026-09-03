@@ -19,14 +19,15 @@ npm install -g @opentabs-dev/opentabs-plugin-powerpoint
 1. Open [powerpoint.cloud.microsoft](https://powerpoint.cloud.microsoft) in Chrome and log in
 2. Open the OpenTabs side panel — the PowerPoint Online plugin should appear as **ready**
 
-## Tools (39)
+## Tools (58)
 
-### Account (2)
+### Account (3)
 
 | Tool | Description | Type |
 |---|---|---|
 | `get_current_user` | Get the current user profile | Read |
 | `reauthenticate` | Clear stale MSAL state and reload the tab to force a fresh Graph token | Write |
+| `diagnose` | Read-only Microsoft Graph connectivity and auth check — token sources (no values), drive resolution, reload marker, single-attempt Graph probes (`/me`, and `/shares` on SharePoint when the drive id is unknown) | Read |
 
 ### Drive (1)
 
@@ -52,12 +53,13 @@ npm install -g @opentabs-dev/opentabs-plugin-powerpoint
 | `create_folder` | Create a new folder | Write |
 | `list_versions` | List version history of a file | Read |
 
-### Presentations (2)
+### Presentations (3)
 
 | Tool | Description | Type |
 |---|---|---|
 | `create_presentation` | Create a new blank presentation | Write |
 | `get_preview_url` | Get an embeddable preview URL | Read |
+| `open_in_editor` | Open a deck in the web editor for live editing | Write |
 
 ### Sessions (4)
 
@@ -70,24 +72,43 @@ Batched editing. Open a session once, run many edit tools against an in-memory c
 | `discard_presentation` | Throw away a session without saving | Write |
 | `list_presentation_sessions` | List all open batched edit sessions | Read |
 
-### Slides (14)
+### Slides (31)
+
+Live tools (marked *co-authoring*) edit the deck that is open in the web editor through its co-authoring session, so the change appears for every editor immediately. The remaining tools read and write the saved PPTX package through Microsoft Graph.
 
 | Tool | Description | Type |
 |---|---|---|
+| `get_slide_structure` | Get a slide as named slots (title, body) rather than shapes | Read |
+| `set_placeholder_text` | Write text into a slide slot by role (title, body) | Write |
+| `get_live_outline` | Read the open deck's live text, formatting, and structure (co-authoring) | Read |
+| `set_text` | Replace slide text by its current content, keeping the formatting (co-authoring) | Write |
+| `set_font_size` | Resize slide text by its visible content (co-authoring) | Write |
+| `format_text` | Format slide text (size/bold/italic/underline/color/font) by its content (co-authoring) | Write |
+| `align_text` | Align a paragraph in the open deck (co-authoring) | Write |
+| `add_slide_live` | Add a slide to the open deck (co-authoring) | Write |
+| `delete_slide_live` | Delete a slide from the open deck (co-authoring) | Write |
+| `move_slide_live` | Reorder a slide in the open deck (co-authoring) | Write |
+| `set_slide_background` | Set a slide's background colour in the open deck (co-authoring) | Write |
+| `list_slide_layouts` | List the layouts available for new slides | Read |
+| `add_slide` | Create a new slide from a layout | Write |
+| `delete_slide` | Remove a slide from a presentation | Write |
+| `duplicate_slide` | Clone an existing slide in place | Write |
+| `move_slide` | Reorder a slide within the deck | Write |
+| `set_slide_hidden` | Hide a slide from the slide show, or restore it | Write |
 | `get_slides` | List all slides with their text content | Read |
 | `get_slide_content` | Get text and notes for a specific slide | Read |
 | `get_slide_layout` | Get the structural layout of a slide (shapes, positions, text, fill) | Read |
-| `get_comments` | Read reviewer comments and threaded replies | Read |
-| `get_slide_notes` | Read speaker notes from a slide | Read |
 | `add_text_box` | Add a new text box to a slide | Write |
 | `add_shape` | Add a preset shape (rectangle, ellipse, arrow, ...) to a slide | Write |
 | `add_image` | Insert an image onto a slide | Write |
+| `add_table` | Add a data-filled table to a slide | Write |
 | `update_shape` | Edit a shape's text, geometry, rotation, or fill | Write |
-| `update_slide_notes` | Modify speaker notes on a slide | Write |
+| `fit_text` | Write text at the largest size that fits the shape | Write |
 | `delete_shape` | Remove a shape from a slide | Write |
 | `duplicate_shape` | Clone a shape in place | Write |
-| `delete_slide` | Remove a slide from a presentation | Write |
-| `duplicate_slide` | Clone an existing slide in place | Write |
+| `get_slide_notes` | Read speaker notes from a slide | Read |
+| `update_slide_notes` | Modify speaker notes on a slide | Write |
+| `get_comments` | Read reviewer comments and threaded replies | Read |
 
 ### Sharing (3)
 

@@ -4,8 +4,8 @@ import {
   appendPlaceholder,
   findSlot,
   readLayoutSlots,
-  resolveSlots,
   resolveSlotFontSize,
+  resolveSlots,
   SLOT_ROLES,
 } from '../placeholders.js';
 import {

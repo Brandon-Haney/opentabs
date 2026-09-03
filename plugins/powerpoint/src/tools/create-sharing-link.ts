@@ -25,12 +25,15 @@ export const createSharingLink = defineTool({
   }),
   handle: async params => {
     const driveId = await requireDriveId(params.drive_id);
+    // createLink returns the existing link when one of this type and scope
+    // already exists, so a replay after a hidden success creates nothing new.
     const data = await api<RawPermission>(`/drives/${driveId}/items/${params.item_id}/createLink`, {
       method: 'POST',
       body: {
         type: params.type,
         scope: params.scope ?? 'anonymous',
       },
+      retryNonIdempotent: true,
     });
     return { permission: mapPermission(data) };
   },

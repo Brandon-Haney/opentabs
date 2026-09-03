@@ -8,5 +8,6 @@
   "include": [
     "src/**/*.test.ts",
     "vitest.config.ts"
-  ]
+  ],
+  "exclude": []
 }

@@ -61,6 +61,34 @@ observed (Graph enforces it — verified 412 on mismatch).
   hidden-iframe renewal using the still-valid SSO session) is the better long-term
   answer and is not yet built — see the token TODO.
 
+### Who the page is: member, guest, or anonymous link
+
+Graph availability is decided by the *identity the page runs as*, not by the
+plugin. `_spPageContextInfo` and `_wopiContextJson` say which case you are in
+(`powerpoint__diagnose` reports it as `identity.kind`):
+
+| Page identity | How to recognise it | Graph token | Co-authoring channel |
+| --- | --- | --- | --- |
+| `member` — signed in to the hosting tenant | `aadUserId` set, `isExternalGuestUser` false | minted by the page's MSAL; captured per origin | works |
+| `guest` — B2B guest of the hosting tenant | `isExternalGuestUser: true` | minted against the *hosting* tenant (its `tid`), so it addresses that tenant's drives — capture is per origin, nothing from the home tenant leaks across | works |
+| `anonymous-link` — "anyone with the link" share | `isAnonymousGuestUser: true`, login `urn:spo:tenantanon#<tenant>`, zero `msal.*` keys | **never exists**: the page has no Microsoft 365 sign-in, so nothing mints one and nothing can be refreshed | works — the WOPI session is the only transport |
+
+Verified 2026-09-03 on a deck in another company's tenant opened through an
+edit-capable anonymous link: `get_live_outline` and the `*_live` writes reach it
+through the editor frame, while every Graph-backed tool fails by design. The
+plugin now throws `ANONYMOUS_SHARING_LINK` (an AUTH_ERROR sibling) naming the
+live tools instead of pointing at `reauthenticate`, which is a no-op there — a
+reload would only drop the live session. The captured token is stored per
+origin (`<tenant>.sharepoint.com`), so a foreign tenant's page never sees, and
+is never confused by, the home tenant's token.
+
+Two capture details that bit before: the page does not call Graph on every
+load (three cold loads in a row captured a token once), so a missing token
+after a reload is not proof the interceptor is broken; and a Bearer token
+sniffed off a Graph request header now keeps the JWT's own `exp` — the earlier
+fixed 600-second trust window expired a perfectly good token ten minutes after
+load.
+
 ## Reaching the cross-origin editor frame
 
 The plugin's `urlPatterns` govern the top frame; they can never match the
@@ -253,13 +281,19 @@ the rest from one capture set — no per-feature recording.
 
 The single biggest time sink is guessing. Prove each claim before acting on it.
 
-- **CDP network capture has an OOPIF blind spot.**
-  `browser_enable_network_capture` (Chrome DevTools Protocol) does **not** attach
-  to the deeply-nested editor OOPIF, so the co-authoring requests never appear —
-  you will see the app's *settings* poll (from a captured frame) but not the actual
-  edit traffic and wrongly conclude nothing is firing. **Export a HAR from the
-  user's own DevTools** ("Save all as HAR with content") — DevTools attaches to all
-  frames and captures the OOPIF.
+- **CDP network capture only sees OOPIFs created after it was enabled.**
+  `browser_enable_network_capture` auto-attaches child targets (`Target.setAutoAttach`,
+  flattened, recursive), but an editor frame that already existed when capture
+  started is never attached — so enabling capture on an open deck shows the host
+  page's traffic and none of the co-authoring writes, and it is easy to conclude
+  nothing is firing. Enable capture, **then reload the tab**, then act. For
+  PowerPoint the in-frame write log (`__otb_pods_writelog__`, below) needs no
+  capture at all; a DevTools HAR ("Save all as HAR with content") remains the
+  fallback for multi-request flows.
+- **The write sentinels carry no credentials.** `__otb_pods_lastwrite__` and
+  `__otb_pods_writelog__` answer with `{url, method, body, ts}` — the session
+  headers stay in the frame-local donor. A decode only ever needs the body; the
+  network capture likewise redacts `x-accesstoken` / `x-aadtoken`.
 - **Prove injection with the call stack.** A HAR entry carries
   `_initiator.stack.callFrames`. Grep it for your pre-script's filename: if
   `…-prescript-<hash>.js` appears in the stack for a given request, your

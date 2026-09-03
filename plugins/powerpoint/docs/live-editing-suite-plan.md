@@ -36,6 +36,47 @@ of the session; the engine auto-recovers by reloading the deck tab and
 re-reading against the fresh session's base. Both are documented in
 [[pods-action-catalog.md]] under "Protocol reliability".
 
+**Status (2026-09-03): identity-aware auth shipped; range formatting and
+hyperlinks are one capture session away.** A deck in another company's tenant
+opened through an edit-capable anonymous sharing link was reached live
+(`get_live_outline` on the editor session) — the earlier "the plugin can't reach
+a foreign tenant" diagnosis was wrong; what fails there is Graph, by design,
+because an anonymous-link page has no Microsoft 365 sign-in at all. `diagnose`
+now reports `identity.kind` (member / guest / anonymous-link) and `canEdit`;
+Graph tools on such a page throw `ANONYMOUS_SHARING_LINK` naming the live tools;
+`reauthenticate` is a no-op there. `get_live_outline` names the shape each
+paragraph belongs to (walking shape → text body → paragraph in the live model),
+so two paragraphs with the same text can be told apart. The in-frame write
+sentinels no longer carry session headers. Next: M2b below.
+
+**M2b capture done, range formatting SHIPPED (2026-09-03).** A live capture of
+three gestures on the test deck decoded all three of the remaining text gaps at
+once, and the first of them is built and live-verified.
+
+- **Run segmentation decoded and shipped.** A paragraph's text is one string;
+  `469769746` holds the run-boundary offsets and `603987475` one run reference per
+  stretch, with the same run object reused across stretches. `format_text` and
+  `set_font_size` now take an optional `match` (plus `occurrence`), so an agent
+  formats part of a paragraph the way a person selects a few words and clicks Bold.
+  Text outside the match keeps its formatting, a match spanning two formats keeps
+  both bases, and a paragraph that already had several runs is no longer refused.
+  Live-verified on Fusion Milestones: one word of the title turned red and back,
+  `applied: true` both ways, the rest of the title untouched.
+- **Hyperlinks decoded, not yet built.** PowerPoint splices a Word field code
+  (`U+FDDF` + `HYPERLINK "<url>"`) into the paragraph text and hides it with run
+  flags; Insert Link is two writes, the second resubmitting the whole shape. See
+  [[pods-action-catalog.md]]. Building it means mutating visible text, so it wants
+  its own builder, tests and set-and-revert cycle.
+- **`NewLine` decoded, not yet built.** Two chained revisions in one POST, and the
+  split appends a new text-body BLOCK to the shape rather than a paragraph to the
+  existing one. This is the piece that turns a 1-4 paragraph template into the
+  15-39 paragraphs a real review needs.
+- **The client's own catalogs are now available** without a capture at all: 2,892
+  action names and 2,195 property ids with types, extracted from anonymously
+  fetchable bundles and validated against every id this repo had decoded by hand.
+  They settle naming and semantics; they do not settle which objects a revision
+  must carry, so captures remain the way to learn an action's object graph.
+
 ## Product decisions (locked 2026-08-16)
 
 1. **Editing is co-authoring-only.** Every write goes through the pods
@@ -194,9 +235,59 @@ lands on — it is deliberately before new capability.
   live-side `fit_text` once size + text are both live), `update_shape`'s text
   half.
 
+**M2b — Format like a person does: select a range, then apply (needs one capture
+session).** Today `format_text` formats a whole single-run paragraph, `set_text`
+replaces one paragraph, and there is no hyperlink action — the three gaps that
+stopped the SOP-link deck (an agent needs 15–39 paragraphs where the template
+gives 1–4, needs to bold or colour part of a line, and needs 11 hyperlinks).
+
+What the live model already tells us (zero-base read of Fusion Milestones,
+2026-09-03): text lives on the paragraph only — runs carry formatting, not text
+— and the deck's one two-run paragraph carries paragraph property `469769746 =
+"8"`, the character length of its first run. The working hypothesis is that run
+boundaries are a paragraph-level offset list, so a range format is: new run
+objects (copies of the covering run with the changed props), the run-ref list
+`603987475` rewritten to name the pieces in order, and `469769746` set to the
+split offsets — the whole paragraph resubmitted, end-mark `536886591` untouched.
+A hyperlink is expected to be a run-level property (or a small linked object)
+on the covering run. Neither is built until the editor's own writes confirm the
+shape; the last constructed run collapse without a capture crashed the editor.
+
+The capture session (Brandon, on Fusion Milestones only — never Chris's deck),
+one gesture at a time, reading the write log after each:
+
+1. Confirm the interceptor is live: `browser_fetch_in_frame({ tabId,
+   frameUrlIncludes: "powerpoint.officeapps", donorGlobal: "__otbPptPodsDonor",
+   url: "https://opentabs.invalid/__otb_pods_head__" })` answers `{head, ts}`
+   with a fresh `ts`. A stale `ts` or a 404 page means the tab predates the
+   pre-script registration — reload it first.
+2. In the title, select the single word `Timeline` (double-click) and press
+   **Ctrl+B** — a bold toggle on a range inside a one-run paragraph. Read
+   `https://opentabs.invalid/__otb_pods_writelog__` the same way (newest first,
+   `{url, method, body, ts}`, no headers). Then **Ctrl+Z**, read again (the
+   inverse), and confirm with `get_live_outline` that the title is one run again.
+3. Select `Milestones`, press **Ctrl+K**, paste a URL (any public page), Enter.
+   Read the log — expect one or two type-3 writes; the one after the dialog
+   commit carries the link. **Ctrl+Z**, read again.
+4. Click at the end of the title, press **Enter**, type `Second line`. Read the
+   log — the `NewLine` split plus the `Typing` write for the new paragraph.
+   **Ctrl+Z** twice, read again.
+5. Save each body under `plugins/powerpoint/docs/exemplars/<ActionName>.json`
+   (bodies only — the sentinels carry nothing else) and diff against the model
+   read; record the property ids in [[pods-action-catalog.md]].
+
+The ring buffer keeps 12 writes and `browser_fetch_in_frame` returns at most
+200 K characters, so read after every gesture rather than at the end. Once
+decoded: `format_text` gains `range: { start, end }` (or `match: "Timeline"`)
+resolved against the paragraph text, `set_hyperlink` mirrors Excel's tool shape
+(`url`, `remove`), and `set_text` gains multi-line input that emits one
+paragraph per line. All three are registry builders on the existing engine.
+
 **M3 — Formatting completion (all decoded, mechanical).**
-- Live-verify the `format_text` props not yet proven (underline, font family,
-  color); add highlight, superscript/subscript.
+- ~~Live-verify `format_text` colour~~ **DONE 2026-09-03** (a range colour change,
+  set and reverted). Underline and font family are still unproven live; add
+  highlight, and strikethrough/superscript/subscript (`134224903`/`904`/`905`,
+  named by the client's registry).
 - Paragraph tier: `set_alignment`, `set_line_spacing`, bullets/numbering
   toggles, indent promote/demote — paragraph-property patches, no new run;
   smaller writes than anything shipped.

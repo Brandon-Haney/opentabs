@@ -29,13 +29,13 @@ import {
 } from './pptx-utils.js';
 import {
   A_NS,
+  CT_NS,
   childByLocalName,
   childElements,
-  CT_NS,
   isElement,
   P_NS,
-  parseXml,
   PKG_REL_NS,
+  parseXml,
   R_NS,
   serializeXml,
 } from './xml.js';

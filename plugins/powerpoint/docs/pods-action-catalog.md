@@ -8,6 +8,18 @@ changes. Exemplar bodies saved under `scratchpad/actions/`.
 Build status: ✅ shipped live · ◑ wire decoded, easy to build (reuses the `format_text` pattern) · ○ decoded,
 harder build (rewrites the object graph) · · captured, not yet analysed.
 
+## The object graph (decoded 2026-09-03 from a zero-base model read)
+
+`393227` slide —`603986976`→ `1074135132` shapes —`603986976`→ `393229` text body
+—`603986975`→ `393230` paragraphs —`603987475`→ `1179725` runs; `536886591` on the
+paragraph is the end-mark run. `603986975` is a generic *ordered children* property
+(the root uses it for its slide list) and `603986976` a generic *content refs*
+property. `603995142` on a shape is **not** its paragraph list (present on only
+17 of 33 shapes; a mapping built on it resolved nothing). Runs in the loaded model
+carry **no text** — the text is on the paragraph. Run boundaries are a
+paragraph-level offset list in `469769746`, **confirmed 2026-09-03** by a live
+range-bold capture; see "How a paragraph holds more than one format" below.
+
 ## Slides (structural)
 | Action | Bytes | Build | Notes |
 | --- | --- | --- | --- |
@@ -33,8 +45,10 @@ harder build (rewrites the object graph) · · captured, not yet analysed.
 | `Font` (family) | ◑ | run `469769226` + `469780527/528/529` (typeface) |
 | `SetFontColor` | ◑ | run `469780760` = `"@RRGGBB,,"` + `335551500` (BGR int) |
 | `SetFontBackgroundColor` (highlight) | ◑ | run color props (background variant) |
-| `Superscript` / `Subscript` | ◑ | run `134224903/904/905` + baseline |
+| `Strikethrough` / `Superscript` / `Subscript` | ◑ | run `134224903` / `134224904` / `134224905` respectively — named by the client's own property registry, which shifts the earlier guess by one. |
 | `GrowFontSize` / `ShrinkFontSize` | ◑ | run `268442635` step |
+| range format (select part of a paragraph, then Bold/…) | ○ DECODED 2026-09-03 | See "How a paragraph holds more than one format" below. |
+| hyperlink (Ctrl+K) | ○ DECODED 2026-09-03 | A field code spliced into the paragraph text; see below. |
 
 ## Paragraph formatting (paragraph `393230`)
 | Action | Build | Wire |
@@ -44,7 +58,7 @@ harder build (rewrites the object graph) · · captured, not yet analysed.
 | `ToggleBulletsList` | ◑ | paragraph + `393229`/`393234` list objects |
 | `ToggleNumberedList` | ◑ | paragraph + numbering objects |
 | `DemoteIndent` / `PromoteIndent` | ◑ | paragraph outline level |
-| `NewLine` | ○ | splits a paragraph (creates new `393230`) |
+| `NewLine` | ○ DECODED 2026-09-03 | Splits a paragraph. Two chained revisions, and it appends a new text-body block to the shape; see below. |
 
 ## Text content
 | Action | Build | Wire |
@@ -71,6 +85,131 @@ harder build (rewrites the object graph) · · captured, not yet analysed.
 | `ApplyTableStyle` | ◑ | table style GUID |
 | `ApplyTableStyleOption` | ◑ | header/band toggles |
 | `PowerPointCellShadingColor` | ◑ | cell `393252` fill |
+
+## How a paragraph holds more than one format (decoded 2026-09-03)
+
+This is the mechanism behind "select some text, then click Bold", and it is not what
+a run-per-span model would predict.
+
+- The paragraph's text (`469769250`) is **one string for the whole paragraph**. Runs
+  carry formatting only; they hold no text of their own.
+- **`469769746` is the run-boundary list**: comma-separated character offsets into that
+  string where the formatting changes. N runs means N-1 offsets, and the property is
+  **absent entirely on a single-run paragraph**.
+- **`603987475` lists one run reference per segment, in order.** The same run object may
+  appear more than once — runs are shared formatting descriptors, not text spans.
+- `536886591` is the end-mark run: the formatting a caret at the end of the paragraph
+  inherits.
+
+Captured from a real range-bold. The title reads `" Fusion Pilot Timeline: Key Milestones"`
+and the word `Timeline` occupies characters 14 to 21, so the editor wrote:
+
+```jsonc
+469769746: "14,22"                      // three segments: [0,14) [14,22) [22,end)
+603987475: "{orig}{58},{new}{23},{orig}{58}"   // head and tail share ONE run object
+```
+
+The two-run paragraph in the same deck (`"04/29 - PILOT GO -- NO GO"`) carries
+`469769746: "8"`, which is the same rule with one boundary.
+
+| Action | Build | Wire |
+| --- | --- | --- |
+| **range format** (select part of a paragraph, then Bold/size/colour/…) | ○ decoded, ready to build | ONE revision, three objects: the action descriptor; the paragraph resubmitted with a new `469769746` and a rewritten `603987475`; and **one new `1179725` run** that is a verbatim copy of the covering run's property list with only the requested properties overridden. The head and tail segments keep pointing at the original run object, so nothing else is touched. Exemplar: `Bold`, `Sequence 5`, 2,650 bytes. |
+| **`NewLine`** (Enter — paragraph split) | ○ decoded, ready to build | ONE POST carrying **two chained revisions** (`rev2.BaseId = rev1.Id`). Rev 1: action descriptor (`469780989:"NewLine"`, while the `469780658` json calls it `"Enter"`); the **shape `1074135132` resubmitted with a second text-body reference appended to `603986976`**; the source paragraph; a **new text body `393229`** whose `603986975` names the new paragraph; and the new paragraph `393230` with `469769250:""`, its run-ref and `536886591` pointing at the source paragraph's run. Rev 2: the new paragraph again with `469780757:{"Lines":[1]}`. So a split appends a text-body BLOCK to the shape — a shape's `603986976` is a list of blocks, not a single one. Exemplar: 6,926 bytes. |
+| **hyperlink** (Ctrl+K) | ○ decoded, ready to build | See below — it is a field code, and it carries **no action name at all**. |
+
+### A hyperlink is a Word field code inside the paragraph text
+
+Nothing about hyperlinks was known before this capture, and the answer is that
+PowerPoint on the web does not model them as a run property or a relationship. It
+splices a **Word-style field code straight into the paragraph's text**, exactly as
+`HYPERLINK "<url>"` appears in a `.docx` field:
+
+```
+" Fusion Pilot Timeline: Key \uFDDFHYPERLINK \"https://example.com/sop\"Milestones"
+                              ^ U+FDDF begins the field code   ^ display text follows
+```
+
+The field code is then hidden by run flags rather than by a separate structure. With
+the URL above the editor wrote `469769746: "28,64"`, giving three segments:
+
+| Segment | Characters | Run | Properties |
+| --- | --- | --- | --- |
+| leading text | `[0,28)` | the original run, resubmitted with a fresh `335551866` timestamp | unchanged formatting |
+| the field code | `[28,64)` | a new `1179725` | **only** `134225428:"true"`, `134225430:"true"`, `134225433:"true"` — no formatting at all, because it is never drawn |
+| the link text | `[64,end)` | a new `1179725` | a full copy of the covering run's formatting **plus** `134225428:"true"`, `134225433:"true"`, `134236593:"true"` |
+
+New property ids, named from their distribution across the two runs:
+
+| Property id | Meaning |
+| --- | --- |
+| `134225428` | the run is part of a field (set on both the code and the display text) |
+| `134225430` | the run **is** the field code, so it is hidden (set only on the code run) |
+| `134225433` | the run is field content (set on both) |
+| `134236593` | the run is a hyperlink's display text (set only on the display run) |
+
+Insert Link is **two writes**, ~1.5 s apart, and neither carries a `469780989` action
+name — the manifest shows them as unnamed. The first write is the one above. The
+second resubmits the whole shape `1074135132` plus the paragraph again, now with
+`536886591` restored and the run references pointing at the ids the **server**
+assigned to the runs the first write created. That second write is the same
+shape-resubmit shape the `Backspace` capture needed, and its absence is what
+previously left the editor client fighting our edits.
+
+Undecoded: `469769819`, which appeared once as `"100"` on the hyperlink write and is
+absent from every other capture. Do not write it.
+
+## The client's own catalogs — names and property ids without a capture
+
+PowerPoint for the web hands over its whole vocabulary to anyone who asks. A plain
+unauthenticated `GET https://usc-powerpoint.officeapps.live.com/pods/ppt.aspx`
+returns the real editor app shell (no WOPI POST, no browser, no auth), and the
+bundle URLs it names are public CDN assets that `curl` fetches directly. Two
+extractions come out of them, both validated against everything this repo had
+already decoded by hand:
+
+- **Action names.** `ppteditDS.core1/core2.js` carry reverse-lookup switch tables
+  registered as `Commands` and `CommonCommands`. Merged: **2,892 action names** with
+  their 32-bit ids, in one global id space. All 38 names ever seen on our wire are
+  present, which is what proves it is the right table. The ids are not a hash of the
+  name — seven standard 32-bit hashes were ruled out — so they can only be read from
+  the table.
+- **Property ids.** `ppteditDS.core1.js` states the composition rule verbatim:
+  `propertyId = index | (group << 10) | (typeCode << 26)`. Expanding the nine
+  registries yields **2,195 property ids** with their wire types, of which 179 carry
+  a human-readable name. Every one of the 57 ids this repo had decoded by capture
+  resolves, with matching types.
+
+The catalogs, the extraction script and the full method are kept at
+`~/.opentabs/wire-catalogs/` (they are Microsoft's identifiers, so they live beside
+the repo rather than in it, and the `h<16-hex>` CDN path segment rotates per build,
+so re-scrape rather than trusting a cached URL).
+
+**What this does not settle.** The self-label is telemetry, not dispatch: the client
+writes `469780989` only behind the feature flag `PPTEmitUndoActionNameForEditIntent`,
+taking the name from the undo stack's top command. So knowing 2,892 names does not
+buy 2,892 capabilities — it tells you what an action is called and what its
+properties mean, while **which objects a revision must carry is still only knowable
+from a capture**. It also explains why our builders' cosmetic `ActionName` has never
+mattered to the server.
+
+Two things the registry corrected on sight: the run flags `134224903/904/905` are
+strikethrough / superscript / subscript rather than the trio the catalog first
+guessed, and `align_text`'s justify case was emitting `JustifyTextJustify`, a name
+that exists nowhere in the client — the real one is `FullTextJustify`.
+
+It also independently confirms the run-segmentation decode above: `469769746` is a
+string property sitting immediately beside the run-reference list (`603987475`) in
+the same registry group, `134225430` is literally named **`isHidden`** — the hidden
+field-code run — and `536886591` is literally **`endOfParagraphFormatting`**.
+
+## Capture channel
+
+`__otb_pods_lastwrite__` and `__otb_pods_writelog__` (12-entry ring buffer, newest
+first) answer with `{url, method, body, ts}` only — the session headers stay in the
+frame-local donor. Read them with `browser_fetch_in_frame` (`donorGlobal:
+"__otbPptPodsDonor"` selects the right frame; the URL override hits the sentinel).
+The response is capped at 200 K characters, so read after every gesture.
 
 ## Protocol reliability (decoded live 2026-08-17)
 

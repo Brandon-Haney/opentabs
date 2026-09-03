@@ -13,8 +13,16 @@ export interface FetchFromPageOptions extends RequestInit {
   timeout?: number;
 }
 
-/** Maps an HTTP error response to a ToolError with the appropriate category. */
-export const httpStatusToToolError = (response: Response, message: string): ToolError => {
+/**
+ * HTTP statuses that signal a transient upstream failure worth retrying:
+ * 408 (request timeout), 429 (rate limited) and the 5xx codes a healthy
+ * origin recovers from on its own (500, 502, 503, 504). 501 and 505 are
+ * excluded — they describe a permanent capability mismatch.
+ */
+export const TRANSIENT_HTTP_STATUSES: ReadonlySet<number> = new Set([408, 429, 500, 502, 503, 504]);
+
+/** Classifies an HTTP error status into a ToolError code/category without attaching details. */
+const classifyHttpStatus = (response: Response, message: string): ToolError => {
   const status = response.status;
   if (status === 401 || status === 403) {
     return ToolError.auth(message);
@@ -34,8 +42,7 @@ export const httpStatusToToolError = (response: Response, message: string): Tool
     return ToolError.timeout(message);
   }
   if (status >= 500) {
-    const TRANSIENT_5XX = new Set([500, 502, 503, 504]);
-    const retryable = TRANSIENT_5XX.has(status);
+    const retryable = TRANSIENT_HTTP_STATUSES.has(status);
     const retryAfter = status === 503 ? response.headers.get('Retry-After') : null;
     const retryAfterMs = retryAfter !== null ? parseRetryAfterMs(retryAfter) : undefined;
     return new ToolError(message, 'http_error', { category: 'internal', retryable, retryAfterMs });
@@ -45,6 +52,14 @@ export const httpStatusToToolError = (response: Response, message: string): Tool
   }
   return new ToolError(message, 'http_error', { category: 'internal' });
 };
+
+/**
+ * Maps an HTTP error response to a ToolError with the appropriate category.
+ * Every returned error carries `details.httpStatus` so the audit log records
+ * the upstream status alongside the classification.
+ */
+export const httpStatusToToolError = (response: Response, message: string): ToolError =>
+  classifyHttpStatus(response, message).withDetails({ httpStatus: response.status });
 
 /** Parses a Retry-After header value (seconds or HTTP-date) into milliseconds. */
 export const parseRetryAfterMs = (value: string): number | undefined => {

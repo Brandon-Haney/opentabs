@@ -42,7 +42,10 @@ vi.mock('./plugin-storage.js', () => ({
   invalidatePluginCache: vi.fn(),
 }));
 
-vi.mock('./tab-matching.js', () => ({
+vi.mock('./tab-matching.js', async importOriginal => ({
+  // isTabScriptable is a pure predicate; the real implementation is kept so
+  // readiness tests exercise the discarded/frozen/unloaded filter.
+  isTabScriptable: (await importOriginal<typeof import('./tab-matching.js')>()).isTabScriptable,
   findAllMatchingTabs: mockFindAllMatchingTabs,
   urlMatchesPatterns: mockUrlMatchesPatterns,
   matchPattern: vi.fn(),
@@ -214,6 +217,214 @@ describe('computePluginTabState', () => {
     const result = await computePluginTabState(makePlugin());
     expect(result.state).toBe('unavailable');
     expect(result.tabs).toEqual([{ tabId: 30, url: '', title: '', ready: false }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computePluginTabState — tabs Chrome cannot script are not probed
+// ---------------------------------------------------------------------------
+
+describe('computePluginTabState — non-scriptable tabs', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    clearTabStateCache();
+    mockFindAllMatchingTabs.mockReset();
+    mockExecuteScript.mockReset();
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  test.each([
+    ['discarded', { discarded: true }],
+    ['unloaded', { status: 'unloaded' }],
+    ['frozen', { frozen: true }],
+  ])('a %s tab is listed ready:false without a probe or a warning', async (_label, flags) => {
+    mockFindAllMatchingTabs.mockResolvedValue([
+      { id: 7, url: 'https://example.com/x', title: 'X', ...flags } as chrome.tabs.Tab,
+    ]);
+
+    const result = await computePluginTabState(makePlugin());
+
+    expect(mockExecuteScript).not.toHaveBeenCalled();
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      state: 'unavailable',
+      tabs: [{ tabId: 7, url: 'https://example.com/x', title: 'X', ready: false }],
+    });
+  });
+
+  test('probes only the scriptable tab in a mixed list and returns both', async () => {
+    mockFindAllMatchingTabs.mockResolvedValue([
+      { id: 1, url: 'https://example.com/a', title: 'A', discarded: true } as chrome.tabs.Tab,
+      { id: 2, url: 'https://example.com/b', title: 'B' } as chrome.tabs.Tab,
+    ]);
+    mockExecuteScript.mockResolvedValue([{ result: true }]);
+
+    const result = await computePluginTabState(makePlugin());
+
+    expect(mockExecuteScript).toHaveBeenCalledTimes(1);
+    expect((mockExecuteScript.mock.calls[0]?.[0] as { target: { tabId: number } }).target.tabId).toBe(2);
+    expect(result.state).toBe('ready');
+    expect(result.tabs).toEqual([
+      { tabId: 1, url: 'https://example.com/a', title: 'A', ready: false },
+      { tabId: 2, url: 'https://example.com/b', title: 'B', ready: true },
+    ]);
+  });
+
+  test('a tab with explicit false flags and status complete is probed', async () => {
+    mockFindAllMatchingTabs.mockResolvedValue([
+      {
+        id: 3,
+        url: 'https://example.com/c',
+        title: 'C',
+        discarded: false,
+        frozen: false,
+        status: 'complete',
+      } as chrome.tabs.Tab,
+    ]);
+    mockExecuteScript.mockResolvedValue([{ result: true }]);
+
+    const result = await computePluginTabState(makePlugin());
+
+    expect(mockExecuteScript).toHaveBeenCalledTimes(1);
+    expect(result.state).toBe('ready');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Probe failures are warned once per (tab, message) until the tab reloads
+// ---------------------------------------------------------------------------
+
+describe('probe failure warn-once', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  const failingTab = (id: number): chrome.tabs.Tab =>
+    ({ id, url: `https://example.com/${id}`, title: `Tab ${id}` }) as chrome.tabs.Tab;
+
+  beforeEach(() => {
+    clearTabStateCache();
+    mockFindAllMatchingTabs.mockReset();
+    mockExecuteScript.mockReset();
+    mockGetAllPluginMeta.mockReset();
+    mockGetAllPluginMeta.mockResolvedValue({});
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  test('the same failure on the same tab is warned exactly once', async () => {
+    mockFindAllMatchingTabs.mockResolvedValue([failingTab(3)]);
+    mockExecuteScript.mockRejectedValue(new Error('Cannot access contents of the page'));
+
+    await computePluginTabState(makePlugin({ name: 'outlook' }));
+    await computePluginTabState(makePlugin({ name: 'outlook' }));
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const line = String(warnSpy.mock.calls[0]?.[0]);
+    expect(line).toContain('"outlook"');
+    expect(line).toContain('tab 3');
+    expect(line).toContain('Cannot access contents of the page');
+  });
+
+  test('a rejection quoting the tab URL is logged with the URL stripped', async () => {
+    mockFindAllMatchingTabs.mockResolvedValue([failingTab(3)]);
+    mockExecuteScript.mockRejectedValue(
+      new Error(
+        'Cannot access contents of url "https://example.com/mail/id/AAMk". Extension manifest must request permission to access this host.',
+      ),
+    );
+
+    await computePluginTabState(makePlugin({ name: 'outlook' }));
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const line = String(warnSpy.mock.calls[0]?.[0]);
+    expect(line).not.toContain('example.com');
+    expect(line).not.toContain('/mail/');
+    expect(line).not.toContain('AAMk');
+    expect(line).toContain('Extension manifest must request permission to access this host.');
+  });
+
+  test('two different failure messages on one tab are both warned', async () => {
+    mockFindAllMatchingTabs.mockResolvedValue([failingTab(3)]);
+    mockExecuteScript.mockRejectedValueOnce(new Error('Cannot access contents of the page'));
+    mockExecuteScript.mockRejectedValueOnce(new Error('Frame with ID 0 was removed'));
+
+    await computePluginTabState(makePlugin());
+    await computePluginTabState(makePlugin());
+
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+  });
+
+  test('the same failure on two tabs is warned once per tab', async () => {
+    mockFindAllMatchingTabs.mockResolvedValue([failingTab(3), failingTab(4)]);
+    mockExecuteScript.mockRejectedValue(new Error('Cannot access contents of the page'));
+
+    await computePluginTabState(makePlugin());
+    await computePluginTabState(makePlugin());
+
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+  });
+
+  test('an isReady() timeout is warned once', async () => {
+    mockFindAllMatchingTabs.mockResolvedValue([failingTab(3)]);
+    mockExecuteScript.mockImplementation(() => new Promise(() => {}));
+
+    await computePluginTabState(makePlugin());
+    await computePluginTabState(makePlugin());
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0]?.[0])).toContain('isReady() timed out after 100ms');
+  });
+
+  describe('reset paths', () => {
+    beforeEach(async () => {
+      mockFindAllMatchingTabs.mockResolvedValue([failingTab(3)]);
+      mockExecuteScript.mockRejectedValue(new Error('Cannot access contents of the page'));
+      await computePluginTabState(makePlugin());
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('checkTabRemoved resets the tab even with zero plugins', async () => {
+      await checkTabRemoved(3);
+      await computePluginTabState(makePlugin());
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+    });
+
+    test('checkTabChanged with a url change resets the tab', async () => {
+      await checkTabChanged(3, { url: 'https://example.com/other' } as chrome.tabs.OnUpdatedInfo);
+      await computePluginTabState(makePlugin());
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+    });
+
+    test('checkTabChanged with status complete resets the tab', async () => {
+      await checkTabChanged(3, { status: 'complete' } as chrome.tabs.OnUpdatedInfo);
+      await computePluginTabState(makePlugin());
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+    });
+
+    test('checkTabChanged with only a title change does not reset', async () => {
+      await checkTabChanged(3, { title: 'x' } as chrome.tabs.OnUpdatedInfo);
+      await computePluginTabState(makePlugin());
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('a change on a different tab does not reset', async () => {
+      await checkTabRemoved(4);
+      await computePluginTabState(makePlugin());
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('clearTabStateCache resets every tab', async () => {
+      clearTabStateCache();
+      await computePluginTabState(makePlugin());
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+    });
   });
 });
 
@@ -623,6 +834,29 @@ describe('readiness polling', () => {
     await vi.advanceTimersByTimeAsync(50);
 
     expect(mockGetAllPluginMeta).toHaveBeenCalled();
+    expect(mockSendTabStateNotification).toHaveBeenCalledWith('slack', {
+      state: 'unavailable',
+      tabs: [{ tabId: 1, url: 'https://example.com', title: 'Ex', ready: false }],
+    });
+  });
+
+  test('reports a discarded tab as unavailable without probing it', async () => {
+    const plugin = makePlugin({ name: 'slack' });
+    mockGetAllPluginMeta.mockResolvedValue({ slack: plugin });
+
+    await updateLastKnownState(
+      'slack',
+      makeStateInfo('ready', [{ tabId: 1, url: 'https://example.com', title: 'Ex', ready: true }]),
+    );
+
+    mockFindAllMatchingTabs.mockResolvedValue([
+      { id: 1, url: 'https://example.com', title: 'Ex', discarded: true } as chrome.tabs.Tab,
+    ]);
+
+    startReadinessPoll();
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(mockExecuteScript).not.toHaveBeenCalled();
     expect(mockSendTabStateNotification).toHaveBeenCalledWith('slack', {
       state: 'unavailable',
       tabs: [{ tabId: 1, url: 'https://example.com', title: 'Ex', ready: false }],

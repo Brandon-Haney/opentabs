@@ -279,6 +279,51 @@ describe('handleExtensionMessage — response settlement', () => {
     expect(err.data).toEqual({ code: 'AUTH_ERROR', category: 'auth' });
   });
 
+  test('error response preserves unknown keys and the tabId echo in data', () => {
+    const state = createState();
+    state.extensionConnections.set('test-conn', {
+      ws: createMockWs(),
+      connectionId: 'test-conn',
+      profileLabel: 'test-conn',
+      tabMapping: new Map(),
+      activeNetworkCaptures: new Set(),
+    });
+
+    let rejected: unknown;
+    const pending: PendingDispatch = {
+      resolve: () => {},
+      reject: err => {
+        rejected = err;
+      },
+      label: 'test',
+      startTs: Date.now(),
+      timerId: setTimeout(() => {}, 60_000),
+    };
+    state.pendingDispatches.set(82, pending);
+
+    const data = {
+      code: 'INTERNAL',
+      category: 'internal',
+      status: 500,
+      proxyErrorLabel: 'M365 NanoProxy',
+      tabId: 12,
+    };
+    handleExtensionMessage(
+      state,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 82,
+        error: { code: -32603, message: 'Upstream failure', data },
+      }),
+      noopCallbacks,
+    );
+
+    // The protocol layer performs no filtering — the dispatch layer decides what is lifted or audited
+    expect(isDispatchError(rejected)).toBe(true);
+    const err = rejected as { data?: Record<string, unknown> };
+    expect(err.data).toEqual(data);
+  });
+
   test('error response without data field has undefined data', () => {
     const state = createState();
     state.extensionConnections.set('test-conn', {

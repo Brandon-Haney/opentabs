@@ -8,6 +8,7 @@
 
 import { access, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { AuditEntry } from '@opentabs-dev/shared';
 import { DEFAULT_HOST, toErrorMessage } from '@opentabs-dev/shared';
 import type { Command } from 'commander';
 import { InvalidArgumentError } from 'commander';
@@ -24,15 +25,6 @@ interface AuditOptions {
   since?: string;
   json?: boolean;
   file?: boolean;
-}
-
-interface AuditEntry {
-  timestamp: string;
-  tool: string;
-  plugin: string;
-  success: boolean;
-  durationMs: number;
-  error?: { code: string; message: string; category?: string };
 }
 
 const parseLimit = (value: string): number => {
@@ -89,30 +81,39 @@ const formatDuration = (ms: number): string => {
 
 const COL_TIME = 15;
 const COL_TOOL_MIN = 'Tool'.length;
+const COL_ORIGIN_MIN = 'Origin'.length;
 const COL_STATUS = 4;
 const COL_DURATION = 10;
 
+/**
+ * Render audit entries as an aligned table: Time, Tool, Origin (the scheme + host
+ * of the tab the tool targeted — blank for entries recorded without one), status
+ * glyph, Duration. The Tool and Origin columns grow to their longest value.
+ */
 const printAuditTable = (entries: AuditEntry[]): void => {
   const maxToolLen = entries.reduce((max, e) => Math.max(max, e.tool.length), 0);
   const colTool = Math.max(COL_TOOL_MIN, maxToolLen) + 2;
+  const maxOriginLen = entries.reduce((max, e) => Math.max(max, (e.tabOrigin ?? '').length), 0);
+  const colOrigin = Math.max(COL_ORIGIN_MIN, maxOriginLen) + 2;
 
   console.log(
     pc.bold(
-      `${'Time'.padEnd(COL_TIME)}${'Tool'.padEnd(colTool)}${''.padEnd(COL_STATUS)}${'Duration'.padEnd(COL_DURATION)}`,
+      `${'Time'.padEnd(COL_TIME)}${'Tool'.padEnd(colTool)}${'Origin'.padEnd(colOrigin)}${''.padEnd(COL_STATUS)}${'Duration'.padEnd(COL_DURATION)}`,
     ),
   );
-  console.log(pc.dim('─'.repeat(COL_TIME + colTool + COL_STATUS + COL_DURATION)));
+  console.log(pc.dim('─'.repeat(COL_TIME + colTool + colOrigin + COL_STATUS + COL_DURATION)));
 
   for (const entry of entries) {
     const time = formatTimestamp(entry.timestamp).padEnd(COL_TIME);
     const tool = entry.tool.padEnd(colTool);
+    const origin = (entry.tabOrigin ?? '').padEnd(colOrigin);
     // Pad the plain-text icon to the column width, then colorize.
     // Colorizing after padding ensures ANSI escape codes don't affect alignment.
     const icon = entry.success ? '✓' : '✗';
     const paddedStatus = icon.padEnd(COL_STATUS);
     const status = entry.success ? pc.green(paddedStatus) : pc.red(paddedStatus);
     const duration = formatDuration(entry.durationMs).padEnd(COL_DURATION);
-    console.log(`${time}${tool}${status}${duration}`);
+    console.log(`${time}${tool}${origin}${status}${duration}`);
   }
 };
 
@@ -338,4 +339,4 @@ Examples:
     .action((_options: AuditOptions, command: Command) => handleAudit(command.optsWithGlobals()));
 };
 
-export { formatDuration, formatTimestamp, parseDuration, parseLimit, registerAuditCommand };
+export { formatDuration, formatTimestamp, parseDuration, parseLimit, printAuditTable, registerAuditCommand };

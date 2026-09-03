@@ -6,6 +6,8 @@
  * domain concepts.
  */
 
+import type { ToolErrorDetails } from './error.js';
+
 // ---------------------------------------------------------------------------
 // Browser tools catalog — static metadata generated at build time
 // ---------------------------------------------------------------------------
@@ -38,6 +40,7 @@ export {
 // Error utilities
 // ---------------------------------------------------------------------------
 
+export type { ToolErrorDetails } from './error.js';
 export { toErrorMessage } from './error.js';
 
 // ---------------------------------------------------------------------------
@@ -289,6 +292,49 @@ export interface ToolInvocationEndParams {
   tool: string;
   durationMs: number;
   success: boolean;
+}
+
+/** Structured failure information recorded with an audit entry */
+export interface AuditError {
+  /** Machine-readable error code (e.g. 'RATE_LIMITED', 'UPSTREAM_UNAVAILABLE') */
+  code: string;
+  /** Sanitized human-readable message */
+  message: string;
+  /** Error category reported by the plugin (auth, rate_limit, not_found, validation, internal, timeout) */
+  category?: string;
+  /**
+   * Plugin-supplied details that were passed through the extension unchanged
+   * except for sanitization and size bounding — upstream HTTP status, request
+   * id, retry metadata. Never contains full URLs.
+   */
+  details?: ToolErrorDetails;
+}
+
+/**
+ * One tool invocation as recorded in the audit log. Written by the MCP server
+ * to ~/.opentabs/audit.log as NDJSON and read back by the CLI and HTTP routes.
+ */
+export interface AuditEntry {
+  /** ISO 8601 timestamp of the invocation */
+  timestamp: string;
+  /** Prefixed tool name (e.g. 'slack__send_message') */
+  tool: string;
+  /** Plugin name (e.g. 'slack') or 'browser' for browser tools */
+  plugin: string;
+  /** Whether the invocation completed successfully */
+  success: boolean;
+  /** Execution duration in milliseconds */
+  durationMs: number;
+  /**
+   * Chrome tab the dispatch targeted — the caller-specified tab or the tab the
+   * extension selected. Present even when the dispatch failed before the
+   * adapter ran; absent when no tab was resolved.
+   */
+  tabId?: number;
+  /** Origin (scheme + host) of the targeted tab's URL at dispatch time — never the full URL */
+  tabOrigin?: string;
+  /** Error details, populated on failure */
+  error?: AuditError;
 }
 
 /** plugin.update notification: server → extension (file watcher / hot reload) */

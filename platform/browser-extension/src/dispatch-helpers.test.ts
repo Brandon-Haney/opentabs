@@ -7,11 +7,20 @@ import type { PluginMeta } from './extension-messages.js';
 // the exported functions bind to the mocked versions of dependencies.
 // ---------------------------------------------------------------------------
 
-const { mockSendToServer, mockGetPluginMeta, mockFindAllMatchingTabs, mockUrlMatchesPatterns } = vi.hoisted(() => ({
+const {
+  mockSendToServer,
+  mockGetPluginMeta,
+  mockFindAllMatchingTabs,
+  mockUrlMatchesPatterns,
+  mockSanitizeErrorDetails,
+} = vi.hoisted(() => ({
   mockSendToServer: vi.fn<(data: unknown) => void>(),
   mockGetPluginMeta: vi.fn<(name: string) => Promise<PluginMeta | null>>(),
   mockFindAllMatchingTabs: vi.fn<(plugin: PluginMeta) => Promise<chrome.tabs.Tab[]>>(),
   mockUrlMatchesPatterns: vi.fn<(url: string, patterns: string[]) => boolean>(),
+  mockSanitizeErrorDetails: vi.fn<(details: unknown) => Record<string, unknown> | undefined>(
+    details => details as Record<string, unknown>,
+  ),
 }));
 
 vi.mock('./messaging.js', () => ({
@@ -37,6 +46,7 @@ vi.mock('./tab-matching.js', () => ({
 
 vi.mock('./sanitize-error.js', () => ({
   sanitizeErrorMessage: (msg: string) => msg,
+  sanitizeErrorDetails: mockSanitizeErrorDetails,
 }));
 
 // Chrome API stubs
@@ -386,6 +396,181 @@ describe('dispatchWithTabFallback', () => {
       error: { code: -32603, message: 'Internal error' },
     });
   });
+
+  describe('tab id echo', () => {
+    const twoTabs = () => {
+      mockFindAllMatchingTabs.mockResolvedValue([
+        { id: 1, url: 'https://example.com/a' } as chrome.tabs.Tab,
+        { id: 2, url: 'https://example.com/b' } as chrome.tabs.Tab,
+      ]);
+      mockTabsGet.mockImplementation(tabId =>
+        Promise.resolve({ id: tabId, url: `https://example.com/${tabId}` } as chrome.tabs.Tab),
+      );
+      mockUrlMatchesPatterns.mockReturnValue(true);
+    };
+
+    test('success echoes the tab the tool ran in beside the output', async () => {
+      twoTabs();
+      const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
+      executeOnTab.mockImplementation(tabId => {
+        if (tabId === 1) return Promise.resolve({ type: 'error', code: -32002, message: 'Adapter not ready' });
+        return Promise.resolve({ type: 'success', output: { ok: true } });
+      });
+
+      await dispatchWithTabFallback({
+        id: 'req-40',
+        pluginName: 'test-plugin',
+        plugin,
+        operationName: 'x',
+        executeOnTab,
+      });
+
+      expect(firstSentMessage()).toEqual({ jsonrpc: '2.0', id: 'req-40', result: { output: { ok: true }, tabId: 2 } });
+    });
+
+    test('a structured error carries its data plus the tab id', async () => {
+      twoTabs();
+      const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
+      executeOnTab.mockResolvedValue({
+        type: 'error',
+        code: -32603,
+        message: 'Upstream failed',
+        data: { code: 'UPSTREAM_UNAVAILABLE', category: 'internal', retryable: true, details: { httpStatus: 503 } },
+      });
+
+      await dispatchWithTabFallback({
+        id: 'req-41',
+        pluginName: 'test-plugin',
+        plugin,
+        operationName: 'x',
+        executeOnTab,
+      });
+
+      expect(firstSentMessage()).toEqual({
+        jsonrpc: '2.0',
+        id: 'req-41',
+        error: {
+          code: -32603,
+          message: 'Upstream failed',
+          data: {
+            code: 'UPSTREAM_UNAVAILABLE',
+            category: 'internal',
+            retryable: true,
+            details: { httpStatus: 503 },
+            tabId: 1,
+          },
+        },
+      });
+      expect(mockSanitizeErrorDetails).toHaveBeenCalledWith({ httpStatus: 503 });
+    });
+
+    test('a thrown non-tab-gone failure carries the tab id', async () => {
+      twoTabs();
+      const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
+      executeOnTab.mockRejectedValue(new Error('Unexpected script error'));
+
+      await dispatchWithTabFallback({
+        id: 'req-42',
+        pluginName: 'test-plugin',
+        plugin,
+        operationName: 'x',
+        executeOnTab,
+      });
+
+      expect(firstSentMessage()).toEqual({
+        jsonrpc: '2.0',
+        id: 'req-42',
+        error: { code: -32603, message: 'Script execution failed: Unexpected script error', data: { tabId: 1 } },
+      });
+    });
+
+    test('when every tab is not ready, the first error names the tab that produced it', async () => {
+      twoTabs();
+      const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
+      executeOnTab.mockResolvedValue({
+        type: 'error',
+        code: -32002,
+        message: 'Adapter not ready',
+        data: { code: 'NOT_READY', category: 'auth' },
+      });
+
+      await dispatchWithTabFallback({
+        id: 'req-43',
+        pluginName: 'test-plugin',
+        plugin,
+        operationName: 'x',
+        executeOnTab,
+      });
+
+      expect(firstSentMessage()).toEqual({
+        jsonrpc: '2.0',
+        id: 'req-43',
+        error: { code: -32002, message: 'Adapter not ready', data: { code: 'NOT_READY', category: 'auth', tabId: 1 } },
+      });
+    });
+
+    test('a tab that disappears while the tool runs is reported as closed during the operation', async () => {
+      mockFindAllMatchingTabs.mockResolvedValue([{ id: 1, url: 'https://example.com/a' } as chrome.tabs.Tab]);
+      mockTabsGet.mockResolvedValue({ id: 1, url: 'https://example.com/a' } as chrome.tabs.Tab);
+      mockUrlMatchesPatterns.mockReturnValue(true);
+      const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
+      executeOnTab.mockRejectedValue(new Error('No tab with id: 1'));
+
+      await dispatchWithTabFallback({
+        id: 'req-45',
+        pluginName: 'test-plugin',
+        plugin,
+        operationName: 'tool dispatch',
+        executeOnTab,
+      });
+
+      expect(firstSentMessage()).toEqual({
+        jsonrpc: '2.0',
+        id: 'req-45',
+        error: { code: -32001, message: 'Tab closed during tool dispatch', data: { tabId: 1 } },
+      });
+    });
+
+    test('when every tab disappears while its tool runs, the first error names the first tab', async () => {
+      twoTabs();
+      const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
+      executeOnTab.mockImplementation(tabId => Promise.reject(new Error(`No tab with id: ${tabId}`)));
+
+      await dispatchWithTabFallback({
+        id: 'req-46',
+        pluginName: 'test-plugin',
+        plugin,
+        operationName: 'tool dispatch',
+        executeOnTab,
+      });
+
+      expect(executeOnTab).toHaveBeenCalledTimes(2);
+      expect(firstSentMessage()).toEqual({
+        jsonrpc: '2.0',
+        id: 'req-46',
+        error: { code: -32001, message: 'Tab closed during tool dispatch', data: { tabId: 1 } },
+      });
+    });
+
+    test('a pre-execution rejection on every tab carries no tab id', async () => {
+      mockFindAllMatchingTabs.mockResolvedValue([{ id: 1, url: 'https://example.com/a' } as chrome.tabs.Tab]);
+      mockTabsGet.mockRejectedValue(new Error('No tab with id: 1'));
+
+      await dispatchWithTabFallback({
+        id: 'req-44',
+        pluginName: 'test-plugin',
+        plugin,
+        operationName: 'tool dispatch',
+        executeOnTab: vi.fn(),
+      });
+
+      expect(firstSentMessage()).toEqual({
+        jsonrpc: '2.0',
+        id: 'req-44',
+        error: { code: -32001, message: 'Tab closed before tool dispatch', data: undefined },
+      });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -397,11 +582,13 @@ describe('dispatchToTargetedTab', () => {
     mockSendToServer.mockReset();
     mockUrlMatchesPatterns.mockReset();
     mockTabsGet.mockReset();
+    mockSanitizeErrorDetails.mockClear();
+    mockSanitizeErrorDetails.mockImplementation(details => details as Record<string, unknown>);
   });
 
   const plugin = makePlugin();
 
-  test('dispatches to targeted tab when tab exists and URL matches', async () => {
+  test('dispatches to targeted tab when tab exists and URL matches, echoing the tab id', async () => {
     mockTabsGet.mockResolvedValue({ id: 42, url: 'https://example.com/page' } as chrome.tabs.Tab);
     mockUrlMatchesPatterns.mockReturnValue(true);
 
@@ -419,11 +606,30 @@ describe('dispatchToTargetedTab', () => {
 
     expect(executeOnTab).toHaveBeenCalledTimes(1);
     expect(executeOnTab).toHaveBeenCalledWith(42);
-    expect(firstSentMessage()).toMatchObject({
+    expect(firstSentMessage()).toEqual({
       jsonrpc: '2.0',
       id: 'req-30',
-      result: { output: { data: 'targeted' } },
+      result: { output: { data: 'targeted' }, tabId: 42 },
     });
+  });
+
+  test('echoes the tab id even when the output is undefined', async () => {
+    mockTabsGet.mockResolvedValue({ id: 43, url: 'https://example.com/page' } as chrome.tabs.Tab);
+    mockUrlMatchesPatterns.mockReturnValue(true);
+
+    const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
+    executeOnTab.mockResolvedValue({ type: 'success', output: undefined });
+
+    await dispatchToTargetedTab({
+      id: 'req-30b',
+      pluginName: 'test-plugin',
+      plugin,
+      tabId: 43,
+      operationName: 'tool execution',
+      executeOnTab,
+    });
+
+    expect(firstSentMessage()).toEqual({ jsonrpc: '2.0', id: 'req-30b', result: { output: undefined, tabId: 43 } });
   });
 
   test('sends -32001 error when tab does not exist', async () => {
@@ -587,13 +793,139 @@ describe('dispatchToTargetedTab', () => {
       executeOnTab,
     });
 
-    expect(firstSentMessage()).toMatchObject({
+    expect(firstSentMessage()).toEqual({
       jsonrpc: '2.0',
       id: 'req-36',
       error: {
         code: -32603,
         message: 'Tool failed',
-        data: { code: 'RATE_LIMITED', retryable: true, retryAfterMs: 5000 },
+        data: { code: 'RATE_LIMITED', retryable: true, retryAfterMs: 5000, tabId: 90 },
+      },
+    });
+    expect(mockSanitizeErrorDetails).not.toHaveBeenCalled();
+  });
+
+  test('a legacy error without data still carries the tab id', async () => {
+    mockTabsGet.mockResolvedValue({ id: 91, url: 'https://example.com/page' } as chrome.tabs.Tab);
+    mockUrlMatchesPatterns.mockReturnValue(true);
+
+    const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
+    executeOnTab.mockResolvedValue({ type: 'error', code: -32603, message: 'Tool failed' });
+
+    await dispatchToTargetedTab({
+      id: 'req-37',
+      pluginName: 'test-plugin',
+      plugin,
+      tabId: 91,
+      operationName: 'tool execution',
+      executeOnTab,
+    });
+
+    expect(firstSentMessage()).toEqual({
+      jsonrpc: '2.0',
+      id: 'req-37',
+      error: { code: -32603, message: 'Tool failed', data: { tabId: 91 } },
+    });
+  });
+
+  test('a tab-gone failure during execution carries the tab id', async () => {
+    mockTabsGet.mockResolvedValue({ id: 92, url: 'https://example.com/page' } as chrome.tabs.Tab);
+    mockUrlMatchesPatterns.mockReturnValue(true);
+
+    const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
+    executeOnTab.mockRejectedValue(new Error('No tab with id: 92'));
+
+    await dispatchToTargetedTab({
+      id: 'req-38',
+      pluginName: 'test-plugin',
+      plugin,
+      tabId: 92,
+      operationName: 'tool execution',
+      executeOnTab,
+    });
+
+    expect(firstSentMessage()).toEqual({
+      jsonrpc: '2.0',
+      id: 'req-38',
+      error: { code: -32001, message: 'Tab closed during tool execution', data: { tabId: 92 } },
+    });
+  });
+
+  test('forwards sanitized error details from the dispatch result', async () => {
+    mockTabsGet.mockResolvedValue({ id: 93, url: 'https://example.com/page' } as chrome.tabs.Tab);
+    mockUrlMatchesPatterns.mockReturnValue(true);
+    mockSanitizeErrorDetails.mockReturnValue({ httpStatus: 500, endpoint: '[URL]' });
+
+    const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
+    executeOnTab.mockResolvedValue({
+      type: 'error',
+      code: -32603,
+      message: 'Upstream failed',
+      data: {
+        code: 'UPSTREAM_UNAVAILABLE',
+        retryable: true,
+        details: { httpStatus: 500, endpoint: 'https://outlook.office.com/api/v2.0/me/messages/AAMk' },
+      },
+    });
+
+    await dispatchToTargetedTab({
+      id: 'req-39',
+      pluginName: 'test-plugin',
+      plugin,
+      tabId: 93,
+      operationName: 'tool execution',
+      executeOnTab,
+    });
+
+    expect(mockSanitizeErrorDetails).toHaveBeenCalledWith({
+      httpStatus: 500,
+      endpoint: 'https://outlook.office.com/api/v2.0/me/messages/AAMk',
+    });
+    expect(firstSentMessage()).toEqual({
+      jsonrpc: '2.0',
+      id: 'req-39',
+      error: {
+        code: -32603,
+        message: 'Upstream failed',
+        data: {
+          code: 'UPSTREAM_UNAVAILABLE',
+          retryable: true,
+          details: { httpStatus: 500, endpoint: '[URL]' },
+          tabId: 93,
+        },
+      },
+    });
+  });
+
+  test('omits details the sanitizer rejects while keeping the other fields', async () => {
+    mockTabsGet.mockResolvedValue({ id: 94, url: 'https://example.com/page' } as chrome.tabs.Tab);
+    mockUrlMatchesPatterns.mockReturnValue(true);
+    mockSanitizeErrorDetails.mockReturnValue(undefined);
+
+    const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
+    executeOnTab.mockResolvedValue({
+      type: 'error',
+      code: -32603,
+      message: 'Rate limited',
+      data: { code: 'RATE_LIMITED', retryable: true, retryAfterMs: 5000, details: { huge: 'x' } },
+    });
+
+    await dispatchToTargetedTab({
+      id: 'req-39b',
+      pluginName: 'test-plugin',
+      plugin,
+      tabId: 94,
+      operationName: 'tool execution',
+      executeOnTab,
+    });
+
+    expect(firstSentMessage()).toEqual({
+      jsonrpc: '2.0',
+      id: 'req-39b',
+      error: {
+        code: -32603,
+        message: 'Rate limited',
+        data: { code: 'RATE_LIMITED', retryable: true, retryAfterMs: 5000, tabId: 94 },
       },
     });
   });

@@ -1,10 +1,11 @@
-import type { PluginTabInfo, TabState } from '@opentabs-dev/shared';
+import { type PluginTabInfo, type TabState, toErrorMessage } from '@opentabs-dev/shared';
 import { IS_READY_TIMEOUT_MS, READINESS_POLL_INTERVAL_MS } from './constants.js';
 import type { PluginMeta, PluginTabStateInfo } from './extension-messages.js';
 import { setLastSeenUrl } from './last-seen-urls.js';
 import { forwardToSidePanel, sendTabStateNotification, sendToServer } from './messaging.js';
 import { getAllPluginMeta } from './plugin-storage.js';
-import { findAllMatchingTabs, urlMatchesPatterns } from './tab-matching.js';
+import { sanitizeErrorMessage } from './sanitize-error.js';
+import { findAllMatchingTabs, isTabScriptable, urlMatchesPatterns } from './tab-matching.js';
 
 /**
  * Serialize a PluginTabStateInfo to a deterministic string for diff detection.
@@ -54,6 +55,34 @@ const scheduleLastKnownStatePersist = (): void => {
  * and writes are atomic within each plugin. Different plugins run in parallel.
  */
 const pluginLocks = new Map<string, Promise<void>>();
+
+/**
+ * Readiness-probe failure messages already reported once, keyed by tab id.
+ * A failing tab is probed every READINESS_POLL_INTERVAL_MS, so without this
+ * memo one dormant tab fills the background log ring buffer in minutes.
+ * Messages are stored and logged in sanitized form: Chrome's rejection for a
+ * host the extension cannot access quotes the tab's full URL, which the log
+ * must not carry. Entries are dropped when the tab navigates or finishes loading
+ * (checkTabChanged), is removed (checkTabRemoved), and on clearTabStateCache.
+ */
+const warnedProbeFailures = new Map<number, Set<string>>();
+
+/** Warn about a probe failure once per (tab, message); repeats of the same failure are silent. */
+const warnProbeFailureOnce = (tabId: number, pluginName: string, errorMessage: string): void => {
+  const warned = warnedProbeFailures.get(tabId);
+  if (warned?.has(errorMessage)) return;
+  if (warned) {
+    warned.add(errorMessage);
+  } else {
+    warnedProbeFailures.set(tabId, new Set([errorMessage]));
+  }
+  console.warn(`[opentabs] readiness probe failed for plugin "${pluginName}" in tab ${tabId}: ${errorMessage}`);
+};
+
+/** Forget a tab's reported probe failures so the next failure after a reload is reported again. */
+const forgetProbeFailures = (tabId: number): void => {
+  warnedProbeFailures.delete(tabId);
+};
 
 /**
  * Chain an async operation onto a plugin's lock so it runs sequentially
@@ -108,7 +137,7 @@ const probeTabReadiness = async (tabId: number, pluginName: string): Promise<boo
     ]);
 
     if (results === null) {
-      console.warn(`[opentabs] isReady() timed out for plugin "${pluginName}" in tab ${tabId}`);
+      warnProbeFailureOnce(tabId, pluginName, `isReady() timed out after ${IS_READY_TIMEOUT_MS}ms`);
       return false;
     }
 
@@ -120,17 +149,19 @@ const probeTabReadiness = async (tabId: number, pluginName: string): Promise<boo
 };
 
 /**
- * Compute the tab state for a single plugin by checking all matching tabs
- * for adapter readiness. Probes every matching tab and returns the full list
- * with per-tab readiness. Aggregate state: 'ready' if any tab is ready,
- * 'unavailable' if tabs exist but none are ready, 'closed' if no tabs match.
- */
-/**
  * Optional callback invoked when the first ready tab is found during probing.
  * Allows callers to send early notifications before all tabs finish probing.
  */
 type OnFirstReady = (partialState: PluginTabStateInfo) => void;
 
+/**
+ * Compute the tab state for a single plugin by checking all matching tabs
+ * for adapter readiness. Probes every scriptable matching tab and returns the
+ * full list with per-tab readiness; tabs Chrome cannot script (discarded,
+ * frozen, unloaded) are listed `ready: false` without a probe. Aggregate state:
+ * 'ready' if any tab is ready, 'unavailable' if tabs exist but none are ready,
+ * 'closed' if no tabs match.
+ */
 const computePluginTabState = async (plugin: PluginMeta, onFirstReady?: OnFirstReady): Promise<PluginTabStateInfo> => {
   const matchingTabs = await findAllMatchingTabs(plugin);
   if (matchingTabs.length === 0) {
@@ -146,10 +177,12 @@ const computePluginTabState = async (plugin: PluginMeta, onFirstReady?: OnFirstR
   await Promise.allSettled(
     validTabs.map(async tab => {
       let ready = false;
-      try {
-        ready = await probeTabReadiness(tab.id, plugin.name);
-      } catch (err) {
-        console.warn(`[opentabs] computePluginTabState failed for plugin ${plugin.name} in tab ${tab.id}:`, err);
+      if (isTabScriptable(tab)) {
+        try {
+          ready = await probeTabReadiness(tab.id, plugin.name);
+        } catch (err) {
+          warnProbeFailureOnce(tab.id, plugin.name, sanitizeErrorMessage(toErrorMessage(err)));
+        }
       }
 
       tabInfos.push({
@@ -289,6 +322,7 @@ const flushLastKnownStateToSession = (): void => {
 const clearTabStateCache = (): void => {
   lastKnownState.clear();
   pluginLocks.clear();
+  warnedProbeFailures.clear();
   if (lastKnownStatePersistTimer !== undefined) {
     clearTimeout(lastKnownStatePersistTimer);
     lastKnownStatePersistTimer = undefined;
@@ -400,9 +434,12 @@ const notifyAffectedPlugins = async (affectedPlugins: PluginMeta[]): Promise<voi
 /**
  * Check if a tab removal affects any plugin's tab state. All plugins are
  * checked because chrome.tabs.get fails for removed tabs and onRemoved
- * provides no URL, so pattern matching is not possible.
+ * provides no URL, so pattern matching is not possible. The removed tab's
+ * probe-failure memo is dropped first, before the plugin lookup, so a Chrome
+ * tab id reused later starts with a clean slate even when no plugins exist.
  */
-const checkTabRemoved = async (_removedTabId: number): Promise<void> => {
+const checkTabRemoved = async (removedTabId: number): Promise<void> => {
+  forgetProbeFailures(removedTabId);
   const index = await getAllPluginMeta();
   const plugins = Object.values(index);
   if (plugins.length === 0) return;
@@ -419,8 +456,14 @@ const checkTabRemoved = async (_removedTabId: number): Promise<void> => {
  *   - URL change: plugins matching the new URL OR plugins with active state
  *   - status=complete: the tab's URL is fetched once and matched against all
  *     plugin patterns, avoiding per-plugin chrome.tabs queries
+ *
+ * Both paths mean the document was replaced or reloaded (a URL change, a
+ * same-URL reload, or a discarded tab reactivating), so the tab's
+ * probe-failure memo is dropped before the probe that follows: the first
+ * failure after each load is reported once.
  */
 const checkTabChanged = async (changedTabId: number, changeInfo: chrome.tabs.OnUpdatedInfo): Promise<void> => {
+  if (changeInfo.url !== undefined || changeInfo.status === 'complete') forgetProbeFailures(changedTabId);
   const index = await getAllPluginMeta();
   const plugins = Object.values(index);
   if (plugins.length === 0) return;

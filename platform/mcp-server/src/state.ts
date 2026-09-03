@@ -9,6 +9,7 @@
 
 import type { FSWatcher } from 'node:fs';
 import type {
+  AuditEntry,
   ConfigSchema,
   ManifestTool,
   PluginPermissionConfig,
@@ -237,22 +238,6 @@ export interface PendingConfirmation {
   tool: string;
   plugin: string;
   params: Record<string, unknown>;
-}
-
-/** Record of a single tool invocation for audit logging */
-export interface AuditEntry {
-  /** ISO 8601 timestamp of the invocation */
-  timestamp: string;
-  /** Prefixed tool name (e.g., 'slack__send_message') */
-  tool: string;
-  /** Plugin name (e.g., 'slack') or 'browser' for browser tools */
-  plugin: string;
-  /** Whether the invocation completed successfully */
-  success: boolean;
-  /** Execution duration in milliseconds */
-  durationMs: number;
-  /** Error details, populated on failure */
-  error?: { code: string; message: string; category?: string };
 }
 
 /** Maximum entries retained in the audit log circular buffer */

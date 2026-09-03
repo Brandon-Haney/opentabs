@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { z } from 'zod';
 import { savePluginPermissions } from './config.js';
 import { buildConfigStatePayload, sendToExtension } from './extension-handlers.js';
@@ -19,9 +19,15 @@ import {
   handlePluginInspect,
   handlePluginMarkReviewed,
   handlePluginToolCall,
+  MAX_AUDIT_ERROR_DETAILS_CHARS,
+  originOfUrl,
+  parseTabIdArg,
   REVIEW_GUIDANCE,
   sanitizeOutput,
+  toAuditErrorDetails,
+  unwrapDispatchResult,
 } from './mcp-tool-dispatch.js';
+import { sanitizeErrorMessage } from './sanitize-error.js';
 import type { CachedBrowserTool, RegisteredPlugin, ServerState, ToolLookupEntry } from './state.js';
 import {
   appendAuditEntry,
@@ -206,6 +212,191 @@ describe('formatZodError', () => {
   });
 });
 
+describe('parseTabIdArg', () => {
+  test('returns a positive integer unchanged', () => {
+    expect(parseTabIdArg(7)).toBe(7);
+    expect(parseTabIdArg(1)).toBe(1);
+  });
+
+  test.each([
+    ['zero', 0],
+    ['negative', -1],
+    ['fractional', 1.5],
+    ['numeric string', '7'],
+    ['NaN', NaN],
+    ['Infinity', Infinity],
+    ['undefined', undefined],
+    ['null', null],
+    ['object', { tabId: 7 }],
+  ])('treats %s as absent', (_label, value) => {
+    expect(parseTabIdArg(value)).toBeUndefined();
+  });
+});
+
+describe('originOfUrl', () => {
+  test('reduces an https URL with a path to its origin', () => {
+    expect(originOfUrl('https://outlook.office.com/mail/inbox/id/AAMkAGI2')).toBe('https://outlook.office.com');
+  });
+
+  test('keeps a non-default port', () => {
+    expect(originOfUrl('http://localhost:3000/x?y=1')).toBe('http://localhost:3000');
+  });
+
+  test('returns undefined for opaque file: origins', () => {
+    expect(originOfUrl('file:///C:/x.html')).toBeUndefined();
+  });
+
+  test('returns undefined for about:blank', () => {
+    expect(originOfUrl('about:blank')).toBeUndefined();
+  });
+
+  test('returns undefined for an unparsable URL', () => {
+    expect(originOfUrl('not a url')).toBeUndefined();
+  });
+});
+
+describe('unwrapDispatchResult', () => {
+  test('separates output from the echoed tabId', () => {
+    expect(unwrapDispatchResult({ output: { ok: true }, tabId: 9 })).toEqual({
+      output: { ok: true },
+      echoedTabId: 9,
+    });
+  });
+
+  test('void output with an echo yields an empty object, never the echo', () => {
+    const { output, echoedTabId } = unwrapDispatchResult({ tabId: 9 });
+    expect(output).toEqual({});
+    expect(output).not.toHaveProperty('tabId');
+    expect(echoedTabId).toBe(9);
+  });
+
+  test('null output keeps its envelope shape and strips the echo', () => {
+    const { output, echoedTabId } = unwrapDispatchResult({ output: null, tabId: 9 });
+    expect(output).toEqual({ output: null });
+    expect(output).not.toHaveProperty('tabId');
+    expect(echoedTabId).toBe(9);
+  });
+
+  test('envelope without an echo reports no tabId', () => {
+    expect(unwrapDispatchResult({ output: 'x' })).toEqual({ output: 'x', echoedTabId: undefined });
+    expect(unwrapDispatchResult({})).toEqual({ output: {}, echoedTabId: undefined });
+  });
+
+  test('an invalid echo is ignored but still removed from the output', () => {
+    const { output, echoedTabId } = unwrapDispatchResult({ output: 1, tabId: 'nine' });
+    expect(output).toBe(1);
+    expect(echoedTabId).toBeUndefined();
+  });
+
+  test.each([
+    ['string', 'bare'],
+    ['null', null],
+    ['array', [1, 2]],
+    ['number', 42],
+  ])('a non-object %s result is the output itself', (_label, value) => {
+    expect(unwrapDispatchResult(value)).toEqual({ output: value, echoedTabId: undefined });
+  });
+});
+
+describe('toAuditErrorDetails', () => {
+  beforeEach(async () => {
+    const actual = await vi.importActual<typeof import('./sanitize-error.js')>('./sanitize-error.js');
+    vi.mocked(sanitizeErrorMessage).mockImplementation(actual.sanitizeErrorMessage);
+  });
+
+  afterEach(() => {
+    vi.mocked(sanitizeErrorMessage).mockImplementation((msg: string) => msg);
+    vi.mocked(log.warn).mockClear();
+  });
+
+  test('undefined data yields undefined', () => {
+    expect(toAuditErrorDetails(undefined)).toBeUndefined();
+  });
+
+  test('data holding only lifted keys yields undefined', () => {
+    expect(toAuditErrorDetails({ code: 'X', category: 'auth', message: 'm', tabId: 4 })).toBeUndefined();
+  });
+
+  test('keeps retryable, retryAfterMs and unknown primitive keys while dropping lifted ones', () => {
+    expect(
+      toAuditErrorDetails({
+        code: 'RATE_LIMITED',
+        category: 'rate_limit',
+        retryable: true,
+        retryAfterMs: 5000,
+        status: 500,
+        proxyErrorLabel: 'M365 NanoProxy',
+        tabId: 12,
+      }),
+    ).toEqual({ retryable: true, retryAfterMs: 5000, status: 500, proxyErrorLabel: 'M365 NanoProxy' });
+  });
+
+  test('flattens the plugin ToolError details nested under data.details', () => {
+    expect(
+      toAuditErrorDetails({
+        code: 'UPSTREAM_UNAVAILABLE',
+        retryable: true,
+        details: { httpStatus: 503, requestId: 'abc-123' },
+      }),
+    ).toEqual({ httpStatus: 503, requestId: 'abc-123', retryable: true });
+  });
+
+  test('top-level platform fields win over colliding nested details', () => {
+    expect(toAuditErrorDetails({ retryable: false, details: { retryable: true } })).toEqual({ retryable: false });
+  });
+
+  test('drops nested objects, arrays, null, undefined and non-finite numbers', () => {
+    expect(
+      toAuditErrorDetails({
+        nested: { a: 1 },
+        list: [1],
+        nothing: null,
+        missing: undefined,
+        nan: NaN,
+        inf: Infinity,
+        ok: true,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test('sanitizes string values', () => {
+    expect(
+      toAuditErrorDetails({
+        requestUrl: 'https://outlook.office.com/api/v2.0/me/messages/AAMkAGI2',
+        path: 'read /Users/x/y failed',
+      }),
+    ).toEqual({ requestUrl: '[URL]', path: 'read [PATH] failed' });
+  });
+
+  test('sanitizes keys', () => {
+    expect(toAuditErrorDetails({ 'https://x.com/a/b': 500 })).toEqual({ '[URL]': 500 });
+  });
+
+  test('drops prototype-polluting keys', () => {
+    const data = JSON.parse('{"__proto__": {"x": 1}, "constructor": "c", "prototype": "p", "ok": 1}') as Record<
+      string,
+      unknown
+    >;
+    const details = toAuditErrorDetails(data);
+    expect(details).toEqual({ ok: 1 });
+    expect(Object.keys(details ?? {})).toEqual(['ok']);
+  });
+
+  test('keeps details whose serialized size is within the cap', () => {
+    const data = Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`k${i}`, 'a'.repeat(600)]));
+    const details = toAuditErrorDetails(data);
+    expect(details).toBeDefined();
+    expect(Object.keys(details ?? {})).toHaveLength(7);
+    expect(JSON.stringify(details).length).toBeLessThanOrEqual(MAX_AUDIT_ERROR_DETAILS_CHARS);
+  });
+
+  test('drops the whole object and warns when the serialized size exceeds the cap', () => {
+    const data = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`k${i}`, 'a'.repeat(600)]));
+    expect(toAuditErrorDetails(data)).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('Dropping audit error details'));
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Mocks for handler tests (handleBrowserToolCall, handlePluginToolCall)
 // ---------------------------------------------------------------------------
@@ -319,6 +510,44 @@ const createMockLookup = (overrides: Partial<ToolLookupEntry> = {}): ToolLookupE
   validationErrors: vi.fn().mockReturnValue(''),
   ...overrides,
 });
+
+/** The single audit entry recorded by the handler under test */
+const auditedEntry = (): Record<string, unknown> => {
+  expect(appendAuditEntry).toHaveBeenCalledTimes(1);
+  return (vi.mocked(appendAuditEntry).mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+};
+
+/** Point getMergedTabMapping at a mapping holding the given tabs (all ready) under one plugin */
+const mockTabMapping = (...plugins: Array<{ plugin: string; tabs: Array<{ tabId: number; url: string }> }>): void => {
+  vi.mocked(getMergedTabMapping).mockReturnValue(
+    new Map(
+      plugins.map(({ plugin, tabs }) => [
+        plugin,
+        { state: 'ready' as const, tabs: tabs.map(tab => ({ ...tab, title: '', ready: true })) },
+      ]),
+    ),
+  );
+};
+
+/** Build a DispatchError-shaped rejection and make isDispatchError recognize it */
+const mockDispatchError = (message: string, code: number, data?: Record<string, unknown>): void => {
+  const err = Object.assign(new Error(message), { name: 'DispatchError', code, ...(data && { data }) });
+  vi.mocked(dispatchToExtension).mockRejectedValue(err);
+  vi.mocked(isDispatchError).mockReturnValue(true);
+};
+
+/** Invoke handlePluginToolCall for testplugin/test_action with default extra and callbacks */
+const callPluginTool = (state: ServerState, args: Record<string, unknown> = {}, lookup = createMockLookup()) =>
+  handlePluginToolCall(
+    state,
+    'testplugin_test_action',
+    args,
+    'testplugin',
+    'test_action',
+    lookup,
+    createMockExtra(),
+    createMockCallbacks(),
+  );
 
 // ---------------------------------------------------------------------------
 // handleBrowserToolCall tests
@@ -558,6 +787,120 @@ describe('handleBrowserToolCall', () => {
       success: false,
       error: { code: 'UNKNOWN', message: 'boom' },
     });
+  });
+
+  test('browser tool failure records no error.details', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    const handler = vi.fn().mockRejectedValue(new Error('boom'));
+    const bt = createMockBrowserTool({ schema: z.object({}), handler });
+
+    await handleBrowserToolCall(
+      createMockState(),
+      'browser_test_tool',
+      {},
+      bt,
+      createMockExtra(),
+      createMockCallbacks(),
+    );
+
+    expect(auditedEntry().error).toEqual({ code: 'UNKNOWN', message: 'boom' });
+  });
+
+  test('audit entry records tabId and tabOrigin from a validated top-level tabId arg', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    mockTabMapping({ plugin: 'anyplugin', tabs: [{ tabId: 7, url: 'https://example.com/a/b?c=1' }] });
+    const bt = createMockBrowserTool({ schema: z.object({ tabId: z.number() }) });
+
+    await handleBrowserToolCall(
+      createMockState(),
+      'browser_test_tool',
+      { tabId: 7 },
+      bt,
+      createMockExtra(),
+      createMockCallbacks(),
+    );
+
+    const entry = auditedEntry();
+    expect(entry.tabId).toBe(7);
+    expect(entry.tabOrigin).toBe('https://example.com');
+  });
+
+  test('tabOrigin is snapshotted before the handler runs, so a navigating tool records the pre-navigation origin', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    mockTabMapping({ plugin: 'anyplugin', tabs: [{ tabId: 7, url: 'https://before.example/' }] });
+    const handler = vi.fn().mockImplementation(async () => {
+      mockTabMapping({ plugin: 'anyplugin', tabs: [{ tabId: 7, url: 'https://after.example/' }] });
+      return {};
+    });
+    const bt = createMockBrowserTool({ schema: z.object({ tabId: z.number() }), handler });
+
+    await handleBrowserToolCall(
+      createMockState(),
+      'browser_test_tool',
+      { tabId: 7 },
+      bt,
+      createMockExtra(),
+      createMockCallbacks(),
+    );
+
+    const entry = auditedEntry();
+    expect(entry.tabId).toBe(7);
+    expect(entry.tabOrigin).toBe('https://before.example');
+  });
+
+  test('audit entry records tabId without origin when the tab is not in any plugin mapping', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    mockTabMapping();
+    const bt = createMockBrowserTool({ schema: z.object({ tabId: z.number() }) });
+
+    await handleBrowserToolCall(
+      createMockState(),
+      'browser_test_tool',
+      { tabId: 7 },
+      bt,
+      createMockExtra(),
+      createMockCallbacks(),
+    );
+
+    const entry = auditedEntry();
+    expect(entry.tabId).toBe(7);
+    expect(entry).not.toHaveProperty('tabOrigin');
+  });
+
+  test('audit entry has no tabId or tabOrigin keys when the args carry no tabId', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    mockTabMapping({ plugin: 'anyplugin', tabs: [{ tabId: 7, url: 'https://example.com/' }] });
+    const bt = createMockBrowserTool({ schema: z.object({ url: z.string().optional() }) });
+
+    await handleBrowserToolCall(
+      createMockState(),
+      'browser_test_tool',
+      { url: 'https://example.com' },
+      bt,
+      createMockExtra(),
+      createMockCallbacks(),
+    );
+
+    const entry = auditedEntry();
+    expect(entry).not.toHaveProperty('tabId');
+    expect(entry).not.toHaveProperty('tabOrigin');
+  });
+
+  test('a non-integer tabId is rejected by the Zod schema before any audit entry is written', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    const bt = createMockBrowserTool({ schema: z.object({ tabId: z.number().int().positive() }) });
+
+    const result = await handleBrowserToolCall(
+      createMockState(),
+      'browser_test_tool',
+      { tabId: 1.5 },
+      bt,
+      createMockExtra(),
+      createMockCallbacks(),
+    );
+
+    expect(result.isError).toBe(true);
+    expect(appendAuditEntry).not.toHaveBeenCalled();
   });
 
   test('sendInvocationStart and sendInvocationEnd are called', async () => {
@@ -1344,6 +1687,294 @@ describe('handlePluginToolCall', () => {
       plugin: 'testplugin',
       success: false,
       error: { code: 'NOT_FOUND', message: 'not found', category: 'client' },
+    });
+  });
+
+  describe('audit tab fields', () => {
+    beforeEach(() => {
+      vi.mocked(getToolPermission).mockReturnValue('auto');
+      vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
+      mockTabMapping();
+    });
+
+    test('explicit tabId is recorded with the origin from the tab cache — never the path', async () => {
+      mockTabMapping({
+        plugin: 'testplugin',
+        tabs: [{ tabId: 42, url: 'https://outlook.office.com/mail/inbox/id/AAMkAGI2' }],
+      });
+
+      await callPluginTool(createMockState(), { tabId: 42 });
+
+      const entry = auditedEntry();
+      expect(entry.tabId).toBe(42);
+      expect(entry.tabOrigin).toBe('https://outlook.office.com');
+      expect(entry.tabOrigin).not.toContain('/mail');
+    });
+
+    test('explicit tabId missing from the cache records tabId only', async () => {
+      await callPluginTool(createMockState(), { tabId: 42 });
+
+      const entry = auditedEntry();
+      expect(entry.tabId).toBe(42);
+      expect(entry).not.toHaveProperty('tabOrigin');
+    });
+
+    test('the dispatching plugin mapping is consulted before other plugins sharing the tab id', async () => {
+      mockTabMapping(
+        { plugin: 'otherplugin', tabs: [{ tabId: 42, url: 'https://other.example/' }] },
+        { plugin: 'testplugin', tabs: [{ tabId: 42, url: 'https://own.example/' }] },
+      );
+
+      await callPluginTool(createMockState(), { tabId: 42 });
+
+      expect(auditedEntry().tabOrigin).toBe('https://own.example');
+    });
+
+    test('a tab known only to another plugin still resolves its origin', async () => {
+      mockTabMapping({ plugin: 'otherplugin', tabs: [{ tabId: 42, url: 'https://other.example/x' }] });
+
+      await callPluginTool(createMockState(), { tabId: 42 });
+
+      expect(auditedEntry().tabOrigin).toBe('https://other.example');
+    });
+
+    test('a file: tab yields tabId without tabOrigin', async () => {
+      mockTabMapping({ plugin: 'testplugin', tabs: [{ tabId: 42, url: 'file:///C:/x.html' }] });
+
+      await callPluginTool(createMockState(), { tabId: 42 });
+
+      const entry = auditedEntry();
+      expect(entry.tabId).toBe(42);
+      expect(entry).not.toHaveProperty('tabOrigin');
+    });
+
+    test('extension-echoed result.tabId is recorded and stripped from the client output', async () => {
+      vi.mocked(dispatchToExtension).mockResolvedValue({ output: { ok: true }, tabId: 9 });
+      mockTabMapping({ plugin: 'testplugin', tabs: [{ tabId: 9, url: 'https://app.example/page' }] });
+
+      const result = await callPluginTool(createMockState());
+
+      expect(result.content[0]?.text).toBe('{"ok":true}');
+      const entry = auditedEntry();
+      expect(entry.tabId).toBe(9);
+      expect(entry.tabOrigin).toBe('https://app.example');
+    });
+
+    test('echo on a void tool output yields an empty object to the client', async () => {
+      vi.mocked(dispatchToExtension).mockResolvedValue({ tabId: 9 });
+
+      const result = await callPluginTool(createMockState());
+
+      expect(result.content[0]?.text).toBe('{}');
+      expect(auditedEntry().tabId).toBe(9);
+    });
+
+    test('echo on a null tool output keeps the envelope shape the client receives today', async () => {
+      vi.mocked(dispatchToExtension).mockResolvedValue({ output: null, tabId: 9 });
+
+      const result = await callPluginTool(createMockState());
+
+      expect(result.content[0]?.text).toBe('{"output":null}');
+      expect(auditedEntry().tabId).toBe(9);
+    });
+
+    test('echoed tabId wins over the caller-targeted one', async () => {
+      vi.mocked(dispatchToExtension).mockResolvedValue({ output: {}, tabId: 9 });
+
+      await callPluginTool(createMockState(), { tabId: 3 });
+
+      expect(auditedEntry().tabId).toBe(9);
+    });
+
+    test('no tabId keys are recorded when neither provided nor echoed', async () => {
+      await callPluginTool(createMockState());
+
+      const entry = auditedEntry();
+      expect(entry).not.toHaveProperty('tabId');
+      expect(entry).not.toHaveProperty('tabOrigin');
+    });
+
+    test('DispatchError data.tabId is recorded as the tab and excluded from details', async () => {
+      mockDispatchError('not found', -32603, { code: 'NOT_FOUND', category: 'not_found', tabId: 5 });
+      mockTabMapping({ plugin: 'testplugin', tabs: [{ tabId: 5, url: 'https://app.example/' }] });
+
+      await callPluginTool(createMockState());
+
+      const entry = auditedEntry();
+      expect(entry.tabId).toBe(5);
+      expect(entry.tabOrigin).toBe('https://app.example');
+      expect(entry.error).toEqual({ code: 'NOT_FOUND', message: 'not found', category: 'not_found' });
+      expect(entry.error).not.toHaveProperty('details');
+    });
+
+    test('tab-does-not-exist error records the targeted tab as the dispatch target without an origin', async () => {
+      mockDispatchError('Tab 42 does not exist', -32001);
+
+      await callPluginTool(createMockState(), { tabId: 42 });
+
+      const entry = auditedEntry();
+      expect(entry.tabId).toBe(42);
+      expect(entry).not.toHaveProperty('tabOrigin');
+      expect(entry.error).toEqual({ code: '-32001', message: 'Tab 42 does not exist' });
+    });
+
+    test('extension-not-connected failure keeps the caller-targeted tab id', async () => {
+      await callPluginTool(createMockState({ extensionConnections: new Map() }), { tabId: 42 });
+
+      const entry = auditedEntry();
+      expect(entry.success).toBe(false);
+      expect(entry.tabId).toBe(42);
+    });
+
+    test('tabOrigin is the origin at dispatch time, not the origin the tab navigated to while the tool ran', async () => {
+      mockTabMapping({ plugin: 'testplugin', tabs: [{ tabId: 42, url: 'https://before.example/inbox' }] });
+      vi.mocked(dispatchToExtension).mockImplementation(async () => {
+        mockTabMapping({ plugin: 'testplugin', tabs: [{ tabId: 42, url: 'https://after.example/landing' }] });
+        return { output: {} };
+      });
+
+      await callPluginTool(createMockState(), { tabId: 42 });
+
+      const entry = auditedEntry();
+      expect(entry.tabId).toBe(42);
+      expect(entry.tabOrigin).toBe('https://before.example');
+    });
+
+    test('an echo naming a different tab is resolved from the cache as it stands after the tool ran', async () => {
+      mockTabMapping({ plugin: 'testplugin', tabs: [{ tabId: 3, url: 'https://caller.example/' }] });
+      vi.mocked(dispatchToExtension).mockImplementation(async () => {
+        mockTabMapping({ plugin: 'testplugin', tabs: [{ tabId: 9, url: 'https://echoed.example/' }] });
+        return { output: {}, tabId: 9 };
+      });
+
+      await callPluginTool(createMockState(), { tabId: 3 });
+
+      const entry = auditedEntry();
+      expect(entry.tabId).toBe(9);
+      expect(entry.tabOrigin).toBe('https://echoed.example');
+    });
+  });
+
+  describe('audit error.details', () => {
+    beforeEach(() => {
+      vi.mocked(getToolPermission).mockReturnValue('auto');
+      mockTabMapping();
+    });
+
+    test('carries retryable, retryAfterMs and unknown primitive keys', async () => {
+      mockDispatchError('Too many requests', -32603, {
+        code: 'RATE_LIMITED',
+        category: 'rate_limit',
+        retryable: true,
+        retryAfterMs: 5000,
+        status: 500,
+      });
+
+      await callPluginTool(createMockState());
+
+      expect(auditedEntry().error).toEqual({
+        code: 'RATE_LIMITED',
+        message: 'Too many requests',
+        category: 'rate_limit',
+        details: { retryable: true, retryAfterMs: 5000, status: 500 },
+      });
+    });
+
+    test('flattens the plugin ToolError details forwarded under data.details', async () => {
+      mockDispatchError('Service unavailable', -32603, {
+        code: 'UPSTREAM_UNAVAILABLE',
+        category: 'internal',
+        retryable: true,
+        details: { httpStatus: 503, requestId: 'req-1' },
+      });
+
+      await callPluginTool(createMockState());
+
+      expect(auditedEntry().error).toEqual({
+        code: 'UPSTREAM_UNAVAILABLE',
+        message: 'Service unavailable',
+        category: 'internal',
+        details: { httpStatus: 503, requestId: 'req-1', retryable: true },
+      });
+    });
+
+    test('string values are sanitized before they reach the audit log', async () => {
+      const actual = await vi.importActual<typeof import('./sanitize-error.js')>('./sanitize-error.js');
+      vi.mocked(sanitizeErrorMessage).mockImplementation(actual.sanitizeErrorMessage);
+      try {
+        mockDispatchError('boom', -32603, {
+          code: 'INTERNAL',
+          requestUrl: 'https://outlook.office.com/api/v2.0/me/messages/AAMkAGI2',
+        });
+
+        await callPluginTool(createMockState());
+
+        const error = auditedEntry().error as { details?: Record<string, unknown> };
+        expect(error.details).toEqual({ requestUrl: '[URL]' });
+      } finally {
+        vi.mocked(sanitizeErrorMessage).mockImplementation((msg: string) => msg);
+      }
+    });
+
+    test('a DispatchError without data.code still records details from the remaining keys', async () => {
+      mockDispatchError('Internal error', -32603, { tabId: 2, status: 500 });
+
+      await callPluginTool(createMockState());
+
+      const entry = auditedEntry();
+      expect(entry.tabId).toBe(2);
+      expect(entry.error).toEqual({ code: '-32603', message: 'Internal error', details: { status: 500 } });
+    });
+
+    test('a DispatchError without data records no details key', async () => {
+      mockDispatchError('Tab closed', -32001);
+
+      await callPluginTool(createMockState());
+
+      expect(auditedEntry().error).toEqual({ code: '-32001', message: 'Tab closed' });
+    });
+
+    test('MCP client text is unchanged by details — only the known structured fields are rendered', async () => {
+      mockDispatchError('Too many requests', -32603, {
+        code: 'RATE_LIMITED',
+        category: 'rate_limit',
+        retryable: true,
+        retryAfterMs: 5000,
+        status: 500,
+        tabId: 4,
+      });
+
+      const result = await callPluginTool(createMockState());
+
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('[ERROR code=RATE_LIMITED category=rate_limit retryable=true retryAfterMs=5000]');
+      expect(text).not.toContain('status');
+      expect(text).not.toContain('tabId');
+    });
+
+    test('telemetry receives only success, errorCategory and durationMs', async () => {
+      mockDispatchError('Too many requests', -32603, {
+        code: 'RATE_LIMITED',
+        category: 'rate_limit',
+        retryable: true,
+        retryAfterMs: 5000,
+        tabId: 4,
+      });
+      mockTabMapping({ plugin: 'testplugin', tabs: [{ tabId: 4, url: 'https://app.example/' }] });
+      const pluginMap = new Map([['testplugin', { name: 'testplugin', version: '1.0.0' }]]) as unknown as ReadonlyMap<
+        string,
+        RegisteredPlugin
+      >;
+      const state = createMockState({ registry: { plugins: pluginMap, toolLookup: new Map(), failures: [] } });
+
+      await callPluginTool(state);
+
+      expect(mockTrackPluginToolUsage).toHaveBeenCalledTimes(1);
+      expect(mockTrackPluginToolUsage.mock.calls[0]?.[2]).toEqual({
+        success: false,
+        errorCategory: 'rate_limit',
+        durationMs: expect.any(Number) as number,
+      });
     });
   });
 
@@ -2139,6 +2770,11 @@ describe('handlePluginToolCall — instance parameter', () => {
       }) as Record<string, unknown>,
       expect.any(Object) as Record<string, unknown>,
     );
+
+    // The audit entry names the resolved staging tab and its origin
+    const entry = auditedEntry();
+    expect(entry.tabId).toBe(202);
+    expect(entry.tabOrigin).toBe('https://staging.example.com');
   });
 
   test('instance not open returns error describing which tab is needed', async () => {

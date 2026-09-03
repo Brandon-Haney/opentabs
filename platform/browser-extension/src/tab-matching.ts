@@ -1,6 +1,18 @@
 import type { PluginMeta } from './extension-messages.js';
 
 /**
+ * Whether chrome.scripting.executeScript can run in this tab. A discarded tab
+ * (Memory Saver) or an `unloaded` tab (lazily restored session) has no running
+ * content, and a frozen tab (Chrome 132+) cannot run tasks; executeScript
+ * rejects with "Cannot access contents of the page" or hangs until the probe
+ * timeout. Adapter injection and readiness probes skip such tabs. `frozen` and
+ * `discarded` are typed as required booleans but are absent at runtime on
+ * older Chrome versions; the `!== true` form treats absent as scriptable.
+ */
+export const isTabScriptable = (tab: chrome.tabs.Tab): boolean =>
+  tab.discarded !== true && tab.frozen !== true && tab.status !== 'unloaded';
+
+/**
  * Checks if a URL matches any of the given Chrome match patterns,
  * optionally excluding URLs that match any exclude pattern.
  *

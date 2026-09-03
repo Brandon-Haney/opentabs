@@ -1,8 +1,10 @@
 import { toErrorMessage } from '@opentabs-dev/shared';
 import { INJECTION_RETRY_DELAY_MS, isValidPluginName } from './constants.js';
+import { CSP_RELAY_DIRECTIVES, MAX_CSP_VIOLATIONS_PER_DOCUMENT } from './csp-violation.js';
+import type { CspViolationMessage } from './extension-messages.js';
 import { sendToServer } from './messaging.js';
 import { getAllPluginMeta } from './plugin-storage.js';
-import { urlMatchesPatterns } from './tab-matching.js';
+import { isTabScriptable, urlMatchesPatterns } from './tab-matching.js';
 
 /** Names reserved for platform use — rejected at the injection layer as defense-in-depth */
 const RESERVED_NAMES = new Set(['system', 'browser', 'opentabs', 'extension', 'config', 'plugin', 'tool', 'mcp']);
@@ -227,6 +229,96 @@ const injectReadinessRelay = async (tabId: number): Promise<void> => {
 };
 
 /**
+ * ISOLATED-world listener for the browser-dispatched `securitypolicyviolation`
+ * event. Installed once per document by {@link injectCspViolationRelay}; the
+ * closure state (dedupe set, counter) lives for the document and resets with
+ * the ISOLATED world on navigation.
+ *
+ * A serialized closure cannot import from csp-violation.ts, so the allow-list
+ * and cap arrive as arguments and the origin-reduction rules are inlined here.
+ * They must match `reduceToOrigin` / `reduceSourceFile` in csp-violation.ts,
+ * which the background applies again to every report it receives.
+ *
+ * No nonce: the log and readiness relays need one because they consume
+ * `window.postMessage`, which any page script can call. This event is
+ * dispatched by the browser, a page-constructed event has `isTrusted === false`
+ * and is ignored, the payload is diagnostic and cannot trigger any action, and
+ * the background sanitizes it again. A page can still cause real violations at
+ * will (a fetch loop against a blocked origin), which is what the per-document
+ * dedupe and cap bound.
+ *
+ * Exported for direct testing; it is also the `func` passed to executeScript.
+ */
+const cspViolationRelayScript = (directives: readonly string[], maxPerDocument: number): void => {
+  const guard = '__opentabs_csp_relay';
+  const win = window as unknown as Record<string, unknown>;
+  if (win[guard]) return;
+  win[guard] = true;
+
+  const seen = new Set<string>();
+  let relayed = 0;
+
+  // Mirrors csp-violation.ts reduceToOrigin: keywords such as `inline` or
+  // `trusted-types-sink` are not URLs and pass through truncated.
+  const toOrigin = (uri: string): string => {
+    try {
+      return new URL(uri).origin;
+    } catch {
+      return uri.slice(0, 64);
+    }
+  };
+
+  document.addEventListener('securitypolicyviolation', event => {
+    if (!event.isTrusted) return;
+    if (!directives.includes(event.effectiveDirective)) return;
+
+    const blockedURI = toOrigin(event.blockedURI);
+    // Mirrors csp-violation.ts reduceSourceFile: an extension file is the
+    // attribution signal and is kept in full; page scripts reduce to origin.
+    const sourceFile = event.sourceFile.startsWith('chrome-extension:') ? event.sourceFile : toOrigin(event.sourceFile);
+
+    const key = `${event.effectiveDirective}|${blockedURI}|${sourceFile}|${event.disposition}`;
+    if (seen.has(key) || relayed >= maxPerDocument) return;
+    seen.add(key);
+    relayed++;
+
+    const message: CspViolationMessage = {
+      type: 'csp:violation',
+      report: {
+        effectiveDirective: event.effectiveDirective,
+        blockedURI,
+        sourceFile,
+        lineNumber: event.lineNumber,
+        columnNumber: event.columnNumber,
+        disposition: event.disposition,
+        documentOrigin: toOrigin(event.documentURI),
+      },
+    };
+    chrome.runtime.sendMessage(message).catch(() => {
+      // Background may not be listening — drop silently
+    });
+  });
+};
+
+/**
+ * Install {@link cspViolationRelayScript} in a tab's ISOLATED world. Top frame
+ * only, like the other relays. Failures are logged and do not block injection:
+ * the relay is diagnostic.
+ */
+const injectCspViolationRelay = async (tabId: number): Promise<void> => {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: cspViolationRelayScript,
+      args: [CSP_RELAY_DIRECTIVES, MAX_CSP_VIOLATIONS_PER_DOCUMENT],
+    });
+  } catch (err) {
+    console.warn(`[opentabs] injectCspViolationRelay failed for tab ${String(tabId)}:`, err);
+  }
+};
+
+/**
  * Inject resolved plugin settings into a tab's MAIN world.
  * Sets globalThis.__openTabs.pluginConfig so getConfig() works in
  * onActivate and tool handlers. Must run before the adapter IIFE.
@@ -312,10 +404,12 @@ const injectAdapterFile = async (
   instanceMap?: Record<string, string>,
   tabUrl?: string,
 ): Promise<void> => {
-  // Inject relays in ISOLATED world before the adapter IIFE (MAIN world)
-  // so postMessage listeners are in place when the adapter starts.
+  // Inject the three ISOLATED-world relays (plugin logs, readiness changes, CSP
+  // violations) before the adapter IIFE (MAIN world) so their listeners are in
+  // place when the adapter starts.
   await injectLogRelay(tabId);
   await injectReadinessRelay(tabId);
+  await injectCspViolationRelay(tabId);
 
   // Inject resolved settings into MAIN world before the adapter IIFE so
   // getConfig() returns values in onActivate and tool handlers.
@@ -377,9 +471,11 @@ interface MatchedTab {
 
 /**
  * Collect all unique tabs matching the given URL patterns,
- * excluding tabs whose URL matches any exclude pattern.
- * Queries each pattern independently and deduplicates by tab ID.
- * Returns tab IDs with their URLs for per-tab config resolution.
+ * excluding tabs whose URL matches any exclude pattern and tabs Chrome cannot
+ * script (discarded, frozen, unloaded) — injecting into those only produces
+ * "Cannot access contents of the page" failures. Queries each pattern
+ * independently and deduplicates by tab ID. Returns tab IDs with their URLs
+ * for per-tab config resolution.
  */
 const queryMatchingTabs = async (urlPatterns: string[], excludePatterns?: string[]): Promise<MatchedTab[]> => {
   const seen = new Set<number>();
@@ -388,7 +484,7 @@ const queryMatchingTabs = async (urlPatterns: string[], excludePatterns?: string
     try {
       const tabs = await chrome.tabs.query({ url: pattern });
       for (const tab of tabs) {
-        if (tab.id !== undefined && !seen.has(tab.id)) {
+        if (tab.id !== undefined && !seen.has(tab.id) && isTabScriptable(tab)) {
           if (
             excludePatterns &&
             excludePatterns.length > 0 &&
@@ -712,6 +808,7 @@ const reinjectStoredPlugins = async (): Promise<void> => {
 
 export {
   cleanupAdaptersInMatchingTabs,
+  cspViolationRelayScript,
   injectPluginIntoMatchingTabs,
   injectPluginsIntoTab,
   isSafePluginName,

@@ -1,5 +1,5 @@
 import type { ConfigStateBrowserTool, ConfigStateFailedPlugin, ConfigStatePlugin } from '@opentabs-dev/shared';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { DisconnectReason } from './extension-messages.js';
 
 /** Response shape returned by handleBgGetFullState */
@@ -53,6 +53,7 @@ const {
   mockGetLastSeenUrl,
   mockSetLastSeenUrl,
   mockFindAllMatchingTabs,
+  mockUrlMatchesPatterns,
   mockGetPendingConfirmations,
 } = vi.hoisted(() => ({
   mockSendToServer: vi.fn<(data: unknown) => void>(),
@@ -105,6 +106,7 @@ const {
   mockGetLastSeenUrl: vi.fn<(name: string) => Promise<string | undefined>>(() => Promise.resolve(undefined)),
   mockSetLastSeenUrl: vi.fn<(name: string, url: string) => Promise<void>>(() => Promise.resolve()),
   mockFindAllMatchingTabs: vi.fn<(meta: unknown) => Promise<chrome.tabs.Tab[]>>(() => Promise.resolve([])),
+  mockUrlMatchesPatterns: vi.fn<(url: string, patterns: string[], excludePatterns?: string[]) => boolean>(() => false),
   mockGetPendingConfirmations: vi.fn<() => unknown[]>(() => []),
 }));
 
@@ -141,6 +143,7 @@ vi.mock('./plugin-storage.js', () => ({
 
 vi.mock('./tab-matching.js', () => ({
   findAllMatchingTabs: mockFindAllMatchingTabs,
+  urlMatchesPatterns: mockUrlMatchesPatterns,
 }));
 
 vi.mock('./server-state-cache.js', () => ({
@@ -226,6 +229,7 @@ const {
   handleBgOpenPluginTab,
   handleBgRemovePlugin,
   handleBgUpdatePlugin,
+  handleCspViolation,
   initBackgroundMessageHandlers,
   restoreWsConnectedState,
 } = await import('./background-message-handlers.js');
@@ -441,6 +445,134 @@ describe('handlePluginLogs', () => {
     const sendResponse = vi.fn();
     handlePluginLogs({ entries: [] }, sendResponse);
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleCspViolation
+// ---------------------------------------------------------------------------
+
+describe('handleCspViolation', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  const report = {
+    effectiveDirective: 'connect-src',
+    blockedURI: 'https://127.0.0.1:9515',
+    sourceFile: 'chrome-extension://abc/adapters/outlook-1234abcd.js',
+    lineNumber: 12,
+    columnNumber: 34,
+    disposition: 'enforce',
+    documentOrigin: 'https://outlook.office.com',
+  };
+
+  const sender = {
+    id: 'test-extension-id',
+    tab: { id: 7, url: 'https://outlook.office.com/mail/' },
+  } as chrome.runtime.MessageSender;
+
+  const twoPlugins = {
+    outlook: { name: 'outlook', urlPatterns: ['*://outlook.office.com/*'], tools: [] },
+    slack: { name: 'slack', urlPatterns: ['*://slack.com/*'], tools: [] },
+  };
+
+  /** Let the handler's async plugin lookup settle. */
+  const flush = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockUrlMatchesPatterns.mockImplementation((_url, patterns) => patterns[0] === '*://outlook.office.com/*');
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  test('responds ok and logs one warn line naming the tab and the block', () => {
+    const sendResponse = vi.fn();
+    handleCspViolation({ report }, sendResponse, sender);
+
+    expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const line = String(warnSpy.mock.calls[0]?.[0]);
+    expect(line).toContain('tab 7');
+    expect(line).toContain('connect-src blocked https://127.0.0.1:9515');
+  });
+
+  test('forwards a warning-level plugin.log entry for each plugin matching the tab', async () => {
+    handleWsState({ connected: true }, () => {});
+    vi.clearAllMocks();
+    mockGetAllPluginMeta.mockResolvedValueOnce(twoPlugins);
+
+    handleCspViolation({ report }, () => {}, sender);
+    await vi.waitFor(() => expect(mockSendToServer).toHaveBeenCalledTimes(1));
+
+    expect(mockUrlMatchesPatterns).toHaveBeenCalledWith(
+      'https://outlook.office.com/mail/',
+      ['*://outlook.office.com/*'],
+      undefined,
+    );
+    expect(mockSendToServer).toHaveBeenCalledWith({
+      jsonrpc: '2.0',
+      method: 'plugin.log',
+      params: {
+        plugin: 'outlook',
+        level: 'warning',
+        message: 'CSP connect-src blocked https://127.0.0.1:9515 (enforce)',
+        data: { ...report, tabId: 7 },
+        ts: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) as unknown as string,
+      },
+    });
+  });
+
+  test('logs but does not forward when disconnected', async () => {
+    handleCspViolation({ report }, () => {}, sender);
+    await flush();
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(mockGetAllPluginMeta).not.toHaveBeenCalled();
+    expect(mockSendToServer).not.toHaveBeenCalled();
+  });
+
+  test('logs but does not forward when no plugin matches the tab', async () => {
+    handleWsState({ connected: true }, () => {});
+    vi.clearAllMocks();
+    mockGetAllPluginMeta.mockResolvedValueOnce(twoPlugins);
+    mockUrlMatchesPatterns.mockReturnValue(false);
+
+    handleCspViolation({ report }, () => {}, sender);
+    await vi.waitFor(() => expect(mockGetAllPluginMeta).toHaveBeenCalled());
+    await flush();
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(mockSendToServer).not.toHaveBeenCalled();
+  });
+
+  test('ignores an invalid report but still responds ok', async () => {
+    handleWsState({ connected: true }, () => {});
+    vi.clearAllMocks();
+    const { disposition: _disposition, ...invalid } = report;
+    const sendResponse = vi.fn();
+
+    handleCspViolation({ report: invalid }, sendResponse, sender);
+    await flush();
+
+    expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(mockSendToServer).not.toHaveBeenCalled();
+  });
+
+  test('ignores a message whose sender has no tab', async () => {
+    handleWsState({ connected: true }, () => {});
+    vi.clearAllMocks();
+    const sendResponse = vi.fn();
+
+    handleCspViolation({ report }, sendResponse, { id: 'test-extension-id' } as chrome.runtime.MessageSender);
+    handleCspViolation({ report }, sendResponse);
+    await flush();
+
+    expect(sendResponse).toHaveBeenCalledTimes(2);
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(mockSendToServer).not.toHaveBeenCalled();
   });
 });
 
@@ -2046,6 +2178,34 @@ describe('EXTENSION_ONLY_TYPES security guard', () => {
 
     // Should return true (accepted and handled asynchronously)
     expect(result).toBe(true);
+  });
+
+  test('threads the Chrome sender through to content-script-originated handlers', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const listeners = installListenerCapture();
+    initBackgroundMessageHandlers();
+    const listener = listeners[0] as Listener;
+
+    const result = listener(
+      {
+        type: 'csp:violation',
+        report: {
+          effectiveDirective: 'connect-src',
+          blockedURI: 'https://127.0.0.1:9515',
+          sourceFile: '',
+          lineNumber: 0,
+          columnNumber: 0,
+          disposition: 'enforce',
+          documentOrigin: 'https://outlook.office.com',
+        },
+      },
+      { id: 'test-extension-id', tab: { id: 7, url: 'https://outlook.office.com/mail/' } },
+      vi.fn(),
+    );
+
+    expect(result).toBe(true);
+    expect(String(warnSpy.mock.calls[0]?.[0])).toContain('tab 7');
+    warnSpy.mockRestore();
   });
 });
 

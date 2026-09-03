@@ -1,8 +1,9 @@
 /**
  * Persistent audit log — appends tool invocations to ~/.opentabs/audit.log as NDJSON.
  *
- * Each line is a self-contained JSON object matching the AuditEntry interface.
- * The file is created with 0600 permissions on first write and rotated when
+ * Each line is a self-contained JSON object matching the AuditEntry interface from
+ * @opentabs-dev/shared. Optional fields (tabId, tabOrigin, error.details) appear
+ * only when known. The file is created with 0600 permissions on first write and rotated when
  * it exceeds 10 MB (audit.log → audit.log.1, keeping at most 1 rotated file).
  *
  * Disk writes are fire-and-forget: errors are logged but never block tool dispatch.
@@ -10,10 +11,10 @@
 
 import { appendFile, rename, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { AuditEntry } from '@opentabs-dev/shared';
 import { safeChmod, toErrorMessage } from '@opentabs-dev/shared';
 import { getConfigDir } from './config.js';
 import { log } from './logger.js';
-import type { AuditEntry } from './state.js';
 
 /** Maximum audit.log size before rotation (10 MB) */
 const MAX_AUDIT_FILE_SIZE = 10 * 1024 * 1024;

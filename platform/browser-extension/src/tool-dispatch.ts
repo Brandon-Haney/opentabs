@@ -13,7 +13,7 @@ import { PODS_ACTION_VERSION, type PodsActionParams, runPodsAction } from './bro
 import { type PodsBridgeParams, runPodsBridge } from './browser-commands/pods-bridge.js';
 import { type PodsOpenEditorParams, runPodsOpenEditor } from './browser-commands/pods-open-editor.js';
 import { MAX_INPUT_SIZE, MAX_SCRIPT_TIMEOUT_MS, SCRIPT_TIMEOUT_MS } from './constants.js';
-import type { DispatchResult } from './dispatch-helpers.js';
+import type { DispatchErrorData, DispatchResult } from './dispatch-helpers.js';
 import { dispatchToTargetedTab, dispatchWithTabFallback, resolvePlugin } from './dispatch-helpers.js';
 import type { PluginMeta } from './extension-messages.js';
 import { JSONRPC_INTERNAL_ERROR, JSONRPC_INVALID_PARAMS } from './json-rpc-errors.js';
@@ -260,6 +260,7 @@ const executeToolOnTab = async (
           retryable?: boolean;
           retryAfterMs?: number;
           category?: string;
+          details?: unknown;
         };
         if (typeof caughtError.code !== 'string') {
           return {
@@ -268,15 +269,28 @@ const executeToolOnTab = async (
             message: caughtError.message ?? 'Tool execution failed',
           };
         }
-        const data: {
-          code: string;
-          retryable?: boolean;
-          retryAfterMs?: number;
-          category?: string;
-        } = { code: caughtError.code };
+        const data: DispatchErrorData = { code: caughtError.code };
         if (typeof caughtError.retryable === 'boolean') data.retryable = caughtError.retryable;
         if (typeof caughtError.retryAfterMs === 'number') data.retryAfterMs = caughtError.retryAfterMs;
         if (typeof caughtError.category === 'string') data.category = caughtError.category;
+        // `details` is read duck-typed off the thrown object, like the fields above.
+        // executeScript requires a JSON-serializable return value: a details object
+        // holding a function, cycle, or BigInt would void the ENTIRE result, so it is
+        // round-tripped through JSON here and dropped if that fails. The size bound
+        // keeps a huge object from crossing the world boundary only to be dropped by
+        // the background; the literal mirrors MAX_DETAILS_LENGTH in sanitize-error.ts
+        // (serialized closures cannot reference module constants).
+        const details = caughtError.details;
+        if (details !== null && typeof details === 'object' && !Array.isArray(details)) {
+          try {
+            const serialized = JSON.stringify(details);
+            if (typeof serialized === 'string' && serialized.length <= 4096) {
+              data.details = JSON.parse(serialized) as Record<string, unknown>;
+            }
+          } catch {
+            // Details that cannot be JSON-serialized are dropped; the rest of the error still crosses the boundary.
+          }
+        }
         return {
           type: 'error' as const,
           code: -32603,

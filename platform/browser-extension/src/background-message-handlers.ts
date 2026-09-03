@@ -1,6 +1,7 @@
 import type { ConfigStatePlugin, PluginTabInfo, TabState, ToolPermission } from '@opentabs-dev/shared';
 import { clearAllConfirmationBadges, clearConfirmationBadge, getPendingConfirmations } from './confirmation-badge.js';
 import { buildWsUrl, SERVER_PORT_KEY, WS_CONNECTED_KEY } from './constants.js';
+import { formatCspViolationLogLine, normalizeCspViolationReport } from './csp-violation.js';
 import type { DisconnectReason, InternalMessage, PluginTabStateInfo } from './extension-messages.js';
 import { getLastSeenUrl, setLastSeenUrl } from './last-seen-urls.js';
 import { handleServerMessage } from './message-router.js';
@@ -24,7 +25,7 @@ import {
   removePendingPluginToolUpdate,
   updateServerStateCache,
 } from './server-state-cache.js';
-import { findAllMatchingTabs } from './tab-matching.js';
+import { findAllMatchingTabs, urlMatchesPatterns } from './tab-matching.js';
 import {
   clearTabStateCache,
   getLastKnownStates,
@@ -86,8 +87,31 @@ const persistWsConnected = (connected: boolean): void => {
 // Individual message handlers
 // ---------------------------------------------------------------------------
 
-/** Handler signature for background message dispatch */
-type MessageHandler = (message: Record<string, unknown>, sendResponse: (response: unknown) => void) => void;
+/**
+ * Handler signature for background message dispatch. `sender` is the
+ * Chrome-provided MessageSender; handlers for content-script-originated
+ * messages read `sender.tab` from it rather than trusting any page-supplied
+ * tab field. Handlers that do not need it declare two parameters.
+ */
+type MessageHandler = (
+  message: Record<string, unknown>,
+  sendResponse: (response: unknown) => void,
+  sender?: chrome.runtime.MessageSender,
+) => void;
+
+/** Params of a `plugin.log` notification; the server validates plugin/level/message types and defaults `ts`. */
+interface PluginLogParams {
+  plugin: unknown;
+  level: unknown;
+  message: unknown;
+  data: unknown;
+  ts: unknown;
+}
+
+/** Forward one plugin log entry to the MCP server. */
+const forwardPluginLogEntry = (params: PluginLogParams): void => {
+  sendToServer({ jsonrpc: '2.0', method: 'plugin.log', params });
+};
 
 /** Handle offscreen:getUrl — return the WebSocket URL and connectionId for the offscreen document */
 const handleOffscreenGetUrl: MessageHandler = (_message, sendResponse) => {
@@ -291,17 +315,7 @@ const handlePluginLogs: MessageHandler = (message, sendResponse) => {
     for (const entry of entries) {
       if (typeof entry !== 'object' || entry === null) continue;
       const e = entry as Record<string, unknown>;
-      sendToServer({
-        jsonrpc: '2.0',
-        method: 'plugin.log',
-        params: {
-          plugin,
-          level: e.level,
-          message: e.message,
-          data: e.data,
-          ts: e.ts,
-        },
-      });
+      forwardPluginLogEntry({ plugin, level: e.level, message: e.message, data: e.data, ts: e.ts });
     }
   }
   sendResponse({ ok: true });
@@ -349,6 +363,54 @@ const handlePluginReadinessChanged: MessageHandler = (message, _sendResponse) =>
     await notifyAffectedPlugins([meta]);
   })().catch((err: unknown) => {
     console.warn('[opentabs] handlePluginReadinessChanged failed:', err);
+  });
+};
+
+/**
+ * Handle csp:violation — a page's Content Security Policy blocked something in
+ * a tab where an adapter runs. Always logs one warn line (captured by the
+ * background log collector, so `extension_get_logs` shows it), then forwards a
+ * `plugin.log` entry at level `warning` for every plugin whose URL patterns
+ * match the sender's tab.
+ *
+ * The plugin-log path carries this cleanly: its contract is (plugin, level,
+ * message, data, ts) with a per-plugin ring buffer and per-plugin CLI filtering,
+ * and the background attributes the tab to plugins by URL pattern without
+ * trusting the page. When no plugin matches (the tab navigated away after
+ * injection) the entry stays in the background log — no pseudo-plugin name is
+ * invented, since the server prunes buffers for unknown plugins. A page-native
+ * violation in a matching tab is attributed to that tab's plugins; the report's
+ * `sourceFile` (extension file vs page origin) tells the two apart.
+ *
+ * `sender.tab` is Chrome-provided and required; a message without it did not
+ * come from a content script and is ignored. Level must be `warning`: the
+ * server's plugin.log handler accepts debug/info/warning/error only.
+ */
+const handleCspViolation: MessageHandler = (message, sendResponse, sender) => {
+  sendResponse({ ok: true });
+  const report = normalizeCspViolationReport(message.report);
+  const tab = sender?.tab;
+  if (!report || !tab) return;
+
+  console.warn(formatCspViolationLogLine(report, tab.id));
+
+  const tabUrl = tab.url;
+  if (!wsConnected || !tabUrl) return;
+
+  (async () => {
+    const ts = new Date().toISOString();
+    for (const meta of Object.values(await getAllPluginMeta())) {
+      if (!urlMatchesPatterns(tabUrl, meta.urlPatterns, meta.excludePatterns)) continue;
+      forwardPluginLogEntry({
+        plugin: meta.name,
+        level: 'warning',
+        message: `CSP ${report.effectiveDirective} blocked ${report.blockedURI} (${report.disposition})`,
+        data: { ...report, tabId: tab.id },
+        ts,
+      });
+    }
+  })().catch((err: unknown) => {
+    console.warn('[opentabs] handleCspViolation failed:', err);
   });
 };
 
@@ -778,6 +840,7 @@ const backgroundHandlers = new Map<InternalMessage['type'], MessageHandler>([
   ['plugin:logs', handlePluginLogs],
   ['plugin:readinessChanged', handlePluginReadinessChanged],
   ['tool:progress', handleToolProgress],
+  ['csp:violation', handleCspViolation],
   ['sp:confirmationResponse', handleSpConfirmationResponse],
   ['port-changed', handlePortChanged],
 ]);
@@ -822,7 +885,7 @@ const initBackgroundMessageHandlers = (): void => {
 
       const handler = backgroundHandlers.get(message.type);
       if (handler) {
-        handler(message as unknown as Record<string, unknown>, sendResponse);
+        handler(message as unknown as Record<string, unknown>, sendResponse, sender);
         return true;
       }
 
@@ -852,6 +915,7 @@ export {
   handleBgSetSkipPermissions,
   handleBgSetToolPermission,
   handleBgUpdatePlugin,
+  handleCspViolation,
   handleOffscreenGetUrl,
   handlePluginLogs,
   handlePluginReadinessChanged,

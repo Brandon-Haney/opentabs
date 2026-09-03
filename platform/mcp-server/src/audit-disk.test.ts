@@ -2,9 +2,9 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { AuditEntry } from '@opentabs-dev/shared';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { _resetInitialized, appendAuditEntryToDisk, getAuditLogPath } from './audit-disk.js';
-import type { AuditEntry } from './state.js';
 
 const makeEntry = (overrides: Partial<AuditEntry> = {}): AuditEntry => ({
   timestamp: '2026-02-21T12:00:00.000Z',
@@ -114,5 +114,34 @@ describe('audit-disk', () => {
 
     // Should not throw — fire-and-forget with internal logging
     await appendAuditEntryToDisk(makeEntry());
+  });
+
+  test('persists tabId, tabOrigin and error.details verbatim', async () => {
+    const entry = makeEntry({
+      tabId: 3,
+      tabOrigin: 'https://example.com',
+      success: false,
+      error: {
+        code: 'RATE_LIMITED',
+        message: 'Too many requests',
+        category: 'rate_limit',
+        details: { retryable: true, retryAfterMs: 5000 },
+      },
+    });
+    await appendAuditEntryToDisk(entry);
+
+    const content = await readFile(getAuditLogPath(), 'utf-8');
+    const parsed = JSON.parse(content.trim()) as AuditEntry;
+    expect(parsed).toEqual(entry);
+  });
+
+  test('omits absent optional fields from the NDJSON line', async () => {
+    await appendAuditEntryToDisk(makeEntry());
+
+    const line = (await readFile(getAuditLogPath(), 'utf-8')).trim();
+    expect(line).not.toContain('"tabId"');
+    expect(line).not.toContain('"tabOrigin"');
+    expect(line).not.toContain('"details"');
+    expect(line).not.toContain('"error"');
   });
 });

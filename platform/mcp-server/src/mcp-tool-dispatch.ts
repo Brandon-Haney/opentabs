@@ -7,7 +7,13 @@
  */
 
 import { readFile } from 'node:fs/promises';
-import type { PluginPermissionConfig, ToolPermission } from '@opentabs-dev/shared';
+import type {
+  AuditEntry,
+  AuditError,
+  PluginPermissionConfig,
+  ToolErrorDetails,
+  ToolPermission,
+} from '@opentabs-dev/shared';
 import { toErrorMessage } from '@opentabs-dev/shared';
 import type { ZodError } from 'zod';
 import { savePluginPermissions } from './config.js';
@@ -22,7 +28,7 @@ import {
 } from './extension-protocol.js';
 import { log } from './logger.js';
 import { sanitizeErrorMessage } from './sanitize-error.js';
-import type { AuditEntry, CachedBrowserTool, ServerState, ToolLookupEntry } from './state.js';
+import type { CachedBrowserTool, ServerState, ToolLookupEntry } from './state.js';
 import {
   appendAuditEntry,
   consumeReviewToken,
@@ -89,8 +95,58 @@ const findTabForInstance = (state: ServerState, pluginName: string, pattern: str
   return fallback;
 };
 
+/** Accept a Chrome tab id only when it is a positive integer; every other value counts as absent. */
+const parseTabIdArg = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
+
+/**
+ * Reduce a tab URL to its origin (scheme + host[:port]) for audit records — never
+ * the path or query, which carry item identifiers. Opaque origins (file:, about:,
+ * blob:) serialize as the string 'null' and are treated as unknown.
+ */
+const originOfUrl = (url: string): string | undefined => {
+  try {
+    const { origin } = new URL(url);
+    return origin === 'null' ? undefined : origin;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Audit fields describing the tab a dispatch targeted. The origin comes from the
+ * server's cached tab mapping (populated by tab.syncAll / tab.stateChanged); the
+ * dispatching plugin's own tabs are consulted first, then every other plugin's,
+ * because a tab that matches several plugins carries a single URL. Returns an
+ * empty object when no tab is known, and omits tabOrigin when the tab is not
+ * cached or its origin is opaque.
+ */
+const auditTabFields = (
+  state: ServerState,
+  tabId: number | undefined,
+  pluginName?: string,
+): Pick<AuditEntry, 'tabId' | 'tabOrigin'> => {
+  if (tabId === undefined) return {};
+  const merged = getMergedTabMapping(state);
+  const mappings = [...merged.values()];
+  const ownMapping = pluginName === undefined ? undefined : merged.get(pluginName);
+  if (ownMapping) mappings.unshift(ownMapping);
+  for (const mapping of mappings) {
+    const tab = mapping.tabs.find(t => t.tabId === tabId);
+    if (tab) {
+      const tabOrigin = originOfUrl(tab.url);
+      return tabOrigin === undefined ? { tabId } : { tabId, tabOrigin };
+    }
+  }
+  return { tabId };
+};
+
 /** Keys that could trigger prototype pollution in JSON deserialization */
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** True for a plain object (non-null, non-array) */
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * Recursively remove dangerous keys from objects to prevent prototype pollution
@@ -148,6 +204,80 @@ const formatStructuredError = (code: string, message: string, data?: Record<stri
   if (retryAfterMs !== undefined) jsonObj.retryAfterMs = retryAfterMs;
 
   return `${prefix}\n\n\`\`\`json\n${JSON.stringify(jsonObj)}\n\`\`\``;
+};
+
+/**
+ * Keys of the extension's error data that never belong in AuditError.details:
+ * `code` and `category` are first-class AuditError fields, `message` is the
+ * error message itself, and `tabId` is the platform's executed-tab echo that is
+ * lifted into AuditEntry.tabId.
+ */
+const LIFTED_ERROR_DATA_KEYS = new Set(['code', 'category', 'message', 'tabId']);
+
+/** Maximum JSON-serialized length of AuditError.details; a larger payload is dropped rather than recorded partially. */
+const MAX_AUDIT_ERROR_DETAILS_CHARS = 4096;
+
+/**
+ * Copy the string, finite-number and boolean entries of `source` into `target`,
+ * skipping `skip` keys and prototype-polluting keys. Every key and string value
+ * passes through sanitizeErrorMessage so no URL, path or address reaches the
+ * audit log. Nested objects, arrays, null and non-finite numbers are dropped.
+ */
+const collectPrimitiveDetails = (
+  target: ToolErrorDetails,
+  source: Record<string, unknown>,
+  skip: ReadonlySet<string>,
+): void => {
+  for (const [rawKey, value] of Object.entries(source)) {
+    if (skip.has(rawKey) || DANGEROUS_KEYS.has(rawKey)) continue;
+    const key = sanitizeErrorMessage(rawKey);
+    if (typeof value === 'string') {
+      target[key] = sanitizeErrorMessage(value);
+    } else if (typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) {
+      target[key] = value;
+    }
+  }
+};
+
+/** Skip set for the nested plugin details, where every key is the plugin's own */
+const NO_SKIPPED_KEYS: ReadonlySet<string> = new Set();
+
+/**
+ * Normalize the extension's JSON-RPC `error.data` into AuditError.details.
+ *
+ * The plugin's own ToolError.details travel nested under `data.details`; they
+ * are flattened first so the platform's top-level fields (retryable,
+ * retryAfterMs) win on a colliding key. Only primitive leaves survive (see
+ * collectPrimitiveDetails). Returns undefined when nothing remains or when the
+ * serialized result exceeds MAX_AUDIT_ERROR_DETAILS_CHARS.
+ */
+const toAuditErrorDetails = (data: Record<string, unknown> | undefined): ToolErrorDetails | undefined => {
+  if (data === undefined) return undefined;
+  const details: ToolErrorDetails = {};
+  if (isRecord(data.details)) collectPrimitiveDetails(details, data.details, NO_SKIPPED_KEYS);
+  collectPrimitiveDetails(details, data, LIFTED_ERROR_DATA_KEYS);
+  if (Object.keys(details).length === 0) return undefined;
+  const serializedLength = JSON.stringify(details).length;
+  if (serializedLength > MAX_AUDIT_ERROR_DETAILS_CHARS) {
+    log.warn(
+      `Dropping audit error details: ${serializedLength} chars exceeds the ${MAX_AUDIT_ERROR_DETAILS_CHARS}-char limit`,
+    );
+    return undefined;
+  }
+  return details;
+};
+
+/**
+ * Split the extension's tool.dispatch result envelope `{ output, tabId? }` into
+ * the tool output and the echoed tab id. The echo is a platform field and must
+ * never reach the MCP client, so it is removed before the output is derived —
+ * including when the tool returned nothing and the envelope itself would
+ * otherwise be returned. A non-object result is treated as the output itself.
+ */
+const unwrapDispatchResult = (result: unknown): { output: unknown; echoedTabId: number | undefined } => {
+  if (!isRecord(result)) return { output: result, echoedTabId: undefined };
+  const { tabId, ...payload } = result;
+  return { output: payload.output ?? payload, echoedTabId: parseTabIdArg(tabId) };
 };
 
 /** Format a ZodError into a readable validation message listing each failing field */
@@ -317,11 +447,17 @@ const handleBrowserToolCall = async (
     };
   }
 
+  // Only a top-level numeric tabId names the tab a browser tool targets; tools
+  // that take tab ids in other shapes (arrays, nested objects) record no tab fields.
+  // The fields are snapshotted before the handler runs so a tool that navigates
+  // its tab records the origin it was dispatched against.
+  const btAuditTab = auditTabFields(state, parseTabIdArg(parseResult.data.tabId));
+
   // Send invocation start notification to extension (for side panel activity indicator)
   sendInvocationStart(state, 'browser', toolName);
   const btStartTs = Date.now();
   let btSuccess = true;
-  let btErrorInfo: AuditEntry['error'] | undefined;
+  let btErrorInfo: AuditError | undefined;
   try {
     const result = await cachedBt.tool.handler(parseResult.data, state);
     const cleaned = sanitizeOutput(result);
@@ -345,7 +481,8 @@ const handleBrowserToolCall = async (
       plugin: 'browser',
       success: btSuccess,
       durationMs: btDurationMs,
-      error: btErrorInfo,
+      ...btAuditTab,
+      ...(btErrorInfo !== undefined && { error: btErrorInfo }),
     });
   }
 };
@@ -403,7 +540,7 @@ const handlePluginToolCall = async (
   // (otherwise plugins with additionalProperties: false would reject them).
   // Use destructuring instead of delete to avoid mutating the caller's object.
   const { tabId: rawTabId, instance: rawInstance, ...pluginArgs } = args;
-  const tabId = typeof rawTabId === 'number' && Number.isInteger(rawTabId) && rawTabId > 0 ? rawTabId : undefined;
+  const tabId = parseTabIdArg(rawTabId);
   const instance = typeof rawInstance === 'string' && rawInstance.length > 0 ? rawInstance : undefined;
 
   // Validate args against the tool's JSON Schema before dispatching.
@@ -476,7 +613,20 @@ const handlePluginToolCall = async (
   sendInvocationStart(state, pluginName, toolBaseName);
   const startTs = Date.now();
   let success = true;
-  let errorInfo: AuditEntry['error'] | undefined;
+  let errorInfo: AuditError | undefined;
+  // Audit fields for the tab the dispatch targets, snapshotted before the tool
+  // runs so a tool that navigates its tab records the origin it was dispatched
+  // against rather than whatever the tab cache holds once it returns. The
+  // snapshot starts at the caller's tabId and is retaken only when the target
+  // changes: to the instance-resolved tab, then — once the extension answers —
+  // to the tab it reports having run the tool in (the echo wins because
+  // auto-selected dispatches are chosen extension-side).
+  let auditTab = auditTabFields(state, tabId, pluginName);
+  const retargetAudit = (nextTabId: number | undefined): void => {
+    if (nextTabId !== undefined && nextTabId !== auditTab.tabId) {
+      auditTab = auditTabFields(state, nextTabId, pluginName);
+    }
+  };
 
   try {
     state.activeDispatches.set(pluginName, currentDispatches + 1);
@@ -531,6 +681,7 @@ const handlePluginToolCall = async (
       }
       resolvedTabId = matchingTabId;
     }
+    retargetAudit(resolvedTabId);
 
     log.debug('tool.call: dispatching', `${pluginName}/${toolBaseName}`);
 
@@ -558,8 +709,9 @@ const handlePluginToolCall = async (
       },
       { label: `${pluginName}/${toolBaseName}`, pluginName, progressToken, onProgress },
     );
-    const rawOutput = (result as Record<string, unknown>).output ?? result;
-    const cleaned = sanitizeOutput(rawOutput);
+    const { output, echoedTabId } = unwrapDispatchResult(result);
+    retargetAudit(echoedTabId);
+    const cleaned = sanitizeOutput(output);
     return {
       content: [{ type: 'text' as const, text: serializeToolOutput(cleaned) }],
     };
@@ -576,13 +728,21 @@ const handlePluginToolCall = async (
         errorMsg = `Tab unavailable: ${errorMsg}`;
       }
 
+      retargetAudit(parseTabIdArg(err.data?.tabId));
+
       const toolErrorCode = err.data?.code;
       const category = typeof err.data?.category === 'string' ? err.data.category : undefined;
+      const details = toAuditErrorDetails(err.data);
       if (typeof toolErrorCode === 'string') {
         errorMsg = formatStructuredError(toolErrorCode, errorMsg, err.data);
-        errorInfo = { code: toolErrorCode, message: err.message, category };
+        errorInfo = {
+          code: toolErrorCode,
+          message: err.message,
+          ...(category !== undefined && { category }),
+          ...(details !== undefined && { details }),
+        };
       } else {
-        errorInfo = { code: String(code), message: err.message };
+        errorInfo = { code: String(code), message: err.message, ...(details !== undefined && { details }) };
       }
 
       return {
@@ -613,7 +773,8 @@ const handlePluginToolCall = async (
       plugin: pluginName,
       success,
       durationMs,
-      error: errorInfo,
+      ...auditTab,
+      ...(errorInfo !== undefined && { error: errorInfo }),
     });
     const plugin = state.registry.plugins.get(pluginName);
     if (plugin !== undefined) {
@@ -916,7 +1077,12 @@ export {
   handlePluginInspect,
   handlePluginMarkReviewed,
   handlePluginToolCall,
+  MAX_AUDIT_ERROR_DETAILS_CHARS,
+  originOfUrl,
+  parseTabIdArg,
   REVIEW_GUIDANCE,
   sanitizeOutput,
   serializeToolOutput,
+  toAuditErrorDetails,
+  unwrapDispatchResult,
 };

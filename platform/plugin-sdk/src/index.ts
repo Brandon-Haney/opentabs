@@ -12,6 +12,7 @@ export type {
   ConfigSettingType,
   ManifestTool,
   PluginManifest as Manifest,
+  ToolErrorDetails,
 } from '@opentabs-dev/shared';
 export { NAME_REGEX, RESERVED_NAMES, validatePluginName, validateUrlPattern } from '@opentabs-dev/shared';
 export type { LucideIconName } from './lucide-icon-names.js';
@@ -219,7 +220,15 @@ export {
   postJSON,
   putJSON,
   stripUndefined,
+  TRANSIENT_HTTP_STATUSES,
 } from './fetch.js';
+
+// ---------------------------------------------------------------------------
+// SDK utilities — Fetch with retry
+// ---------------------------------------------------------------------------
+
+export type { FetchRetryEvent, FetchWithRetryOptions } from './fetch-retry.js';
+export { fetchWithRetry } from './fetch-retry.js';
 
 // ---------------------------------------------------------------------------
 // SDK utilities — Timing

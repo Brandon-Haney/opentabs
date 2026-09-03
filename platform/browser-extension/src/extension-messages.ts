@@ -112,6 +112,28 @@ export interface ToolProgressMessage {
   message?: string;
 }
 
+/**
+ * A `securitypolicyviolation` event reduced in the ISOLATED world for the
+ * background. `blockedURI` and `documentOrigin` are origins only; `sourceFile`
+ * is kept in full only when its scheme is `chrome-extension:` (the attribution
+ * signal), otherwise it is an origin too.
+ */
+export interface CspViolationReport {
+  effectiveDirective: string;
+  blockedURI: string;
+  sourceFile: string;
+  lineNumber: number;
+  columnNumber: number;
+  disposition: 'enforce' | 'report';
+  documentOrigin: string;
+}
+
+/** Content script relay → Background: a CSP violation occurred in the sender's document */
+export interface CspViolationMessage {
+  type: 'csp:violation';
+  report: CspViolationReport;
+}
+
 /** Side panel → Background: confirmation response from user */
 export interface SpConfirmationResponseMessage {
   type: 'sp:confirmationResponse';
@@ -239,6 +261,7 @@ export type InternalMessage =
   | PluginLogsMessage
   | PluginReadinessChangedMessage
   | ToolProgressMessage
+  | CspViolationMessage
   | SpGetStateMessage
   | SpConnectionStateMessage
   | SpRelayMessage

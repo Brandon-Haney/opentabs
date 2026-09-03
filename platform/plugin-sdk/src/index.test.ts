@@ -3,10 +3,12 @@ import { z } from 'zod';
 import type { ErrorCategory, LucideIconName, ProgressOptions, ToolHandlerContext } from './index.js';
 import {
   defineTool,
+  fetchWithRetry,
   LUCIDE_ICON_NAMES,
   NAME_REGEX,
   RESERVED_NAMES,
   ToolError,
+  TRANSIENT_HTTP_STATUSES,
   validatePluginName,
   validateUrlPattern,
 } from './index.js';
@@ -369,6 +371,16 @@ describe('LucideIconName and LUCIDE_ICON_NAMES', () => {
   test('LucideIconName type accepts valid icon names', () => {
     const name: LucideIconName = 'send';
     expect(LUCIDE_ICON_NAMES.has(name)).toBe(true);
+  });
+});
+
+describe('fetch retry exports', () => {
+  test('fetchWithRetry is a function', () => {
+    expect(typeof fetchWithRetry).toBe('function');
+  });
+
+  test('TRANSIENT_HTTP_STATUSES lists exactly the retryable statuses', () => {
+    expect([...TRANSIENT_HTTP_STATUSES].sort((a, b) => a - b)).toEqual([408, 429, 500, 502, 503, 504]);
   });
 });
 

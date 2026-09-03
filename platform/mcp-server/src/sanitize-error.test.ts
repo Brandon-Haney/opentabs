@@ -103,6 +103,18 @@ describe('sanitizeErrorMessage', () => {
   });
 
   describe('IPv6 sanitization', () => {
+    // A clock time is colon-separated and all hex digits, so it reaches the same
+    // regex an IPv6 literal does. Nothing valid in IPv6 has exactly two colons and
+    // no `::`, which is what keeps these intact.
+    test('leaves a clock time alone', () => {
+      expect(sanitizeErrorMessage('request started at 10:30:45')).toBe('request started at 10:30:45');
+      expect(sanitizeErrorMessage('Error at 23:59:59 UTC')).toBe('Error at 23:59:59 UTC');
+      expect(sanitizeErrorMessage('elapsed 01:02:03.456')).toBe('elapsed 01:02:03.456');
+    });
+
+    test('still replaces an all-decimal IPv6 address, which spells out every group', () => {
+      expect(sanitizeErrorMessage('route via 1:2:3:4:5:6:7:8 failed')).toBe('route via [IP] failed');
+    });
     test('replaces bracket-wrapped loopback [::1]', () => {
       expect(sanitizeErrorMessage('Connection refused [::1]:3000')).toBe('Connection refused [IP]:3000');
     });
@@ -129,6 +141,31 @@ describe('sanitizeErrorMessage', () => {
 
     test('replaces mixed IPv6/IPv4 ::ffff:192.168.1.1 in full', () => {
       expect(sanitizeErrorMessage('Mapped address ::ffff:192.168.1.1')).toBe('Mapped address [IP]');
+    });
+
+    test('replaces IPv6 with zone ID fe80::1%eth0 including the zone', () => {
+      expect(sanitizeErrorMessage('link-local fe80::1%eth0 unreachable')).toBe('link-local [IP] unreachable');
+    });
+
+    test('leaves a ::-delimited Microsoft proxy label intact', () => {
+      const label = 'Microsoft::M365::RoutingPlane::NanoProxy::HttpProxy::OnHttpRequest';
+      expect(sanitizeErrorMessage(label)).toBe(label);
+    });
+
+    test('leaves ::-delimited identifiers whose segments are all hex intact', () => {
+      expect(sanitizeErrorMessage('Http::Proxy::Deadbeef::OnRequest')).toBe('Http::Proxy::Deadbeef::OnRequest');
+      expect(sanitizeErrorMessage('Foo::abc::Bar')).toBe('Foo::abc::Bar');
+    });
+
+    test('leaves scope operators and a spaced :: intact', () => {
+      expect(sanitizeErrorMessage('std::abs')).toBe('std::abs');
+      expect(sanitizeErrorMessage('Foo :: Bar')).toBe('Foo :: Bar');
+    });
+
+    test('leaves a ::-delimited label intact inside a longer message', () => {
+      const message =
+        'Microsoft service front door refused the request (HTTP 500): Microsoft::M365::RoutingPlane::NanoProxy::HttpProxy::OnHttpRequest, request-id abc';
+      expect(sanitizeErrorMessage(message)).toBe(message);
     });
 
     test('does not replace array indices like [0]', () => {

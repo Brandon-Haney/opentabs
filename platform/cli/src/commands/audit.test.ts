@@ -1,6 +1,7 @@
+import type { AuditEntry } from '@opentabs-dev/shared';
 import { InvalidArgumentError } from 'commander';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { formatDuration, formatTimestamp, parseDuration, parseLimit } from './audit.js';
+import { formatDuration, formatTimestamp, parseDuration, parseLimit, printAuditTable } from './audit.js';
 
 // ---------------------------------------------------------------------------
 // parseDuration
@@ -170,5 +171,95 @@ describe('parseLimit', () => {
 
   test('throws for empty string', () => {
     expect(() => parseLimit('')).toThrow(InvalidArgumentError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// printAuditTable
+// ---------------------------------------------------------------------------
+
+/** Width of the fixed Time column (mirrors COL_TIME in audit.ts) */
+const TIME_WIDTH = 15;
+
+/** Remove ANSI color sequences so column positions can be asserted on plain text */
+const ANSI_ESCAPE = String.fromCharCode(27);
+const stripAnsi = (line: string): string => line.replace(new RegExp(`${ANSI_ESCAPE}\\[[0-9;]*m`, 'g'), '');
+
+const makeEntry = (overrides: Partial<AuditEntry> = {}): AuditEntry => ({
+  timestamp: '2026-02-21T12:00:00.000Z',
+  tool: 'outlook__list_messages',
+  plugin: 'outlook',
+  success: true,
+  durationMs: 120,
+  ...overrides,
+});
+
+/** Capture the plain-text lines printAuditTable writes to console.log */
+const renderTable = (entries: AuditEntry[]): string[] => {
+  const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  try {
+    printAuditTable(entries);
+    return spy.mock.calls.map(call => stripAnsi(String(call[0])));
+  } finally {
+    spy.mockRestore();
+  }
+};
+
+describe('printAuditTable', () => {
+  test('header places an Origin column between Tool and the status column', () => {
+    const [header] = renderTable([makeEntry()]);
+    expect(header).toMatch(/^Time\s+Tool\s+Origin\s+Duration\s*$/);
+  });
+
+  test('row prints tabOrigin verbatim between tool and status', () => {
+    const origin = 'https://outlook.office.com';
+    const lines = renderTable([makeEntry({ tabOrigin: origin })]);
+    const row = lines[2];
+    if (row === undefined) throw new Error('Expected a data row');
+
+    const toolColumnWidth = 'outlook__list_messages'.length + 2;
+    const originColumnWidth = origin.length + 2;
+    expect(row.indexOf('outlook__list_messages')).toBe(TIME_WIDTH);
+    expect(row.indexOf(origin)).toBe(TIME_WIDTH + toolColumnWidth);
+    expect(row.indexOf('✓')).toBe(TIME_WIDTH + toolColumnWidth + originColumnWidth);
+    expect(row).toContain(`${origin}  ✓`);
+  });
+
+  test('entries without tabOrigin render a blank origin cell and stay aligned with entries that have one', () => {
+    const origin = 'https://outlook.office.com';
+    const lines = renderTable([makeEntry({ tabOrigin: origin }), makeEntry({ success: false, durationMs: 2500 })]);
+    const [, , withOrigin, withoutOrigin] = lines;
+    if (withOrigin === undefined || withoutOrigin === undefined) throw new Error('Expected two data rows');
+
+    expect(withoutOrigin).not.toContain(origin);
+    expect(withOrigin.indexOf('✓')).toBe(withoutOrigin.indexOf('✗'));
+    expect(withoutOrigin.indexOf('2.5s')).toBe(withOrigin.indexOf('120ms'));
+  });
+
+  test('origin column width grows to the longest origin', () => {
+    const shortOrigin = 'https://a.io';
+    const longOrigin = 'https://contoso-my.sharepoint.com';
+    const lines = renderTable([makeEntry({ tabOrigin: shortOrigin }), makeEntry({ tabOrigin: longOrigin })]);
+    const [header, , shortRow, longRow] = lines;
+    if (header === undefined || shortRow === undefined || longRow === undefined) {
+      throw new Error('Expected header and two data rows');
+    }
+
+    const toolColumnWidth = 'outlook__list_messages'.length + 2;
+    const originColumnWidth = longOrigin.length + 2;
+    const statusIndex = TIME_WIDTH + toolColumnWidth + originColumnWidth;
+    expect(shortRow.indexOf('✓')).toBe(statusIndex);
+    expect(longRow.indexOf('✓')).toBe(statusIndex);
+    expect(header.indexOf('Duration')).toBe(statusIndex + 4);
+  });
+
+  test('origin column keeps its minimum width when no entry carries an origin', () => {
+    const [header, , row] = renderTable([makeEntry()]);
+    if (header === undefined || row === undefined) throw new Error('Expected header and a data row');
+
+    const toolColumnWidth = 'outlook__list_messages'.length + 2;
+    const originColumnWidth = 'Origin'.length + 2;
+    expect(header.indexOf('Origin')).toBe(TIME_WIDTH + toolColumnWidth);
+    expect(row.indexOf('✓')).toBe(TIME_WIDTH + toolColumnWidth + originColumnWidth);
   });
 });

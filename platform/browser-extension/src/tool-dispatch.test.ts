@@ -22,6 +22,7 @@ vi.mock('./messaging.js', () => ({
 
 vi.mock('./sanitize-error.js', () => ({
   sanitizeErrorMessage: (msg: string) => msg,
+  sanitizeErrorDetails: (details: unknown) => details,
 }));
 
 // Chrome API stubs for real plugin-storage.js, tab-matching.js, and tool-dispatch.js
@@ -718,5 +719,132 @@ describe('handleToolDispatch', () => {
     if (!mainToolCall) return; // Real handleToolDispatch not available (mocked by another file)
 
     expect(mainToolCall[0].args?.[3]).toBe('corr-id-123');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// executeToolOnTab MAIN-world error serialization
+//
+// The MAIN-world `func` is captured from the executeScript mock and invoked
+// directly against a `globalThis.__openTabs` fixture whose tool handler throws
+// a given error. Follows the file's `if (!mainToolCall) return;` convention.
+// ---------------------------------------------------------------------------
+
+describe('executeToolOnTab MAIN-world error serialization', () => {
+  type ToolFunc = (pName: string, tName: string, tInput: Record<string, unknown>, dId: string) => Promise<unknown>;
+
+  beforeEach(() => {
+    mockSendToServer.mockReset();
+  });
+
+  /** Dispatch to tab 1 and return the MAIN-world tool func, or undefined when the module is mocked. */
+  const captureToolFunc = async (): Promise<ToolFunc | undefined> => {
+    invalidatePluginCache();
+    const plugin = makePlugin({ name: 'test-plugin', urlPatterns: ['*://example.com/*'] });
+    const chromeStub = (globalThis as Record<string, unknown>).chrome as {
+      storage: { local: { get: ReturnType<typeof vi.fn> } };
+      tabs: { get: ReturnType<typeof vi.fn> };
+      scripting: { executeScript: ReturnType<typeof vi.fn> };
+    };
+    chromeStub.storage.local.get.mockResolvedValue({ plugins_meta: { 'test-plugin': plugin } });
+    chromeStub.tabs.get.mockResolvedValue({ id: 1, url: 'https://example.com/', status: 'complete' });
+    chromeStub.scripting.executeScript.mockClear();
+
+    await handleToolDispatch({ plugin: 'test-plugin', tool: 'do-thing', input: {}, tabId: 1 }, 'req-serialize');
+    if (mockSendToServer.mock.calls.length === 0) return undefined;
+
+    const calls = chromeStub.scripting.executeScript.mock.calls as Array<
+      [{ world?: string; args?: unknown[]; func?: unknown }]
+    >;
+    const mainToolCall = calls.find(c => c[0].world === 'MAIN' && c[0].args?.length === 4);
+    return mainToolCall?.[0].func as ToolFunc | undefined;
+  };
+
+  /** Run the captured func against a frozen adapter whose tool throws `thrown`. */
+  const runWithThrown = async (func: ToolFunc, thrown: unknown): Promise<Record<string, unknown>> => {
+    const adapter = Object.freeze({
+      isReady: () => Promise.resolve(true),
+      tools: [
+        {
+          name: 'do-thing',
+          handle: () => Promise.reject(thrown),
+        },
+      ],
+    });
+    (globalThis as Record<string, unknown>).__openTabs = { adapters: { 'test-plugin': adapter } };
+    try {
+      return (await func('test-plugin', 'do-thing', {}, 'dispatch-1')) as Record<string, unknown>;
+    } finally {
+      delete (globalThis as Record<string, unknown>).__openTabs;
+    }
+  };
+
+  test('forwards a JSON-serializable details object alongside the structured fields', async () => {
+    const func = await captureToolFunc();
+    if (!func) return;
+
+    const result = await runWithThrown(func, {
+      code: 'UPSTREAM_500',
+      message: 'x',
+      category: 'internal',
+      retryable: true,
+      details: { status: 500, proxyErrorLabel: 'Microsoft::M365::RoutingPlane' },
+    });
+
+    expect(result).toEqual({
+      type: 'error',
+      code: -32603,
+      message: 'x',
+      data: {
+        code: 'UPSTREAM_500',
+        category: 'internal',
+        retryable: true,
+        details: { status: 500, proxyErrorLabel: 'Microsoft::M365::RoutingPlane' },
+      },
+    });
+  });
+
+  test('drops function-valued keys through the JSON round trip and keeps the rest', async () => {
+    const func = await captureToolFunc();
+    if (!func) return;
+
+    const result = await runWithThrown(func, { code: 'E', message: 'x', details: { fn: () => 1, keep: 1 } });
+    expect((result.data as Record<string, unknown>).details).toEqual({ keep: 1 });
+  });
+
+  test('omits details that cannot be serialized (cycle) but keeps the code', async () => {
+    const func = await captureToolFunc();
+    if (!func) return;
+
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const result = await runWithThrown(func, { code: 'E', message: 'x', details: cyclic });
+    expect(result.data).toEqual({ code: 'E' });
+  });
+
+  test('omits details that are not a plain object', async () => {
+    const func = await captureToolFunc();
+    if (!func) return;
+
+    expect((await runWithThrown(func, { code: 'E', message: 'x', details: 'string' })).data).toEqual({ code: 'E' });
+    expect((await runWithThrown(func, { code: 'E', message: 'x', details: [1, 2] })).data).toEqual({ code: 'E' });
+    expect((await runWithThrown(func, { code: 'E', message: 'x', details: null })).data).toEqual({ code: 'E' });
+  });
+
+  test('omits details whose serialized size exceeds 4096 characters', async () => {
+    const func = await captureToolFunc();
+    if (!func) return;
+
+    const result = await runWithThrown(func, { code: 'E', message: 'x', details: { blob: 'x'.repeat(5000) } });
+    expect(result.data).toEqual({ code: 'E' });
+  });
+
+  test('an error without a string code keeps the legacy shape with no data', async () => {
+    const func = await captureToolFunc();
+    if (!func) return;
+
+    const result = await runWithThrown(func, new Error('plain failure'));
+    expect(result).toEqual({ type: 'error', code: -32603, message: 'plain failure' });
+    expect(result).not.toHaveProperty('data');
   });
 });

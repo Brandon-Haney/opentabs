@@ -19,7 +19,10 @@ vi.mock('./plugin-storage.js', () => ({
   invalidatePluginCache: vi.fn(),
 }));
 
-vi.mock('./tab-matching.js', () => ({
+vi.mock('./tab-matching.js', async importOriginal => ({
+  // isTabScriptable is a pure predicate; the real implementation is kept so
+  // injection tests exercise the discarded/frozen/unloaded filter.
+  isTabScriptable: (await importOriginal<typeof import('./tab-matching.js')>()).isTabScriptable,
   urlMatchesPatterns: vi.fn(),
   matchPattern: vi.fn(),
   findAllMatchingTabs: vi.fn(),
@@ -32,15 +35,25 @@ vi.mock('./tab-matching.js', () => ({
 
 const mockTabsQuery = vi.fn<(queryInfo: chrome.tabs.QueryInfo) => Promise<chrome.tabs.Tab[]>>();
 const mockExecuteScript = vi.fn<(injection: unknown) => Promise<Array<{ result?: unknown }>>>();
+const mockRuntimeSendMessage = vi.fn<(message: unknown) => Promise<void>>(() => Promise.resolve());
 
 (globalThis as Record<string, unknown>).chrome = {
   tabs: { query: mockTabsQuery },
   scripting: { executeScript: mockExecuteScript },
-  runtime: { sendMessage: vi.fn(() => Promise.resolve()) },
+  runtime: { sendMessage: mockRuntimeSendMessage },
 };
 
+// The ISOLATED-world relay closures reference `window` and `document`. Tests
+// run under Node, so both are faked on globalThis; `window` is (re)installed
+// per test by the describes that execute ISOLATED funcs.
+const mockAddEventListener = vi.fn<(type: string, listener: (event: unknown) => void) => void>();
+(globalThis as Record<string, unknown>).document = { addEventListener: mockAddEventListener };
+
 // Import after mocking
-const { isSafePluginName, queryMatchingTabIds, injectPluginIntoMatchingTabs } = await import('./iife-injection.js');
+const { isSafePluginName, queryMatchingTabIds, injectPluginIntoMatchingTabs, cspViolationRelayScript } = await import(
+  './iife-injection.js'
+);
+const { CSP_RELAY_DIRECTIVES, MAX_CSP_VIOLATIONS_PER_DOCUMENT } = await import('./csp-violation.js');
 
 // ---------------------------------------------------------------------------
 // isSafePluginName
@@ -128,6 +141,18 @@ describe('queryMatchingTabIds', () => {
     expect(result).toEqual([3]);
   });
 
+  test('skips tabs Chrome cannot script (discarded, frozen, unloaded)', async () => {
+    mockTabsQuery.mockResolvedValue([
+      { id: 1, url: 'https://example.com/a', discarded: true } as chrome.tabs.Tab,
+      { id: 2, url: 'https://example.com/b', frozen: true } as chrome.tabs.Tab,
+      { id: 3, url: 'https://example.com/c', status: 'unloaded' } as chrome.tabs.Tab,
+      { id: 4, url: 'https://example.com/d', status: 'complete' } as chrome.tabs.Tab,
+    ]);
+
+    const result = await queryMatchingTabIds(['*://example.com/*']);
+    expect(result).toEqual([4]);
+  });
+
   test('returns empty array for empty URL patterns', async () => {
     const result = await queryMatchingTabIds([]);
     expect(result).toEqual([]);
@@ -163,6 +188,7 @@ describe('injectLogRelay nonce management', () => {
   beforeEach(() => {
     mockTabsQuery.mockReset();
     mockExecuteScript.mockReset();
+    mockAddEventListener.mockReset();
     // Provide a fake window for the ISOLATED world func to run against.
     // The ISOLATED world content script accesses `window` — in Node test
     // context we set it on globalThis so the reference resolves.
@@ -204,8 +230,21 @@ describe('injectLogRelay nonce management', () => {
     const nonce2 = [...nonces][0];
     expect(nonce2).not.toBe(nonce1);
 
-    // 2 injections × 2 ISOLATED calls each (log relay + readiness relay)
-    expect(isolatedCallCount).toBe(4);
+    // 2 injections × 3 ISOLATED calls each (log relay + readiness relay + CSP violation relay)
+    expect(isolatedCallCount).toBe(6);
+  });
+
+  test('installs the CSP violation relay with the shared allow-list and cap as args', async () => {
+    mockTabsQuery.mockResolvedValue([{ id: 42 } as chrome.tabs.Tab]);
+    mockExecuteScript.mockResolvedValue([{ result: undefined }]);
+
+    await injectPluginIntoMatchingTabs('slack', ['*://slack.com/*'], true);
+
+    const relayCall = mockExecuteScript.mock.calls
+      .map(call => call[0] as { world?: string; func?: unknown; args?: unknown[] })
+      .find(injection => injection.world === 'ISOLATED' && injection.func === cspViolationRelayScript);
+    expect(relayCall).toBeDefined();
+    expect(relayCall?.args).toEqual([CSP_RELAY_DIRECTIVES, MAX_CSP_VIOLATIONS_PER_DOCUMENT]);
   });
 
   test('nonces Set always has exactly one entry regardless of injection count', async () => {
@@ -227,6 +266,148 @@ describe('injectLogRelay nonce management', () => {
 
     const nonces = fakeWindow.__opentabs_log_nonces as Set<string>;
     expect(nonces.size).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cspViolationRelayScript — the ISOLATED-world securitypolicyviolation listener
+// ---------------------------------------------------------------------------
+
+describe('cspViolationRelayScript', () => {
+  type Listener = (event: SecurityPolicyViolationEvent) => void;
+
+  const baseEvent = {
+    isTrusted: true,
+    effectiveDirective: 'connect-src',
+    blockedURI: 'https://127.0.0.1:9515/mcp?x=1',
+    documentURI: 'https://outlook.office.com/mail/inbox/id/AAMk',
+    sourceFile: 'chrome-extension://abc/adapters/outlook-1234abcd.js',
+    lineNumber: 12,
+    columnNumber: 34,
+    disposition: 'enforce',
+  };
+
+  const makeEvent = (overrides: Partial<typeof baseEvent> = {}): SecurityPolicyViolationEvent =>
+    ({ ...baseEvent, ...overrides }) as unknown as SecurityPolicyViolationEvent;
+
+  /** Install the relay against the fakes and return the registered listener. */
+  const installRelay = (): Listener => {
+    cspViolationRelayScript(CSP_RELAY_DIRECTIVES, MAX_CSP_VIOLATIONS_PER_DOCUMENT);
+    const registration = mockAddEventListener.mock.calls[0];
+    if (!registration) throw new Error('relay registered no listener');
+    return registration[1] as unknown as Listener;
+  };
+
+  const sentReports = (): Array<Record<string, unknown>> =>
+    mockRuntimeSendMessage.mock.calls.map(call => (call[0] as { report: Record<string, unknown> }).report);
+
+  beforeEach(() => {
+    mockAddEventListener.mockReset();
+    mockRuntimeSendMessage.mockClear();
+    (globalThis as Record<string, unknown>).window = {};
+  });
+
+  afterEach(() => {
+    delete (globalThis as Record<string, unknown>).window;
+  });
+
+  test('registers exactly one securitypolicyviolation listener per document', () => {
+    installRelay();
+    expect(mockAddEventListener).toHaveBeenCalledTimes(1);
+    expect(mockAddEventListener.mock.calls[0]?.[0]).toBe('securitypolicyviolation');
+
+    cspViolationRelayScript(CSP_RELAY_DIRECTIVES, MAX_CSP_VIOLATIONS_PER_DOCUMENT);
+    expect(mockAddEventListener).toHaveBeenCalledTimes(1);
+  });
+
+  test('relays a trusted connect-src violation with URIs reduced to origins', () => {
+    const listener = installRelay();
+    listener(makeEvent());
+
+    expect(mockRuntimeSendMessage).toHaveBeenCalledTimes(1);
+    expect(mockRuntimeSendMessage.mock.calls[0]?.[0]).toEqual({
+      type: 'csp:violation',
+      report: {
+        effectiveDirective: 'connect-src',
+        blockedURI: 'https://127.0.0.1:9515',
+        sourceFile: 'chrome-extension://abc/adapters/outlook-1234abcd.js',
+        lineNumber: 12,
+        columnNumber: 34,
+        disposition: 'enforce',
+        documentOrigin: 'https://outlook.office.com',
+      },
+    });
+  });
+
+  test('ignores untrusted (page-constructed) events', () => {
+    const listener = installRelay();
+    listener(makeEvent({ isTrusted: false }));
+    expect(mockRuntimeSendMessage).not.toHaveBeenCalled();
+  });
+
+  test('ignores directives outside the allow-list', () => {
+    const listener = installRelay();
+    listener(makeEvent({ effectiveDirective: 'img-src' }));
+    listener(makeEvent({ effectiveDirective: 'style-src-elem' }));
+    expect(mockRuntimeSendMessage).not.toHaveBeenCalled();
+  });
+
+  test('relays a trusted-types violation attributed to its source file', () => {
+    const listener = installRelay();
+    listener(makeEvent({ effectiveDirective: 'require-trusted-types-for', blockedURI: 'trusted-types-sink' }));
+    expect(sentReports()[0]).toMatchObject({
+      effectiveDirective: 'require-trusted-types-for',
+      blockedURI: 'trusted-types-sink',
+      sourceFile: 'chrome-extension://abc/adapters/outlook-1234abcd.js',
+    });
+  });
+
+  test('reduces a page-script sourceFile to its origin', () => {
+    const listener = installRelay();
+    listener(makeEvent({ sourceFile: 'https://outlook.office.com/mail/app.js' }));
+    expect(sentReports()[0]?.sourceFile).toBe('https://outlook.office.com');
+  });
+
+  test('forwards a non-URL blockedURI as-is', () => {
+    const listener = installRelay();
+    listener(makeEvent({ blockedURI: 'inline' }));
+    expect(sentReports()[0]?.blockedURI).toBe('inline');
+  });
+
+  test('dedupes by directive, blocked origin, source file, and disposition', () => {
+    const listener = installRelay();
+    listener(makeEvent());
+    listener(makeEvent({ blockedURI: 'https://127.0.0.1:9515/other' }));
+    expect(mockRuntimeSendMessage).toHaveBeenCalledTimes(1);
+
+    listener(makeEvent({ disposition: 'report' }));
+    expect(mockRuntimeSendMessage).toHaveBeenCalledTimes(2);
+
+    listener(makeEvent({ sourceFile: 'https://outlook.office.com/mail/app.js' }));
+    expect(mockRuntimeSendMessage).toHaveBeenCalledTimes(3);
+  });
+
+  test('caps relayed reports at the per-document maximum', () => {
+    const listener = installRelay();
+    for (let i = 0; i < 25; i++) {
+      listener(makeEvent({ blockedURI: `https://host-${i}.example.com/path` }));
+    }
+    expect(mockRuntimeSendMessage).toHaveBeenCalledTimes(MAX_CSP_VIOLATIONS_PER_DOCUMENT);
+  });
+
+  test('repeats never consume the per-document budget', () => {
+    const listener = installRelay();
+    for (let i = 0; i < 30; i++) listener(makeEvent());
+    for (let i = 0; i < 19; i++) {
+      listener(makeEvent({ blockedURI: `https://host-${i}.example.com/path` }));
+    }
+    expect(mockRuntimeSendMessage).toHaveBeenCalledTimes(20);
+  });
+
+  test('a rejected sendMessage is swallowed', () => {
+    mockRuntimeSendMessage.mockImplementationOnce(() => Promise.reject(new Error('no receiver')));
+    const listener = installRelay();
+    expect(() => listener(makeEvent())).not.toThrow();
   });
 });
 

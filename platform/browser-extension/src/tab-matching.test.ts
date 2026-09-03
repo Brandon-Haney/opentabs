@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import type { PluginMeta } from './extension-messages.js';
-import { findAllMatchingTabs, findMatchingTab, matchPattern, urlMatchesPatterns } from './tab-matching.js';
+import {
+  findAllMatchingTabs,
+  findMatchingTab,
+  isTabScriptable,
+  matchPattern,
+  urlMatchesPatterns,
+} from './tab-matching.js';
 
 describe('matchPattern', () => {
   describe('scheme matching', () => {
@@ -436,5 +442,26 @@ describe('findMatchingTab', () => {
   test('returns null when patterns array is empty', async () => {
     const result = await findMatchingTab(makePlugin([]));
     expect(result).toBeNull();
+  });
+});
+
+describe('isTabScriptable', () => {
+  const tab = (overrides: Partial<chrome.tabs.Tab>): chrome.tabs.Tab =>
+    ({ id: 1, url: 'https://example.com/', ...overrides }) as chrome.tabs.Tab;
+
+  test('a loaded tab is scriptable', () => {
+    expect(isTabScriptable(tab({ status: 'complete', discarded: false, frozen: false }))).toBe(true);
+  });
+
+  test('absent discarded/frozen fields (older Chrome) count as scriptable', () => {
+    expect(isTabScriptable(tab({ status: 'loading' }))).toBe(true);
+  });
+
+  test.each([
+    ['discarded', { discarded: true }],
+    ['frozen', { frozen: true }],
+    ['unloaded', { status: 'unloaded' }],
+  ] as const)('a %s tab is not scriptable', (_label, overrides) => {
+    expect(isTabScriptable(tab(overrides))).toBe(false);
   });
 });

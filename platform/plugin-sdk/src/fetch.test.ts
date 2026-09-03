@@ -8,6 +8,7 @@ import {
   deleteJSON,
   fetchFromPage,
   fetchJSON,
+  httpStatusToToolError,
   parseRateLimitHeader,
   parseRetryAfterMs,
   patchJSON,
@@ -16,6 +17,7 @@ import {
   postJSON,
   putJSON,
   stripUndefined,
+  TRANSIENT_HTTP_STATUSES,
 } from './fetch.js';
 
 // ---------------------------------------------------------------------------
@@ -319,6 +321,7 @@ describe('fetchFromPage', () => {
       expect(toolError.category).toBe('rate_limit');
       expect(toolError.retryable).toBe(true);
       expect(toolError.retryAfterMs).toBe(30_000);
+      expect(toolError.details).toEqual({ httpStatus: 429 });
     }
   });
 
@@ -348,6 +351,7 @@ describe('fetchFromPage', () => {
       expect(toolError.retryable).toBe(true);
       expect(toolError.message).toContain('HTTP 500');
       expect(toolError.message).toContain('Internal Server Error');
+      expect(toolError.details).toEqual({ httpStatus: 500 });
     }
   });
 
@@ -935,6 +939,75 @@ describe('deleteJSON', () => {
     const schema = z.object({ method: z.string(), contentType: z.string().nullable(), received: z.null() });
     const data = await deleteJSON(`${baseUrl}/echo-method`, undefined, schema);
     expect(data.method).toBe('DELETE');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// httpStatusToToolError
+// ---------------------------------------------------------------------------
+
+describe('httpStatusToToolError', () => {
+  const responseWith = (status: number, headers?: Record<string, string>): Response =>
+    new Response(null, { status, headers });
+
+  test.each([
+    { status: 401, code: 'AUTH_ERROR', category: 'auth', retryable: false },
+    { status: 403, code: 'AUTH_ERROR', category: 'auth', retryable: false },
+    { status: 404, code: 'NOT_FOUND', category: 'not_found', retryable: false },
+    { status: 429, code: 'RATE_LIMITED', category: 'rate_limit', retryable: true },
+    { status: 400, code: 'VALIDATION_ERROR', category: 'validation', retryable: false },
+    { status: 422, code: 'VALIDATION_ERROR', category: 'validation', retryable: false },
+    { status: 408, code: 'TIMEOUT', category: 'timeout', retryable: true },
+    { status: 409, code: 'http_error', category: undefined, retryable: false },
+    { status: 413, code: 'http_error', category: undefined, retryable: false },
+    { status: 500, code: 'http_error', category: 'internal', retryable: true },
+    { status: 502, code: 'http_error', category: 'internal', retryable: true },
+    { status: 503, code: 'http_error', category: 'internal', retryable: true },
+    { status: 504, code: 'http_error', category: 'internal', retryable: true },
+    { status: 501, code: 'http_error', category: 'internal', retryable: false },
+    { status: 505, code: 'http_error', category: 'internal', retryable: false },
+    { status: 302, code: 'http_error', category: 'internal', retryable: false },
+  ])('$status → $code/$category retryable=$retryable with details.httpStatus', ({
+    status,
+    code,
+    category,
+    retryable,
+  }) => {
+    const err = httpStatusToToolError(responseWith(status), `HTTP ${status}`);
+    expect(err).toBeInstanceOf(ToolError);
+    expect(err.code).toBe(code);
+    expect(err.category).toBe(category);
+    expect(err.retryable).toBe(retryable);
+    expect(err.message).toBe(`HTTP ${status}`);
+    expect(err.details).toEqual({ httpStatus: status });
+  });
+
+  test('keeps retryAfterMs from Retry-After on 429 and 503 alongside details', () => {
+    const rateLimited = httpStatusToToolError(responseWith(429, { 'Retry-After': '12' }), 'throttled');
+    expect(rateLimited.retryAfterMs).toBe(12_000);
+    expect(rateLimited.details).toEqual({ httpStatus: 429 });
+
+    const unavailable = httpStatusToToolError(responseWith(503, { 'Retry-After': '7' }), 'down');
+    expect(unavailable.retryAfterMs).toBe(7_000);
+    expect(unavailable.details).toEqual({ httpStatus: 503 });
+  });
+
+  test('5xx retryability follows TRANSIENT_HTTP_STATUSES', () => {
+    for (let status = 500; status <= 511; status++) {
+      const err = httpStatusToToolError(responseWith(status), 'x');
+      expect(err.retryable).toBe(TRANSIENT_HTTP_STATUSES.has(status));
+    }
+  });
+});
+
+describe('TRANSIENT_HTTP_STATUSES', () => {
+  test('contains exactly 408, 429, 500, 502, 503 and 504', () => {
+    expect([...TRANSIENT_HTTP_STATUSES].sort((a, b) => a - b)).toEqual([408, 429, 500, 502, 503, 504]);
+  });
+
+  test('excludes 501 and 505', () => {
+    expect(TRANSIENT_HTTP_STATUSES.has(501)).toBe(false);
+    expect(TRANSIENT_HTTP_STATUSES.has(505)).toBe(false);
   });
 });
 

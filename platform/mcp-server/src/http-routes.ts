@@ -15,7 +15,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
-import type { WsHandle } from '@opentabs-dev/shared';
+import type { AuditEntry, WsHandle } from '@opentabs-dev/shared';
 import { toErrorMessage } from '@opentabs-dev/shared';
 import { savePluginPermissions, savePluginSettings } from './config.js';
 import { isDev } from './dev-mode.js';
@@ -49,7 +49,7 @@ import {
 import { performConfigReload } from './reload.js';
 import { sanitizeErrorMessage } from './sanitize-error.js';
 import { sdkVersion } from './sdk-version.js';
-import type { AuditEntry, ExtensionConnection, ServerState } from './state.js';
+import type { ExtensionConnection, ServerState } from './state.js';
 import {
   assignProfileLabel,
   getMergedTabMapping,

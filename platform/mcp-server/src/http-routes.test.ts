@@ -1,4 +1,4 @@
-import type { WsHandle } from '@opentabs-dev/shared';
+import type { AuditEntry, WsHandle } from '@opentabs-dev/shared';
 import { beforeAll, describe, expect, test, vi } from 'vitest';
 import { z } from 'zod';
 import type { HotHandlers } from './http-routes.js';
@@ -2107,5 +2107,83 @@ describe('multi-connection — wsOpen with explicit connectionId', () => {
     expect(state.extensionConnections.get('beta')?.ws).toBe(ws2);
     expect(ws1.closed).toBe(true);
     expect((ws2 as ReturnType<typeof createMockWsHandle>).closed).toBe(false);
+  });
+});
+
+describe('GET /audit', () => {
+  /** A failed entry carrying every optional audit field */
+  const richEntry: AuditEntry = {
+    timestamp: '2026-02-21T12:00:00.000Z',
+    tool: 'outlook__list_messages',
+    plugin: 'outlook',
+    success: false,
+    durationMs: 120,
+    tabId: 7,
+    tabOrigin: 'https://outlook.office.com',
+    error: {
+      code: 'RATE_LIMITED',
+      message: 'Too many requests',
+      category: 'rate_limit',
+      details: { retryable: true, retryAfterMs: 5000 },
+    },
+  };
+
+  test('returns tabId, tabOrigin and error.details untouched', async () => {
+    const { handlers, state } = createTestHandlers();
+    state.wsSecret = 'test-secret';
+    state.auditLog.push(structuredClone(richEntry));
+
+    const body = await fetchJson<AuditEntry[]>(handlers, 'http://localhost:9876/audit', {
+      Authorization: 'Bearer test-secret',
+    });
+
+    expect(body).toEqual([richEntry]);
+  });
+
+  test('entries recorded without the optional fields come back without them', async () => {
+    const { handlers, state } = createTestHandlers();
+    state.wsSecret = 'test-secret';
+    state.auditLog.push({
+      timestamp: '2026-02-21T12:00:00.000Z',
+      tool: 'browser_list_tabs',
+      plugin: 'browser',
+      success: true,
+      durationMs: 5,
+    });
+
+    const body = await fetchJson<AuditEntry[]>(handlers, 'http://localhost:9876/audit', {
+      Authorization: 'Bearer test-secret',
+    });
+
+    expect(body).toHaveLength(1);
+    expect(body[0]).not.toHaveProperty('tabId');
+    expect(body[0]).not.toHaveProperty('tabOrigin');
+    expect(body[0]).not.toHaveProperty('error');
+  });
+
+  test('rejects requests without a bearer token', async () => {
+    const { handlers, state } = createTestHandlers();
+    state.wsSecret = 'test-secret';
+
+    const req = new Request('http://localhost:9876/audit', { headers: { Host: 'localhost:9876' } });
+    const res = await handlers.fetch(req, mockServer);
+
+    expect(res).toBeInstanceOf(Response);
+    expect((res as Response).status).toBe(401);
+  });
+
+  test('/health auditSummary counts entries regardless of the optional fields', async () => {
+    const { handlers, state } = createTestHandlers();
+    state.wsSecret = 'test-secret';
+    state.auditLog.push(structuredClone(richEntry));
+
+    const body = await fetchJson<{ auditSummary: { totalInvocations: number; failureCount: number } }>(
+      handlers,
+      'http://localhost:9876/health',
+      { Authorization: 'Bearer test-secret' },
+    );
+
+    expect(body.auditSummary.totalInvocations).toBe(1);
+    expect(body.auditSummary.failureCount).toBe(1);
   });
 });

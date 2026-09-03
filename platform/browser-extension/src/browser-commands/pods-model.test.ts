@@ -66,7 +66,7 @@ describe('reduceOutline', () => {
       ROOT,
       {
         classId: 393230,
-        objectId: 'p|1',
+        objectId: '0a1b2c3d-1111-2222-3333-444444444444|1',
         properties: [469769250, 'Fusion Pilot Timeline', 603987475, '{e6b8a11d-1fe8-49e2-b5d9-28e6e5a5d082}{7}'],
       },
       {
@@ -74,20 +74,32 @@ describe('reduceOutline', () => {
         objectId: 'e6b8a11d-1fe8-49e2-b5d9-28e6e5a5d082|7',
         properties: [134224900, 'true', 268442635, '64', 469780527, 'Aptos', 469780760, '@FF0000,0,'],
       },
-      { classId: 1074135132, objectId: 's|1', properties: [469780826, 'Title 1'] },
+      { classId: 393230, objectId: 'p|2', properties: [469769250, 'Orphan', 603987475, '{missing}{1}'] },
+      {
+        classId: 393229,
+        objectId: '0b0b0b0b-1111-2222-3333-444444444444|1',
+        properties: [603986975, '{0a1b2c3d-1111-2222-3333-444444444444}{1}'],
+      },
+      {
+        classId: 1074135132,
+        objectId: 's|1',
+        properties: [469780826, 'Title 1', 603986976, '{0b0b0b0b-1111-2222-3333-444444444444}{1}'],
+      },
       { classId: 1074135132, objectId: 's|2', properties: [469780826, 'Content Placeholder 2'] },
     ],
   });
 
-  test('reduces the model to slides, paragraphs with run formatting, and shape names', () => {
+  test('reduces the model to slides, paragraphs with their shape and run formatting, and shape names', () => {
     const outline = reduceOutline(model());
     expect(outline.slideCount).toBe(2);
-    expect(outline.paragraphTotal).toBe(1);
+    expect(outline.paragraphTotal).toBe(2);
     expect(outline.paragraphs).toEqual([
       {
         text: 'Fusion Pilot Timeline',
+        shape: 'Title 1',
         runs: [{ sizePt: 32, bold: true, italic: null, underline: null, colorHex: 'FF0000', font: 'Aptos' }],
       },
+      { text: 'Orphan', shape: null, runs: [] },
     ]);
     expect(outline.shapes).toEqual(['Title 1', 'Content Placeholder 2']);
     expect(outline.shapeTotal).toBe(2);

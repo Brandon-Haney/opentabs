@@ -29,12 +29,20 @@ import {
 const PROP_ALIGN_A = 335551550;
 const PROP_ALIGN_B = 335551620;
 
-/** Alignment name → wire code, and the editor's own action name for each. */
+/**
+ * Alignment name → wire code, and the editor's own action name for each.
+ *
+ * The names are the client's own, checked against the command table extracted from
+ * its bundles: `FullTextJustify` is what PowerPoint calls justified text, and the
+ * `JustifyTextJustify` this once carried exists nowhere in that table. The label is
+ * revision metadata rather than a dispatch key — the server applies the object-graph
+ * diff either way — so this is honesty about what we claim to be, not a fixed bug.
+ */
 const ALIGNMENTS = {
   left: { code: '1', actionName: 'LeftTextJustify' },
   center: { code: '2', actionName: 'CenterTextJustify' },
   right: { code: '3', actionName: 'RightTextJustify' },
-  justify: { code: '4', actionName: 'JustifyTextJustify' },
+  justify: { code: '4', actionName: 'FullTextJustify' },
 } as const;
 
 export type TextAlignment = keyof typeof ALIGNMENTS;

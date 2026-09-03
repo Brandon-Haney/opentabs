@@ -37,7 +37,15 @@ const target = (): ResolvedTarget => ({
     134236461,
     'true',
   ],
+  text: 'Testing',
   runRef: '{cfc16549-02d7-4fbe-85bd-3d047593bf17}{222}',
+  segments: [{ start: 0, end: 'Testing'.length, ref: '{cfc16549-02d7-4fbe-85bd-3d047593bf17}{222}' }],
+  runsByRef: new Map([
+    [
+      '{cfc16549-02d7-4fbe-85bd-3d047593bf17}{222}',
+      { classId: 1179725, objectId: 'cfc16549-02d7-4fbe-85bd-3d047593bf17|222', properties: [268442635, '22'] },
+    ],
+  ]),
   textRuns: [
     {
       ref: '{cfc16549-02d7-4fbe-85bd-3d047593bf17}{222}',

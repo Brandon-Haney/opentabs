@@ -7,6 +7,14 @@
  * shape was proven live as `SetFontSize` and generalizes to any run property — the
  * `ActionName` is cosmetic; the server applies the object-graph diff regardless.
  *
+ * A range within the paragraph formats the way a person expects it to: select a
+ * few words, apply bold, and only those words change. That is the same revision
+ * with the paragraph re-cut around the range — see `pods-text-runs.ts` for the
+ * segmentation, decoded from the editor's own range-bold write. Formatting the
+ * whole paragraph is simply the range that covers all of it, so a paragraph that
+ * already carries several runs is no longer a bail-out: each stretch keeps its own
+ * base formatting and takes only the requested change.
+ *
  * Property ids decoded from captured SetFontSize/Bold/SetItalic/Font/SetFontColor
  * writes; see `plugins/powerpoint/docs/pods-action-catalog.md`.
  */
@@ -21,12 +29,24 @@ import {
   cellIdOf,
   findPresentationRoot,
   type PodsModel,
+  type PodsObject,
   PROP_RUN_REF,
   PROP_TEXT,
   parseRefList,
   readProp,
   refToObjectId,
 } from './pods-model.js';
+import {
+  boundariesOf,
+  formatRunBoundaries,
+  PROP_RUN_BOUNDARIES,
+  parseRunBoundaries,
+  type RunSegment,
+  rangeOfMatch,
+  recutForRange,
+  segmentsOf,
+  type TextRange,
+} from './pods-text-runs.js';
 
 /** Run (1179725) format property ids. */
 const PROP_FONT_SIZE = 268442635;
@@ -58,6 +78,8 @@ export interface RunFormatChanges {
 export interface RunFormatArgs {
   /** Exact visible text of the target paragraph. */
   text: string;
+  /** The stretch to format, as a substring of the paragraph; the whole paragraph when absent. */
+  match?: { value: string; occurrence: number };
   changes: RunFormatChanges;
   /** The size in points as requested, kept for result reporting. */
   requested: {
@@ -69,6 +91,12 @@ export interface RunFormatArgs {
     font?: string;
   };
 }
+
+/** The character range a set of arguments targets within the resolved paragraph. */
+export const rangeOf = (target: ResolvedTarget, args: RunFormatArgs): TextRange =>
+  args.match === undefined
+    ? { start: 0, end: target.text.length }
+    : rangeOfMatch(target.text, args.match.value, args.match.occurrence);
 
 /** `RRGGBB` → the BGR integer PowerPoint stores alongside the `@RRGGBB,,` display colour. */
 const hexToBgrInt = (hex: string): number => {
@@ -127,8 +155,14 @@ export interface ResolvedTarget {
   actionDescId: string;
   paragraphId: string;
   paragraphProperties: (string | number)[];
+  /** The paragraph's whole visible text — the string the segment offsets index into. */
+  text: string;
   /** The paragraph's raw run-reference list value (`{guid}{ctr},…`). */
   runRef: string;
+  /** The paragraph's text cut into stretches, each with the run that formats it. */
+  segments: RunSegment[];
+  /** Every run the paragraph references, by its `{guid}{ctr}` reference. */
+  runsByRef: Map<string, PodsObject>;
   /** The text runs the paragraph references, in order. */
   textRuns: ResolvedRun[];
 }
@@ -156,11 +190,14 @@ export const resolveRunFormatTarget = (model: PodsModel, text: string): Resolved
   }
 
   const runRef = readProp(paragraph.properties, PROP_RUN_REF) ?? '';
+  const refs = parseRefList(runRef);
   const textRuns: ResolvedRun[] = [];
-  for (const part of parseRefList(runRef)) {
+  const runsByRef = new Map<string, PodsObject>();
+  for (const part of refs) {
     const id = refToObjectId(part);
     const run = id ? byId.get(id) : undefined;
     if (run && run.classId === CLASS_RUN) {
+      runsByRef.set(part, run);
       textRuns.push({
         ref: part,
         objectId: run.objectId,
@@ -171,6 +208,7 @@ export const resolveRunFormatTarget = (model: PodsModel, text: string): Resolved
       });
     }
   }
+  const boundaries = parseRunBoundaries(readProp(paragraph.properties, PROP_RUN_BOUNDARIES));
 
   return {
     // The TARGET's own storage cell: cells are per slide, and a revision naming
@@ -180,7 +218,10 @@ export const resolveRunFormatTarget = (model: PodsModel, text: string): Resolved
     actionDescId: actionDescIdOf(root),
     paragraphId: paragraph.objectId,
     paragraphProperties: paragraph.properties,
+    text,
     runRef,
+    segments: segmentsOf(text.length, boundaries, refs),
+    runsByRef,
     textRuns,
   };
 };
@@ -190,73 +231,110 @@ export const resolveRunFormatTarget = (model: PodsModel, text: string): Resolved
  * the post-write check that the format actually landed on the document, rather
  * than merely being accepted by the server.
  */
-const runReflectsChanges = (run: ResolvedRun, changes: RunFormatChanges): boolean =>
+const propertiesReflectChanges = (properties: (string | number)[], changes: RunFormatChanges): boolean =>
   requestedRunProps(changes).every(propId => {
     const expected = overrideForRunProp(propId, changes);
-    return expected === undefined || readProp(run.properties, propId) === expected;
+    return expected === undefined || readProp(properties, propId) === expected;
   });
+
+/**
+ * Copy a run's properties, overriding the ones a change set names.
+ *
+ * The copy is verbatim — font, colour, weight, and the run's references to shared
+ * style objects all carry over — so a change only ever alters what it was asked to.
+ * A requested property the run never carried is appended, so turning a format on
+ * works from a default run as well as from one that already had the flag.
+ */
+const applyChangesToRun = (properties: (string | number)[], changes: RunFormatChanges): (string | number)[] => {
+  const seen = new Set<number>();
+  const copied: (string | number)[] = [];
+  for (let i = 0; i + 1 < properties.length; i += 2) {
+    const key = properties[i];
+    const value = properties[i + 1];
+    if (key === undefined || value === undefined) continue;
+    const override = typeof key === 'number' ? overrideForRunProp(key, changes) : undefined;
+    if (typeof key === 'number') seen.add(key);
+    copied.push(key, override ?? value);
+  }
+  for (const propId of requestedRunProps(changes)) {
+    if (seen.has(propId)) continue;
+    const value = overrideForRunProp(propId, changes);
+    if (value !== undefined) copied.push(propId, value);
+  }
+  return copied;
+};
+
+/**
+ * Rebuild a paragraph's properties for a new segmentation.
+ *
+ * Everything is copied verbatim except the two properties that express which run
+ * formats what: the reference list, and the boundary offsets. The boundaries are
+ * rewritten from the segments rather than patched, which is what makes the property
+ * appear when a paragraph gains its second run and disappear when it falls back to
+ * one — the editor never leaves a boundary behind on a single-run paragraph.
+ */
+export const paragraphPropertiesForSegments = (
+  properties: (string | number)[],
+  segments: RunSegment[],
+): (string | number)[] => {
+  const rebuilt: (string | number)[] = [];
+  for (let i = 0; i + 1 < properties.length; i += 2) {
+    const key = properties[i];
+    const value = properties[i + 1];
+    if (key === undefined || value === undefined) continue;
+    if (key === PROP_RUN_BOUNDARIES) continue;
+    rebuilt.push(key, key === PROP_RUN_REF ? segments.map(segment => segment.ref).join(',') : value);
+  }
+  const boundaries = boundariesOf(segments);
+  if (boundaries.length > 0) rebuilt.push(PROP_RUN_BOUNDARIES, formatRunBoundaries(boundaries));
+  return rebuilt;
+};
 
 /**
  * Build the type-3 run-format revision body with identity placeholders.
  *
  * Generalizes the proven `SetFontSize` write: the revision is really "merge this
  * modified copy of the run into its paragraph", so the same shape applies any run
- * property change, not just size. The new run copies the target run's properties
- * verbatim (font, colour, weight, and its references to existing style objects),
- * overriding only the properties named in `changes` — and appending any the run
- * did not already carry (e.g. a bold flag on a run that had never been bolded), so
- * turning a format on works even from a default run. The paragraph is resubmitted
- * with its run-reference rewritten to swap the old run for `{GUID}{1}`, so the run
- * is not orphaned. Pure and deterministic, for unit testing against a captured write.
+ * property change, not just size. The paragraph is re-cut around `range` and
+ * resubmitted with the new reference list and boundary offsets, and one run is
+ * minted per stretch the range covers — each a copy of the run it replaces, so a
+ * selection crossing two formats keeps both and takes only the requested change.
+ * Stretches outside the range keep pointing at the runs they already had, which is
+ * why bolding one word leaves the rest of the paragraph's objects untouched.
+ * Pure and deterministic, for unit testing against a captured write.
  */
 export const buildRunFormatBody = (
   target: ResolvedTarget,
   changes: RunFormatChanges,
+  range: TextRange,
   guidToken: string,
   headToken: string,
 ): Record<string, unknown> => {
-  const [run, ...extraRuns] = target.textRuns;
-  if (!run || extraRuns.length > 0) {
+  if (target.segments.length === 0) {
     throw new FrameBridgeValidationError(
-      `format_text formats single-run text; "${target.paragraphId}" has ${target.textRuns.length} formatting runs. ` +
-        'Formatting multi-run text is not supported yet.',
+      `"${target.paragraphId}" references no text runs, so there is no formatting to change.`,
     );
   }
-  const requested = requestedRunProps(changes);
-  if (requested.length === 0) {
+  if (requestedRunProps(changes).length === 0) {
     throw new FrameBridgeValidationError(
       'format_text needs at least one property to change (size, bold, italic, underline, color, or font).',
     );
   }
 
-  const seen = new Set<number>();
-  const newRunProperties: (string | number)[] = [];
-  for (let i = 0; i + 1 < run.properties.length; i += 2) {
-    const key = run.properties[i];
-    const value = run.properties[i + 1];
-    if (key === undefined || value === undefined) continue;
-    const override = typeof key === 'number' ? overrideForRunProp(key, changes) : undefined;
-    if (typeof key === 'number') seen.add(key);
-    newRunProperties.push(key, override ?? value);
-  }
-  // Add any requested property the run did not already carry, so a format can be
-  // turned on from a run that never had that property set.
-  for (const propId of requested) {
-    if (seen.has(propId)) continue;
-    const value = overrideForRunProp(propId, changes);
-    if (value !== undefined) newRunProperties.push(propId, value);
-  }
-
-  const rewrittenRef = parseRefList(target.runRef)
-    .map(ref => (ref === run.ref ? `{${guidToken}}{1}` : ref))
-    .join(',');
-  const newParagraphProperties: (string | number)[] = [];
-  for (let i = 0; i + 1 < target.paragraphProperties.length; i += 2) {
-    const key = target.paragraphProperties[i];
-    const value = target.paragraphProperties[i + 1];
-    if (key === undefined || value === undefined) continue;
-    newParagraphProperties.push(key, key === PROP_RUN_REF ? rewrittenRef : value);
-  }
+  const recut = recutForRange(target.segments, range, guidToken);
+  const mintedRuns = recut.minted.map(({ slot, sourceRef }) => {
+    const source = target.runsByRef.get(sourceRef);
+    if (source === undefined) {
+      throw new FrameBridgeValidationError(
+        `Run ${sourceRef} is referenced by the paragraph but missing from the live model. Re-read the deck and retry.`,
+      );
+    }
+    return {
+      ObjectId: `${guidToken}|${slot}`,
+      ClassId: CLASS_RUN,
+      Properties: sortPropertiesById(applyChangesToRun(source.properties, changes)),
+    };
+  });
 
   const objects = [
     {
@@ -264,8 +342,12 @@ export const buildRunFormatBody = (
       ClassId: 131140,
       Properties: [134236193, 'true', 335562934, '1', 469780989, 'SetFontSize'],
     },
-    { ObjectId: target.paragraphId, ClassId: CLASS_PARAGRAPH, Properties: sortPropertiesById(newParagraphProperties) },
-    { ObjectId: `${guidToken}|1`, ClassId: CLASS_RUN, Properties: sortPropertiesById(newRunProperties) },
+    {
+      ObjectId: target.paragraphId,
+      ClassId: CLASS_PARAGRAPH,
+      Properties: sortPropertiesById(paragraphPropertiesForSegments(target.paragraphProperties, recut.segments)),
+    },
+    ...mintedRuns,
   ];
 
   const revision = {
@@ -310,8 +392,27 @@ const requireText = (raw: Record<string, unknown>): string => {
   return raw.text;
 };
 
+/**
+ * The stretch to format, when the caller named one. `match` is a substring of the
+ * paragraph rather than a pair of offsets, because that is how a person describes
+ * a selection and it survives the paragraph being re-read; `occurrence` is 1-based
+ * and disambiguates a word that appears more than once.
+ */
+const parseMatch = (raw: Record<string, unknown>): RunFormatArgs['match'] => {
+  if (raw.match === undefined) return undefined;
+  if (typeof raw.match !== 'string' || raw.match.length === 0) {
+    throw new FrameBridgeValidationError('`match` must be a non-empty substring of the paragraph to format.');
+  }
+  const occurrence = raw.occurrence === undefined ? 1 : raw.occurrence;
+  if (typeof occurrence !== 'number' || !Number.isInteger(occurrence) || occurrence < 1) {
+    throw new FrameBridgeValidationError('`occurrence` must be a whole number of 1 or more.');
+  }
+  return { value: raw.match, occurrence };
+};
+
 const parseFormatArgs = (raw: Record<string, unknown>): RunFormatArgs => {
   const text = requireText(raw);
+  const match = parseMatch(raw);
   const hasSize = typeof raw.sizePt === 'number' && Number.isFinite(raw.sizePt) && raw.sizePt > 0;
   const hasBold = typeof raw.bold === 'boolean';
   const hasItalic = typeof raw.italic === 'boolean';
@@ -339,25 +440,40 @@ const parseFormatArgs = (raw: Record<string, unknown>): RunFormatArgs => {
     ...(requested.colorHex !== undefined ? { colorHex: requested.colorHex } : {}),
     ...(requested.font !== undefined ? { font: requested.font } : {}),
   };
-  return { text, changes, requested };
+  return { text, ...(match !== undefined ? { match } : {}), changes, requested };
 };
 
 const CLASS_FILTER = [CLASS_PARAGRAPH, CLASS_RUN];
 
-const isAppliedToFirstRun = (model: PodsModel, args: RunFormatArgs): boolean => {
+/** The segments a range covers, in order. */
+const coveredSegments = (target: ResolvedTarget, range: TextRange): RunSegment[] =>
+  target.segments.filter(segment => Math.max(segment.start, range.start) < Math.min(segment.end, range.end));
+
+/**
+ * Whether the formatting landed on the document: every stretch the range covers now
+ * carries the requested values. Checking each covered stretch rather than the first
+ * run means a range spanning two formats is only confirmed once BOTH changed.
+ */
+const isRangeFormatted = (model: PodsModel, args: RunFormatArgs): boolean => {
   try {
     const state = resolveRunFormatTarget(model, args.text);
-    const run = state.textRuns[0];
-    return run !== undefined && runReflectsChanges(run, args.changes);
+    const covered = coveredSegments(state, rangeOf(state, args));
+    if (covered.length === 0) return false;
+    return covered.every(segment => {
+      const run = state.runsByRef.get(segment.ref);
+      return run !== undefined && propertiesReflectChanges(run.properties, args.changes);
+    });
   } catch {
     return false;
   }
 };
 
 const summarizeFormat = (ctx: ResolvedTarget, args: RunFormatArgs): Record<string, unknown> => {
+  const range = rangeOf(ctx, args);
   const run = ctx.textRuns[0];
   return {
     text: args.text,
+    formatted: ctx.text.slice(range.start, range.end),
     runId: run?.objectId ?? '',
     before: {
       sizePt: run?.sizeHalfPt ? Number(run.sizeHalfPt) / 2 : null,
@@ -374,8 +490,9 @@ export const formatTextAction: PodsWriteActionSpec<RunFormatArgs, ResolvedTarget
   classFilter: CLASS_FILTER,
   parseArgs: parseFormatArgs,
   resolve: (model, args) => resolveRunFormatTarget(model, args.text),
-  build: (ctx, args, mint: PodsMint) => buildRunFormatBody(ctx, args.changes, mint.guidToken, mint.headToken),
-  isApplied: (model, _first, args) => isAppliedToFirstRun(model, args),
+  build: (ctx, args, mint: PodsMint) =>
+    buildRunFormatBody(ctx, args.changes, rangeOf(ctx, args), mint.guidToken, mint.headToken),
+  isApplied: (model, _first, args) => isRangeFormatted(model, args),
   idempotent: true,
   summarize: summarizeFormat,
 };
@@ -391,15 +508,18 @@ export const setFontSizeAction: PodsWriteActionSpec<RunFormatArgs, ResolvedTarge
         'set_font_size needs `sizePt`: the new font size in points, greater than 0.',
       );
     }
+    const match = parseMatch(raw);
     return {
       text,
+      ...(match !== undefined ? { match } : {}),
       changes: { sizeHalfPt: Math.round(raw.sizePt * 2) },
       requested: { sizePt: raw.sizePt },
     };
   },
   resolve: (model, args) => resolveRunFormatTarget(model, args.text),
-  build: (ctx, args, mint: PodsMint) => buildRunFormatBody(ctx, args.changes, mint.guidToken, mint.headToken),
-  isApplied: (model, _first, args) => isAppliedToFirstRun(model, args),
+  build: (ctx, args, mint: PodsMint) =>
+    buildRunFormatBody(ctx, args.changes, rangeOf(ctx, args), mint.guidToken, mint.headToken),
+  isApplied: (model, _first, args) => isRangeFormatted(model, args),
   idempotent: true,
   summarize: (ctx, args) => {
     const run = ctx.textRuns[0];

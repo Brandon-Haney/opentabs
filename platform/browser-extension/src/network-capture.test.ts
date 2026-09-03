@@ -67,6 +67,11 @@ describe('scrubHeaders', () => {
       expect(result).toEqual({ 'Set-Cookie': '[REDACTED]' });
     });
 
+    test('redacts the Office web app session tokens (x-accesstoken, x-aadtoken)', () => {
+      const result = scrubHeaders({ 'X-AccessToken': 'eyJ.wopi', 'X-AADToken': 'Bearer eyJ.aad' });
+      expect(result).toEqual({ 'X-AccessToken': '[REDACTED]', 'X-AADToken': '[REDACTED]' });
+    });
+
     test('redacts x-csrf-token', () => {
       const result = scrubHeaders({ 'X-CSRF-Token': 'token123' });
       expect(result).toEqual({ 'X-CSRF-Token': '[REDACTED]' });

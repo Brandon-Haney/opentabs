@@ -3,9 +3,10 @@
  *
  * The OOXML read tools report the last *saved* package, which trails the live
  * document during active co-editing. This read reduces the same live model every
- * pods write resolves against — slide list, paragraphs with their run formatting,
- * shape names — so a reviewer (or a post-write verification) sees the deck as it
- * is on screen right now.
+ * pods write resolves against — slide list, paragraphs with their run formatting
+ * and the shape each paragraph belongs to, shape names — so a reviewer (or a
+ * post-write verification) sees the deck as it is on screen right now, and two
+ * paragraphs with the same text can be told apart by their shape.
  *
  * The reduction is capped and carries honesty counts, so a partial view is never
  * mistaken for the whole deck.
@@ -17,8 +18,11 @@ import {
   CLASS_RENDER_SHAPE,
   CLASS_RUN,
   CLASS_SLIDE,
+  CLASS_TEXT_BODY,
   findPresentationRoot,
   type PodsModel,
+  PROP_CONTENT_REFS,
+  PROP_ORDERED_CHILDREN,
   PROP_RUN_REF,
   PROP_SHAPE_NAME,
   PROP_TEXT,
@@ -51,9 +55,11 @@ interface OutlineRun {
   font: string | null;
 }
 
-/** One paragraph of live text and the formatting of its runs. */
+/** One paragraph of live text, the shape holding it, and the formatting of its runs. */
 interface OutlineParagraph {
   text: string;
+  /** Name of the shape whose text body holds this paragraph; null when no shape claims it. */
+  shape: string | null;
   runs: OutlineRun[];
 }
 
@@ -83,6 +89,31 @@ export const reduceOutline = (model: PodsModel): Record<string, unknown> => {
   const { slideRefs } = slideRefsOf(root);
   const byId = new Map(model.objects.map(o => [o.objectId, o]));
 
+  // A paragraph's shape is two references away: the shape's content reference
+  // names its text body, whose ordered children are the paragraphs. Invert both
+  // so a paragraph can name its shape — how a caller tells apart two paragraphs
+  // with the same text.
+  const shapeOfTextBody = new Map<string, string>();
+  for (const o of model.objects) {
+    if (o.classId !== CLASS_RENDER_SHAPE) continue;
+    const name = readProp(o.properties, PROP_SHAPE_NAME);
+    if (name === undefined) continue;
+    for (const token of parseRefList(readProp(o.properties, PROP_CONTENT_REFS) ?? '')) {
+      const id = refToObjectId(token);
+      if (id !== null) shapeOfTextBody.set(id, name);
+    }
+  }
+  const shapeOfParagraph = new Map<string, string>();
+  for (const o of model.objects) {
+    if (o.classId !== CLASS_TEXT_BODY) continue;
+    const shape = shapeOfTextBody.get(o.objectId);
+    if (shape === undefined) continue;
+    for (const token of parseRefList(readProp(o.properties, PROP_ORDERED_CHILDREN) ?? '')) {
+      const id = refToObjectId(token);
+      if (id !== null) shapeOfParagraph.set(id, shape);
+    }
+  }
+
   const allParagraphs: OutlineParagraph[] = [];
   for (const o of model.objects) {
     if (o.classId !== CLASS_PARAGRAPH) continue;
@@ -94,7 +125,7 @@ export const reduceOutline = (model: PodsModel): Record<string, unknown> => {
       const run = id ? byId.get(id) : undefined;
       if (run && run.classId === CLASS_RUN) runs.push(runFormatting(run.properties));
     }
-    allParagraphs.push({ text, runs });
+    allParagraphs.push({ text, shape: shapeOfParagraph.get(o.objectId) ?? null, runs });
   }
 
   const allShapes = model.objects
@@ -117,7 +148,7 @@ export const reduceOutline = (model: PodsModel): Record<string, unknown> => {
 /** The `read_outline` action: the live deck reduced to text, formatting, and structure. */
 export const readOutlineAction: PodsReadActionSpec<Record<string, never>> = {
   kind: 'read',
-  classFilter: [CLASS_SLIDE, CLASS_PARAGRAPH, CLASS_RUN, CLASS_RENDER_SHAPE],
+  classFilter: [CLASS_SLIDE, CLASS_RENDER_SHAPE, CLASS_TEXT_BODY, CLASS_PARAGRAPH, CLASS_RUN],
   parseArgs: () => ({}),
   read: model => reduceOutline(model),
 };

@@ -71,6 +71,8 @@ export interface PodsModel {
 /** Well-known pods ClassIds. */
 export const CLASS_PRESENTATION = 393271;
 export const CLASS_SLIDE = 393227;
+/** A shape's text body: the object whose ordered children are the shape's paragraphs. */
+export const CLASS_TEXT_BODY = 393229;
 export const CLASS_PARAGRAPH = 393230;
 export const CLASS_RUN = 1179725;
 export const CLASS_RENDER_SHAPE = 1074135132;
@@ -78,7 +80,15 @@ export const CLASS_RENDER_SHAPE = 1074135132;
 /** Well-known pods property ids. */
 export const PROP_TEXT = 469769250;
 export const PROP_RUN_REF = 603987475;
-export const PROP_SLIDE_LIST = 603986975;
+/**
+ * An object's ordered children (`{guid}{ctr},…`): the presentation root's
+ * slides, a text body's paragraphs.
+ */
+export const PROP_ORDERED_CHILDREN = 603986975;
+/** The presentation root's ordered slide list — its ordered children. */
+export const PROP_SLIDE_LIST = PROP_ORDERED_CHILDREN;
+/** An object's content references: a slide's shapes, a shape's text body. */
+export const PROP_CONTENT_REFS = 603986976;
 export const PROP_ACTION_CTX = 536889540;
 export const PROP_SHAPE_NAME = 469780826;
 

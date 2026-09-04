@@ -67,10 +67,17 @@ once, and the first of them is built and live-verified.
   flags; Insert Link is two writes, the second resubmitting the whole shape. See
   [[pods-action-catalog.md]]. Building it means mutating visible text, so it wants
   its own builder, tests and set-and-revert cycle.
-- **`NewLine` decoded, not yet built.** Two chained revisions in one POST, and the
-  split appends a new text-body BLOCK to the shape rather than a paragraph to the
-  existing one. This is the piece that turns a 1-4 paragraph template into the
-  15-39 paragraphs a real review needs.
+- **`NewLine` built and live-verified**, as `add_paragraph`. Two chained revisions
+  in one POST, and the split appends a new text-body BLOCK to the shape rather
+  than a paragraph to the existing one. A THIRD chained revision types the
+  caller's text into the paragraph the first two created — the object shape of the
+  verified `set_text` write, chained by the mechanism the capture demonstrates.
+  Verified live twice, the second call appending after a paragraph the first had
+  created, so paragraphs chain one call at a time. This is the piece that turns a
+  1-4 paragraph template into the 15-39 paragraphs a real review needs.
+- **Removing a paragraph has no builder.** `add_paragraph` is one-way: the
+  co-authoring channel puts our writes beyond the editor's Undo, and there is no
+  decoded inverse. Capturing a backspace-merge is the next structural capture.
 - **The client's own catalogs are now available** without a capture at all: 2,892
   action names and 2,195 property ids with types, extracted from anonymously
   fetchable bundles and validated against every id this repo had decoded by hand.

@@ -341,6 +341,29 @@ export const podsSetTextOutputSchema = z.object({
 export const podsSetText = (text: string, newText: string, dryRun = false): z.infer<typeof podsSetTextOutputSchema> =>
   podsAction('set_text', { text, newText }, dryRun);
 
+/** What the agent receives after the `add_paragraph` engine runs (write result, or a dry-run body). */
+export const podsAddParagraphOutputSchema = z.object({
+  ...podsActionResultShape,
+  after: z.string().optional().describe('The paragraph the new one was appended after.'),
+  text: z.string().optional().describe('The text the new paragraph carries.'),
+  shape: z.string().nullable().optional().describe('Name of the shape that gained the paragraph.'),
+  sourceParagraphId: z.string().optional().describe('Object id of the paragraph it was appended after.'),
+  blocksBefore: z.number().int().optional().describe("Count of the shape's text blocks before the append."),
+  dryRun: z.boolean().optional().describe('True when this was a dry run (constructed but not written).'),
+  body: z.unknown().optional().describe('The constructed revision (dry run only), for inspection.'),
+});
+
+/**
+ * Build the `add_paragraph` action directive: append a paragraph carrying `text`
+ * to the shape holding the paragraph whose visible text is `after`. With `dryRun`,
+ * the engine constructs and returns the chained revisions without writing.
+ */
+export const podsAddParagraph = (
+  after: string,
+  text: string,
+  dryRun = false,
+): z.infer<typeof podsAddParagraphOutputSchema> => podsAction('add_paragraph', { after, text }, dryRun);
+
 /** What the agent receives after the `add_slide` engine runs (write result, or a dry-run body). */
 export const podsAddSlideOutputSchema = z.object({
   ...podsActionResultShape,
@@ -454,11 +477,7 @@ export const podsSetHyperlink = (
   dryRun = false,
   remove = false,
 ): z.infer<typeof podsSetHyperlinkOutputSchema> =>
-  podsAction(
-    'set_hyperlink',
-    remove ? { text, remove: true } : { text, url, ...matchArgs(target) },
-    dryRun,
-  );
+  podsAction('set_hyperlink', remove ? { text, remove: true } : { text, url, ...matchArgs(target) }, dryRun);
 
 /** What the agent receives after the `read_outline` engine action runs. */
 export const podsReadOutlineOutputSchema = z.object({

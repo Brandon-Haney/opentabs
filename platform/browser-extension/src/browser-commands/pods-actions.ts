@@ -17,6 +17,7 @@
  */
 
 import { FrameBridgeValidationError } from './frame-bridge-rpc.js';
+import { addParagraphAction } from './pods-action-add-paragraph.js';
 import { addSlideAction } from './pods-action-add-slide.js';
 import { alignTextAction } from './pods-action-align-text.js';
 import { deleteSlideAction } from './pods-action-delete-slide.js';
@@ -111,6 +112,7 @@ const PODS_ACTIONS: Record<string, PodsWriteActionSpec<unknown, unknown> | PodsR
   format_text: formatTextAction,
   align_text: alignTextAction,
   set_text: setTextAction,
+  add_paragraph: addParagraphAction,
   add_slide: addSlideAction,
   delete_slide: deleteSlideAction,
   move_slide: moveSlideAction,

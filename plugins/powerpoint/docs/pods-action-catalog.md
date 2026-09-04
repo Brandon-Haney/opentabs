@@ -58,7 +58,7 @@ range-bold capture; see "How a paragraph holds more than one format" below.
 | `ToggleBulletsList` | ◑ | paragraph + `393229`/`393234` list objects |
 | `ToggleNumberedList` | ◑ | paragraph + numbering objects |
 | `DemoteIndent` / `PromoteIndent` | ◑ | paragraph outline level |
-| `NewLine` | ○ DECODED 2026-09-03 | Splits a paragraph. Two chained revisions, and it appends a new text-body block to the shape; see below. |
+| `NewLine` | ● BUILT 2026-09-03 | `add_paragraph`. Splits a paragraph; two chained revisions, and it appends a new text-body block to the shape. A third chained revision types the text in. See below. |
 
 ## Text content
 | Action | Build | Wire |
@@ -115,8 +115,27 @@ The two-run paragraph in the same deck (`"04/29 - PILOT GO -- NO GO"`) carries
 | Action | Build | Wire |
 | --- | --- | --- |
 | **range format** (select part of a paragraph, then Bold/size/colour/…) | ○ decoded, ready to build | ONE revision, three objects: the action descriptor; the paragraph resubmitted with a new `469769746` and a rewritten `603987475`; and **one new `1179725` run** that is a verbatim copy of the covering run's property list with only the requested properties overridden. The head and tail segments keep pointing at the original run object, so nothing else is touched. Exemplar: `Bold`, `Sequence 5`, 2,650 bytes. |
-| **`NewLine`** (Enter — paragraph split) | ○ decoded, ready to build | ONE POST carrying **two chained revisions** (`rev2.BaseId = rev1.Id`). Rev 1: action descriptor (`469780989:"NewLine"`, while the `469780658` json calls it `"Enter"`); the **shape `1074135132` resubmitted with a second text-body reference appended to `603986976`**; the source paragraph; a **new text body `393229`** whose `603986975` names the new paragraph; and the new paragraph `393230` with `469769250:""`, its run-ref and `536886591` pointing at the source paragraph's run. Rev 2: the new paragraph again with `469780757:{"Lines":[1]}`. So a split appends a text-body BLOCK to the shape — a shape's `603986976` is a list of blocks, not a single one. Exemplar: 6,926 bytes. |
+| **`NewLine`** (Enter — paragraph split) | ● built as `add_paragraph` | ONE POST carrying **two chained revisions** (`rev2.BaseId = rev1.Id`). Rev 1: action descriptor (`469780989:"NewLine"`, while the `469780658` json calls it `"Enter"`); the **shape `1074135132` resubmitted with a second text-body reference appended to `603986976`**; the source paragraph; a **new text body `393229`** whose `603986975` names the new paragraph; and the new paragraph `393230` with `469769250:""`, its run-ref and `536886591` pointing at the source paragraph's run. Rev 2: the new paragraph again with `469780757:{"Lines":[1]}`. So a split appends a text-body BLOCK to the shape — a shape's `603986976` is a list of blocks, not a single one. Exemplar: 6,926 bytes. |
 | **hyperlink** (Ctrl+K) | ○ decoded, ready to build | See below — it is a field code, and it carries **no action name at all**. |
+
+### What one capture of `NewLine` could not tell us
+
+The captured split was an Enter at the end of a title, and that title carried no
+`536886591` (`endOfParagraphFormatting`) of its own. The new paragraph got the
+source's RUN reference in both `536886591` and `603987475`, which is consistent
+with two different rules — inherit the source's end-mark, or reuse the source's
+run — because in that one paragraph they were the same value.
+
+Live paragraphs frequently carry an end-mark that is a DIFFERENT run from the body
+text's: the first real target tried had `536886591` pointing at run `{60}` while
+`603987475` pointed at `{143}`. The builder therefore inherits an end-mark as an
+end-mark, falling back to the run reference only when the source has none — which
+reproduces the capture exactly. Getting this wrong is cosmetic, not destructive:
+the new line inherits the wrong formatting rather than corrupting anything.
+
+The general lesson is worth more than the property: a capture whose two candidate
+rules coincide has not decided between them, and the deciding case shows up on the
+first document that is not the one you captured.
 
 ### A hyperlink is a Word field code inside the paragraph text
 

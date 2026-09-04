@@ -5,6 +5,7 @@ import { reportReloadMarker } from './reload-marker.js';
 import { addImage } from './tools/add-image.js';
 import { addShape } from './tools/add-shape.js';
 import { addSlide } from './tools/add-slide.js';
+import { addParagraph } from './tools/add-paragraph.js';
 import { addSlideLive } from './tools/add-slide-live.js';
 import { addTable } from './tools/add-table.js';
 import { addTextBox } from './tools/add-text-box.js';
@@ -106,6 +107,7 @@ class PowerPointPlugin extends OpenTabsPlugin {
     alignText,
     setHyperlink,
     addSlideLive,
+    addParagraph,
     deleteSlideLive,
     moveSlideLive,
     setSlideBackground,

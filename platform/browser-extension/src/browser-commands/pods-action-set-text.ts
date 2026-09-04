@@ -31,6 +31,63 @@ export interface SetTextArgs {
   newText: string;
 }
 
+/** The objects a `Typing` write carries: the paragraph, and a run when one is needed. */
+export interface TypingObjects {
+  paragraphProperties: (string | number)[];
+  /**
+   * A replacement run, present only when the existing run carries its own text.
+   * A paragraph whose text diverges from its run's makes the editor reconcile by
+   * splitting in a second run and re-generating deleted text under the user, so
+   * such a run is replaced rather than shared.
+   */
+  runProperties?: (string | number)[];
+}
+
+/**
+ * Build the paragraph — and, where the run carries text, the replacement run — that
+ * a `Typing` write submits to put `newText` into a paragraph.
+ *
+ * Shared with `add_paragraph`, whose chained third revision types into a paragraph
+ * the same POST created: the run-text rule is subtle enough that a second
+ * implementation of it would be a second place to get it wrong.
+ */
+export const typingParagraphAndRun = (
+  paragraphProperties: (string | number)[],
+  run: { properties: (string | number)[] },
+  newText: string,
+  runRefToken: string,
+): TypingObjects => {
+  const runCarriesText = readProp(run.properties, PROP_TEXT) !== undefined;
+
+  const newParagraphProperties: (string | number)[] = [];
+  for (let i = 0; i + 1 < paragraphProperties.length; i += 2) {
+    const key = paragraphProperties[i];
+    const value = paragraphProperties[i + 1];
+    if (key === undefined || value === undefined) continue;
+    if (key === PROP_TEXT) {
+      newParagraphProperties.push(key, newText);
+    } else if (key === PROP_RUN_REF && runCarriesText) {
+      // The replacement run takes over the reference, exactly as in run-format.
+      newParagraphProperties.push(key, runRefToken);
+    } else {
+      newParagraphProperties.push(key, value);
+    }
+  }
+  if (!runCarriesText) return { paragraphProperties: sortPropertiesById(newParagraphProperties) };
+
+  const newRunProperties: (string | number)[] = [];
+  for (let i = 0; i + 1 < run.properties.length; i += 2) {
+    const key = run.properties[i];
+    const value = run.properties[i + 1];
+    if (key === undefined || value === undefined) continue;
+    newRunProperties.push(key, key === PROP_TEXT ? newText : value);
+  }
+  return {
+    paragraphProperties: sortPropertiesById(newParagraphProperties),
+    runProperties: sortPropertiesById(newRunProperties),
+  };
+};
+
 /**
  * Build the `Typing` revision body with identity placeholders.
  *
@@ -67,32 +124,7 @@ export const buildSetTextBody = (
         'Replacing multi-run text is not supported: a constructed run collapse crashes the live editor client.',
     );
   }
-  const runCarriesText = readProp(run.properties, PROP_TEXT) !== undefined;
-
-  const newParagraphProperties: (string | number)[] = [];
-  for (let i = 0; i + 1 < target.paragraphProperties.length; i += 2) {
-    const key = target.paragraphProperties[i];
-    const value = target.paragraphProperties[i + 1];
-    if (key === undefined || value === undefined) continue;
-    if (key === PROP_TEXT) {
-      newParagraphProperties.push(key, newText);
-    } else if (key === PROP_RUN_REF && runCarriesText) {
-      // The replacement run takes over the reference, exactly as in run-format.
-      newParagraphProperties.push(key, `{${guidToken}}{1}`);
-    } else {
-      newParagraphProperties.push(key, value);
-    }
-  }
-
-  const newRunProperties: (string | number)[] = [];
-  if (runCarriesText) {
-    for (let i = 0; i + 1 < run.properties.length; i += 2) {
-      const key = run.properties[i];
-      const value = run.properties[i + 1];
-      if (key === undefined || value === undefined) continue;
-      newRunProperties.push(key, key === PROP_TEXT ? newText : value);
-    }
-  }
+  const typed = typingParagraphAndRun(target.paragraphProperties, run, newText, `{${guidToken}}{1}`);
 
   const objects = [
     {
@@ -100,9 +132,9 @@ export const buildSetTextBody = (
       ClassId: 131140,
       Properties: [134236193, 'true', 335562934, '1', 469780989, 'Typing'],
     },
-    { ObjectId: target.paragraphId, ClassId: CLASS_PARAGRAPH, Properties: sortPropertiesById(newParagraphProperties) },
-    ...(runCarriesText
-      ? [{ ObjectId: `${guidToken}|1`, ClassId: CLASS_RUN, Properties: sortPropertiesById(newRunProperties) }]
+    { ObjectId: target.paragraphId, ClassId: CLASS_PARAGRAPH, Properties: typed.paragraphProperties },
+    ...(typed.runProperties
+      ? [{ ObjectId: `${guidToken}|1`, ClassId: CLASS_RUN, Properties: typed.runProperties }]
       : []),
   ];
 

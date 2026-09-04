@@ -54,6 +54,7 @@ import { reauthenticate } from './tools/reauthenticate.js';
 import { renameItem } from './tools/rename-item.js';
 import { searchFiles } from './tools/search-files.js';
 import { setFontSize } from './tools/set-font-size.js';
+import { setHyperlink } from './tools/set-hyperlink.js';
 import { setPlaceholderText } from './tools/set-placeholder-text.js';
 import { setSlideBackground } from './tools/set-slide-background.js';
 import { setSlideHiddenTool } from './tools/set-slide-hidden.js';
@@ -103,6 +104,7 @@ class PowerPointPlugin extends OpenTabsPlugin {
     setFontSize,
     formatText,
     alignText,
+    setHyperlink,
     addSlideLive,
     deleteSlideLive,
     moveSlideLive,

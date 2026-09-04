@@ -433,6 +433,33 @@ export const podsSetSlideBackground = (
 ): z.infer<typeof podsSetSlideBackgroundOutputSchema> =>
   podsAction('set_slide_background', { slideIndex, colorHex }, dryRun);
 
+/** What the agent receives after the `set_hyperlink` engine action runs. */
+export const podsSetHyperlinkOutputSchema = z.object({
+  ...podsActionResultShape,
+  text: z.string().describe('The paragraph that was rewritten.'),
+  linked: z.string().describe('The words that became the link; empty when removing.'),
+  url: z.string().describe('The address they point at; empty when removing.'),
+  removed: z.boolean().optional().describe('True when the paragraph’s existing link was stripped.'),
+  paragraphId: z.string().describe('The object id of the paragraph that was rewritten.'),
+});
+
+/**
+ * Build the `set_hyperlink` action directive: turn `match` (or the whole
+ * paragraph) into a link to `url`, live in the open deck.
+ */
+export const podsSetHyperlink = (
+  text: string,
+  url: string | undefined,
+  target: TextMatch = {},
+  dryRun = false,
+  remove = false,
+): z.infer<typeof podsSetHyperlinkOutputSchema> =>
+  podsAction(
+    'set_hyperlink',
+    remove ? { text, remove: true } : { text, url, ...matchArgs(target) },
+    dryRun,
+  );
+
 /** What the agent receives after the `read_outline` engine action runs. */
 export const podsReadOutlineOutputSchema = z.object({
   action: z.string().optional().describe('The engine action that ran.'),

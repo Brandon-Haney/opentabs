@@ -92,8 +92,14 @@ export interface RunFormatArgs {
   };
 }
 
-/** The character range a set of arguments targets within the resolved paragraph. */
-export const rangeOf = (target: ResolvedTarget, args: RunFormatArgs): TextRange =>
+/**
+ * The character range a set of arguments targets within the resolved paragraph.
+ *
+ * Typed on the `match` field alone rather than on one action's argument type, so
+ * every text action that narrows to part of a paragraph resolves its range the
+ * same way.
+ */
+export const rangeOf = (target: ResolvedTarget, args: Pick<RunFormatArgs, 'match'>): TextRange =>
   args.match === undefined
     ? { start: 0, end: target.text.length }
     : rangeOfMatch(target.text, args.match.value, args.match.occurrence);

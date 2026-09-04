@@ -203,6 +203,34 @@ string property sitting immediately beside the run-reference list (`603987475`) 
 the same registry group, `134225430` is literally named **`isHidden`** — the hidden
 field-code run — and `536886591` is literally **`endOfParagraphFormatting`**.
 
+### Removing a link, and the wire rule it taught us
+
+`RemoveHyperlink`, captured 2026-09-03. Two writes again. The first restores the
+paragraph: the text without the field code, one boundary where the link began, and
+two run references — the untouched head run, and a new run for the words that were
+linked. The second, about a second later, resubmits the shape and re-points both
+references at the original run.
+
+The new run is where the lesson is. It does **not** drop the field flags. It writes
+them `false`:
+
+| Property | Adding a link | Removing it |
+| --- | --- | --- |
+| `134225428` in-field | `"true"` | `"false"` |
+| `134225433` field content | `"true"` | `"false"` |
+| `134236593` | `"true"` | **left `"true"`** |
+
+**A property a revision omits keeps the value it already had.** The write is merged
+onto the document, so omission means "unchanged", not "off". A constructed removal
+that deleted those keys instead of clearing them left the run half a field; the
+editor then repaired the paragraph by rebuilding the link with a target guessed from
+the visible words, turning a link to a real URL into one pointing at the word itself.
+It survived a reload, so it reached the document. Any builder that turns a flag off
+must write `false`.
+
+`134236593` staying `true` after removal also rules out the earlier reading of it as
+"this run displays a link" — whatever it marks outlives the field.
+
 ## Capture channel
 
 `__otb_pods_lastwrite__` and `__otb_pods_writelog__` (12-entry ring buffer, newest

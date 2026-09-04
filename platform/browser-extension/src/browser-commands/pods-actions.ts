@@ -20,6 +20,7 @@ import { FrameBridgeValidationError } from './frame-bridge-rpc.js';
 import { addSlideAction } from './pods-action-add-slide.js';
 import { alignTextAction } from './pods-action-align-text.js';
 import { deleteSlideAction } from './pods-action-delete-slide.js';
+import { setHyperlinkAction } from './pods-action-hyperlink.js';
 import { moveSlideAction } from './pods-action-move-slide.js';
 import { readOutlineAction } from './pods-action-read-outline.js';
 import { formatTextAction, setFontSizeAction } from './pods-action-run-format.js';
@@ -114,6 +115,7 @@ const PODS_ACTIONS: Record<string, PodsWriteActionSpec<unknown, unknown> | PodsR
   delete_slide: deleteSlideAction,
   move_slide: moveSlideAction,
   set_slide_background: slideBackgroundAction,
+  set_hyperlink: setHyperlinkAction,
   read_outline: readOutlineAction,
 };
 

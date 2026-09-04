@@ -270,9 +270,15 @@ describe('create-opentabs-plugin CLI', () => {
     // the daily plugin-build matrix exercise the same code path on hosts
     // with more RAM, so skipping in CI is a resource accommodation — not
     // a coverage regression.
+    //
+    // The ten-minute budget is sized for contention, not for the test alone.
+    // A registry install followed by a full tsc and esbuild pass takes about
+    // two minutes when this file runs by itself, but the suite runs files in
+    // parallel workers and these subprocesses then compete with every other
+    // file for CPU, which has taken the same run past six minutes.
     test.skipIf(process.env.CI === 'true')(
       'scaffolded plugin can be installed and built, producing valid manifest and adapter',
-      { timeout: 180_000 },
+      { timeout: 600_000 },
       async () => {
         const { exitCode: scaffoldExit } = runCli(['build-test', '--domain', 'example.com'], {
           cwd: tmpDir,

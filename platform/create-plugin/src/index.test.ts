@@ -271,11 +271,13 @@ describe('create-opentabs-plugin CLI', () => {
     // with more RAM, so skipping in CI is a resource accommodation — not
     // a coverage regression.
     //
-    // The ten-minute budget is sized for contention, not for the test alone.
-    // A registry install followed by a full tsc and esbuild pass takes about
-    // two minutes when this file runs by itself, but the suite runs files in
-    // parallel workers and these subprocesses then compete with every other
-    // file for CPU, which has taken the same run past six minutes.
+    // The ten-minute budget absorbs how variable this one test is. It shells
+    // out to a real `npm install` and then to a full tsc and esbuild pass, so
+    // its runtime tracks both the npm cache and how much CPU the other test
+    // files leave it while the suite runs them in parallel workers. Measured
+    // on one machine: 127 seconds running alone, a swing of over 150 seconds
+    // between two runs of the same suite, and once past 400. A budget inside
+    // that swing fails pushes for reasons unrelated to the code under test.
     test.skipIf(process.env.CI === 'true')(
       'scaffolded plugin can be installed and built, producing valid manifest and adapter',
       { timeout: 600_000 },

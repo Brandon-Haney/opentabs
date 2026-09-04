@@ -56,6 +56,9 @@ const config: KnipConfig = {
   ignore: [
     'plugins/**',
     'docs/**',
+    // A standalone browser userscript. It is installed into a userscript manager
+    // by hand and imported by nothing, so it has no place in the module graph.
+    'userscripts/**',
     'platform/browser-extension/side-panel/**/*.{js,css}',
     'platform/browser-extension/src/dev/*.js',
   ],

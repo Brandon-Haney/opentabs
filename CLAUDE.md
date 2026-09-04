@@ -219,10 +219,12 @@ npm run build
 
 ```bash
 # 1. Edit plugin source
-# 2. Build the plugin
-cd plugins/<name> && npm run build
+# 2. Build the plugin from the repo root
+npm run build:plugins -- --filter=<name>
 # 3. Done — build notifies the server via POST /reload
 ```
+
+The scripted build installs the plugin's registry dependencies and then links `@opentabs-dev/plugin-sdk` in its `node_modules` to the working-tree SDK (`platform/plugin-sdk`), so plugins build against the SDK in this checkout. A bare `npm install` inside a plugin reverts that link to the registry copy until the next scripted build. See `plugins/CLAUDE.md` for details.
 
 ---
 

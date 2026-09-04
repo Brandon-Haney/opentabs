@@ -5,9 +5,13 @@
  *   tsx scripts/plugins.ts --build                        # Install deps + build each plugin
  *   tsx scripts/plugins.ts --check                        # Type-check + lint + format:check each plugin
  *   tsx scripts/plugins.ts --build --filter=slack,discord  # Build only named plugins
- *   tsx scripts/plugins.ts --build --affected              # Build only plugins with outdated SDK
  *   tsx scripts/plugins.ts --check --changed=origin/main   # Check only plugins changed vs a git ref
- *   tsx scripts/plugins.ts --build --filter=slack --affected # Intersection: named AND affected
+ *
+ * `--build` installs each plugin's registry dependencies and then links the
+ * plugin's `@opentabs-dev/plugin-sdk` to the working-tree SDK in
+ * platform/plugin-sdk, so every plugin builds and type-checks against the SDK
+ * in this checkout rather than the last published version. The plugin's
+ * package.json and lockfile are untouched; only node_modules differs.
  *
  * `--changed[=<ref>]` restricts the set to plugins with files modified relative
  * to <ref> (default: origin/main). This is how CI scopes a contributor's PR to
@@ -16,8 +20,8 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { DEFAULT_HOST, DEFAULT_PORT, getConfigDir, getConfigPath, isWindows, platformExec } from '@opentabs-dev/shared';
 
 const repoRoot = join(import.meta.dirname, '..');
@@ -93,33 +97,6 @@ if (changedArg) {
   console.log(`Changed plugins relative to ${baseRef}: ${pluginDirs.join(', ')}`);
 }
 
-// --affected: only plugins whose installed SDK version differs from current
-if (process.argv.includes('--affected')) {
-  const sdkPkgPath = join(repoRoot, 'platform/plugin-sdk/package.json');
-  const currentSdkVersion = (JSON.parse(readFileSync(sdkPkgPath, 'utf-8')) as Record<string, unknown>)
-    .version as string;
-  pluginDirs = pluginDirs.filter(name => {
-    const lockPath = join(pluginsDir, name, 'package-lock.json');
-    if (!existsSync(lockPath)) return true;
-    try {
-      const lock = JSON.parse(readFileSync(lockPath, 'utf-8')) as Record<string, unknown>;
-      const packages = lock.packages as Record<string, Record<string, unknown>> | undefined;
-      const installed = packages?.['node_modules/@opentabs-dev/plugin-sdk']?.version;
-      if (installed === currentSdkVersion) {
-        console.log(`  ${name}: up to date (SDK v${currentSdkVersion})`);
-        return false;
-      }
-      return true;
-    } catch {
-      return true;
-    }
-  });
-  if (pluginDirs.length === 0) {
-    console.log(`All plugins are up to date with SDK v${currentSdkVersion}`);
-    process.exit(0);
-  }
-}
-
 if (pluginDirs.length === 0) {
   console.log('No plugins found.');
   process.exit(0);
@@ -183,6 +160,48 @@ const notifyServerOnce = async (): Promise<void> => {
   }
 };
 
+const localSdkDir = join(repoRoot, 'platform/plugin-sdk');
+
+/**
+ * Replace a plugin's installed `@opentabs-dev/plugin-sdk` with a link to the
+ * working-tree SDK. Plugins declare the published SDK in package.json (they
+ * are standalone packages), but inside this repository they must build against
+ * the SDK as it exists in the checkout: an SDK change is otherwise invisible
+ * to plugins until a publish, and a breaking one would only surface after
+ * release. The link lives in node_modules only — package.json and
+ * package-lock.json keep the published range. A junction is used on Windows
+ * because creating one needs no elevated privileges.
+ */
+const linkLocalSdk = (pluginName: string): boolean => {
+  if (!existsSync(join(localSdkDir, 'dist/index.js'))) {
+    console.error(
+      `${RED}platform/plugin-sdk is not built — run "npm run build" (or "npm run type-check") at the repo root first.${RESET}`,
+    );
+    return false;
+  }
+  const target = join(pluginsDir, pluginName, 'node_modules/@opentabs-dev/plugin-sdk');
+  if (existsSync(target) || isLink(target)) {
+    if (isLink(target)) {
+      // A junction on Windows must be removed with rmdir semantics; a POSIX
+      // symlink with unlink. rmSync handles both without following the link.
+      rmSync(target, { recursive: false, force: true });
+    } else {
+      rmSync(target, { recursive: true, force: true });
+    }
+  }
+  mkdirSync(dirname(target), { recursive: true });
+  symlinkSync(localSdkDir, target, isWindows() ? 'junction' : 'dir');
+  return true;
+};
+
+const isLink = (path: string): boolean => {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
+
 const failed: string[] = [];
 
 const runInPlugin = (pluginName: string, cmd: string[], extraEnv?: Record<string, string>): Promise<boolean> => {
@@ -229,6 +248,7 @@ for (const pluginName of pluginDirs) {
     const skipNotify = { OPENTABS_SKIP_NOTIFY: '1', OPENTABS_SKIP_REGISTER: '1' };
     success =
       (await runInPlugin(pluginName, ['npm', 'install'])) &&
+      linkLocalSdk(pluginName) &&
       (await runInPlugin(pluginName, ['npm', 'run', 'build'], skipNotify));
   } else {
     success =

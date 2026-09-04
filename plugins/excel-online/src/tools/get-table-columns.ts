@@ -2,7 +2,7 @@ import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { workbookApi } from '../excel-api.js';
 import type { GraphListResponse, RawTableColumn } from './schemas.js';
-import { tableColumnSchema, mapTableColumn } from './schemas.js';
+import { mapTableColumn, tableColumnSchema } from './schemas.js';
 
 export const getTableColumns = defineTool({
   name: 'get_table_columns',

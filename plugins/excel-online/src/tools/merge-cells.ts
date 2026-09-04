@@ -21,6 +21,7 @@ export const mergeCells = defineTool({
   handle: async params => {
     await workbookApi(`${rangePath(params.worksheet, params.address)}/merge`, {
       method: 'POST',
+      retryNonIdempotent: true,
       body: { across: params.across ?? false },
     });
     return { success: true };

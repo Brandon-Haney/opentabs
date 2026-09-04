@@ -1,4 +1,4 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { buildRangeAddress, parseBoundedRange } from '../a1.js';
 import { rangePath, workbookApi } from '../excel-api.js';
@@ -157,7 +157,7 @@ export const formatRange = defineTool({
         throw ToolError.validation('The format object is empty — provide fill, font, or align properties.');
       }
       for (const request of requests) {
-        await workbookApi(request.path, { method: request.method, body: request.body });
+        await workbookApi(request.path, { method: request.method, body: request.body, retryNonIdempotent: true });
       }
       return { regions_formatted: 1, requests_sent: requests.length };
     }
@@ -198,7 +198,7 @@ export const formatRange = defineTool({
 
     let sent = 0;
     for (const request of requests) {
-      await workbookApi(request.path, { method: request.method, body: request.body });
+      await workbookApi(request.path, { method: request.method, body: request.body, retryNonIdempotent: true });
       sent++;
       context?.reportProgress({ progress: sent, total: requests.length, message: `Formatting ${params.address}` });
     }

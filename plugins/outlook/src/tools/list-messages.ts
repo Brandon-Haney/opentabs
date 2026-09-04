@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../outlook-api.js';
-import { MESSAGE_SUMMARY_FIELDS, type RawMessage, mapMessageSummary, messageSummarySchema } from './schemas.js';
+import { MESSAGE_SUMMARY_FIELDS, mapMessageSummary, messageSummarySchema, type RawMessage } from './schemas.js';
 
 export const listMessages = defineTool({
   name: 'list_messages',

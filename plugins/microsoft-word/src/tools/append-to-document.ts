@@ -19,11 +19,11 @@ export const appendToDocument = defineTool({
     success: z.boolean().describe('Whether the paragraphs were appended'),
   }),
   handle: async params => {
-    const { entries, documentXml, documentXmlIndex } = await downloadDocxEntries(params.item_id);
+    const { entries, documentXml, documentXmlIndex, eTag } = await downloadDocxEntries(params.item_id);
 
     const newXml = appendParagraphsToXml(documentXml, params.paragraphs);
 
-    await uploadModifiedDocx(params.item_id, entries, documentXmlIndex, newXml);
+    await uploadModifiedDocx(params.item_id, entries, documentXmlIndex, newXml, eTag);
 
     return { success: true };
   },

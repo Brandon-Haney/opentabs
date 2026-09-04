@@ -1,6 +1,6 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { attachToDraft, attachmentInputSchema } from '../attachments.js';
+import { attachmentInputSchema, attachToDraft } from '../attachments.js';
 import { composeToolBody } from '../compose-defaults.js';
 import { api } from '../outlook-api.js';
 
@@ -25,7 +25,7 @@ export const forwardMessage = defineTool({
     draft_id: z.string().optional().describe('Created draft message ID (only when draft is true)'),
     web_link: z.string().optional().describe('Link to open the draft in Outlook (only when draft is true)'),
   }),
-  handle: async params => {
+  handle: async (params, context) => {
     const toRecipients = params.to.map(addr => ({ emailAddress: { address: addr } }));
 
     // createForward produces a draft with the original message quoted and recipients
@@ -50,7 +50,7 @@ export const forwardMessage = defineTool({
         method: 'PATCH',
         body: { body: { contentType: 'HTML', content: `${composed.content}${quoted}` } },
       });
-      await attachToDraft(draftId, params.attachments);
+      await attachToDraft(draftId, params.attachments, context);
     };
 
     // Compose the comment onto the created draft. Any failure here means nothing was

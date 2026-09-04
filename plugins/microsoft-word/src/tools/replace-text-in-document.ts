@@ -1,4 +1,4 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { replaceTextInXml } from '../docx-utils.js';
 import { downloadDocxEntries, uploadModifiedDocx } from './docx-edit-helpers.js';
@@ -21,7 +21,7 @@ export const replaceTextInDocument = defineTool({
     replacements: z.number().int().describe('Number of replacements made'),
   }),
   handle: async params => {
-    const { entries, documentXml, documentXmlIndex } = await downloadDocxEntries(params.item_id);
+    const { entries, documentXml, documentXmlIndex, eTag } = await downloadDocxEntries(params.item_id);
 
     const { xml: newXml, count } = replaceTextInXml(documentXml, params.find, params.replace);
 
@@ -29,7 +29,7 @@ export const replaceTextInDocument = defineTool({
       throw ToolError.notFound(`Text "${params.find}" not found in the document.`);
     }
 
-    await uploadModifiedDocx(params.item_id, entries, documentXmlIndex, newXml);
+    await uploadModifiedDocx(params.item_id, entries, documentXmlIndex, newXml, eTag);
 
     return { success: true, replacements: count };
   },

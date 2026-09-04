@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-teams
 1. Open [teams.live.com](https://teams.live.com/v2/) in Chrome and log in
 2. Open the OpenTabs side panel — the Microsoft Teams plugin should appear as **ready**
 
-## Tools (12)
+## Tools (13)
 
 ### Chats (4)
 
@@ -47,11 +47,12 @@ npm install -g @opentabs-dev/opentabs-plugin-teams
 | `invite_to_channel` | Add a user to a group chat | Write |
 | `remove_member` | Remove a user from a group chat | Write |
 
-### People (1)
+### People (2)
 
 | Tool | Description | Type |
 |---|---|---|
 | `get_current_user` | Get current user info | Read |
+| `diagnose` | Read-only connectivity and auth check: page origin, captured auth token sources (presence, expiry, audience host and a 4-hex fingerprint — never the token), and one un-retried probe each of the authsvc token exchange, the chat service and Substrate search | Read |
 
 ## How It Works
 

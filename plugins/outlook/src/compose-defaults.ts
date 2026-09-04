@@ -108,10 +108,13 @@ type UserOptions = NonNullable<NonNullable<StartupData['owaUserConfig']>['UserOp
 const readFont = async (): Promise<Pick<ComposeDefaults, 'fontFamily' | 'fontSizePt' | 'fontColor' | 'fontFlags'>> => {
   let options: UserOptions | undefined;
   try {
+    // startupdata is a read issued as a POST; without the opt-in a transient failure
+    // would fall back to the default font instead of being retried like the GET reads.
     const data = await owsRequest<StartupData>('/owa/startupdata.ashx', {
       method: 'POST',
       query: { app: 'Mail', n: 0 },
       headers: { action: 'StartupData', 'x-owa-actionsource': 'StartupData', 'x-req-source': 'Mail' },
+      retryNonIdempotent: true,
     });
     options = data?.owaUserConfig?.UserOptions;
   } catch {

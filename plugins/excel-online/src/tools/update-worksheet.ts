@@ -2,7 +2,7 @@ import { defineTool, stripUndefined } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { workbookApi } from '../excel-api.js';
 import type { RawWorksheet } from './schemas.js';
-import { worksheetSchema, mapWorksheet } from './schemas.js';
+import { mapWorksheet, worksheetSchema } from './schemas.js';
 
 export const updateWorksheet = defineTool({
   name: 'update_worksheet',
@@ -27,6 +27,10 @@ export const updateWorksheet = defineTool({
     });
     const data = await workbookApi<RawWorksheet>(`/worksheets('${encodeURIComponent(params.name)}')`, {
       method: 'PATCH',
+      // A rename changes the address a replay would target: after a hidden
+      // success the old name no longer exists, so only a non-renaming PATCH
+      // is safe to replay.
+      retryNonIdempotent: params.new_name === undefined,
       body,
     });
     return { worksheet: mapWorksheet(data) };

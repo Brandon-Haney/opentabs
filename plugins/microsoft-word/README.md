@@ -19,13 +19,15 @@ npm install -g @opentabs-dev/opentabs-plugin-microsoft-word
 1. Open [word.cloud.microsoft](https://word.cloud.microsoft) in Chrome and log in
 2. Open the OpenTabs side panel — the Microsoft Word plugin should appear as **ready**
 
-## Tools (27)
+## Tools (29)
 
-### Account (1)
+### Account (3)
 
 | Tool | Description | Type |
 |---|---|---|
 | `get_current_user` | Get the current user profile | Read |
+| `reauthenticate` | Force a fresh Microsoft Graph token by clearing stale MSAL state and reloading the tab | Write |
+| `diagnose` | Read-only connectivity and auth check: page origin, Graph token sources (fingerprints, never the token), how the open document resolves, any Office reload marker, and one un-retried GET probe each against Graph `/me` and — on a SharePoint/OneDrive document — `/shares/{shareId}/driveItem` | Read |
 
 ### Drive (1)
 

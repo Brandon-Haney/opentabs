@@ -1,4 +1,4 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { buildRangeAddress, parseBoundedRange } from '../a1.js';
 import { workbookApi } from '../excel-api.js';
@@ -44,6 +44,7 @@ export const insertTable = defineTool({
 
     await workbookApi(`/worksheets('${encodeURIComponent(params.worksheet)}')/range(address='${fullAddress}')`, {
       method: 'PATCH',
+      retryNonIdempotent: true,
       body: { values: [params.headers, ...params.rows] },
     });
 
@@ -59,6 +60,7 @@ export const insertTable = defineTool({
     if (Object.keys(patch).length > 0 && table.id) {
       table = await workbookApi<RawTable>(`/tables('${encodeURIComponent(table.id)}')`, {
         method: 'PATCH',
+        retryNonIdempotent: true,
         body: patch,
       });
     }

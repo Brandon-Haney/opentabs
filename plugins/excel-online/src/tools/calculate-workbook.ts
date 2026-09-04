@@ -22,6 +22,7 @@ export const calculateWorkbook = defineTool({
   handle: async params => {
     await workbookApi('/application/calculate', {
       method: 'POST',
+      retryNonIdempotent: true,
       body: { calculationType: params.calculation_type ?? 'Recalculate' },
     });
     return { success: true };

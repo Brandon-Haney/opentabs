@@ -1,4 +1,4 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { workbookApi } from '../excel-api.js';
 import type { RawChart } from './schemas.js';
@@ -41,14 +41,14 @@ export const updateChart = defineTool({
     }
 
     if (Object.keys(titleBody).length > 0) {
-      await workbookApi(`${base}/title`, { method: 'PATCH', body: titleBody });
+      await workbookApi(`${base}/title`, { method: 'PATCH', body: titleBody, retryNonIdempotent: true });
     }
 
     // The chart PATCH returns the updated chart entity; when only the title
     // changed, read the chart back so the response still reflects current state.
     const chart =
       Object.keys(positionBody).length > 0
-        ? await workbookApi<RawChart>(base, { method: 'PATCH', body: positionBody })
+        ? await workbookApi<RawChart>(base, { method: 'PATCH', body: positionBody, retryNonIdempotent: true })
         : await workbookApi<RawChart>(base);
     return { chart: mapChart(chart) };
   },

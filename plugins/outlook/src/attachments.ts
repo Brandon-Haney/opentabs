@@ -1,9 +1,10 @@
-import { ToolError } from '@opentabs-dev/plugin-sdk';
+import { ToolError, type ToolHandlerContext } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import {
   attachFileToMessage,
   attachLargeFileToMessage,
   attachReferenceToMessage,
+  type UploadProgressReporter,
   uploadAttachmentToOneDrive,
 } from './outlook-api.js';
 
@@ -66,7 +67,11 @@ const base64ByteLength = (base64: string): number => {
 };
 
 /** Attach one file to a draft, dispatching on embed-vs-link and size. */
-const attachOne = async (messageId: string, input: AttachmentInput): Promise<void> => {
+const attachOne = async (
+  messageId: string,
+  input: AttachmentInput,
+  onUploadProgress: UploadProgressReporter,
+): Promise<void> => {
   const contentBase64 = stripDataUri(input.content_base64.trim());
   if (contentBase64.length === 0) throw ToolError.validation(`Attachment "${input.name}" has no content.`);
 
@@ -86,11 +91,11 @@ const attachOne = async (messageId: string, input: AttachmentInput): Promise<voi
   // A single inline request cannot carry more than ~3 MB of base64, so larger embeds
   // stream the raw bytes to the draft through a chunked upload session instead.
   if (base64ByteLength(contentBase64) > INLINE_ATTACHMENT_LIMIT_BYTES) {
-    await attachLargeFileToMessage(messageId, {
-      name: input.name,
-      contentType: input.content_type,
-      bytes: decodeBase64(contentBase64),
-    });
+    await attachLargeFileToMessage(
+      messageId,
+      { name: input.name, contentType: input.content_type, bytes: decodeBase64(contentBase64) },
+      onUploadProgress,
+    );
     return;
   }
 
@@ -101,14 +106,34 @@ const attachOne = async (messageId: string, input: AttachmentInput): Promise<voi
   });
 };
 
+const formatMegabytes = (bytes: number): string => `${(bytes / 1_000_000).toFixed(1)} MB`;
+
 /**
  * Attach files to a draft message in order. Attachments are applied sequentially —
  * concurrent POSTs to the same message race on its change key — so a failure stops
  * the run and propagates, leaving the draft with whatever attached before it.
+ *
+ * Progress is reported through `context` on one scale, attachments completed out of
+ * the total: once per attached file, and fractionally after every chunk of a
+ * chunked upload so a large embed keeps restarting the extension's no-progress
+ * budget while its bytes are still moving.
  */
-export const attachToDraft = async (messageId: string, attachments: AttachmentInput[] | undefined): Promise<void> => {
+export const attachToDraft = async (
+  messageId: string,
+  attachments: AttachmentInput[] | undefined,
+  context?: ToolHandlerContext,
+): Promise<void> => {
   if (!attachments || attachments.length === 0) return;
-  for (const attachment of attachments) {
-    await attachOne(messageId, attachment);
+  const total = attachments.length;
+  for (const [index, attachment] of attachments.entries()) {
+    const position = `Attachment ${index + 1} of ${total}`;
+    await attachOne(messageId, attachment, (uploadedBytes, totalBytes) =>
+      context?.reportProgress({
+        progress: index + uploadedBytes / totalBytes,
+        total,
+        message: `${position}: ${formatMegabytes(uploadedBytes)} of ${formatMegabytes(totalBytes)} uploaded`,
+      }),
+    );
+    context?.reportProgress({ progress: index + 1, total, message: `${position} attached` });
   }
 };

@@ -1,13 +1,14 @@
-import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
+import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import { isAuthenticated, waitForAuth } from './outlook-api.js';
 import { addAttachment } from './tools/add-attachment.js';
 import { createDraft } from './tools/create-draft.js';
 import { createEvent } from './tools/create-event.js';
 import { deleteEvent } from './tools/delete-event.js';
 import { deleteMessage } from './tools/delete-message.js';
-import { forwardMessage } from './tools/forward-message.js';
+import { diagnose } from './tools/diagnose.js';
 import { downloadAttachment } from './tools/download-attachment.js';
+import { forwardMessage } from './tools/forward-message.js';
 import { getAttachmentContent } from './tools/get-attachment-content.js';
 import { getCalendarView } from './tools/get-calendar-view.js';
 import { getCurrentUser } from './tools/get-current-user.js';
@@ -42,6 +43,7 @@ class OutlookPlugin extends OpenTabsPlugin {
   readonly tools: ToolDefinition[] = [
     // Account
     getCurrentUser,
+    diagnose,
     // Messages
     listMessages,
     getMessage,

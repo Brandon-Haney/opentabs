@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../onenote-api.js';
-import { type RawPage, mapPage, pageSchema } from './schemas.js';
+import { mapPage, pageSchema, type RawPage } from './schemas.js';
 
 export const createPage = defineTool({
   name: 'create_page',

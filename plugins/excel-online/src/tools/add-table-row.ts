@@ -2,7 +2,7 @@ import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { workbookApi } from '../excel-api.js';
 import type { RawTableRow } from './schemas.js';
-import { tableRowSchema, mapTableRow } from './schemas.js';
+import { mapTableRow, tableRowSchema } from './schemas.js';
 
 export const addTableRow = defineTool({
   name: 'add_table_row',

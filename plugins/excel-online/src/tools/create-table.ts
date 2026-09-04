@@ -31,7 +31,11 @@ export const createTable = defineTool({
       const body: Record<string, unknown> = {};
       if (params.style !== undefined) body.style = params.style;
       if (params.show_filter_button !== undefined) body.showFilterButton = params.show_filter_button;
-      data = await workbookApi<RawTable>(`/tables('${encodeURIComponent(data.id)}')`, { method: 'PATCH', body });
+      data = await workbookApi<RawTable>(`/tables('${encodeURIComponent(data.id)}')`, {
+        method: 'PATCH',
+        body,
+        retryNonIdempotent: true,
+      });
     }
     return { table: mapTable(data) };
   },

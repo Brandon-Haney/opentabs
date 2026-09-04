@@ -21,6 +21,7 @@ export const clearRange = defineTool({
   handle: async params => {
     await workbookApi(`${rangePath(params.worksheet, params.address)}/clear`, {
       method: 'POST',
+      retryNonIdempotent: true,
       body: { applyTo: params.apply_to ?? 'All' },
     });
     return { success: true };

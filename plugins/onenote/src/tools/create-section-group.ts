@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../onenote-api.js';
-import { type RawSectionGroup, mapSectionGroup, sectionGroupSchema } from './schemas.js';
+import { mapSectionGroup, type RawSectionGroup, sectionGroupSchema } from './schemas.js';
 
 export const createSectionGroup = defineTool({
   name: 'create_section_group',

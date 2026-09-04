@@ -1,10 +1,8 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { buildDocx } from '../docx-utils.js';
-import { AUTH_EXPIRED_MESSAGE, authError, getGraphToken } from '../microsoft-word-api.js';
-import { type RawDriveItem, driveItemSchema, mapDriveItem } from './schemas.js';
-
-const GRAPH_API_BASE = 'https://graph.microsoft.com/v1.0';
+import { buildDocx, DOCX_MIME, toArrayBuffer } from '../docx-utils.js';
+import { graphFetch } from '../microsoft-word-api.js';
+import { driveItemSchema, mapDriveItem, type RawDriveItem } from './schemas.js';
 
 export const createDocument = defineTool({
   name: 'create_document',
@@ -25,53 +23,18 @@ export const createDocument = defineTool({
     item: driveItemSchema.describe('The created document'),
   }),
   handle: async params => {
-    const token = getGraphToken();
-    const docxBytes = buildDocx(params.paragraphs);
-
-    // Create a clean ArrayBuffer copy for the fetch body.
-    // buildDocx returns Uint8Array whose .buffer is ArrayBufferLike — TS doesn't
-    // accept that as BodyInit. Constructing a new ArrayBuffer via slice fixes it.
-    const body = new ArrayBuffer(docxBytes.byteLength);
-    new Uint8Array(body).set(docxBytes);
-
     const encodedPath = encodeURIComponent(params.path).replace(/%2F/g, '/');
-    const url = `${GRAPH_API_BASE}/me/drive/root:/${encodedPath}:/content`;
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: 'PUT',
-        credentials: 'omit',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        },
-        body,
-        signal: AbortSignal.timeout(30_000),
-      });
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'TimeoutError') {
-        throw ToolError.timeout('Microsoft Graph API request timed out.');
-      }
-      throw ToolError.internal(`Network error: ${err instanceof Error ? err.message : 'unknown'}`);
-    }
-
-    if (response.status === 401 || response.status === 403) {
-      authError(AUTH_EXPIRED_MESSAGE);
-    }
-
-    if (!response.ok) {
-      let errorMsg = `Microsoft Graph API error (${response.status})`;
-      try {
-        const errBody = (await response.json()) as {
-          error?: { message?: string };
-        };
-        if (errBody.error?.message) errorMsg = errBody.error.message;
-      } catch {
-        // ignore parse errors
-      }
-      throw ToolError.internal(errorMsg);
-    }
+    // The PUT replays on a transient failure: with Graph's default
+    // conflictBehavior (replace) a replay writes the same bytes to the same
+    // path. Adding conflictBehavior=rename would make a replay create a
+    // renamed duplicate, so it must come with retryNonIdempotent removed.
+    const response = await graphFetch(`/me/drive/root:/${encodedPath}:/content`, {
+      method: 'PUT',
+      body: toArrayBuffer(buildDocx(params.paragraphs)),
+      contentType: DOCX_MIME,
+      retryNonIdempotent: true,
+    });
 
     const data = (await response.json()) as RawDriveItem;
     return { item: mapDriveItem(data) };

@@ -1,4 +1,4 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { rangePath, workbookApi } from '../excel-api.js';
 
@@ -59,12 +59,17 @@ export const evaluateFormula = defineTool({
     try {
       written = await workbookApi<RangeEcho>(scratch, {
         method: 'PATCH',
+        retryNonIdempotent: true,
         body: { formulas: [[formula]] },
       });
     } finally {
       // The write may or may not persist depending on coauthoring state, so
       // clear unconditionally rather than reasoning about which case applies.
-      await workbookApi(`${scratch}/clear`, { method: 'POST', body: { applyTo: 'All' } }).catch(() => {});
+      await workbookApi(`${scratch}/clear`, {
+        method: 'POST',
+        body: { applyTo: 'All' },
+        retryNonIdempotent: true,
+      }).catch(() => {});
     }
 
     const value = written.values?.[0]?.[0];

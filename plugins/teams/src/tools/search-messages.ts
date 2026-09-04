@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { substrateSearch } from '../teams-api.js';
-import { SEARCH_MESSAGE_EXTENSION_FIELDS, mapSearchResult, messageSearchResultSchema } from './schemas.js';
+import { buildMessageSearchBody, substrateSearch } from '../teams-api.js';
+import { mapSearchResult, messageSearchResultSchema } from './schemas.js';
 
 interface SearchResponse {
   EntitySets?: Array<{
@@ -47,30 +47,9 @@ export const searchMessages = defineTool({
     more_results_available: z.boolean().describe('Whether more results exist beyond this page'),
   }),
   handle: async params => {
-    const size = params.limit ?? 25;
-    const data = await substrateSearch<SearchResponse>({
-      entityRequests: [
-        {
-          entityType: 'Message',
-          contentSources: ['Teams'],
-          fields: SEARCH_MESSAGE_EXTENSION_FIELDS,
-          propertySet: 'Optimized',
-          query: { queryString: params.query, displayQueryString: params.query },
-          from: params.offset ?? 0,
-          size,
-          topResultsCount: 0,
-        },
-      ],
-      cvid: crypto.randomUUID(),
-      logicalId: crypto.randomUUID(),
-      scenario: {
-        Dimensions: [
-          { DimensionName: 'QueryType', DimensionValue: 'Messages' },
-          { DimensionName: 'FormFactor', DimensionValue: 'general.web.reactSearch' },
-        ],
-        Name: 'powerbar',
-      },
-    });
+    const data = await substrateSearch<SearchResponse>(
+      buildMessageSearchBody({ query: params.query, from: params.offset ?? 0, size: params.limit ?? 25 }),
+    );
 
     const resultSet = data.EntitySets?.[0]?.ResultSets?.[0];
     const results = (resultSet?.Results ?? []).map(mapSearchResult);

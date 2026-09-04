@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../onenote-api.js';
-import { type RawNotebook, mapNotebook, notebookSchema } from './schemas.js';
+import { mapNotebook, notebookSchema, type RawNotebook } from './schemas.js';
 
 interface ListNotebooksResponse {
   value?: RawNotebook[];

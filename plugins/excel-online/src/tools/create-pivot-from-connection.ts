@@ -1,7 +1,7 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { parseBoundedRange } from '../a1.js';
-import { EWA_ERROR_HINTS, bridgeOutputSchema, ewaBridge, richApiRequest } from '../bridge.js';
+import { bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge, richApiRequest } from '../bridge.js';
 import { CUBE_COMMAND, powerBiConnectionString, qualifyDestination } from '../powerbi-connection.js';
 
 /**

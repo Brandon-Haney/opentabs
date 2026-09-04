@@ -4,7 +4,7 @@ import { workbookApi } from '../excel-api.js';
 import { hasPivotTableParts } from '../pivot-model.js';
 import { fetchWorkbookPartNames } from '../workbook-package.js';
 import type { GraphListResponse, RawTable } from './schemas.js';
-import { tableSchema, mapTable } from './schemas.js';
+import { mapTable, tableSchema } from './schemas.js';
 
 export const listTables = defineTool({
   name: 'list_tables',

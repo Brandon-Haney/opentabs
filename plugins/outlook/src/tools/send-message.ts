@@ -1,6 +1,6 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { attachToDraft, attachmentInputSchema } from '../attachments.js';
+import { attachmentInputSchema, attachToDraft } from '../attachments.js';
 import { composeToolBody } from '../compose-defaults.js';
 import { api } from '../outlook-api.js';
 
@@ -32,7 +32,7 @@ export const sendMessage = defineTool({
   output: z.object({
     success: z.boolean().describe('Whether the message was sent'),
   }),
-  handle: async params => {
+  handle: async (params, context) => {
     const toRecipients = (addrs: string[]) => addrs.map(addr => ({ emailAddress: { address: addr } }));
 
     const body = await composeToolBody(params, 'new');
@@ -57,7 +57,7 @@ export const sendMessage = defineTool({
       if (!draftId) throw ToolError.internal('Draft was created without a message id.');
 
       try {
-        await attachToDraft(draftId, params.attachments);
+        await attachToDraft(draftId, params.attachments, context);
       } catch (err) {
         // Nothing was sent, so delete the partially-built draft rather than orphan it.
         await api(`/me/messages/${draftId}`, { method: 'DELETE' }).catch(() => {});

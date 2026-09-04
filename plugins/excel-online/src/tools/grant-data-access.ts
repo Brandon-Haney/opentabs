@@ -1,11 +1,11 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { buildRangeAddress } from '../a1.js';
 import {
   type BridgeProjection,
+  bridgeOutputSchema,
   EWA_ERROR_HINTS,
   EWA_GET_CONTEXT_KEYS,
-  bridgeOutputSchema,
   ewaBridgeRead,
   viewportSelection,
 } from '../bridge.js';

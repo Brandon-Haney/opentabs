@@ -19,14 +19,15 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 1. Open [excel.cloud.microsoft](https://excel.cloud.microsoft/) in Chrome and log in
 2. Open the OpenTabs side panel — the Excel Online plugin should appear as **ready**
 
-## Tools (73)
+## Tools (75)
 
-### Account (2)
+### Account (3)
 
 | Tool | Description | Type |
 |---|---|---|
 | `get_current_user` | Get the authenticated user profile | Read |
 | `reauthenticate` | Force a fresh Microsoft Graph token by clearing stale MSAL state and reloading the tab | Write |
+| `diagnose` | Read-only connectivity and auth check: page origin and kind, Graph token sources (fingerprints, never the token), workbook resolution, reload marker, and one un-retried Graph probe each of `GET /me` and, on SharePoint, `/shares/{shareId}/driveItem` | Read |
 
 ### Workbook (5)
 
@@ -104,11 +105,12 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 | `filter_table` | Filter a table by a column | Write |
 | `clear_table_filters` | Clear filters on a table | Write |
 
-### Data Model (11)
+### Data Model (12)
 
 | Tool | Description | Type |
 |---|---|---|
 | `inspect_data_model` | Inspect connections, PivotTables, and all available cube measures | Write |
+| `grant_data_access` | Answer Excel's external-data trust prompt and verify it took effect | Write |
 | `list_pivot_tables` | List PivotTables with their zones and pinned filters | Read |
 | `get_pivot_field_layout` | Read a PivotTable's live field layout and ids | Read |
 | `add_pivot_field` | Place a measure or hierarchy into a PivotTable zone | Write |

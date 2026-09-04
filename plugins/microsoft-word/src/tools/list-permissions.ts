@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../microsoft-word-api.js';
-import { type RawPermission, mapPermission, permissionSchema } from './schemas.js';
+import { mapPermission, permissionSchema, type RawPermission } from './schemas.js';
 
 export const listPermissions = defineTool({
   name: 'list_permissions',

@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-onenote
 1. Open [onenote.cloud.microsoft](https://onenote.cloud.microsoft/) in Chrome and log in
 2. Open the OpenTabs side panel — the Microsoft OneNote plugin should appear as **ready**
 
-## Tools (12)
+## Tools (14)
 
 ### Notebooks (4)
 
@@ -46,17 +46,19 @@ npm install -g @opentabs-dev/opentabs-plugin-onenote
 | `get_section_group` | Get a section group by ID | Read |
 | `create_section_group` | Create a section group in a notebook | Write |
 
-### Pages (1)
+### Pages (2)
 
 | Tool | Description | Type |
 |---|---|---|
+| `read_current_page` | Read the currently open OneNote page from the viewer cache (works without a Graph token) | Read |
 | `create_page` | Create a new page in a section with HTML content | Write |
 
-### Account (1)
+### Account (2)
 
 | Tool | Description | Type |
 |---|---|---|
 | `get_current_user` | Get the current user profile | Read |
+| `diagnose` | Read-only connectivity and auth check: page origin and kind, every Graph token source (present, expiry, audience, scopes, Notes scope — never the token), the active source, and one single-attempt bearer GET of `/me/onenote/notebooks` (`$top=1`) that reports status, latency, request id and any front-door label | Read |
 
 ## How It Works
 

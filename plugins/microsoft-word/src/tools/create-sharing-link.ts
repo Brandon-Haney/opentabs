@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../microsoft-word-api.js';
-import { type RawPermission, mapPermission, permissionSchema } from './schemas.js';
+import { mapPermission, permissionSchema, type RawPermission } from './schemas.js';
 
 export const createSharingLink = defineTool({
   name: 'create_sharing_link',
@@ -21,6 +21,9 @@ export const createSharingLink = defineTool({
   handle: async params => {
     const data = await api<RawPermission>(`/me/drive/items/${params.item_id}/createLink`, {
       method: 'POST',
+      // Graph returns the existing link when one of this type and scope already
+      // exists, so replaying the POST after a transient failure is idempotent.
+      retryNonIdempotent: true,
       body: {
         type: params.type ?? 'view',
         scope: params.scope ?? 'anonymous',

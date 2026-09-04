@@ -1,4 +1,5 @@
 import { definePreScript } from '@opentabs-dev/plugin-sdk/pre-script';
+import { parseReloadMarker } from './reload-marker-parse.js';
 
 /**
  * Pre-script for the Excel Online plugin.
@@ -22,6 +23,10 @@ import { definePreScript } from '@opentabs-dev/plugin-sdk/pre-script';
  *    the platform's frame-bridge engine reads. Hooking here at document_start is
  *    essential: the Office bundle caches native `XMLHttpRequest`/`fetch`
  *    references at load, so a later hook would see nothing.
+ *
+ * In the plugin's own tabs it also records the Office reload marker
+ * (`wdrldr`/`wdrldc`/`wdrldsc` query parameters) before the app can strip
+ * it from the URL, so the adapter's `onActivate` can report the reload.
  */
 
 // ---------------------------------------------------------------------------
@@ -278,6 +283,14 @@ definePreScript(({ set, log }) => {
   if (isExcelEditorFrame()) {
     installEwaDonorInterceptor(log);
     return;
+  }
+
+  // Office may replaceState the reload marker away before the adapter runs;
+  // document_start is the one moment it is guaranteed to still be on the URL.
+  const reloadMarker = parseReloadMarker(location.search, Date.now());
+  if (reloadMarker) {
+    set('reloadMarker', reloadMarker);
+    log.info('[excel-online] reload marker captured', reloadMarker.reason);
   }
 
   const g = globalThis as {

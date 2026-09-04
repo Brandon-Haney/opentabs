@@ -1,14 +1,14 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../outlook-api.js';
 import {
-  EVENT_DETAIL_FIELDS,
-  type RawEvent,
   attendeeInputSchema,
   buildAttendees,
   buildDateTime,
+  EVENT_DETAIL_FIELDS,
   eventDetailSchema,
   mapEventDetail,
+  type RawEvent,
 } from './calendar-schemas.js';
 
 export const updateEvent = defineTool({

@@ -23,6 +23,7 @@ import {
 } from './microsoft-upstream.js';
 import { isAnonymousLinkPage } from './page-identity.js';
 import { parseReloadMarker, type ReloadMarker } from './reload-marker-parse.js';
+import { tokenFingerprint } from './token-fingerprint.js';
 
 const GRAPH_ORIGIN = 'https://graph.microsoft.com';
 export const GRAPH_BASE = `${GRAPH_ORIGIN}/v1.0`;
@@ -223,14 +224,6 @@ const audienceOf = (token: string): string | null => {
 };
 
 /** Last 4 hex digits of the 32-bit FNV-1a hash of `text`. */
-const fingerprintOf = (text: string): string => {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, '0').slice(-4);
-};
 
 /**
  * Describes every token source for `diagnose`, without exposing any token
@@ -246,7 +239,7 @@ export const describeTokenSources = (): GraphTokenSourceStatus[] => {
       present: captured !== null,
       expiresInSec: captured === null ? null : captured.exp - now,
       audience: captured === null ? null : audienceOf(captured.token),
-      fingerprint: captured === null ? null : fingerprintOf(captured.token),
+      fingerprint: captured === null ? null : tokenFingerprint(captured.token),
     };
   });
 };

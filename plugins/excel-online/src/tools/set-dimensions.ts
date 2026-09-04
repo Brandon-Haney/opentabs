@@ -1,6 +1,6 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { type WorkbookBatchRequest, rangePath, workbookBatch } from '../excel-api.js';
+import { rangePath, type WorkbookBatchRequest, workbookBatch } from '../excel-api.js';
 
 const COLUMN_SPAN_RE = /^[A-Za-z]{1,3}(:[A-Za-z]{1,3})?$/;
 const ROW_SPAN_RE = /^\d+(:\d+)?$/;
@@ -92,10 +92,18 @@ export const setDimensions = defineTool({
 
     // Every operation goes through one batched round trip rather than one
     // request each. Progress reports also extend the dispatch budget, which
-    // matters for inputs large enough to need several batches.
-    const applied = await workbookBatch(requests, (completed, total) =>
-      context?.reportProgress({ progress: completed, total, message: `Applied ${completed} of ${total} dimensions…` }),
-    );
+    // matters for inputs large enough to need several batches. Setting a width
+    // or height and autofitting to content all land on the same state when
+    // replayed, so the batch is safe to retry after a transient failure.
+    const applied = await workbookBatch(requests, {
+      retryNonIdempotent: true,
+      onChunkComplete: (completed, total) =>
+        context?.reportProgress({
+          progress: completed,
+          total,
+          message: `Applied ${completed} of ${total} dimensions…`,
+        }),
+    });
     return { success: true, operations_applied: applied };
   },
 });

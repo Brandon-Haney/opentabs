@@ -1,8 +1,6 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { AUTH_EXPIRED_MESSAGE, authError, getGraphToken } from '../microsoft-word-api.js';
-
-const GRAPH_API_BASE = 'https://graph.microsoft.com/v1.0';
+import { api } from '../microsoft-word-api.js';
 
 export const copyItem = defineTool({
   name: 'copy_item',
@@ -21,54 +19,14 @@ export const copyItem = defineTool({
     success: z.boolean().describe('Whether the copy operation was accepted'),
   }),
   handle: async params => {
-    const token = getGraphToken();
-    const url = `${GRAPH_API_BASE}/me/drive/items/${params.item_id}/copy`;
-
     const body: Record<string, unknown> = {
       parentReference: { id: params.destination_id },
     };
     if (params.name !== undefined) body.name = params.name;
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        credentials: 'omit',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(30_000),
-      });
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'TimeoutError') {
-        throw ToolError.timeout('Microsoft Graph API request timed out.');
-      }
-      throw ToolError.internal(`Network error: ${err instanceof Error ? err.message : 'unknown'}`);
-    }
-
-    if (response.status === 401 || response.status === 403) {
-      authError(AUTH_EXPIRED_MESSAGE);
-    }
-
-    if (response.status === 404) {
-      throw ToolError.notFound('The requested item was not found.');
-    }
-
-    if (!response.ok) {
-      let errorMsg = `Microsoft Graph API error (${response.status})`;
-      try {
-        const errBody = (await response.json()) as {
-          error?: { message?: string };
-        };
-        if (errBody.error?.message) errorMsg = errBody.error.message;
-      } catch {
-        // ignore parse errors
-      }
-      throw ToolError.internal(errorMsg);
-    }
-
+    // Graph answers 202 Accepted with no body. Each POST starts another copy,
+    // so the request keeps the default no-replay policy on transient failures.
+    await api(`/me/drive/items/${params.item_id}/copy`, { method: 'POST', body });
     return { success: true };
   },
 });

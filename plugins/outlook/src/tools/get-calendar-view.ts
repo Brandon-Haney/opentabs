@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../outlook-api.js';
-import { EVENT_SUMMARY_FIELDS, type RawEvent, eventSummarySchema, mapEventSummary } from './calendar-schemas.js';
+import { EVENT_SUMMARY_FIELDS, eventSummarySchema, mapEventSummary, type RawEvent } from './calendar-schemas.js';
 
 export const getCalendarView = defineTool({
   name: 'get_calendar_view',

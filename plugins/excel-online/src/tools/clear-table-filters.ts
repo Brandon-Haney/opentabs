@@ -23,14 +23,14 @@ export const clearTableFilters = defineTool({
   handle: async params => {
     const base = `/tables('${encodeURIComponent(params.table)}')`;
     if (params.column === undefined) {
-      await workbookApi(`${base}/clearFilters`, { method: 'POST', body: {} });
+      await workbookApi(`${base}/clearFilters`, { method: 'POST', body: {}, retryNonIdempotent: true });
       return { success: true };
     }
     const col =
       typeof params.column === 'number'
         ? `/columns/itemAt(index=${params.column})`
         : `/columns('${encodeURIComponent(params.column)}')`;
-    await workbookApi(`${base}${col}/filter/clear`, { method: 'POST', body: {} });
+    await workbookApi(`${base}${col}/filter/clear`, { method: 'POST', body: {}, retryNonIdempotent: true });
     return { success: true };
   },
 });

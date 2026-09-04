@@ -1,4 +1,4 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { workbookApi } from '../excel-api.js';
 
@@ -79,6 +79,7 @@ export const filterTable = defineTool({
 
     await workbookApi(columnFilterPath(params.table, params.column), {
       method: 'POST',
+      retryNonIdempotent: true,
       body: { criteria },
     });
 

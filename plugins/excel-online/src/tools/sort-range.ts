@@ -34,6 +34,7 @@ export const sortRange = defineTool({
     }));
     await workbookApi(`${rangePath(params.worksheet, params.address)}/sort/apply`, {
       method: 'POST',
+      retryNonIdempotent: true,
       body: {
         fields,
         matchCase: false,

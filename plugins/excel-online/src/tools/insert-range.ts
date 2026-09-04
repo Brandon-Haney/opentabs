@@ -2,7 +2,7 @@ import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { rangePath, workbookApi } from '../excel-api.js';
 import type { RawRange } from './schemas.js';
-import { rangeSchema, mapRange } from './schemas.js';
+import { mapRange, rangeSchema } from './schemas.js';
 
 export const insertRange = defineTool({
   name: 'insert_range',

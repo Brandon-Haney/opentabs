@@ -17,7 +17,11 @@ export const unmergeCells = defineTool({
     success: z.boolean().describe('Whether the operation succeeded'),
   }),
   handle: async params => {
-    await workbookApi(`${rangePath(params.worksheet, params.address)}/unmerge`, { method: 'POST', body: {} });
+    await workbookApi(`${rangePath(params.worksheet, params.address)}/unmerge`, {
+      method: 'POST',
+      body: {},
+      retryNonIdempotent: true,
+    });
     return { success: true };
   },
 });

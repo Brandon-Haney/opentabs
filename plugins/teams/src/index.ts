@@ -1,9 +1,10 @@
-import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
+import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import { clearCaches, isTeamsAuthenticated, waitForTeamsAuth } from './teams-api.js';
 import { addMember } from './tools/add-member.js';
 import { createChat } from './tools/create-chat.js';
 import { deleteMessage } from './tools/delete-message.js';
+import { diagnose } from './tools/diagnose.js';
 import { editMessage } from './tools/edit-message.js';
 import { getConversationDetails } from './tools/get-conversation-details.js';
 import { getCurrentUser } from './tools/get-current-user.js';
@@ -37,6 +38,7 @@ class TeamsPlugin extends OpenTabsPlugin {
     removeMember,
     // User
     getCurrentUser,
+    diagnose,
   ];
 
   override teardown(): void {

@@ -1,4 +1,4 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { workbookApi } from '../excel-api.js';
 import type { RawTable } from './schemas.js';
@@ -41,6 +41,10 @@ export const updateTable = defineTool({
     }
     const data = await workbookApi<RawTable>(`/tables('${encodeURIComponent(params.table)}')`, {
       method: 'PATCH',
+      // A rename changes the address a replay would target when the table is
+      // addressed by name: after a hidden success the old name no longer
+      // exists, so only a non-renaming PATCH is safe to replay.
+      retryNonIdempotent: params.new_name === undefined,
       body,
     });
     return { table: mapTable(data) };

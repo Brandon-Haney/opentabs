@@ -20,6 +20,8 @@ export const addMember = defineTool({
     await threadApi<Record<string, unknown>>(params.conversation_id, `/members/${encodeURIComponent(params.user)}`, {
       method: 'PUT',
       body: { role: 'User' },
+      // PUT /members/{mri} writes the member's role; re-adding an existing member is a no-op.
+      retryNonIdempotent: true,
     });
     return { success: true };
   },

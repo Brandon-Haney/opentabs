@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { type RawEmailAddress, emailAddressSchema, mapEmailAddress } from './schemas.js';
+import { emailAddressSchema, mapEmailAddress, type RawEmailAddress } from './schemas.js';
 
 // ── Date / time ───────────────────────────────────────────────────────────
 

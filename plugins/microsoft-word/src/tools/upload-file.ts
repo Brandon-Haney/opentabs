@@ -1,9 +1,7 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { AUTH_EXPIRED_MESSAGE, authError, getGraphToken } from '../microsoft-word-api.js';
-import { type RawDriveItem, driveItemSchema, mapDriveItem } from './schemas.js';
-
-const GRAPH_API_BASE = 'https://graph.microsoft.com/v1.0';
+import { graphFetch } from '../microsoft-word-api.js';
+import { driveItemSchema, mapDriveItem, type RawDriveItem } from './schemas.js';
 
 export const uploadFile = defineTool({
   name: 'upload_file',
@@ -22,45 +20,18 @@ export const uploadFile = defineTool({
     item: driveItemSchema.describe('The uploaded file'),
   }),
   handle: async params => {
-    const token = getGraphToken();
     const encodedPath = encodeURIComponent(params.path).replace(/%2F/g, '/');
-    const url = `${GRAPH_API_BASE}/me/drive/root:/${encodedPath}:/content`;
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: 'PUT',
-        credentials: 'omit',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': params.content_type ?? 'text/plain',
-        },
-        body: params.content,
-        signal: AbortSignal.timeout(30_000),
-      });
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'TimeoutError') {
-        throw ToolError.timeout('Microsoft Graph API request timed out.');
-      }
-      throw ToolError.internal(`Network error: ${err instanceof Error ? err.message : 'unknown'}`);
-    }
-
-    if (response.status === 401 || response.status === 403) {
-      authError(AUTH_EXPIRED_MESSAGE);
-    }
-
-    if (!response.ok) {
-      let errorMsg = `Microsoft Graph API error (${response.status})`;
-      try {
-        const errBody = (await response.json()) as {
-          error?: { message?: string };
-        };
-        if (errBody.error?.message) errorMsg = errBody.error.message;
-      } catch {
-        // ignore parse errors
-      }
-      throw ToolError.internal(errorMsg);
-    }
+    // The PUT replays on a transient failure: with Graph's default
+    // conflictBehavior (replace) a replay writes the same content to the same
+    // path. Adding conflictBehavior=rename would make a replay create a
+    // renamed duplicate, so it must come with retryNonIdempotent removed.
+    const response = await graphFetch(`/me/drive/root:/${encodedPath}:/content`, {
+      method: 'PUT',
+      body: params.content,
+      contentType: params.content_type ?? 'text/plain',
+      retryNonIdempotent: true,
+    });
 
     const data = (await response.json()) as RawDriveItem;
     return { item: mapDriveItem(data) };

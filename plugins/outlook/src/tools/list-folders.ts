@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../outlook-api.js';
-import { type RawMailFolder, mailFolderSchema, mapMailFolder } from './schemas.js';
+import { mailFolderSchema, mapMailFolder, type RawMailFolder } from './schemas.js';
 
 export const listFolders = defineTool({
   name: 'list_folders',

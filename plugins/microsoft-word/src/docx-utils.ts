@@ -60,6 +60,20 @@ export async function extractZipEntry(zipBytes: Uint8Array, filename: string): P
   return null;
 }
 
+/** MIME type of a .docx package. */
+export const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+/**
+ * Copy bytes into a standalone ArrayBuffer. A Uint8Array's `.buffer` is typed
+ * ArrayBufferLike (it may be a SharedArrayBuffer view), which fetch's BodyInit
+ * rejects; the copy also drops any byte offset the view carried.
+ */
+export function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
 /** Decompress a DEFLATE-raw buffer using the browser DecompressionStream API. */
 async function decompressDeflateRaw(data: Uint8Array): Promise<Uint8Array> {
   const ds = new DecompressionStream('deflate-raw');

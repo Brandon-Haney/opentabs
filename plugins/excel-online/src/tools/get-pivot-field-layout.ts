@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { EWA_GET_CONTEXT_KEYS, bridgeReadOutputSchema, ewaBridgeRead, pivotCellRef } from '../bridge.js';
+import { bridgeReadOutputSchema, EWA_GET_CONTEXT_KEYS, ewaBridgeRead, pivotCellRef } from '../bridge.js';
 import { PIVOT_DATA_SOURCE_INDEX } from './pivot-data-source.js';
 
 /**

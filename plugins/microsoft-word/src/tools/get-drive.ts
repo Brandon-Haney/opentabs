@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../microsoft-word-api.js';
-import { type RawDrive, driveSchema, mapDrive } from './schemas.js';
+import { driveSchema, mapDrive, type RawDrive } from './schemas.js';
 
 export const getDrive = defineTool({
   name: 'get_drive',

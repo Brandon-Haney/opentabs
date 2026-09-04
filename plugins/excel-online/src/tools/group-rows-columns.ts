@@ -1,6 +1,6 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { type RangeBounds, buildRangeAddress, columnToIndex } from '../a1.js';
+import { buildRangeAddress, columnToIndex, type RangeBounds } from '../a1.js';
 import { boundsToEwaRange, bridgeOutputSchema, ewaBridge, viewportSelection } from '../bridge.js';
 
 const COLUMN_SPAN_RE = /^[A-Za-z]{1,3}(:[A-Za-z]{1,3})?$/;

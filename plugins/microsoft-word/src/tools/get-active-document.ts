@@ -1,7 +1,7 @@
 import { defineTool, getCurrentUrl, getPageTitle } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api, resolveDocumentContext } from '../microsoft-word-api.js';
-import { type RawDriveItem, driveItemSchema, mapDriveItem } from './schemas.js';
+import { driveItemSchema, mapDriveItem, type RawDriveItem } from './schemas.js';
 
 export const getActiveDocument = defineTool({
   name: 'get_active_document',

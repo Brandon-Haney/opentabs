@@ -1,4 +1,4 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { bridgeOutputSchema, ewaBridge, selectedRanges, viewportSelection } from '../bridge.js';
 

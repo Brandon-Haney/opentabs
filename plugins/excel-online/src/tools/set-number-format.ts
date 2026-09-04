@@ -1,4 +1,4 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { parseBoundedRange } from '../a1.js';
 import { rangePath, workbookApi } from '../excel-api.js';
@@ -94,6 +94,7 @@ export const setNumberFormat = defineTool({
 
     await workbookApi(rangePath(params.worksheet, params.address), {
       method: 'PATCH',
+      retryNonIdempotent: true,
       body: { numberFormat },
     });
     return { cells_formatted: cellCount };

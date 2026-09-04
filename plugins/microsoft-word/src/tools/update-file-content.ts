@@ -1,9 +1,7 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { AUTH_EXPIRED_MESSAGE, FILE_LOCKED_MESSAGE, authError, getGraphToken } from '../microsoft-word-api.js';
-import { type RawDriveItem, driveItemSchema, mapDriveItem } from './schemas.js';
-
-const GRAPH_API_BASE = 'https://graph.microsoft.com/v1.0';
+import { graphFetch } from '../microsoft-word-api.js';
+import { driveItemSchema, mapDriveItem, type RawDriveItem } from './schemas.js';
 
 export const updateFileContent = defineTool({
   name: 'update_file_content',
@@ -21,52 +19,14 @@ export const updateFileContent = defineTool({
     item: driveItemSchema.describe('The updated file'),
   }),
   handle: async params => {
-    const token = getGraphToken();
-    const url = `${GRAPH_API_BASE}/me/drive/items/${params.item_id}/content`;
-
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: 'PUT',
-        credentials: 'omit',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': params.content_type ?? 'text/plain',
-        },
-        body: params.content,
-        signal: AbortSignal.timeout(30_000),
-      });
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'TimeoutError') {
-        throw ToolError.timeout('Microsoft Graph API request timed out.');
-      }
-      throw ToolError.internal(`Network error: ${err instanceof Error ? err.message : 'unknown'}`);
-    }
-
-    if (response.status === 401 || response.status === 403) {
-      authError(AUTH_EXPIRED_MESSAGE);
-    }
-
-    if (response.status === 423) {
-      throw ToolError.validation(FILE_LOCKED_MESSAGE);
-    }
-
-    if (response.status === 404) {
-      throw ToolError.notFound('The requested file was not found.');
-    }
-
-    if (!response.ok) {
-      let errorMsg = `Microsoft Graph API error (${response.status})`;
-      try {
-        const errBody = (await response.json()) as {
-          error?: { message?: string };
-        };
-        if (errBody.error?.message) errorMsg = errBody.error.message;
-      } catch {
-        // ignore parse errors
-      }
-      throw ToolError.internal(errorMsg);
-    }
+    // The PUT replays on a transient failure: the body is fixed, so a replay
+    // after a hidden success writes the same content again.
+    const response = await graphFetch(`/me/drive/items/${params.item_id}/content`, {
+      method: 'PUT',
+      body: params.content,
+      contentType: params.content_type ?? 'text/plain',
+      retryNonIdempotent: true,
+    });
 
     const data = (await response.json()) as RawDriveItem;
     return { item: mapDriveItem(data) };

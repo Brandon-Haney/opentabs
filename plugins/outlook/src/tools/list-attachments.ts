@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../outlook-api.js';
-import { type RawAttachment, attachmentSchema, mapAttachment } from './schemas.js';
+import { attachmentSchema, mapAttachment, type RawAttachment } from './schemas.js';
 
 export const listAttachments = defineTool({
   name: 'list_attachments',

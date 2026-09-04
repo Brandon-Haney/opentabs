@@ -1,6 +1,6 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge, type EwaBridgeExtra } from '../bridge.js';
+import { bridgeOutputSchema, EWA_ERROR_HINTS, type EwaBridgeExtra, ewaBridge } from '../bridge.js';
 import {
   DATA_SOURCE_INDEX_DESCRIPTION,
   PIVOT_DATA_SOURCE_INDEX,

@@ -1,4 +1,5 @@
 import { definePreScript } from '@opentabs-dev/plugin-sdk/pre-script';
+import { parseReloadMarker } from './reload-marker-parse.js';
 
 /**
  * Pre-script for the Microsoft Word plugin.
@@ -18,6 +19,12 @@ import { definePreScript } from '@opentabs-dev/plugin-sdk/pre-script';
  * direct `graph.microsoft.com` request, covering the standalone
  * `word.cloud.microsoft` app. Capturing the minted token is format-agnostic: it
  * works regardless of how MSAL keys or encrypts its cache.
+ *
+ * It also records the Office reload marker (`wdrldr`/`wdrldc`/`wdrldsc` query
+ * parameters) under `reloadMarker`. Office may strip those parameters via
+ * `history.replaceState` before the adapter is injected, so document_start is
+ * the only reliable moment to read them; the adapter reports the marker from
+ * `onActivate`.
  */
 
 interface CapturedGraphToken {
@@ -63,6 +70,12 @@ const isTokenEndpointUrl = (url: string): boolean => {
 };
 
 definePreScript(({ set, log }) => {
+  const reloadMarker = parseReloadMarker(location.search, Date.now());
+  if (reloadMarker) {
+    set('reloadMarker', reloadMarker);
+    log.info('[microsoft-word] reload marker captured', reloadMarker.reason);
+  }
+
   const g = globalThis as {
     fetch: typeof fetch & { [FETCH_PATCHED_MARKER]?: true };
     XMLHttpRequest: typeof XMLHttpRequest & { [XHR_PATCHED_MARKER]?: true };

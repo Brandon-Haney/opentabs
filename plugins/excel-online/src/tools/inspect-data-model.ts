@@ -1,4 +1,4 @@
-import { ToolError, defineTool } from '@opentabs-dev/plugin-sdk';
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { isPeriodRelative } from '../period-relative.js';
 import { readConnections, readPivotCaches, readPivotTables } from '../pivot-model.js';

@@ -167,17 +167,6 @@ export const mapMessage = (m: RawMessage): Message => ({
 // Message search result schema (Substrate Search API)
 // ---------------------------------------------------------------------------
 
-/**
- * `$select`-equivalent extension fields requested for each message hit. These
- * surface the Teams-specific properties (thread type, sender identity) that
- * are not part of the base Substrate message schema.
- */
-export const SEARCH_MESSAGE_EXTENSION_FIELDS = [
-  'Extension_SkypeSpaces_ConversationPost_Extension_ThreadType_String',
-  'Extension_SkypeSpaces_ConversationPost_Extension_FromSkypeInternalId_String',
-  'Extension_SkypeSpaces_ConversationPost_Extension_SkypeGroupId_String',
-];
-
 export const messageSearchResultSchema = z.object({
   id: z.string().describe('Message ID'),
   conversation_id: z

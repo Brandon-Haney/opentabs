@@ -16,7 +16,13 @@ export const getPreviewUrl = defineTool({
     url: z.string().describe('Embeddable preview URL'),
   }),
   handle: async ({ item_id }) => {
-    const data = await api<{ getUrl: string }>(`/me/drive/items/${item_id}/preview`, { method: 'POST', body: {} });
+    // The preview POST is a pure read (it mints a view URL), so replaying it
+    // after a transient failure is idempotent.
+    const data = await api<{ getUrl: string }>(`/me/drive/items/${item_id}/preview`, {
+      method: 'POST',
+      body: {},
+      retryNonIdempotent: true,
+    });
     return { url: data.getUrl };
   },
 });

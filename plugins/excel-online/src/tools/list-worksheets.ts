@@ -2,7 +2,7 @@ import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { workbookApi } from '../excel-api.js';
 import type { GraphListResponse, RawWorksheet } from './schemas.js';
-import { worksheetSchema, mapWorksheet } from './schemas.js';
+import { mapWorksheet, worksheetSchema } from './schemas.js';
 
 export const listWorksheets = defineTool({
   name: 'list_worksheets',

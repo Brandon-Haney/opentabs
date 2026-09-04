@@ -2,7 +2,7 @@ import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { workbookApi } from '../excel-api.js';
 import type { RawNamedItem } from './schemas.js';
-import { namedItemSchema, mapNamedItem } from './schemas.js';
+import { mapNamedItem, namedItemSchema } from './schemas.js';
 
 export const addNamedItem = defineTool({
   name: 'add_named_item',

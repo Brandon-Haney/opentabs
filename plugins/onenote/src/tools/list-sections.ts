@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../onenote-api.js';
-import { type RawSection, mapSection, sectionSchema } from './schemas.js';
+import { mapSection, type RawSection, sectionSchema } from './schemas.js';
 
 interface ListSectionsResponse {
   value?: RawSection[];

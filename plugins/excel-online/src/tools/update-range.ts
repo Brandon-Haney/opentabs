@@ -2,7 +2,7 @@ import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { rangePath, workbookApi } from '../excel-api.js';
 import type { RawRange } from './schemas.js';
-import { rangeSchema, mapRange } from './schemas.js';
+import { mapRange, rangeSchema } from './schemas.js';
 
 export const updateRange = defineTool({
   name: 'update_range',
@@ -34,7 +34,11 @@ export const updateRange = defineTool({
     if (params.values !== undefined) body.values = params.values;
     if (params.formulas !== undefined) body.formulas = params.formulas;
     if (params.number_format !== undefined) body.numberFormat = params.number_format;
-    const data = await workbookApi<RawRange>(rangePath(params.worksheet, params.address), { method: 'PATCH', body });
+    const data = await workbookApi<RawRange>(rangePath(params.worksheet, params.address), {
+      method: 'PATCH',
+      body,
+      retryNonIdempotent: true,
+    });
     return { range: mapRange(data) };
   },
 });

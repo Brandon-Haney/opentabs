@@ -1,10 +1,11 @@
-import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
+import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import { isAuthenticated, isOneNoteTab, isSharePointNotebook, waitForAuth } from './onenote-api.js';
 import { createNotebook } from './tools/create-notebook.js';
 import { createPage } from './tools/create-page.js';
 import { createSection } from './tools/create-section.js';
 import { createSectionGroup } from './tools/create-section-group.js';
+import { diagnose } from './tools/diagnose.js';
 import { getCurrentUser } from './tools/get-current-user.js';
 import { getNotebook } from './tools/get-notebook.js';
 import { getRecentNotebooks } from './tools/get-recent-notebooks.js';
@@ -45,6 +46,7 @@ class OneNotePlugin extends OpenTabsPlugin {
     createPage,
     // Account
     getCurrentUser,
+    diagnose,
   ];
 
   async isReady(): Promise<boolean> {

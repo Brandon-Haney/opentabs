@@ -63,6 +63,7 @@ export const setBorders = defineTool({
     for (const side of sides) {
       await workbookApi(`${rangePath(params.worksheet, params.address)}/format/borders/${side}`, {
         method: 'PATCH',
+        retryNonIdempotent: true,
         body,
       });
     }

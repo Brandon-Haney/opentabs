@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../outlook-api.js';
-import { type RawCalendar, calendarSchema, mapCalendar } from './calendar-schemas.js';
+import { calendarSchema, mapCalendar, type RawCalendar } from './calendar-schemas.js';
 
 export const listCalendars = defineTool({
   name: 'list_calendars',

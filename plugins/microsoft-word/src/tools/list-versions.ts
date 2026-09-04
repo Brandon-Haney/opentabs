@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../microsoft-word-api.js';
-import { type RawVersion, mapVersion, versionSchema } from './schemas.js';
+import { mapVersion, type RawVersion, versionSchema } from './schemas.js';
 
 export const listVersions = defineTool({
   name: 'list_versions',

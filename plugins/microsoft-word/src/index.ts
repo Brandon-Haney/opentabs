@@ -1,6 +1,7 @@
-import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
-import { isAuthenticated, isSharePointDocument, waitForAuth } from './microsoft-word-api.js';
+import { getCurrentUrl, OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
+import { isAuthenticated, isSharePointDocument, readReloadMarker, waitForAuth } from './microsoft-word-api.js';
+import { reportReloadMarker } from './reload-marker.js';
 import { appendToDocument } from './tools/append-to-document.js';
 import { copyItem } from './tools/copy-item.js';
 import { createDocument } from './tools/create-document.js';
@@ -8,6 +9,7 @@ import { createFolder } from './tools/create-folder.js';
 import { createSharingLink } from './tools/create-sharing-link.js';
 import { deleteItem } from './tools/delete-item.js';
 import { deletePermission } from './tools/delete-permission.js';
+import { diagnose } from './tools/diagnose.js';
 import { getActiveDocument } from './tools/get-active-document.js';
 import { getCurrentUser } from './tools/get-current-user.js';
 import { getDocumentText } from './tools/get-document-text.js';
@@ -40,6 +42,7 @@ class MicrosoftWordPlugin extends OpenTabsPlugin {
     // Account
     getCurrentUser,
     reauthenticate,
+    diagnose,
     // Drive
     getDrive,
     // Documents — the core document editing tools
@@ -72,6 +75,16 @@ class MicrosoftWordPlugin extends OpenTabsPlugin {
     listVersions,
     restoreVersion,
   ];
+
+  /**
+   * Reports the Office reload marker for this document load (captured by the
+   * pre-script at document_start, or parsed from the URL for tabs that were
+   * open before the plugin registered) so the server log records the reload.
+   */
+  override onActivate(): void {
+    const marker = readReloadMarker();
+    if (marker) reportReloadMarker(marker, new URL(getCurrentUrl()).origin);
+  }
 
   async isReady(): Promise<boolean> {
     if (isAuthenticated()) return true;

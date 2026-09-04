@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../outlook-api.js';
-import { type RawSchedule, mapSchedule, scheduleSchema } from './calendar-schemas.js';
+import { mapSchedule, type RawSchedule, scheduleSchema } from './calendar-schemas.js';
 
 export const getSchedule = defineTool({
   name: 'get_schedule',
@@ -49,6 +49,8 @@ export const getSchedule = defineTool({
           availabilityViewInterval: params.interval_minutes ?? 30,
         },
         headers: { Prefer: `outlook.timezone="${tz}"` },
+        // getSchedule is a read expressed as an OData action, so replaying it is safe.
+        retryNonIdempotent: true,
       },
       'calendar',
     );

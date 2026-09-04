@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../outlook-api.js';
-import { MESSAGE_DETAIL_FIELDS, type RawMessage, mapMessageDetail, messageDetailSchema } from './schemas.js';
+import { MESSAGE_DETAIL_FIELDS, mapMessageDetail, messageDetailSchema, type RawMessage } from './schemas.js';
 
 export const getMessage = defineTool({
   name: 'get_message',

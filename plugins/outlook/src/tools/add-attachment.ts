@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { attachToDraft, attachmentInputSchema } from '../attachments.js';
+import { attachmentInputSchema, attachToDraft } from '../attachments.js';
 
 export const addAttachment = defineTool({
   name: 'add_attachment',
@@ -18,8 +18,8 @@ export const addAttachment = defineTool({
     success: z.boolean().describe('Whether the files were attached'),
     attached_count: z.number().describe('Number of files attached'),
   }),
-  handle: async params => {
-    await attachToDraft(params.draft_id, params.attachments);
+  handle: async (params, context) => {
+    await attachToDraft(params.draft_id, params.attachments, context);
     return { success: true, attached_count: params.attachments.length };
   },
 });

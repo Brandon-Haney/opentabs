@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../microsoft-word-api.js';
-import { type RawDriveItem, driveItemSchema, mapDriveItem } from './schemas.js';
+import { driveItemSchema, mapDriveItem, type RawDriveItem } from './schemas.js';
 
 const SELECT_FIELDS =
   'id,name,folder,file,size,lastModifiedDateTime,webUrl,parentReference,createdDateTime,description';

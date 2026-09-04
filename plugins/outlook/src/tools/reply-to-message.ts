@@ -1,6 +1,6 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { attachToDraft, attachmentInputSchema } from '../attachments.js';
+import { attachmentInputSchema, attachToDraft } from '../attachments.js';
 import { composeToolBody } from '../compose-defaults.js';
 import { api } from '../outlook-api.js';
 
@@ -29,7 +29,7 @@ export const replyToMessage = defineTool({
     draft_id: z.string().optional().describe('Created draft message ID (only when draft is true)'),
     web_link: z.string().optional().describe('Link to open the draft in Outlook (only when draft is true)'),
   }),
-  handle: async params => {
+  handle: async (params, context) => {
     // createReply/createReplyAll have the server build a draft with the original
     // conversation quoted, recipients pre-filled, and reply headers set. The action
     // takes no body, so the user's text — styled with the default font and reply
@@ -52,7 +52,7 @@ export const replyToMessage = defineTool({
         method: 'PATCH',
         body: { body: { contentType: 'HTML', content: `${composed.content}${quoted}` } },
       });
-      await attachToDraft(draftId, params.attachments);
+      await attachToDraft(draftId, params.attachments, context);
     };
 
     // Compose the reply onto the created draft. Any failure here means nothing was

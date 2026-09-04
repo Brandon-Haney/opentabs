@@ -2,45 +2,61 @@
  * Shared helpers for tools that download, modify, and re-upload .docx files.
  */
 import { ToolError } from '@opentabs-dev/plugin-sdk';
-import { type ZipEntry, extractAllZipEntries, rebuildZip } from '../docx-utils.js';
-import { AUTH_EXPIRED_MESSAGE, FILE_LOCKED_MESSAGE, authError, getGraphToken } from '../microsoft-word-api.js';
+import { DOCX_MIME, extractAllZipEntries, rebuildZip, toArrayBuffer, type ZipEntry } from '../docx-utils.js';
+import { api, fetchDownloadUrl, graphFetch, METADATA_TIMEOUT_MS } from '../microsoft-word-api.js';
 
-const GRAPH_API_BASE = 'https://graph.microsoft.com/v1.0';
-const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+interface DownloadableItem {
+  '@microsoft.graph.downloadUrl'?: string;
+  file?: { mimeType?: string };
+  eTag?: string;
+}
+
+/** A document's bytes and the item version they were read at. */
+export interface DocxSnapshot {
+  bytes: Uint8Array;
+  /** The item's `eTag` at read time, or undefined when Graph did not report one. */
+  eTag: string | undefined;
+}
+
+const isWordMimeType = (mimeType: string): boolean =>
+  mimeType.includes('wordprocessingml') || mimeType.includes('msword');
+
+/**
+ * Download a Word document's bytes: reads the item's pre-authenticated download
+ * URL from Graph within METADATA_TIMEOUT_MS, rejects files whose MIME type is
+ * not a Word document, and fetches the binary from that URL under the default
+ * request budget.
+ */
+export async function downloadDocxBytes(itemId: string): Promise<DocxSnapshot> {
+  const meta = await api<DownloadableItem>(`/me/drive/items/${itemId}`, { timeoutMs: METADATA_TIMEOUT_MS });
+
+  const downloadUrl = meta['@microsoft.graph.downloadUrl'];
+  if (!downloadUrl) {
+    throw ToolError.internal('No download URL available for this item.');
+  }
+
+  const mimeType = meta.file?.mimeType ?? '';
+  if (mimeType && !isWordMimeType(mimeType)) {
+    throw ToolError.validation(
+      `This file is not a Word document (${mimeType}). Only .docx files can be read or edited with the document tools — use get_file_content for text-based files.`,
+    );
+  }
+
+  const response = await fetchDownloadUrl(downloadUrl);
+  return { bytes: new Uint8Array(await response.arrayBuffer()), eTag: meta.eTag };
+}
 
 /** Download a .docx file and return all ZIP entries plus the document.xml as text. */
 export async function downloadDocxEntries(itemId: string): Promise<{
   entries: ZipEntry[];
   documentXml: string;
   documentXmlIndex: number;
+  /** The item version the entries were read at; pass it back to uploadModifiedDocx. */
+  eTag: string | undefined;
 }> {
-  const token = getGraphToken();
+  const { bytes, eTag } = await downloadDocxBytes(itemId);
 
-  // Get the pre-authenticated download URL
-  const metaResp = await fetchWithErrorHandling(`${GRAPH_API_BASE}/me/drive/items/${itemId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    credentials: 'omit',
-  });
-  const meta = (await metaResp.json()) as {
-    '@microsoft.graph.downloadUrl'?: string;
-    file?: { mimeType?: string };
-  };
-
-  if (!meta['@microsoft.graph.downloadUrl']) {
-    throw ToolError.internal('No download URL available for this item.');
-  }
-
-  const mimeType = meta.file?.mimeType ?? '';
-  if (mimeType && !mimeType.includes('wordprocessingml') && !mimeType.includes('msword')) {
-    throw ToolError.validation(`This file is not a Word document (${mimeType}). Only .docx files can be edited.`);
-  }
-
-  // Download the binary
-  const docResp = await fetchWithErrorHandling(meta['@microsoft.graph.downloadUrl'], {});
-  const docBytes = new Uint8Array(await docResp.arrayBuffer());
-
-  // Extract all ZIP entries
-  const entries = await extractAllZipEntries(docBytes);
+  const entries = await extractAllZipEntries(bytes);
   const docIndex = entries.findIndex(e => e.name === 'word/document.xml');
   if (docIndex === -1) {
     throw ToolError.internal('Could not find word/document.xml in the .docx archive.');
@@ -51,80 +67,48 @@ export async function downloadDocxEntries(itemId: string): Promise<{
     throw ToolError.internal('Could not read word/document.xml from the .docx archive.');
   }
   const documentXml = new TextDecoder().decode(entry.data);
-  return { entries, documentXml, documentXmlIndex: docIndex };
+  return { entries, documentXml, documentXmlIndex: docIndex, eTag };
 }
 
-/** Replace the document.xml in entries and re-upload the .docx to OneDrive. */
+/**
+ * Replace the document.xml in entries and re-upload the .docx to OneDrive.
+ *
+ * This rewrites the WHOLE file, so anything written between the read and this
+ * upload would be replaced wholesale. `eTag` is the version the entries were
+ * read at: Graph answers 412 rather than accepting the write once the item has
+ * moved on, which turns a silent overwrite into a refusal the caller can act on.
+ *
+ * That guard is also what makes the replay safe. The bytes are fixed inside this
+ * call, so a replay after a hidden success re-sends identical content — and with
+ * the version pinned, a replay that lands after someone else's edit is refused
+ * instead of clobbering it.
+ */
 export async function uploadModifiedDocx(
   itemId: string,
   entries: ZipEntry[],
   documentXmlIndex: number,
   newDocumentXml: string,
+  eTag: string | undefined,
 ): Promise<void> {
-  const token = getGraphToken();
-  const encoder = new TextEncoder();
-
-  // Replace document.xml content
   entries[documentXmlIndex] = {
     name: 'word/document.xml',
-    data: encoder.encode(newDocumentXml),
+    data: new TextEncoder().encode(newDocumentXml),
   };
 
-  // Rebuild the ZIP
-  const zipBytes = rebuildZip(entries);
-
-  // Upload back — PUT to /content endpoint
-  const body = new ArrayBuffer(zipBytes.byteLength);
-  new Uint8Array(body).set(zipBytes);
-
-  const resp = await fetchWithErrorHandling(`${GRAPH_API_BASE}/me/drive/items/${itemId}/content`, {
+  const response = await graphFetch(`/me/drive/items/${itemId}/content`, {
     method: 'PUT',
-    credentials: 'omit',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': DOCX_MIME,
-    },
-    body,
+    body: toArrayBuffer(rebuildZip(entries)),
+    contentType: DOCX_MIME,
+    retryNonIdempotent: true,
+    ...(eTag !== undefined ? { ifMatch: eTag } : {}),
   });
-
-  // Consume the response to avoid leaking
-  await resp.json();
-}
-
-/** Wrapper around fetch with standard error handling for Graph API calls. */
-async function fetchWithErrorHandling(url: string, init: RequestInit): Promise<Response> {
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      ...init,
-      signal: AbortSignal.timeout(30_000),
-    });
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'TimeoutError') {
-      throw ToolError.timeout('Microsoft Graph API request timed out.');
-    }
-    throw ToolError.internal(`Network error: ${err instanceof Error ? err.message : 'unknown'}`);
+  if (response.status === 412) {
+    void response.body?.cancel().catch(() => undefined);
+    throw ToolError.validation(
+      'The document changed while this edit was being prepared, so writing it would have discarded that change. ' +
+        'Read the document again and re-apply the edit.',
+      'DOCUMENT_CHANGED',
+    );
   }
-
-  if (response.status === 401 || response.status === 403) {
-    authError(AUTH_EXPIRED_MESSAGE);
-  }
-  if (response.status === 423) {
-    throw ToolError.validation(FILE_LOCKED_MESSAGE);
-  }
-  if (response.status === 404) {
-    throw ToolError.notFound('Document not found.');
-  }
-  if (!response.ok) {
-    let errorMsg = `Microsoft Graph API error (${response.status})`;
-    try {
-      const errBody = (await response.json()) as { error?: { message?: string } };
-      if (errBody.error?.message) errorMsg = errBody.error.message;
-    } catch {
-      // ignore parse errors
-    }
-    throw ToolError.internal(errorMsg);
-  }
-
-  return response;
+  void response.body?.cancel().catch(() => undefined);
 }

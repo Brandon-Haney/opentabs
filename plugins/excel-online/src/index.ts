@@ -1,14 +1,15 @@
-import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import type { ToolDefinition } from '@opentabs-dev/plugin-sdk';
-import { isAuthenticated, isSharePointWorkbook, waitForAuth } from './excel-api.js';
+import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
+import { isAuthenticated, isSharePointWorkbook, pageOrigin, readReloadMarker, waitForAuth } from './excel-api.js';
+import { reportReloadMarker } from './reload-marker.js';
 import { addComment } from './tools/add-comment.js';
 import { addConditionalFormat } from './tools/add-conditional-format.js';
 import { addDataValidation } from './tools/add-data-validation.js';
 import { addNamedItem } from './tools/add-named-item.js';
+import { addPivotField } from './tools/add-pivot-field.js';
 import { addTableColumn } from './tools/add-table-column.js';
 import { addTableRow } from './tools/add-table-row.js';
 import { addWorksheet } from './tools/add-worksheet.js';
-import { addPivotField } from './tools/add-pivot-field.js';
 import { applyCellStyle } from './tools/apply-cell-style.js';
 import { calculateWorkbook } from './tools/calculate-workbook.js';
 import { clearDataValidation } from './tools/clear-data-validation.js';
@@ -23,13 +24,14 @@ import { deleteRange } from './tools/delete-range.js';
 import { deleteTable } from './tools/delete-table.js';
 import { deleteTableRow } from './tools/delete-table-row.js';
 import { deleteWorksheet } from './tools/delete-worksheet.js';
+import { diagnose } from './tools/diagnose.js';
 import { evaluateFormula } from './tools/evaluate-formula.js';
 import { filterRangeColumn } from './tools/filter-range-column.js';
 import { filterRangeCustom } from './tools/filter-range-custom.js';
 import { filterRangeTop } from './tools/filter-range-top.js';
 import { filterTable } from './tools/filter-table.js';
-import { formatRangeAdvanced } from './tools/format-range-advanced.js';
 import { formatRange } from './tools/format-range.js';
+import { formatRangeAdvanced } from './tools/format-range-advanced.js';
 import { freezePanes } from './tools/freeze-panes.js';
 import { getChartImage } from './tools/get-chart-image.js';
 import { getCurrentUser } from './tools/get-current-user.js';
@@ -58,8 +60,8 @@ import { protectWorksheet } from './tools/protect-worksheet.js';
 import { reauthenticate } from './tools/reauthenticate.js';
 import { refreshAllConnections } from './tools/refresh-all-connections.js';
 import { refreshPivot } from './tools/refresh-pivot.js';
-import { removePivotField } from './tools/remove-pivot-field.js';
 import { removeDuplicates } from './tools/remove-duplicates.js';
+import { removePivotField } from './tools/remove-pivot-field.js';
 import { setBorders } from './tools/set-borders.js';
 import { setDimensions } from './tools/set-dimensions.js';
 import { setHyperlink } from './tools/set-hyperlink.js';
@@ -86,6 +88,7 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     // Account
     getCurrentUser,
     reauthenticate,
+    diagnose,
     // Workbook
     getWorkbookInfo,
     calculateWorkbook,
@@ -169,6 +172,16 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     addDataValidation,
     clearDataValidation,
   ];
+
+  /**
+   * Reports an Office-initiated reload of this document to the plugin log,
+   * once per document, so the server log carries a timestamped reload event
+   * next to the tool failures it explains.
+   */
+  override onActivate(): void {
+    const marker = readReloadMarker();
+    if (marker !== null) reportReloadMarker(marker, pageOrigin());
+  }
 
   async isReady(): Promise<boolean> {
     if (isAuthenticated()) return true;

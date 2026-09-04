@@ -1,7 +1,7 @@
 ---
 title: MCP Server
 description: HTTP endpoints, WebSocket protocol, authentication, MCP capabilities, and client configuration for the OpenTabs server.
-lastUpdated: 2026-04-24
+lastUpdated: 2026-09-02
 ---
 
 Everything here describes the server that `opentabs start` runs on your machine. It's a single localhost HTTP process — port 9515 by default. AI clients connect to `/mcp`, the Chrome extension connects to `/ws`. No cloud, no relay, no accounts. Just a process running locally, bridging your AI agent and your browser.
@@ -452,7 +452,7 @@ The extension uses this URL to establish the WebSocket connection. The `wsUrl` i
 
 ## /audit — Tool invocation history
 
-Returns tool invocations as a JSON array, newest first. Requires Bearer token authentication. The server maintains a circular buffer of the last 500 entries. Entries are also persisted to `~/.opentabs/audit.log` as NDJSON with automatic rotation at 10 MB (keeping `audit.log` and `audit.log.1`). Use `opentabs audit --file` to query the full disk-based log, which survives server restarts.
+Returns tool invocations as a JSON array, newest first. Requires Bearer token authentication. The server maintains a circular buffer of the last 500 entries. Entries are also persisted to `~/.opentabs/audit.log` as NDJSON with automatic rotation at 10 MB (keeping `audit.log` and `audit.log.1`); optional fields (`tabId`, `tabOrigin`, `error.details`) appear only when known. Use `opentabs audit --file` to query the full disk-based log, which survives server restarts.
 
 ```bash
 curl -s http://127.0.0.1:9515/audit \
@@ -501,11 +501,31 @@ Each entry contains:
   "tool": "slack__send_message",
   "plugin": "slack",
   "success": true,
-  "durationMs": 245
+  "durationMs": 245,
+  "tabId": 1234,
+  "tabOrigin": "https://app.slack.com"
 }
 ```
 
-Failed entries include an `error` object with `code`, `message`, and optional `category`.
+Entries include `tabId` and `tabOrigin` (scheme and host only — never the full URL) when the dispatch-target tab is known: the tab the extension ran the tool in, or — when the extension did not report one — the tab the caller targeted via `tabId` or `instance`. Failed entries include an `error` object with `code`, `message`, optional `category`, and optional `details` — the remaining primitive fields of the plugin error (for example `retryable`, `retryAfterMs`, and the upstream HTTP status), with string values sanitized and the whole object dropped when its JSON form exceeds 4 KB:
+
+```json
+{
+  "timestamp": "2026-02-21T10:31:12.000Z",
+  "tool": "slack__send_message",
+  "plugin": "slack",
+  "success": false,
+  "durationMs": 812,
+  "tabId": 1234,
+  "tabOrigin": "https://app.slack.com",
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Rate limited",
+    "category": "rate_limit",
+    "details": { "retryable": true, "retryAfterMs": 5000, "httpStatus": 429 }
+  }
+}
+```
 
 ---
 

@@ -1,7 +1,7 @@
 ---
 title: Plugin Development
 description: Build an OpenTabs plugin from scratch — scaffold, define tools, use SDK utilities, test with hot reload, and publish to npm.
-lastUpdated: 2026-03-10
+lastUpdated: 2026-09-02
 ---
 
 This is the part I'm most excited about. You can point an AI agent at any web app and it'll build a plugin for you in minutes — but if you want to understand what's happening under the hood, or build one by hand, this guide walks you through the whole thing from scratch. By the end, you'll have a working plugin that gives AI agents access to a web application through the user's browser.
@@ -493,7 +493,18 @@ if (!response.ok) {
 const data = await response.json();
 ```
 
-`httpStatusToToolError` maps HTTP status codes to appropriate error categories: 401/403 → `auth` (not retryable), 404 → `notFound` (not retryable), 429 → `rateLimited` (retryable, parses `Retry-After` header), 400/422 → `validation` (not retryable), 408 → `timeout` (retryable), 503 → `internal` (retryable, parses `Retry-After` header), other 5xx → `internal` (retryable), other 4xx → no category (not retryable).
+`httpStatusToToolError` maps HTTP status codes to appropriate error categories: 401/403 → `auth` (not retryable), 404 → `notFound` (not retryable), 429 → `rateLimited` (retryable, parses `Retry-After` header), 400/422 → `validation` (not retryable), 408 → `timeout` (retryable), 503 → `internal` (retryable, parses `Retry-After` header), 500/502/504 → `internal` (retryable), other 5xx such as 501/505 → `internal` (not retryable), other 4xx → no category (not retryable). Every error it returns carries `details.httpStatus` for the audit log.
+
+If the request itself is flaky — a proxy returning 500s or `Failed to fetch` on an otherwise healthy API — wrap it in `fetchWithRetry` instead of hand-rolling a loop. It retries transient statuses and network errors for GET/HEAD/OPTIONS with jittered backoff and returns the final `Response` for you to classify:
+
+```typescript
+import { fetchWithRetry, httpStatusToToolError } from '@opentabs-dev/plugin-sdk';
+
+const response = await fetchWithRetry('/api/items', { credentials: 'include' });
+if (!response.ok) {
+  throw httpStatusToToolError(response, `Failed to fetch items: ${response.status}`);
+}
+```
 
 ## Add Logging
 

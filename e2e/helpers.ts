@@ -9,6 +9,7 @@ import { execSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { PluginTabInfo } from '@opentabs-dev/shared';
 import { BROWSER_TOOLS_CATALOG } from '@opentabs-dev/shared';
 import type { BrowserContext, Page } from '@playwright/test';
 import type { McpClient, McpServer, TestServer } from './fixtures.js';
@@ -212,6 +213,65 @@ export const waitForToolList = async (
       `Last tool names: [${last.map(t => t.name).join(', ')}]`,
   );
 };
+
+// ---------------------------------------------------------------------------
+// plugin_list_tabs polling
+// ---------------------------------------------------------------------------
+
+/** One tab as reported by plugin_list_tabs. */
+export interface PluginTabsTab extends PluginTabInfo {
+  /** Extension connection that owns the tab */
+  connectionId: string;
+  /** Instance label, present when the plugin is configured with named instances */
+  instance?: string;
+}
+
+/** Shape of plugin_list_tabs response entries. */
+export interface PluginTabsEntry {
+  plugin: string;
+  displayName: string;
+  state: string;
+  tabs: PluginTabsTab[];
+}
+
+/**
+ * Poll plugin_list_tabs for `plugin` until `predicate` accepts its tab list
+ * (empty when the plugin reports no entry) and return the last response.
+ */
+export const waitForPluginTabs = async (
+  client: McpClient,
+  plugin: string,
+  predicate: (tabs: PluginTabsTab[]) => boolean,
+  label: string,
+  timeoutMs = 20_000,
+): Promise<PluginTabsEntry[]> => {
+  let last: PluginTabsEntry[] = [];
+  await waitFor(
+    async () => {
+      const result = await client.callTool('plugin_list_tabs', { plugin });
+      if (result.isError) return false;
+      last = JSON.parse(result.content) as PluginTabsEntry[];
+      return predicate(last[0]?.tabs ?? []);
+    },
+    timeoutMs,
+    500,
+    label,
+  );
+  return last;
+};
+
+/**
+ * Poll plugin_list_tabs until the e2e-test plugin reports at least `count`
+ * tabs, all ready.
+ */
+export const waitForReadyTabs = (client: McpClient, count: number, timeoutMs = 20_000): Promise<PluginTabsEntry[]> =>
+  waitForPluginTabs(
+    client,
+    'e2e-test',
+    tabs => tabs.length >= count && tabs.every(t => t.ready),
+    `plugin_list_tabs to report ${String(count)} ready tab(s)`,
+    timeoutMs,
+  );
 
 // ---------------------------------------------------------------------------
 // Tool result parsing

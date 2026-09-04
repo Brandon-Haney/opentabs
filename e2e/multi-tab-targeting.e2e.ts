@@ -10,48 +10,31 @@
  *   - Readiness reporting per tab
  */
 
+import type { McpClient } from './fixtures.js';
 import { expect, test } from './fixtures.js';
+import type { PluginTabsEntry } from './helpers.js';
 import {
   callToolExpectSuccess,
   openTestAppTab,
   parseToolResult,
   setupToolTest,
   waitFor,
+  waitForPluginTabs,
   waitForToolResult,
 } from './helpers.js';
-
-/** Shape of plugin_list_tabs response entries. */
-interface PluginTabsEntry {
-  plugin: string;
-  displayName: string;
-  state: string;
-  tabs: Array<{ tabId: number; url: string; title: string; ready: boolean }>;
-}
 
 /**
  * Poll plugin_list_tabs until the e2e-test plugin reports at least `count` tabs.
  * Returns the parsed response array.
  */
-const waitForTabCount = async (
-  callTool: (name: string, args: Record<string, unknown>) => Promise<{ content: string; isError: boolean }>,
-  count: number,
-  timeoutMs = 15_000,
-): Promise<PluginTabsEntry[]> => {
-  let last: PluginTabsEntry[] = [];
-  await waitFor(
-    async () => {
-      const result = await callTool('plugin_list_tabs', { plugin: 'e2e-test' });
-      if (result.isError) return false;
-      last = JSON.parse(result.content) as PluginTabsEntry[];
-      const entry = last[0];
-      return entry !== undefined && entry.tabs.length >= count;
-    },
-    timeoutMs,
-    500,
-    `plugin_list_tabs to report ${count} tab(s)`,
+const waitForTabCount = (client: McpClient, count: number): Promise<PluginTabsEntry[]> =>
+  waitForPluginTabs(
+    client,
+    'e2e-test',
+    tabs => tabs.length >= count,
+    `plugin_list_tabs to report ${String(count)} tab(s)`,
+    15_000,
   );
-  return last;
-};
 
 // ---------------------------------------------------------------------------
 // Test 1: plugin_list_tabs discovers multiple matching tabs
@@ -76,7 +59,7 @@ test.describe('Multi-tab targeting — plugin_list_tabs', () => {
     await waitForToolResult(mcpClient, 'e2e-test__get_status', {}, { isError: false }, 15_000);
 
     // Wait for the server to receive updated tab state with two tabs
-    const plugins = await waitForTabCount(mcpClient.callTool.bind(mcpClient), 2);
+    const plugins = await waitForTabCount(mcpClient, 2);
 
     expect(plugins.length).toBe(1);
     const pluginInfo = plugins[0];
@@ -132,7 +115,7 @@ test.describe('Multi-tab targeting — targeted dispatch', () => {
     });
 
     // Wait for both tabs to be tracked
-    const plugins = await waitForTabCount(mcpClient.callTool.bind(mcpClient), 2);
+    const plugins = await waitForTabCount(mcpClient, 2);
 
     const entry = plugins[0];
     if (!entry) throw new Error('Expected plugin entry in plugin_list_tabs response');
@@ -283,7 +266,7 @@ test.describe('Multi-tab targeting — auto-select fallback', () => {
     const page2 = await openTestAppTab(extensionContext, testServer.url, mcpServer, testServer);
 
     // Wait for both tabs to be tracked
-    await waitForTabCount(mcpClient.callTool.bind(mcpClient), 2);
+    await waitForTabCount(mcpClient, 2);
 
     // Call echo WITHOUT tabId — should auto-select and succeed
     const result = await mcpClient.callTool('e2e-test__echo', { message: 'auto-select' });
@@ -370,7 +353,7 @@ test.describe('Multi-tab targeting — targeted dispatch to unavailable tab', ()
     const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
 
     // Get the tab's ID via plugin_list_tabs
-    const plugins = await waitForTabCount(mcpClient.callTool.bind(mcpClient), 1);
+    const plugins = await waitForTabCount(mcpClient, 1);
     const entry = plugins[0];
     if (!entry) throw new Error('Expected plugin entry in plugin_list_tabs response');
     const tab = entry.tabs[0];
@@ -580,7 +563,7 @@ test.describe('Multi-tab targeting — concurrent targeted dispatches', () => {
     });
 
     // Wait for both tabs to be tracked
-    const plugins = await waitForTabCount(mcpClient.callTool.bind(mcpClient), 2);
+    const plugins = await waitForTabCount(mcpClient, 2);
 
     const entry = plugins[0];
     if (!entry) throw new Error('Expected plugin entry in plugin_list_tabs response');
@@ -652,7 +635,7 @@ test.describe('Multi-tab targeting — real-time tab tracking', () => {
 
     // Step 1: Open tab 1 → verify plugin_list_tabs shows 1 tab
     const page1 = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
-    const plugins1 = await waitForTabCount(mcpClient.callTool.bind(mcpClient), 1);
+    const plugins1 = await waitForTabCount(mcpClient, 1);
     const entry1 = plugins1[0];
     if (!entry1) throw new Error('Expected plugin entry after opening tab 1');
     expect(entry1.state).toBe('ready');
@@ -664,7 +647,7 @@ test.describe('Multi-tab targeting — real-time tab tracking', () => {
 
     // Step 2: Open tab 2 → verify shows 2 tabs with distinct IDs
     const page2 = await openTestAppTab(extensionContext, testServer.url, mcpServer, testServer);
-    const plugins2 = await waitForTabCount(mcpClient.callTool.bind(mcpClient), 2);
+    const plugins2 = await waitForTabCount(mcpClient, 2);
     const entry2 = plugins2[0];
     if (!entry2) throw new Error('Expected plugin entry after opening tab 2');
     expect(entry2.state).toBe('ready');
@@ -750,7 +733,7 @@ test.describe('Multi-tab targeting — targeted dispatch to closed tab', () => {
     const page2 = await openTestAppTab(extensionContext, testServer.url, mcpServer, testServer);
 
     // Wait for both tabs to be tracked and ready
-    const plugins = await waitForTabCount(mcpClient.callTool.bind(mcpClient), 2);
+    const plugins = await waitForTabCount(mcpClient, 2);
 
     const entry = plugins[0];
     if (!entry) throw new Error('Expected plugin entry in plugin_list_tabs response');
@@ -853,7 +836,7 @@ test.describe('Multi-tab targeting — tab closes mid-execution', () => {
     const page2 = await openTestAppTab(extensionContext, testServer.url, mcpServer, testServer);
 
     // Wait for both tabs to be tracked
-    const plugins = await waitForTabCount(mcpClient.callTool.bind(mcpClient), 2);
+    const plugins = await waitForTabCount(mcpClient, 2);
 
     const entry = plugins[0];
     if (!entry) throw new Error('Expected plugin entry in plugin_list_tabs response');

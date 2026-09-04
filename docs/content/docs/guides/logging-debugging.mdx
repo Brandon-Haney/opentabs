@@ -1,7 +1,7 @@
 ---
 title: Logging & Debugging
 description: Add structured logging to your plugin and use the CLI tools to diagnose issues when things go wrong.
-lastUpdated: 2026-03-10
+lastUpdated: 2026-09-02
 ---
 
 I built this logging pipeline because I kept flying blind. A tool would fail, and I'd have no idea where in the chain it went wrong — was it the API call? The DOM query? The adapter injection? So I wired up structured logging that flows from your plugin code all the way to the MCP server, and built a set of CLI tools to poke at the system when things aren't working. Here's how I use them.
@@ -139,13 +139,13 @@ opentabs audit
 ```
 
 ```bash
-Time       Tool                      OK   Duration
-10:15:30   slack__list_channels       ✓    120ms
-10:15:45   slack__send_message        ✗    30.0s
-10:16:02   slack__list_channels       ✓    95ms
+Time       Tool                      Origin                   OK   Duration
+10:15:30   slack__list_channels       https://app.slack.com    ✓    120ms
+10:15:45   slack__send_message        https://app.slack.com    ✗    30.0s
+10:16:02   slack__list_channels       https://app.slack.com    ✓    95ms
 ```
 
-A red `✗` means the tool call failed. Filter by plugin to focus on what matters:
+A red `✗` means the tool call failed. The `Origin` column is the scheme and host of the tab the tool targeted (never the full URL); it is blank when no tab was resolved. Filter by plugin to focus on what matters:
 
 ```bash
 opentabs audit --plugin slack
@@ -153,7 +153,7 @@ opentabs audit --limit 50
 opentabs audit --json          # raw JSON with error details
 ```
 
-The `--json` output is where the real detail lives — error codes, categories, and messages that tell you exactly what went wrong:
+The `--json` output is where the real detail lives — the targeted tab (`tabId` plus `tabOrigin`), and for failures the error code, category, message, and structured `details` that tell you exactly what went wrong:
 
 ```json
 {
@@ -161,14 +161,19 @@ The `--json` output is where the real detail lives — error codes, categories, 
   "tool": "slack__send_message",
   "plugin": "slack",
   "success": false,
-  "durationMs": 30000,
+  "durationMs": 812,
+  "tabId": 1234,
+  "tabOrigin": "https://app.slack.com",
   "error": {
-    "code": "TIMEOUT",
-    "message": "Dispatch timed out after 30000ms",
-    "category": "timeout"
+    "code": "RATE_LIMITED",
+    "message": "Rate limited",
+    "category": "rate_limit",
+    "details": { "retryable": true, "retryAfterMs": 5000, "httpStatus": 429 }
   }
 }
 ```
+
+`error.details` holds the remaining primitive fields of the plugin's error — retry metadata, the upstream HTTP status, a request id — with string values sanitized. It is omitted when the plugin supplied nothing beyond the code and message, or when the serialized object would exceed 4 KB.
 
 ### Step 3: Read Plugin Logs with `opentabs logs`
 

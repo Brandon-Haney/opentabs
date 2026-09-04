@@ -25,22 +25,16 @@ import {
   test,
   writeTestConfig,
 } from './fixtures.js';
+import type { PluginTabsEntry } from './helpers.js';
 import {
   openTestAppTab,
   setupAdapterSymlink,
-  waitFor,
   waitForExtensionConnected,
   waitForLog,
+  waitForPluginTabs,
+  waitForReadyTabs,
   waitForToolList,
 } from './helpers.js';
-
-/** Shape of plugin_list_tabs response entries. */
-interface PluginTabsEntry {
-  plugin: string;
-  displayName: string;
-  state: string;
-  tabs: Array<{ tabId: number; url: string; title: string; ready: boolean; instance?: string }>;
-}
 
 // ---------------------------------------------------------------------------
 // Shared infrastructure for same-host multi-instance tests
@@ -124,27 +118,6 @@ const cleanupSameHostTest = async (ctx: SameHostTestContext): Promise<void> => {
   await ctx.server.kill();
   fs.rmSync(ctx.cleanupDir, { recursive: true, force: true });
   cleanupTestConfigDir(ctx.configDir);
-};
-
-/**
- * Poll plugin_list_tabs until the e2e-test plugin reports at least `count` tabs
- * where all are ready.
- */
-const waitForReadyTabs = async (client: McpClient, count: number, timeoutMs = 20_000): Promise<PluginTabsEntry[]> => {
-  let last: PluginTabsEntry[] = [];
-  await waitFor(
-    async () => {
-      const result = await client.callTool('plugin_list_tabs', { plugin: 'e2e-test' });
-      if (result.isError) return false;
-      last = JSON.parse(result.content) as PluginTabsEntry[];
-      const entry = last[0];
-      return entry !== undefined && entry.tabs.length >= count && entry.tabs.every(t => t.ready);
-    },
-    timeoutMs,
-    500,
-    `plugin_list_tabs to report ${count} ready tab(s)`,
-  );
-  return last;
 };
 
 /**
@@ -789,23 +762,13 @@ test.describe('Multi-instance robust — concurrent burst dispatch', () => {
  * Poll plugin_list_tabs until the e2e-test plugin reports exactly `count` tabs
  * (regardless of readiness). Returns the plugin entry list.
  */
-const waitForTabCount = async (client: McpClient, count: number, timeoutMs = 20_000): Promise<PluginTabsEntry[]> => {
-  let last: PluginTabsEntry[] = [];
-  await waitFor(
-    async () => {
-      const result = await client.callTool('plugin_list_tabs', { plugin: 'e2e-test' });
-      if (result.isError) return false;
-      last = JSON.parse(result.content) as PluginTabsEntry[];
-      const entry = last[0];
-      if (!entry) return count === 0;
-      return entry.tabs.length === count;
-    },
-    timeoutMs,
-    500,
+const waitForTabCount = (client: McpClient, count: number): Promise<PluginTabsEntry[]> =>
+  waitForPluginTabs(
+    client,
+    'e2e-test',
+    tabs => tabs.length === count,
     `plugin_list_tabs to report exactly ${String(count)} tab(s)`,
   );
-  return last;
-};
 
 test.describe('Multi-instance robust — all instance tabs closed', () => {
   test('closing all tabs returns No open tab error and plugin_list_tabs shows closed state', async () => {

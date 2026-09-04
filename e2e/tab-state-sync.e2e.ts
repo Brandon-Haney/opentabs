@@ -23,6 +23,7 @@ import {
   test,
   writeTestConfig,
 } from './fixtures.js';
+import type { PluginTabsEntry } from './helpers.js';
 import {
   openTestAppTab,
   parseToolResult,
@@ -33,14 +34,6 @@ import {
   waitForLog,
   waitForToolResult,
 } from './helpers.js';
-
-/** Shape of plugin_list_tabs response entries. */
-interface PluginTabsEntry {
-  plugin: string;
-  displayName: string;
-  state: string;
-  tabs: Array<{ tabId: number; url: string; title: string; ready: boolean }>;
-}
 
 // ---------------------------------------------------------------------------
 // US-003: Navigate away → closed transition

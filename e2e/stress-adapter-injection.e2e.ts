@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from '@playwright/test';
 import { expect } from './fixtures.js';
+import type { PluginTabsEntry } from './helpers.js';
 import {
   callToolExpectSuccess,
   openTestAppTab,
@@ -199,14 +200,6 @@ test.describe('Stress — adapter injection during tab navigation', () => {
 // ---------------------------------------------------------------------------
 // US-003: Multiple tabs opening simultaneously with adapter injection
 // ---------------------------------------------------------------------------
-
-/** Shape of plugin_list_tabs response entries. */
-interface PluginTabsEntry {
-  plugin: string;
-  displayName: string;
-  state: string;
-  tabs: Array<{ tabId: number; url: string; title: string; ready: boolean }>;
-}
 
 test.describe('Stress — multiple tabs opening simultaneously', () => {
   test('5 tabs opened concurrently all get injected and tools dispatch to each via tabId', async () => {

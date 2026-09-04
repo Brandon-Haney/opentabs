@@ -6,25 +6,19 @@
  *   - GET /audit supports combined tool+plugin filters
  *   - GET /health includes auditSummary with aggregate stats
  *   - GET /audit without auth returns 401
+ *   - Failed entries carry the plugin's structured error data in error.details
+ *   - tabId-targeted calls record the tab id and its origin (scheme + host only)
  *
  * All tests use dynamic ports and are safe for parallel execution.
  */
 
+import type { AuditEntry } from '@opentabs-dev/shared';
 import { expect, test } from './fixtures.js';
-import { callToolExpectSuccess, setupToolTest } from './helpers.js';
+import { callToolExpectSuccess, setupToolTest, waitForReadyTabs } from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface AuditEntry {
-  timestamp: string;
-  tool: string;
-  plugin: string;
-  success: boolean;
-  durationMs: number;
-  error?: { code: string; message: string; category?: string };
-}
 
 interface AuditSummary {
   totalInvocations: number;
@@ -299,6 +293,58 @@ test.describe('Audit logging', () => {
       signal: AbortSignal.timeout(5_000),
     });
     expect(res.status).toBe(401);
+
+    await page.close();
+  });
+
+  test('failed entry carries the structured ToolError fields in error.details', async ({
+    mcpServer,
+    testServer,
+    extensionContext,
+    mcpClient,
+  }) => {
+    const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
+
+    const result = await mcpClient.callTool('e2e-test__error_rate_limited', {});
+    expect(result.isError).toBe(true);
+
+    const { entries } = await fetchAudit(mcpServer.port, mcpServer.secret, {
+      tool: 'e2e-test__error_rate_limited',
+      limit: '1',
+    });
+    const entry = entries[0];
+    if (!entry?.error) throw new Error('Expected a failed audit entry with an error object');
+
+    expect(entry.success).toBe(false);
+    expect(entry.error.code).toBe('RATE_LIMITED');
+    expect(entry.error.category).toBe('rate_limit');
+    // retryable/retryAfterMs land in details; code, category and the platform's tabId echo are lifted out of it
+    expect(entry.error.details).toEqual({ retryable: true, retryAfterMs: 5000 });
+
+    await page.close();
+  });
+
+  test('tabId-targeted call records the targeted tab id and its origin only', async ({
+    mcpServer,
+    testServer,
+    extensionContext,
+    mcpClient,
+  }) => {
+    const page = await setupToolTest(mcpServer, testServer, extensionContext, mcpClient);
+
+    const plugins = await waitForReadyTabs(mcpClient, 1, 15_000);
+    const tabId = plugins[0]?.tabs.find(tab => tab.ready)?.tabId;
+    if (tabId === undefined) throw new Error('No ready e2e-test tab reported');
+    await callToolExpectSuccess(mcpClient, mcpServer, 'e2e-test__echo', { message: 'tab-targeted', tabId });
+
+    const { entries } = await fetchAudit(mcpServer.port, mcpServer.secret, { tool: 'e2e-test__echo', limit: '1' });
+    const entry = entries[0];
+    if (!entry) throw new Error('Expected an audit entry for the targeted echo call');
+
+    expect(entry.success).toBe(true);
+    expect(entry.tabId).toBe(tabId);
+    // Origin only — never the tab's path or query
+    expect(entry.tabOrigin).toBe(new URL(testServer.url).origin);
 
     await page.close();
   });

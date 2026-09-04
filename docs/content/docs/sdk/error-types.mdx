@@ -1,16 +1,16 @@
 ---
 title: Error Types
 description: API reference for ToolError — structured errors with categories, retry hints, and factory methods for AI-agent-friendly error responses.
-lastUpdated: 2026-03-10
+lastUpdated: 2026-09-02
 ---
 
-Tool errors need to carry more than just a message. A failed login is different from a rate limit, which is different from a missing resource — and an AI agent needs to know which is which. I designed `ToolError` with machine-readable metadata (code, category, retryable, retryAfterMs) so the agent can make intelligent decisions: retry with backoff, ask the user to log in, or give up immediately. When your tool throws a `ToolError`, all of that metadata propagates through the entire dispatch chain to the agent.
+Tool errors need to carry more than just a message. A failed login is different from a rate limit, which is different from a missing resource — and an AI agent needs to know which is which. I designed `ToolError` with machine-readable metadata (code, category, retryable, retryAfterMs, details) so the agent can make intelligent decisions: retry with backoff, ask the user to log in, or give up immediately. When your tool throws a `ToolError`, the code, category, and retry hints propagate through the entire dispatch chain to the agent, and `details` lands in the server's audit log.
 
 ## Import
 
 ```typescript
 import { ToolError } from '@opentabs-dev/plugin-sdk';
-import type { ErrorCategory, ToolErrorOptions } from '@opentabs-dev/plugin-sdk';
+import type { ErrorCategory, ToolErrorDetails, ToolErrorOptions } from '@opentabs-dev/plugin-sdk';
 ```
 
 ## `ToolError`
@@ -23,8 +23,11 @@ class ToolError extends Error {
   readonly retryable: boolean;
   readonly retryAfterMs: number | undefined;
   readonly category: ErrorCategory | undefined;
+  readonly details: ToolErrorDetails | undefined;
 
   constructor(message: string, code: string, opts?: ToolErrorOptions);
+
+  withDetails(details: ToolErrorDetails): ToolError;
 
   static auth(message: string, code?: string): ToolError;
   static notFound(message: string, code?: string): ToolError;
@@ -79,8 +82,13 @@ interface ToolErrorOptions {
   retryable?: boolean;     // Default: false
   retryAfterMs?: number;   // Suggested retry delay in milliseconds
   category?: ErrorCategory;
+  details?: ToolErrorDetails;
 }
+
+type ToolErrorDetails = Record<string, string | number | boolean>;
 ```
+
+`details` is a flat map of primitive values recorded in the server's audit log (`opentabs audit --json`) — the upstream HTTP status, the service's request id, a proxy error label. The agent-facing error response does not carry it. Keep values to hosts, identifiers and numbers: never put a full URL in a detail value, because URLs carry item identifiers and the audit log is persisted to disk.
 
 ### Properties
 
@@ -113,14 +121,38 @@ interface ToolErrorOptions {
       <Table.Cell>`ErrorCategory \| undefined`</Table.Cell>
       <Table.Cell>Error classification. One of: `'auth'`, `'rate_limit'`, `'not_found'`, `'validation'`, `'internal'`, `'timeout'`.</Table.Cell>
     </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`details`</Table.Cell>
+      <Table.Cell>`ToolErrorDetails \| undefined`</Table.Cell>
+      <Table.Cell>Flat, primitive-valued metadata recorded in the audit log (for example `{ httpStatus: 503, requestId: '…' }`).</Table.Cell>
+    </Table.Row>
   </Table.Body>
 </Table>
+
+### `withDetails(details)`
+
+Returns a **new** `ToolError` whose `details` are this error's details merged with `details` (later keys win). Message, code, category, `retryable`, `retryAfterMs` and the original stack are preserved, and the receiving instance is left untouched. This is how you attach metadata to a factory result — the factories themselves take no `details` argument.
+
+```typescript
+withDetails(details: ToolErrorDetails): ToolError;
+```
+
+```typescript
+throw ToolError.rateLimited('Mailbox throttled', 5000).withDetails({
+  httpStatus: 429,
+  requestId: response.headers.get('request-id') ?? 'unknown',
+});
+// code=RATE_LIMITED category=rate_limit retryable=true retryAfterMs=5000
+// details={"httpStatus":429,"requestId":"…"}
+```
+
+`httpStatusToToolError` already attaches `{ httpStatus }`; chain `withDetails()` on its result to add service-specific fields on top.
 
 ---
 
 ## Factory Methods
 
-Prefer factory methods over the constructor — they set the correct code, category, and retryable values automatically.
+Prefer factory methods over the constructor — they set the correct code, category, and retryable values automatically. None of them takes `details`; add metadata with `withDetails()`.
 
 ### `ToolError.auth(message, code?)`
 
@@ -272,9 +304,9 @@ type ErrorCategory = 'auth' | 'rate_limit' | 'not_found' | 'validation' | 'inter
 When a tool handler throws a `ToolError`, the structured metadata propagates through the entire dispatch chain:
 
 1. **Tool handler** throws `ToolError` in the page context
-2. **Adapter IIFE** serializes the error fields (`code`, `category`, `retryable`, `retryAfterMs`) into the dispatch response
+2. **Adapter IIFE** serializes the error fields (`code`, `category`, `retryable`, `retryAfterMs`, `details`) into the dispatch response
 3. **Chrome extension** relays the structured error over WebSocket to the MCP server
-4. **MCP server** formats the error response with both a human-readable prefix and a machine-readable JSON block
+4. **MCP server** formats the error response with both a human-readable prefix and a machine-readable JSON block, and records the error (including `details`) in the audit log
 
 The AI agent receives an error response like:
 
@@ -286,7 +318,7 @@ The AI agent receives an error response like:
 ```
 ````
 
-The first line is human-readable. The JSON block in the fenced code block is machine-parseable, enabling AI agents to programmatically decide whether to retry, how long to wait, and what kind of error occurred.
+The first line is human-readable. The JSON block in the fenced code block is machine-parseable, enabling AI agents to programmatically decide whether to retry, how long to wait, and what kind of error occurred. `details` is part of neither — it reaches the audit log, not the agent.
 
 ## Custom Error Codes
 

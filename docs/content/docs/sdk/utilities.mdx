@@ -1,7 +1,7 @@
 ---
 title: Utilities
 description: API reference for all SDK utility functions — DOM, Fetch, Storage, Page State, and Timing helpers for plugin authors.
-lastUpdated: 2026-04-24
+lastUpdated: 2026-09-02
 ---
 
 I wrote these utilities because the same boilerplate kept showing up in every plugin: wait for this element, fetch that URL with session cookies, read this localStorage key. Rather than copy-paste the same patterns, they're first-class utilities in the SDK. They all run in the browser page context and are exported from `@opentabs-dev/plugin-sdk`.
@@ -11,6 +11,7 @@ import {
   waitForSelector, waitForSelectorRemoval, querySelectorAll, getTextContent, getMetaContent, observeDOM,
   fetchFromPage, fetchJSON, postJSON, postForm, postFormData, putJSON, patchJSON, deleteJSON,
   fetchText, buildQueryString, httpStatusToToolError, parseRetryAfterMs, parseRateLimitHeader, stripUndefined,
+  fetchWithRetry, TRANSIENT_HTTP_STATUSES,
   getLocalStorage, setLocalStorage, removeLocalStorage,
   getSessionStorage, setSessionStorage, removeSessionStorage,
   getCookie,
@@ -193,7 +194,7 @@ cleanup();
 
 ## Fetch Utilities
 
-Functions for making HTTP requests using the page's authenticated session. All fetch utilities use `credentials: 'include'` to send session cookies automatically.
+Functions for making HTTP requests using the page's authenticated session. The `fetchFromPage` family uses `credentials: 'include'` to send session cookies automatically; `fetchWithRetry` is a transport-policy wrapper that leaves credentials to the caller.
 
 <Table>
   <Table.Header>
@@ -208,6 +209,11 @@ Functions for making HTTP requests using the page's authenticated session. All f
       <Table.Cell className="font-medium">`fetchFromPage`</Table.Cell>
       <Table.Cell>Any</Table.Cell>
       <Table.Cell>Low-level fetch — returns `Response`, handles timeout and errors.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`fetchWithRetry`</Table.Cell>
+      <Table.Cell>Any</Table.Cell>
+      <Table.Cell>Fetch with bounded retries for transient failures — returns the final `Response`, never classifies non-transient statuses.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`fetchJSON`</Table.Cell>
@@ -262,7 +268,12 @@ Functions for making HTTP requests using the page's authenticated session. All f
     <Table.Row>
       <Table.Cell className="font-medium">`httpStatusToToolError`</Table.Cell>
       <Table.Cell>—</Table.Cell>
-      <Table.Cell>Map an HTTP error response to a `ToolError` with the appropriate category.</Table.Cell>
+      <Table.Cell>Map an HTTP error response to a `ToolError` with the appropriate category and `details.httpStatus`.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`TRANSIENT_HTTP_STATUSES`</Table.Cell>
+      <Table.Cell>—</Table.Cell>
+      <Table.Cell>`ReadonlySet` of the statuses `fetchWithRetry` retries and `httpStatusToToolError` marks retryable: 408, 429, 500, 502, 503, 504.</Table.Cell>
     </Table.Row>
     <Table.Row>
       <Table.Cell className="font-medium">`parseRetryAfterMs`</Table.Cell>
@@ -320,6 +331,139 @@ const response = await fetchFromPage('/api/export', {
   body: JSON.stringify({ format: 'csv' }),
   timeout: 60_000,
 });
+```
+
+### `fetchWithRetry(url, init?, options?)`
+
+Fetches a URL and retries transient failures with capped exponential backoff. It keeps the `fetch` contract: it resolves with the final `Response` for every outcome that is not retried — including 4xx responses and a 5xx that is still failing after the last attempt — so your code keeps classifying statuses itself (for example with `httpStatusToToolError`). Use it where you need to inspect the `Response` (token cascades on 401/403, body-derived messages) and `fetchFromPage`'s throw-on-non-ok behavior gets in the way.
+
+```typescript
+function fetchWithRetry(url: string, init?: RequestInit, options?: FetchWithRetryOptions): Promise<Response>;
+
+interface FetchRetryEvent {
+  attempt: number; // 1-based number of the attempt that just failed
+  reason: string; // 'network' or 'http <status>'
+  delayMs: number; // backoff wait about to happen
+}
+```
+
+`init` is passed to `fetch` unchanged on every attempt — `fetchWithRetry` does not set `credentials`. When `options.signal` is provided it is combined with `init.signal`; either signal cancels both the in-flight request and any pending retry sleep. An `options.signal` abort throws a `ToolError` with code `'aborted'`, while an `init.signal` abort surfaces its own reason (a `TimeoutError` for `AbortSignal.timeout()`).
+
+<Table>
+  <Table.Header>
+    <Table.Row>
+      <Table.Head>Option</Table.Head>
+      <Table.Head>Type</Table.Head>
+      <Table.Head>Default</Table.Head>
+      <Table.Head>Description</Table.Head>
+    </Table.Row>
+  </Table.Header>
+  <Table.Body>
+    <Table.Row>
+      <Table.Cell className="font-medium">`maxAttempts`</Table.Cell>
+      <Table.Cell>`number`</Table.Cell>
+      <Table.Cell>`3`</Table.Cell>
+      <Table.Cell>Total attempts including the first request.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`baseDelayMs`</Table.Cell>
+      <Table.Cell>`number`</Table.Cell>
+      <Table.Cell>`400`</Table.Cell>
+      <Table.Cell>Backoff before the first retry; doubles on each further retry.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`maxDelayMs`</Table.Cell>
+      <Table.Cell>`number`</Table.Cell>
+      <Table.Cell>`5000`</Table.Cell>
+      <Table.Cell>Upper bound for a single backoff delay.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`deadlineMs`</Table.Cell>
+      <Table.Cell>`number`</Table.Cell>
+      <Table.Cell>`20000`</Table.Cell>
+      <Table.Cell>Wall-clock budget from the first attempt. A retry whose delay would end past the deadline is skipped: the last `Response` is returned (or the network `ToolError` thrown) without sleeping. Keeps a tool inside the extension's dispatch timeout.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`maxRetryAfterMs`</Table.Cell>
+      <Table.Cell>`number`</Table.Cell>
+      <Table.Cell>`10000`</Table.Cell>
+      <Table.Cell>Longest `Retry-After` (on 429/503) the wrapper waits for. A longer value returns the response immediately so you can surface `retryAfterMs` to the agent instead of blocking.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`retryNonIdempotent`</Table.Cell>
+      <Table.Cell>`boolean`</Table.Cell>
+      <Table.Cell>`false`</Table.Cell>
+      <Table.Cell>Retry POST/PUT/PATCH/DELETE on transient statuses and network errors. Enable only where replaying the request is provably safe.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`isTransient`</Table.Cell>
+      <Table.Cell>`(response: Response) => boolean`</Table.Cell>
+      <Table.Cell>—</Table.Cell>
+      <Table.Cell>Predicate that vouches the request never executed at the origin (for example a proxy refusal identified by a response header). When it returns `true` for a non-ok response, the request is retried regardless of method. Not consulted on the final attempt or for responses already retryable by status; must not consume the body.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`onRetry`</Table.Cell>
+      <Table.Cell>`(event: FetchRetryEvent) => void`</Table.Cell>
+      <Table.Cell>—</Table.Cell>
+      <Table.Cell>Invoked synchronously right before each backoff sleep with `{ attempt, reason, delayMs }`: the 1-based number of the attempt that just failed, the reason (`'network'` or `'http <status>'`) and the wait about to happen. Never invoked for the final attempt or for a response returned without a retry. An exception thrown by the callback propagates.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`signal`</Table.Cell>
+      <Table.Cell>`AbortSignal`</Table.Cell>
+      <Table.Cell>—</Table.Cell>
+      <Table.Cell>Cancels the whole operation. Throws a `ToolError` with code `'aborted'` whether the abort lands before a request, during one, or during a retry sleep. An `init.signal` interrupts a retry sleep too, surfacing its own abort reason instead.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`jitter`</Table.Cell>
+      <Table.Cell>`boolean`</Table.Cell>
+      <Table.Cell>`true`</Table.Cell>
+      <Table.Cell>Randomize each backoff delay to `[d/2, d]` (equal jitter). `Retry-After` delays are never jittered.</Table.Cell>
+    </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`label`</Table.Cell>
+      <Table.Cell>`string`</Table.Cell>
+      <Table.Cell>—</Table.Cell>
+      <Table.Cell>Service name added to retry log lines (e.g. `'graph-mail'`); never a URL — log lines must stay host-only.</Table.Cell>
+    </Table.Row>
+  </Table.Body>
+</Table>
+
+**What is retried.** A network-level `TypeError` (`Failed to fetch`) or a status in `TRANSIENT_HTTP_STATUSES` — 408, 429, 500, 502, 503, 504 — for GET, HEAD and OPTIONS. Other methods are retried only with `retryNonIdempotent: true` or when `isTransient(response)` returns `true`. PUT and DELETE are deliberately outside the default set: upload-session PUTs are stateful, and a replayed DELETE hides whether the first one landed. 501 and 505 are never retried. Any other status is returned untouched.
+
+**Non-replayable bodies.** A request whose `init.body` is a `ReadableStream` is never retried: the first request consumes the stream, so a second attempt could not send the same bytes. Neither `retryNonIdempotent` nor `isTransient` applies to it — the response is returned (or the network error thrown) after a single attempt. Pass a string, `ArrayBuffer`, `Blob` or `FormData` body when you need retries.
+
+**Delay.** `Retry-After` on 429/503 when present and at most `maxRetryAfterMs`; otherwise `baseDelayMs × 2^(attempt−1)` capped at `maxDelayMs`, with equal jitter. Every delay is subject to `deadlineMs`. The body of each retried response is cancelled; the returned `Response` is untouched.
+
+**What is thrown.** A `ToolError` with code `'network_error'` (`category: 'internal'`, `retryable: true`) when a network failure exhausts its retries, and `'aborted'` when `options.signal` aborts. A `TimeoutError` from an `init.signal` created with `AbortSignal.timeout()` is rethrown untouched and never retried, whether it fires during a request or during a retry sleep — a slow origin must not multiply the per-request timeout, and the timeout is reported the moment it elapses.
+
+**Logging.** One `log.warn('transient upstream failure, retrying', { host, method, attempt, reason, delayMs })` per retry, where `reason` is `'network'` or `'http <status>'`. Only the request host is logged, never the full URL.
+
+**Counting attempts.** `onRetry` receives the same `attempt`, `reason` and `delayMs` as the log line, once per retry, so `1 + invocations` is the number of requests that were actually sent. Use it to report an honest attempt count instead of deriving one from the retry policy:
+
+```typescript
+let attempts = 1;
+const response = await fetchWithRetry(url, init, { onRetry: () => attempts++ });
+if (!response.ok) {
+  throw ToolError.internal(`Upstream returned HTTP ${response.status} after ${attempts} attempt${attempts === 1 ? '' : 's'}`);
+}
+```
+
+```typescript
+import { fetchWithRetry, httpStatusToToolError } from '@opentabs-dev/plugin-sdk';
+
+// Bearer-authenticated GET: transient 5xx and network errors are retried automatically
+const response = await fetchWithRetry(
+  'https://graph.microsoft.com/v1.0/me/messages',
+  { headers: { Authorization: `Bearer ${token}` }, credentials: 'omit', signal: AbortSignal.timeout(30_000) },
+);
+if (!response.ok) throw httpStatusToToolError(response, `Graph request failed: HTTP ${response.status}`);
+
+// POST that a proxy refused before it reached the origin: the predicate vouches it is safe to replay
+const created = await fetchWithRetry(
+  url,
+  { method: 'POST', headers, body },
+  { isTransient: r => r.headers.get('x-proxyerrorlabel')?.endsWith('::OnHttpRequest') === true },
+);
 ```
 
 ### `fetchJSON(url, init?, schema?)`
@@ -537,7 +681,7 @@ const qs2 = buildQueryString({ types: ['public_channel', 'private_channel'] });
 
 ### `httpStatusToToolError(response, message)`
 
-Maps an HTTP error response to a `ToolError` with the appropriate category. Status code mapping:
+Maps an HTTP error response to a `ToolError` with the appropriate category. Every returned error carries `details: { httpStatus: response.status }`, so the audit log records the upstream status alongside the classification. Status code mapping:
 
 | Status | Category | `retryable` | Notes |
 | --- | --- | --- | --- |
@@ -548,11 +692,20 @@ Maps an HTTP error response to a `ToolError` with the appropriate category. Stat
 | 429 | `rate_limit` | `true` | Parses `Retry-After` header into `retryAfterMs` |
 | 4xx (other) | — | `false` | Other client errors not individually listed above |
 | 503 | `internal` | `true` | Parses `Retry-After` header into `retryAfterMs` |
-| 5xx (other) | `internal` | `true` | Server errors are retryable |
+| 500, 502, 504 | `internal` | `true` | Transient server errors (see `TRANSIENT_HTTP_STATUSES`) |
+| 501, 505, 506–511 | `internal` | `false` | Permanent server-side capability mismatches |
 | Other | `internal` | `false` | Not retryable |
 
 ```typescript
 function httpStatusToToolError(response: Response, message: string): ToolError;
+```
+
+Add service-specific metadata on top with `withDetails()` — the classification is preserved:
+
+```typescript
+throw httpStatusToToolError(response, 'Mailbox request failed').withDetails({
+  requestId: response.headers.get('request-id') ?? 'unknown',
+});
 ```
 
 ```typescript

@@ -1,7 +1,7 @@
 ---
 title: CLI Commands
 description: Complete reference for the opentabs CLI — start the server, manage plugins, view logs, run diagnostics, configure settings, and manage telemetry.
-lastUpdated: 2026-04-15
+lastUpdated: 2026-09-02
 ---
 
 The `opentabs` CLI is the single entry point for everything platform-side: starting the server, managing plugins, checking status, viewing logs, and rotating secrets. I wanted one command that handles all of it, so you never have to remember which tool does what. Install it globally:
@@ -229,7 +229,7 @@ opentabs audit [options]
   </Table.Body>
 </Table>
 
-Each entry shows the timestamp, tool name, success/failure status, and duration. Failed entries include the error code, category, and message when using `--json`.
+Each entry shows the timestamp, tool name, tab origin (scheme and host of the tab the tool targeted, when known), success/failure status, and duration. With `--json`, entries also carry the numeric `tabId`, and failed entries include the error code, category, message, and any structured `details` (for example `retryable`, `retryAfterMs`, and the upstream HTTP status).
 
 The server maintains the last 500 tool invocations in memory. The audit log resets when the server restarts. Use `--file` to read from the persistent disk log at `~/.opentabs/audit.log`, which survives server restarts.
 

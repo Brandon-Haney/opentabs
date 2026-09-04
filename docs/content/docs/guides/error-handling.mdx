@@ -1,7 +1,7 @@
 ---
 title: Error Handling
 description: Use structured errors so AI agents can distinguish retryable failures from permanent ones and make intelligent retry decisions.
-lastUpdated: 2026-03-10
+lastUpdated: 2026-09-02
 ---
 
 I kept watching AI agents make the same mistake: a tool would fail, the agent would get a generic error string, and then it would either retry something that was never going to work or give up on something that would have succeeded on the second try. It was maddening. So I built `ToolError` — a structured error class that carries machine-readable metadata (what failed, why, and whether retrying is worth it) through the entire dispatch chain to the AI agent.
@@ -18,11 +18,12 @@ That's it. No context. The agent doesn't know if this is temporary (retry might 
 
 ## ToolError
 
-`ToolError` fixes this by adding three pieces of metadata to every error:
+`ToolError` fixes this by adding structured metadata to every error:
 
 - **`category`** — what kind of failure (`auth`, `rate_limit`, `not_found`, `validation`, `timeout`, `internal`)
 - **`retryable`** — whether retrying might succeed
 - **`retryAfterMs`** — how long to wait before retrying (optional)
+- **`details`** — flat, primitive-valued triage data such as the upstream HTTP status or request id (optional; never a full URL)
 
 ```typescript
 import { ToolError } from '@opentabs-dev/plugin-sdk';
@@ -352,11 +353,11 @@ async function handle() {
 
 ## How Errors Reach the AI Agent
 
-One thing I wanted to get right: you throw a `ToolError` in your tool handler, and it arrives at the AI agent intact — no metadata lost along the way, no special plumbing on your end. Here's the path it takes:
+One thing I wanted to get right: you throw a `ToolError` in your tool handler, and its code, category, and retry hints arrive at the AI agent intact — no special plumbing on your end. Here's the path it takes:
 
 1. **Tool handler** throws `ToolError` in the page context
-2. **Browser extension** serializes the error, preserving `code`, `category`, `retryable`, and `retryAfterMs`
-3. **MCP server** formats the error into a human-readable prefix line and a machine-readable JSON block
+2. **Browser extension** serializes the error, preserving `code`, `category`, `retryable`, `retryAfterMs`, and `details`
+3. **MCP server** formats the error into a human-readable prefix line and a machine-readable JSON block, and records it — `details` included — in the audit log
 4. **AI agent** receives both formats and uses the structured fields to decide what to do next
 
 You don't have to think about any of those hops. The AI agent sees a response like this:
@@ -370,6 +371,8 @@ You don't have to think about any of those hops. The AI agent sees a response li
 ```
 
 With this, the agent knows to wait 2 seconds and retry — instead of giving up or hammering the API immediately. That's the whole point.
+
+`details` — the flat map you attach with `withDetails()` or that `httpStatusToToolError` fills with `httpStatus` — is recorded in the audit log (`opentabs audit --json`) so an upstream failure can be traced to its status and request id later; the agent-facing JSON block carries `code`, `category`, `retryable`, and `retryAfterMs`. Keep detail values to hosts, identifiers, and numbers: never a full URL.
 
 ## Custom Error Codes
 

@@ -202,7 +202,7 @@ test.describe('Stress: rapid config writes (10x in 2 seconds)', () => {
   });
 });
 
-test.describe('Stress: hot reload spam (5x rapid SIGUSR1)', () => {
+test.describe('Stress: hot reload spam (5x rapid restart requests)', () => {
   test('5 rapid hot reloads stabilize with correct state and working dispatch', async () => {
     const configDir = createTestConfigDir();
     const server = await startMcpServer(configDir, true);
@@ -227,7 +227,7 @@ test.describe('Stress: hot reload spam (5x rapid SIGUSR1)', () => {
       // Clear logs to isolate hot-reload output
       server.logs.length = 0;
 
-      // Fire 5 SIGUSR1 signals with 500ms between each. Each signal triggers
+      // Fire 5 restart requests with 500ms between each. Each request triggers
       // startWorker() in the dev proxy, which kills the current worker and
       // forks a new one. Only the final worker's 'ready' IPC message produces
       // a stable state — intermediate workers are killed before they finish

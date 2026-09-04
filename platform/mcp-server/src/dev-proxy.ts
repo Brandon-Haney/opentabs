@@ -248,7 +248,10 @@ const startWorker = (): void => {
 
     if (type === 'ready' && typeof (msg as { port?: unknown }).port === 'number') {
       workerPort = (msg as { type: string; port: number }).port;
-      console.log(`[proxy] Worker ready on port ${workerPort}`);
+      // The pid is reported so tests can address THIS proxy's worker directly.
+      // Reading it from the log they already capture beats shelling out to a
+      // process-tree tool, which ties the suite to a POSIX host.
+      console.log(`[proxy] Worker ready on port ${workerPort} (pid ${child.pid})`);
 
       if (isRestart) {
         // Re-initialize existing MCP sessions with the new worker before
@@ -749,7 +752,30 @@ wss.on('headers', (headers: string[]) => {
   }
 });
 
+/**
+ * Path the E2E fixture posts to in order to restart the worker, standing in for
+ * a code change without touching any file. `e2e/fixtures.ts` hardcodes the same
+ * string; a mismatch fails loudly, as the test then waits for a restart log that
+ * never arrives.
+ *
+ * It is a request rather than a signal because Windows has no user-defined
+ * signal, and it is not a file touch because every proxy watches the same dist
+ * directory — one test's touch would restart every other test's worker. The
+ * proxy's port is per-test, so a request to it is isolated the way the old
+ * per-pid signal was. Only `dev-proxy.js` serves this, and users run
+ * `index.js`; nothing reaches this endpoint outside a dev or test run.
+ */
+export const RESTART_WORKER_PATH = '/__dev/restart-worker';
+
 const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+  if (req.method === 'POST' && (req.url ?? '') === RESTART_WORKER_PATH) {
+    console.log('[proxy] Hot reload triggered, restarting worker...');
+    startWorker();
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   const isMcpRequest = (req.url ?? '/').startsWith('/mcp');
 
   whenReady(
@@ -879,13 +905,3 @@ process.on('SIGINT', () => {
   worker?.kill('SIGTERM');
   process.exit(0);
 });
-
-// SIGUSR1: triggered by test fixtures via triggerHotReload() to simulate
-// a code change without modifying files on disk. Restarts the worker.
-// Windows does not support SIGUSR1 — skip registration to avoid silent failures.
-if (process.platform !== 'win32') {
-  process.on('SIGUSR1', () => {
-    console.log('[proxy] Hot reload triggered, restarting worker...');
-    startWorker();
-  });
-}

@@ -77,6 +77,23 @@ export const setupAdapterSymlink = (configDir: string, extensionDir: string): vo
 // ---------------------------------------------------------------------------
 
 /**
+ * The pid of the dev proxy's current worker, or null when none has reported one.
+ *
+ * The proxy prints its worker's pid on every start precisely so the suite needs
+ * no process-tree tool. `pgrep` does not exist on Windows, and shelling out to
+ * enumerate children also races the fork. The LAST pid reported wins, because a
+ * restart supersedes every worker before it.
+ */
+export const currentWorkerPid = (server: McpServer): number | null => {
+  let pid: number | null = null;
+  for (const line of server.logs) {
+    const match = line.match(/Worker ready on port \d+ \(pid (\d+)\)/);
+    if (match?.[1] !== undefined) pid = Number(match[1]);
+  }
+  return pid;
+};
+
+/**
  * Wait until the server's accumulated logs contain `substring`.
  * Polls the logs array every `intervalMs` until found or timeout.
  */

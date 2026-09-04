@@ -35,6 +35,6 @@ E2E tests run under Playwright's Node.js test runner using Node.js APIs (`node:f
 
 ## MCP Server Subprocess
 
-The MCP server test fixture spawns the server using the dev proxy (`dist/dev-proxy.js`) for hot-reload mode, or `dist/index.js --dev` directly for non-hot mode. Hot reload is triggered by sending SIGUSR1 to the proxy process, which restarts the worker and logs `'Hot reload complete'` when the new worker is ready.
+The MCP server test fixture spawns the server using the dev proxy (`dist/dev-proxy.js`) for hot-reload mode, or `dist/index.js --dev` directly for non-hot mode. Hot reload is triggered by POSTing to `/__dev/restart-worker` on the proxy's own port, which restarts the worker and logs `'Hot reload complete'` when the new worker is ready.
 
 Test servers (`test-server.ts`, `strict-csp-test-server.ts`, `analyze-site-test-server.ts`) are TypeScript files run via `node --import tsx/esm`.

@@ -461,7 +461,7 @@ const killProcess = (proc: ChildProcess, graceMs = 5_000): Promise<void> => {
  * its own server instance with isolated config and port.
  *
  * In hot mode the server runs under the dev proxy (dist/dev-proxy.js),
- * which restarts the worker on SIGUSR1. In non-hot mode the server runs
+ * which restarts the worker on request. In non-hot mode the server runs
  * directly (dist/index.js --dev).
  */
 interface McpServer {
@@ -477,7 +477,7 @@ interface McpServer {
   secret: string | undefined;
   /** Poll /health until the predicate returns true. Throws on timeout. */
   waitForHealth: (predicate: (h: HealthResponse) => boolean, timeoutMs?: number) => Promise<HealthResponse>;
-  /** Send SIGUSR1 to the proxy process, triggering a worker restart (hot reload). */
+  /** Ask the proxy to restart its worker (hot reload). */
   triggerHotReload: () => void;
   /** Kill the server subprocess (SIGTERM → SIGKILL). */
   kill: () => Promise<void>;
@@ -493,8 +493,8 @@ interface McpServer {
  *
  * In hot mode, spawns the dev proxy (dist/dev-proxy.js). The proxy listens
  * on the configured port, forks dist/index.js as a worker, and restarts
- * the worker on SIGUSR1 (triggered by triggerHotReload). Hot reload is
- * isolated per-server because each proxy has its own PID.
+ * the worker when triggerHotReload() asks it to. Hot reload is isolated
+ * per-server because each proxy listens on its own port.
  *
  * In non-hot mode, spawns dist/index.js --dev directly.
  * In prod mode (prodMode=true), spawns dist/index.js without --dev for production-mode testing.
@@ -533,7 +533,7 @@ const startMcpServer = (
     const portStr = explicitPort !== undefined ? String(explicitPort) : '0';
 
     // Hot mode: spawn the dev proxy, which forks dist/index.js as a worker
-    // and restarts it on SIGUSR1. Non-hot: spawn dist/index.js --dev directly.
+    // and restarts it on request. Non-hot: spawn dist/index.js --dev directly.
     // Prod mode: spawn dist/index.js without --dev to test production behavior.
     const nodeArgs = hot
       ? [path.join(SERVER_DIST_DIR, 'dev-proxy.js')]
@@ -651,12 +651,12 @@ const startMcpServer = (
       health: () => Promise.resolve(null),
       waitForHealth: () => Promise.reject(new Error('Server not started yet')),
       triggerHotReload() {
-        // Send SIGUSR1 to the proxy process to trigger a worker restart.
-        // Each server has its own proxy PID, so this is isolated to this
-        // test's server instance.
-        if (proc.pid !== undefined) {
-          process.kill(proc.pid, 'SIGUSR1');
-        }
+        // Ask this test's proxy to restart its worker. The path is defined by
+        // RESTART_WORKER_PATH in platform/mcp-server/src/dev-proxy.ts.
+        //
+        // Fire-and-forget, exactly like the signal this replaces: callers wait on
+        // the proxy's restart log, which is what actually proves it happened.
+        void fetch(`http://127.0.0.1:${this.port}/__dev/restart-worker`, { method: 'POST' }).catch(() => {});
       },
       async kill() {
         await killProcess(proc, 5_000);

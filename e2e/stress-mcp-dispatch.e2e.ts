@@ -93,7 +93,7 @@ test.describe('Hot reload during active tool dispatch', () => {
     // over WebSocket, but we wait 1s to ensure calls are genuinely in-flight.
     await new Promise(r => setTimeout(r, 1_000));
 
-    // Trigger hot reload (SIGUSR1 → worker kill + restart)
+    // Trigger hot reload (restart request → worker kill + restart)
     const reloadTime = Date.now();
     mcpServer.triggerHotReload();
 
@@ -236,7 +236,7 @@ test.describe('Permission change mid-dispatch', () => {
     await new Promise(r => setTimeout(r, 1_000));
 
     // Change e2e-test permission to 'off' via config + POST /reload.
-    // Use POST /reload (config reload) instead of triggerHotReload (SIGUSR1)
+    // Use POST /reload (config reload) instead of triggerHotReload (worker restart)
     // because hot reload kills the worker process, which would interrupt the
     // in-flight slow call. Config reload re-reads config.json and updates
     // permissions in-place without restarting the worker.

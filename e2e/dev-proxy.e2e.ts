@@ -9,7 +9,6 @@
  * All tests use dynamic ports and isolated config directories.
  */
 
-import { execSync } from 'node:child_process';
 import fs, { readFileSync } from 'node:fs';
 import {
   cleanupTestConfigDir,
@@ -25,6 +24,7 @@ import {
   writeTestConfig,
 } from './fixtures.js';
 import {
+  currentWorkerPid,
   parseToolResult,
   setupToolTest,
   waitForExtensionConnected,
@@ -105,7 +105,7 @@ test.describe('Dev proxy request buffering', () => {
 });
 
 test.describe('Dev proxy concurrent overlapping reloads', () => {
-  test('two rapid SIGUSR1 signals resolve without deadlock or state corruption', async () => {
+  test('two rapid restart requests resolve without deadlock or state corruption', async () => {
     const configDir = createTestConfigDir();
     const server = await startMcpServer(configDir, true);
 
@@ -130,7 +130,7 @@ test.describe('Dev proxy concurrent overlapping reloads', () => {
       // Clear logs to isolate hot-reload output
       server.logs.length = 0;
 
-      // Fire two SIGUSR1 signals in rapid succession (< 100ms apart).
+      // Fire two restart requests in rapid succession (< 100ms apart).
       // The first signal calls startWorker(), which kills the current worker
       // and forks child1. The second signal calls startWorker() again, which
       // kills child1 (before it reports ready) and forks child2. The pending[]
@@ -175,6 +175,13 @@ test.describe('Dev proxy concurrent overlapping reloads', () => {
 });
 
 test.describe('Dev proxy graceful shutdown', () => {
+  // Windows has no SIGTERM to deliver: process.kill(pid, 'SIGTERM') there calls
+  // TerminateProcess, which ends the target without running its handler. The
+  // graceful path this asserts — the proxy taking its worker down and exiting 0 —
+  // therefore cannot happen, so there is nothing here to assert on that platform.
+  // Ctrl+C in a console is unaffected; Node maps it to SIGINT, whose handler does
+  // run and does clean up the worker.
+  test.skip(process.platform === 'win32', 'POSIX signal delivery');
   test('SIGTERM kills worker and proxy exits cleanly', async () => {
     const configDir = createTestConfigDir();
     const server = await startMcpServer(configDir, true);
@@ -190,14 +197,10 @@ test.describe('Dev proxy graceful shutdown', () => {
       const proxyPid = server.proc.pid;
       if (proxyPid === undefined) throw new Error('proxy PID is undefined');
 
-      // Find the worker child process before sending SIGTERM so we can
-      // verify it is also cleaned up.
-      const pgrepOutput = execSync(`pgrep -P ${proxyPid}`, { encoding: 'utf-8' }).trim();
-      const workerPids = pgrepOutput
-        .split('\n')
-        .map(s => Number(s.trim()))
-        .filter(n => !Number.isNaN(n) && n > 0);
-      expect(workerPids.length).toBeGreaterThan(0);
+      // Note the worker before sending SIGTERM, so we can verify the proxy takes
+      // it down too.
+      const workerPid = currentWorkerPid(server);
+      if (workerPid === null) throw new Error('proxy never reported a worker pid');
 
       // Create a promise that resolves when the proxy process exits.
       // We listen on the ChildProcess 'exit' event directly to capture
@@ -233,20 +236,17 @@ test.describe('Dev proxy graceful shutdown', () => {
         }),
       ).rejects.toThrow();
 
-      // Verify no orphaned worker processes remain. After the proxy sends
-      // SIGTERM to the worker and calls process.exit(0), the worker should
-      // also be dead. Poll each worker PID until it exits (up to 5 seconds)
-      // to accommodate slower process teardown in Docker containers.
-      // Uses isProcessDead() to detect zombie processes, which linger in
-      // the process table in Docker containers without an init process.
-      for (const workerPid of workerPids) {
-        let dead = false;
-        for (let attempt = 0; attempt < 50 && !dead; attempt++) {
-          dead = isProcessDead(workerPid);
-          if (!dead) await new Promise(r => setTimeout(r, 100));
-        }
-        expect(dead).toBe(true);
+      // Verify no orphaned worker remains. After the proxy sends SIGTERM to the
+      // worker and calls process.exit(0), the worker should be dead too. Poll the
+      // pid until it exits (up to 5 seconds) to accommodate slower process
+      // teardown in Docker containers. isProcessDead() detects zombies, which
+      // linger in the process table in containers without an init process.
+      let dead = false;
+      for (let attempt = 0; attempt < 50 && !dead; attempt++) {
+        dead = isProcessDead(workerPid);
+        if (!dead) await new Promise(r => setTimeout(r, 100));
       }
+      expect(dead).toBe(true);
     } finally {
       // The proxy is already dead from SIGTERM, but call kill() defensively
       // in case the test failed before sending SIGTERM. killProcess handles
@@ -269,26 +269,16 @@ test.describe('Dev proxy health during worker restart window', () => {
       if (!initialHealth) throw new Error('health returned null');
       expect(initialHealth.status).toBe('ok');
 
-      const proxyPid = server.proc.pid;
-      if (proxyPid === undefined) throw new Error('proxy PID is undefined');
-
-      // Find the worker child process. Killing it directly (not via SIGUSR1)
-      // lets us control the timing: the proxy detects the death and sets
-      // workerPort = null.
-      const pgrepOutput = execSync(`pgrep -P ${proxyPid}`, { encoding: 'utf-8' }).trim();
-      const workerPids = pgrepOutput
-        .split('\n')
-        .map(s => Number(s.trim()))
-        .filter(n => !Number.isNaN(n) && n > 0);
-      expect(workerPids.length).toBeGreaterThan(0);
+      // Kill the worker directly rather than asking the proxy to restart it, so
+      // the timing is ours: the proxy detects the death and sets workerPort = null.
+      const workerPid = currentWorkerPid(server);
+      if (workerPid === null) throw new Error('proxy never reported a worker pid');
 
       const headers: Record<string, string> = {};
       if (server.secret) headers.Authorization = `Bearer ${server.secret}`;
 
       // Kill the worker directly with SIGKILL.
-      for (const pid of workerPids) {
-        process.kill(pid, 'SIGKILL');
-      }
+      process.kill(workerPid, 'SIGKILL');
 
       // Wait for the proxy to detect the worker exit (workerPort = null)
       await waitForLog(server, 'Worker exited', 5_000);
@@ -340,31 +330,21 @@ test.describe('Dev proxy crash-loop circuit breaker', () => {
       if (!initialHealth) throw new Error('health returned null');
       expect(initialHealth.status).toBe('ok');
 
-      const proxyPid = server.proc.pid;
-      if (proxyPid === undefined) throw new Error('proxy PID is undefined');
-
       // Kill the current worker child of the proxy, if any. Returns true if at
       // least one worker process was signalled.
+      // Kill the proxy's current worker, if there is one. Returns whether a
+      // process was actually signalled.
       const killWorker = (): boolean => {
-        let pgrepOutput = '';
+        const pid = currentWorkerPid(server);
+        if (pid === null) return false;
         try {
-          pgrepOutput = execSync(`pgrep -P ${proxyPid}`, { encoding: 'utf-8' }).trim();
+          process.kill(pid, 'SIGKILL');
         } catch {
-          // pgrep exits non-zero when there are no children — no worker yet
+          // Either it is already dead, or a respawned worker has not reported its
+          // pid yet and the last one reported is stale. Nothing to kill either way.
           return false;
         }
-        const workerPids = pgrepOutput
-          .split('\n')
-          .map(s => Number(s.trim()))
-          .filter(n => !Number.isNaN(n) && n > 0);
-        for (const pid of workerPids) {
-          try {
-            process.kill(pid, 'SIGKILL');
-          } catch {
-            // Already gone between pgrep and kill
-          }
-        }
-        return workerPids.length > 0;
+        return true;
       };
 
       // The proxy auto-respawns a crashed worker, so a single kill self-heals.

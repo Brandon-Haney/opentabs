@@ -269,7 +269,7 @@ test.describe
         const sidePanelPage = await openSidePanel(context);
         await expect(sidePanelPage.locator('text=E2E Test')).toBeVisible({ timeout: 30_000 });
 
-        // Trigger a dev proxy hot reload (SIGUSR1 → worker kill + restart).
+        // Trigger a dev proxy hot reload (restart request → worker kill + restart).
         // This is a full process-level restart, unlike POST /reload which is
         // an in-process config rediscovery. Clear logs first so we detect the
         // single 'Hot reload complete' from the new worker unambiguously.

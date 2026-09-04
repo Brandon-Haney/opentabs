@@ -1153,7 +1153,7 @@ test.describe('Permission change mid-flight — in-flight completes, next call d
     await new Promise(r => setTimeout(r, 1_000));
 
     // Change e2e-test permission to 'off' via config reload.
-    // Use POST /reload (config reload) instead of triggerHotReload (SIGUSR1)
+    // Use POST /reload (config reload) instead of triggerHotReload (worker restart)
     // because hot reload kills the worker process, which would interrupt the
     // in-flight slow call. Config reload re-reads config.json and updates
     // permissions in-place without restarting the worker.

@@ -6,7 +6,7 @@
  * hot-reload lifecycle:
  *
  *   1. Extension connects to MCP server on startup
- *   2. Hot reload (SIGUSR1 to dev proxy) triggers worker restart + extension reconnect
+ *   2. Hot reload (restart request to the dev proxy) triggers worker restart + extension reconnect
  *   3. Rapid successive hot reloads all recover
  *   4. Kill → restart: extension detects TCP close and reconnects
  *   5. Old WebSocket replaced when a new connection arrives

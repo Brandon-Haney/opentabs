@@ -1355,7 +1355,7 @@ test.describe('Hot reload — rapid config changes converge to final state', () 
       }
 
       // Wait for at least one hot reload to complete after the burst.
-      // The dev proxy debounces rapid SIGUSR1 signals, so not all 5 may
+      // The dev proxy debounces rapid restart requests, so not all 5 may
       // result in separate completions — some are coalesced.
       await waitFor(
         () => {

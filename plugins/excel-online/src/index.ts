@@ -17,11 +17,14 @@ import { clearRange } from './tools/clear-range.js';
 import { clearTableFilters } from './tools/clear-table-filters.js';
 import { convertTableToRange } from './tools/convert-table-to-range.js';
 import { copyRange } from './tools/copy-range.js';
+import { copyWorksheet } from './tools/copy-worksheet.js';
 import { createChart } from './tools/create-chart.js';
 import { createPivotFromConnection } from './tools/create-pivot-from-connection.js';
 import { createPivotTable } from './tools/create-pivot-table.js';
 import { createTable } from './tools/create-table.js';
 import { deleteChart } from './tools/delete-chart.js';
+import { deleteComment } from './tools/delete-comment.js';
+import { deleteNamedItem } from './tools/delete-named-item.js';
 import { deleteRange } from './tools/delete-range.js';
 import { deleteTable } from './tools/delete-table.js';
 import { deleteTableRow } from './tools/delete-table-row.js';
@@ -53,6 +56,7 @@ import { insertRange } from './tools/insert-range.js';
 import { insertTable } from './tools/insert-table.js';
 import { inspectDataModel } from './tools/inspect-data-model.js';
 import { listCharts } from './tools/list-charts.js';
+import { listComments } from './tools/list-comments.js';
 import { listNamedItems } from './tools/list-named-items.js';
 import { listPivotTables } from './tools/list-pivot-tables.js';
 import { listTables } from './tools/list-tables.js';
@@ -66,6 +70,7 @@ import { removeDuplicates } from './tools/remove-duplicates.js';
 import { removePivotField } from './tools/remove-pivot-field.js';
 import { replaceText } from './tools/replace-text.js';
 import { setBorders } from './tools/set-borders.js';
+import { setCalculationMode } from './tools/set-calculation-mode.js';
 import { setDimensions } from './tools/set-dimensions.js';
 import { setHyperlink } from './tools/set-hyperlink.js';
 import { setNumberFormat } from './tools/set-number-format.js';
@@ -78,6 +83,7 @@ import { toggleRangeAutofilter } from './tools/toggle-range-autofilter.js';
 import { unmergeCells } from './tools/unmerge-cells.js';
 import { unprotectWorksheet } from './tools/unprotect-worksheet.js';
 import { updateChart } from './tools/update-chart.js';
+import { updateComment } from './tools/update-comment.js';
 import { updateRange } from './tools/update-range.js';
 import { updateTable } from './tools/update-table.js';
 import { updateWorksheet } from './tools/update-worksheet.js';
@@ -172,6 +178,12 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     replaceText,
     createPivotTable,
     setTabColor,
+    listComments,
+    updateComment,
+    deleteComment,
+    setCalculationMode,
+    copyWorksheet,
+    deleteNamedItem,
     insertPageBreak,
     setHyperlink,
     addComment,

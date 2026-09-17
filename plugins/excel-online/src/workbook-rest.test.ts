@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import { buildCopyRangeBody } from './tools/copy-range.js';
+import { COPY_POSITIONS } from './tools/copy-worksheet.js';
 import { buildCreatePivotTableBody } from './tools/create-pivot-table.js';
+import { LIST_COMMENTS_PATH } from './tools/list-comments.js';
 import { buildReplaceTextBody, replaceTextTarget } from './tools/replace-text.js';
+import { CALCULATION_MODES } from './tools/set-calculation-mode.js';
+import { commentPath, updateComment } from './tools/update-comment.js';
 import { buildWorkbookRestOptions, qualifiedRange, rangePath, worksheetPath } from './workbook-rest.js';
 
 describe('workbook REST paths', () => {
@@ -69,5 +73,26 @@ describe('tool bodies', () => {
       source: "'Plugin Lab'!A1:D5",
       destination: 'Report!B3',
     });
+  });
+});
+
+describe('comment, calculation and worksheet tools', () => {
+  test('addresses a comment by its id', () => {
+    expect(commentPath('{0CDF7FD1-CF20}')).toBe("comments('{0CDF7FD1-CF20}')");
+  });
+
+  test('update_comment refuses a request that changes nothing or changes both', async () => {
+    await expect(updateComment.handle({ id: '{1}' })).rejects.toThrow(/exactly one/);
+    await expect(updateComment.handle({ id: '{1}', resolved: true, content: 'x' })).rejects.toThrow(/exactly one/);
+  });
+
+  test('maps calculation and copy positions to the values Excel accepts', () => {
+    expect(CALCULATION_MODES.automatic_except_tables).toBe('AutomaticExceptTables');
+    expect(COPY_POSITIONS).toEqual({ beginning: 'Beginning', end: 'End' });
+  });
+
+  test('list_comments selects the fields Excel serves only on request', () => {
+    expect(LIST_COMMENTS_PATH).toContain('resolved');
+    expect(LIST_COMMENTS_PATH).toContain('authorName');
   });
 });

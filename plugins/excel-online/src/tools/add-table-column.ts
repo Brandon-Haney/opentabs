@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { RawTableColumn } from './schemas.js';
 import { mapTableColumn, tableColumnSchema } from './schemas.js';
 
@@ -18,13 +18,15 @@ export const addTableColumn = defineTool({
     index: z.number().int().min(0).optional().describe('Zero-based column insertion index. Appends at end if omitted.'),
   }),
   output: z.object({ column: tableColumnSchema }),
-  handle: async params => {
+  handle: async (params, context) => {
     const body: Record<string, unknown> = { values: params.values };
     if (params.index !== undefined) body.index = params.index;
-    const data = await workbookApi<RawTableColumn>(`/tables('${encodeURIComponent(params.table)}')/columns`, {
-      method: 'POST',
+    const data = await workbookCall<RawTableColumn>(
+      context,
+      'POST',
+      `/tables('${encodeURIComponent(params.table)}')/columns`,
       body,
-    });
+    );
     return { column: mapTableColumn(data) };
   },
 });

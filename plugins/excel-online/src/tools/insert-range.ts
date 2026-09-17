@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { rangePath, workbookApi } from '../excel-api.js';
+import { rangePath } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { RawRange } from './schemas.js';
 import { mapRange, rangeSchema } from './schemas.js';
 
@@ -18,11 +19,15 @@ export const insertRange = defineTool({
     shift: z.enum(['Down', 'Right']).describe('Direction to shift existing cells: "Down" or "Right"'),
   }),
   output: z.object({ range: rangeSchema }),
-  handle: async params => {
-    const data = await workbookApi<RawRange>(`${rangePath(params.worksheet, params.address)}/insert`, {
-      method: 'POST',
-      body: { shift: params.shift },
-    });
+  handle: async (params, context) => {
+    const data = await workbookCall<RawRange>(
+      context,
+      'POST',
+      `${rangePath(params.worksheet, params.address)}/insert`,
+      {
+        shift: params.shift,
+      },
+    );
     return { range: mapRange(data) };
   },
 });

@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { RawNamedItem } from './schemas.js';
 import { mapNamedItem, namedItemSchema } from './schemas.js';
 
@@ -18,13 +18,13 @@ export const addNamedItem = defineTool({
     comment: z.string().optional().describe('Optional comment for the named item'),
   }),
   output: z.object({ item: namedItemSchema }),
-  handle: async params => {
+  handle: async (params, context) => {
     const body: Record<string, unknown> = {
       name: params.name,
       reference: params.reference,
     };
     if (params.comment) body.comment = params.comment;
-    const data = await workbookApi<RawNamedItem>('/names/add', { method: 'POST', body });
+    const data = await workbookCall<RawNamedItem>(context, 'POST', '/names/add', body);
     return { item: mapNamedItem(data) };
   },
 });

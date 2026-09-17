@@ -1,6 +1,7 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { rangePath, workbookApi } from '../excel-api.js';
+import { rangePath } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 
 /**
  * Scratch cell the formula is evaluated in. Far outside any realistic used
@@ -45,31 +46,23 @@ export const evaluateFormula = defineTool({
       .string()
       .describe('The Excel error code (e.g., "#DIV/0!", "#NAME?") when the formula errored, otherwise an empty string'),
   }),
-  handle: async params => {
+  handle: async (params, context) => {
     const formula = params.formula.startsWith('=') ? params.formula : `=${params.formula}`;
     const scratch = rangePath(params.worksheet, SCRATCH_CELL);
 
     // Writing the formula returns the range's post-write state, which already
     // carries the evaluated value and its type. Reading the cell back in a
-    // second request is not just redundant, it is unreliable: a sessionless
-    // write to a workbook that is open for coauthoring does not survive to the
-    // next request, so the read intermittently sees an empty cell and the tool
-    // used to report that empty cell as a legitimate blank result.
+    // second request is not just redundant, it is unreliable through Graph: a
+    // sessionless write to a workbook that is open for coauthoring does not
+    // survive to the next request, so the read intermittently saw an empty cell
+    // and the tool used to report that empty cell as a legitimate blank result.
     let written: RangeEcho;
     try {
-      written = await workbookApi<RangeEcho>(scratch, {
-        method: 'PATCH',
-        retryNonIdempotent: true,
-        body: { formulas: [[formula]] },
-      });
+      written = await workbookCall<RangeEcho>(context, 'PATCH', scratch, { formulas: [[formula]] });
     } finally {
       // The write may or may not persist depending on coauthoring state, so
       // clear unconditionally rather than reasoning about which case applies.
-      await workbookApi(`${scratch}/clear`, {
-        method: 'POST',
-        body: { applyTo: 'All' },
-        retryNonIdempotent: true,
-      }).catch(() => {});
+      await workbookCall(context, 'POST', `${scratch}/clear`, { applyTo: 'All' }).catch(() => {});
     }
 
     const value = written.values?.[0]?.[0];

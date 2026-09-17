@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { rangePath, workbookApi } from '../excel-api.js';
+import { rangePath } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 
 export const mergeCells = defineTool({
   name: 'merge_cells',
@@ -18,11 +19,9 @@ export const mergeCells = defineTool({
   output: z.object({
     success: z.boolean().describe('Whether the operation succeeded'),
   }),
-  handle: async params => {
-    await workbookApi(`${rangePath(params.worksheet, params.address)}/merge`, {
-      method: 'POST',
-      retryNonIdempotent: true,
-      body: { across: params.across ?? false },
+  handle: async (params, context) => {
+    await workbookCall(context, 'POST', `${rangePath(params.worksheet, params.address)}/merge`, {
+      across: params.across ?? false,
     });
     return { success: true };
   },

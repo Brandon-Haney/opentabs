@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { GraphListResponse, RawNamedItem } from './schemas.js';
 import { mapNamedItem, namedItemSchema } from './schemas.js';
 
@@ -14,8 +14,8 @@ export const listNamedItems = defineTool({
   group: 'Workbook',
   input: z.object({}),
   output: z.object({ items: z.array(namedItemSchema) }),
-  handle: async () => {
-    const data = await workbookApi<GraphListResponse<RawNamedItem>>('/names');
+  handle: async (_params, context) => {
+    const data = await workbookCall<GraphListResponse<RawNamedItem>>(context, 'GET', '/names');
     return { items: (data.value ?? []).map(mapNamedItem) };
   },
 });

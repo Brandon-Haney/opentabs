@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 
 export const calculateWorkbook = defineTool({
   name: 'calculate_workbook',
@@ -19,11 +19,9 @@ export const calculateWorkbook = defineTool({
   output: z.object({
     success: z.boolean().describe('Whether the operation succeeded'),
   }),
-  handle: async params => {
-    await workbookApi('/application/calculate', {
-      method: 'POST',
-      retryNonIdempotent: true,
-      body: { calculationType: params.calculation_type ?? 'Recalculate' },
+  handle: async (params, context) => {
+    await workbookCall(context, 'POST', '/application/calculate', {
+      calculationType: params.calculation_type ?? 'Recalculate',
     });
     return { success: true };
   },

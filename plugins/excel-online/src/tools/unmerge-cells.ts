@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { rangePath, workbookApi } from '../excel-api.js';
+import { rangePath } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 
 export const unmergeCells = defineTool({
   name: 'unmerge_cells',
@@ -16,12 +17,8 @@ export const unmergeCells = defineTool({
   output: z.object({
     success: z.boolean().describe('Whether the operation succeeded'),
   }),
-  handle: async params => {
-    await workbookApi(`${rangePath(params.worksheet, params.address)}/unmerge`, {
-      method: 'POST',
-      body: {},
-      retryNonIdempotent: true,
-    });
+  handle: async (params, context) => {
+    await workbookCall(context, 'POST', `${rangePath(params.worksheet, params.address)}/unmerge`, {});
     return { success: true };
   },
 });

@@ -91,8 +91,18 @@ Build every live write from the editor's own captured write, not from a guess:
 reproduce on a test document, capture the gesture from an in-frame write log,
 diff against the builder, build the smallest faithful write, test it live with a
 screenshot and a reload, and record the decode. The method, the per-app capture
-infrastructure (PowerPoint has a write log; Excel and Word need one ported) and
+infrastructure (PowerPoint and Excel have a write log; Word needs one ported) and
 the lessons that hold across apps are in [[office-coauthoring-capture-method.md]].
+
+**Check first whether the editor tunnels its own API.** Excel's co-authoring
+channel carries one — `ExecuteRichApiRequest` runs an ordinary REST call over the
+Graph workbook resource paths, inside the live session, in milliseconds and with
+no Graph token, including operations Graph itself does not expose. On a workbook
+open for co-authoring, where Graph was timing out and then answering 403, it is
+the more reliable path for reads and writes alike, and its documented paths beat
+decoding gestures one at a time. Word and OneNote host add-ins the same way, so
+look for the same tunnel there before building on captures. See
+[[office-coauthoring-capture-method.md]] for how to read its answers.
 
 ## Auth: the token is minted once, on a cold load
 

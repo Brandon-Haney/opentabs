@@ -54,9 +54,46 @@ DevTools HAR exports work but need a person at the keyboard.
 | Word | unproven; WOPI reports `IsPragueDocument` (Fluid, likely socket ops) | none | **Capture first.** Confirm whether the channel is replayable before building anything live. |
 | OneNote | WAC `ObjectModel` command bus | none | Different mechanism; the same loop applies once commands can be observed. |
 
-Porting the write log is the highest-leverage piece of work for Excel and Word:
-it is what made the PowerPoint loop fast. Read it through `browser_fetch_in_frame`
-against the editor frame, as PowerPoint does.
+Porting the write log is the highest-leverage piece of work for Word: it is what
+made the PowerPoint and Excel loops fast. Read it through `browser_fetch_in_frame`
+against the editor frame, as both do.
+
+## Look for the app's own API inside the channel
+
+Before decoding a gesture, check whether the editor already tunnels a documented
+API of its own through the same channel. Excel's does: the method
+`ExecuteRichApiRequest` carries an ordinary REST call —
+`{HttpMethod, PathAndQuery, RequestHeaders, RequestBody, RequestFlags}` — over the
+same resource paths as the Graph workbook API, and runs it inside the live
+session. That was worth more than any single decode:
+
+- **It answers in milliseconds and needs no Graph token**, on a workbook whose
+  Graph calls were timing out and then refusing with 403 under co-authoring.
+- **It serves methods the public API lacks**: copy and paste, find and replace, a
+  PivotTable over a range, comments, page setup.
+- **Its paths are documented**, so a tool is written from the API reference rather
+  than from a capture. Keep capturing for what it will not do: Excel refuses
+  `find`, `findAll` and `$batch`, and setting several cell borders in one request
+  needed the editor's own `FormatCellsV2`.
+
+The lookout is the same in any of these apps: an editor method whose argument is a
+whole request, a path, or a script. Word and OneNote host add-ins the way Excel
+does, so each is likely to tunnel its own object model too.
+
+**Reading its answers.** A tunnelled call reports its own status inside an
+otherwise successful envelope, so a caller that checks only the outer result reads
+a refusal as success — the frame-bridge engine now treats a tunnelled status of
+400 or above as a failure. A write echoes only the resource's default fields, so a
+property it accepted is usually missing from the reply: read it back by name
+rather than concluding it was ignored (that mistake cost an afternoon here).
+Paths differ in one detail: Graph wants the names in them percent-encoded, and the
+session matches them literally.
+
+**Letting a tool use the result.** A tool handler can hand the platform a
+frame-bridge call and end on it, or — since `ToolHandlerContext.bridge` — run one
+and carry on with what came back. The second is what lets a tool built on the
+public API move onto the session while keeping its own output; in Excel one
+wrapper now sends each workbook path down whichever path is available.
 
 ## Lessons that apply to every app
 
@@ -68,6 +105,11 @@ against the editor frame, as PowerPoint does.
   save.
 - **Reload before declaring done.** The editor's local rendering and the saved
   document can disagree. Only a reload proves persistence.
+- **Let the reload finish.** Excel redraws a cached grid while it is still
+  loading. Judging state in that window produced two wrong conclusions in one
+  session, in both directions.
+- **Read a setting back by name.** A write's own response is not evidence that a
+  property applied, and its absence there is not evidence that it did not.
 - **When an option does not persist, remove it** instead of documenting around it.
 
 **Protocol shapes to expect**
@@ -112,14 +154,23 @@ against the editor frame, as PowerPoint does.
   screenshot showed the true state.
 - **Watch for other editors.** The write log records everyone's edits in the
   session; leave writes you did not make alone.
+- **A session expires when the tab sits idle,** after which every call fails —
+  reads included — with the app's most generic error. Map that error to "reload
+  the document" rather than passing it on.
+- **Reloading a tab while the extension restarts leaves the page without the
+  pre-script,** so calls hang with no explanation until the tab is reloaded again.
+  Check that the write-log sentinel answers before blaming a tool.
 
 ## Applying it next
 
 - **All apps:** a slide/sheet/section scope on every tool that finds content by
   text.
-- **Excel:** capture the gaps listed in `excel-online/docs/frame-bridge-gaps.md`.
-- **Word:** capture the co-authoring channel and decide whether it is replayable;
-  the staged Graph path stays until a live path is proven.
+- **Excel:** move the rest of the Graph-backed tools onto the session wrapper, and
+  capture the gaps listed in `excel-online/docs/frame-bridge-gaps.md`.
+- **Word and OneNote:** look for a tunnelled object model first — it may beat
+  decoding the channel, as it did for Excel. For Word, capture the co-authoring
+  channel and decide whether it is replayable; the staged Graph path stays until a
+  live path is proven.
 - **PowerPoint:** shape outline, text box insert and delete, table columns and
   cell shading, paragraph formatting, then images and charts (multi-request
   captures; the write log holds them).

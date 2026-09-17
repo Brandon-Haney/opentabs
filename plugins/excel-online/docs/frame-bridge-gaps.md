@@ -9,6 +9,28 @@ and `…?entry=<index>` through `browser_fetch_in_frame` with `frameUrlIncludes:
 reload, judge saved state only once the editor's "Loading…" bar has cleared; until
 then it draws a cached grid.
 
+## The in-session workbook REST API
+
+`ExecuteRichApiRequest` with `{ HttpMethod, PathAndQuery, RequestHeaders, RequestBody,
+RequestFlags }` answers the workbook REST API — the same resource paths as the Graph
+workbook API, relative to the workbook — inside the live session, in milliseconds
+and without a Graph token. `src/workbook-rest.ts` wraps it; reads send
+`RequestFlags: 256`, writes `1`. The outcome is `Result.ResponseStatusCode` with an
+OData body inside a 200 envelope, which the bridge reports as a failure at 400 and
+above.
+
+Verified live (each checked after a reload): `range/copyFrom`, `range/replaceAll`,
+`worksheets/{name}` PATCH `tabColor`, `pivotTables/add` from a range, `comments` GET
+(fields such as `resolved` and `authorName` only when `$select`ed), comment PATCH
+`resolved` or `content` (not both in one request), comment DELETE,
+`application` PATCH `calculationMode`, `worksheets/{name}/copy` (`Beginning`/`End`;
+`relativeTo` is refused), `names/add`, name DELETE, worksheet DELETE.
+
+Not served: `worksheets/{name}/findAll` and `range/find` (MethodNotAllowed). Silently
+ignored (200, no change): worksheet `showGridlines`, `pageLayout` PATCH. An ignored
+property is indistinguishable from an applied one in the response, so verify every
+new property in the workbook.
+
 The advanced Excel tools driven through the frame bridge (`freeze_panes`,
 `format_range_advanced`, `set_print_area`, `insert_page_break`, `set_hyperlink`,
 `add_comment`, `add_conditional_format`, `apply_cell_style`, the plain-range filter

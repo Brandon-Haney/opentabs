@@ -44,5 +44,9 @@ export const setFontSize = defineTool({
   }),
   output: podsSetFontSizeOutputSchema,
   handle: async params =>
-    podsSetFontSize(params.text, params.size_pt, { match: params.match, occurrence: params.occurrence, slideIndex: params.slide }),
+    podsSetFontSize(params.text, params.size_pt, {
+      match: params.match,
+      occurrence: params.occurrence,
+      slideIndex: params.slide,
+    }),
 });

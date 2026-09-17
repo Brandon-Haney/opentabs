@@ -2,9 +2,12 @@ import { describe, expect, test } from 'vitest';
 import { buildCopyRangeBody } from './tools/copy-range.js';
 import { COPY_POSITIONS } from './tools/copy-worksheet.js';
 import { buildCreatePivotTableBody } from './tools/create-pivot-table.js';
+import { PAGE_SETUP_FIELDS } from './tools/get-page-setup.js';
 import { LIST_COMMENTS_PATH } from './tools/list-comments.js';
 import { buildReplaceTextBody, replaceTextTarget } from './tools/replace-text.js';
 import { CALCULATION_MODES } from './tools/set-calculation-mode.js';
+import { buildPageSetupBody } from './tools/set-page-setup.js';
+import { setSheetView } from './tools/set-sheet-view.js';
 import { commentPath, updateComment } from './tools/update-comment.js';
 import { buildWorkbookRestOptions, qualifiedRange, rangePath, worksheetPath } from './workbook-rest.js';
 
@@ -94,5 +97,36 @@ describe('comment, calculation and worksheet tools', () => {
   test('list_comments selects the fields Excel serves only on request', () => {
     expect(LIST_COMMENTS_PATH).toContain('resolved');
     expect(LIST_COMMENTS_PATH).toContain('authorName');
+  });
+});
+
+describe('page setup and sheet view', () => {
+  test('converts margins from inches to points and sends only what was set', () => {
+    expect(buildPageSetupBody({ margins_inches: { top: 0.5, left: 0.75 }, orientation: 'landscape' })).toEqual({
+      orientation: 'Landscape',
+      topMargin: 36,
+      leftMargin: 54,
+    });
+  });
+
+  test('sends fitting or scaling as the zoom object', () => {
+    expect(buildPageSetupBody({ fit_to_pages: { wide: 1, tall: 2 } })).toEqual({
+      zoom: { horizontalFitToPages: 1, verticalFitToPages: 2 },
+    });
+    expect(buildPageSetupBody({ scale_percent: 85 })).toEqual({ zoom: { scale: 85 } });
+  });
+
+  test('refuses an empty request and one that both fits and scales', () => {
+    expect(() => buildPageSetupBody({})).toThrow(/at least one/);
+    expect(() => buildPageSetupBody({ fit_to_pages: { wide: 1, tall: 1 }, scale_percent: 90 })).toThrow(/not both/);
+  });
+
+  test('get_page_setup selects the fields the service serves only on request', () => {
+    expect(PAGE_SETUP_FIELDS).toContain('zoom');
+    expect(PAGE_SETUP_FIELDS).toContain('printGridlines');
+  });
+
+  test('set_sheet_view refuses a request that changes nothing', async () => {
+    await expect(setSheetView.handle({ worksheet: 'Sheet1' })).rejects.toThrow(/show_gridlines/);
   });
 });

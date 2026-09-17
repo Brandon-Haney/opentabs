@@ -90,6 +90,9 @@ const PIVOT_CONSENT_HINT =
  */
 export const EWA_ERROR_HINTS: Record<string, string> = {
   PftTokenMissing: PIVOT_CONSENT_HINT,
+  InternalErrorEwr:
+    'Excel answers every call this way once the open editing session has expired, which happens after the workbook ' +
+    'tab sits idle; even a read fails. Reload the workbook tab, wait for it to finish loading, then retry.',
   RetryOutOfSync:
     'This service reports every malformed argument as RetryOutOfSync, so a wrong argument is far more likely than ' +
     'a stale session. Re-read the pivot layout and check each argument rather than retrying unchanged.',

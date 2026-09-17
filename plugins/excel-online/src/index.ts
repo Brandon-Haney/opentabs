@@ -40,6 +40,7 @@ import { formatRangeAdvanced } from './tools/format-range-advanced.js';
 import { freezePanes } from './tools/freeze-panes.js';
 import { getChartImage } from './tools/get-chart-image.js';
 import { getCurrentUser } from './tools/get-current-user.js';
+import { getPageSetup } from './tools/get-page-setup.js';
 import { getPivotFieldLayout } from './tools/get-pivot-field-layout.js';
 import { getPivotFilterMembers } from './tools/get-pivot-filter-members.js';
 import { getRange } from './tools/get-range.js';
@@ -74,8 +75,10 @@ import { setCalculationMode } from './tools/set-calculation-mode.js';
 import { setDimensions } from './tools/set-dimensions.js';
 import { setHyperlink } from './tools/set-hyperlink.js';
 import { setNumberFormat } from './tools/set-number-format.js';
+import { setPageSetup } from './tools/set-page-setup.js';
 import { setPivotFilter } from './tools/set-pivot-filter.js';
 import { setPrintArea } from './tools/set-print-area.js';
+import { setSheetView } from './tools/set-sheet-view.js';
 import { setTabColor } from './tools/set-tab-color.js';
 import { sortRange } from './tools/sort-range.js';
 import { textToColumns } from './tools/text-to-columns.js';
@@ -184,6 +187,9 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     setCalculationMode,
     copyWorksheet,
     deleteNamedItem,
+    setPageSetup,
+    getPageSetup,
+    setSheetView,
     insertPageBreak,
     setHyperlink,
     addComment,

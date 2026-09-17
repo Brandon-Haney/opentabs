@@ -85,6 +85,27 @@ const injectProgressListener = async (tabId: number, dispatchId: string): Promis
       target: { tabId },
       world: 'ISOLATED',
       func: (dId: string) => {
+        // A tool handler that needs the result of a frame-bridge call fires this
+        // event and waits; the result goes back as its own event, keyed by the
+        // call id. Relaying it here keeps the handler in the MAIN world, which
+        // cannot message the service worker itself.
+        const bridgeEventName = `opentabs:bridge:${dId}`;
+        const bridgeHandler = (e: Event) => {
+          const detail = (e as CustomEvent).detail as { callId?: string; directive?: unknown } | null;
+          const callId = detail?.callId;
+          if (typeof callId !== 'string') return;
+          const reply = (response: unknown) => {
+            document.dispatchEvent(
+              new CustomEvent(`opentabs:bridge-result:${dId}:${callId}`, { detail: response ?? null }),
+            );
+          };
+          chrome.runtime
+            .sendMessage({ type: 'tool:bridgeCall', dispatchId: dId, callId, directive: detail?.directive })
+            .then(reply)
+            .catch((err: unknown) => reply({ ok: false, error: String(err) }));
+        };
+        document.addEventListener(bridgeEventName, bridgeHandler);
+
         const eventName = `opentabs:progress:${dId}`;
         const handler = (e: Event) => {
           const detail = (e as CustomEvent).detail as {
@@ -109,6 +130,7 @@ const injectProgressListener = async (tabId: number, dispatchId: string): Promis
         const doc = document as unknown as Record<string, unknown>;
         doc[cleanupKey] = () => {
           document.removeEventListener(eventName, handler);
+          document.removeEventListener(bridgeEventName, bridgeHandler);
           doc[cleanupKey] = undefined;
         };
       },
@@ -232,6 +254,26 @@ const executeToolOnTab = async (
       // and relays it to the background service worker. Missing progress/total
       // default to 0 for indeterminate progress reporting.
       const context = {
+        /**
+         * Run a frame-bridge call and resolve with its result, so a handler can
+         * act on what the app returned. Rejects when the engine refuses the
+         * call, matching what the caller would have seen had the handler
+         * returned the directive instead.
+         */
+        bridge(directive: unknown): Promise<unknown> {
+          return new Promise((resolve, reject) => {
+            const callId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+            const resultEvent = `opentabs:bridge-result:${dId}:${callId}`;
+            const onResult = (e: Event) => {
+              document.removeEventListener(resultEvent, onResult);
+              const response = (e as CustomEvent).detail as { ok?: boolean; result?: unknown; error?: string } | null;
+              if (response?.ok === true) resolve(response.result);
+              else reject(new Error(response?.error ?? 'The frame-bridge call returned no result.'));
+            };
+            document.addEventListener(resultEvent, onResult);
+            document.dispatchEvent(new CustomEvent(`opentabs:bridge:${dId}`, { detail: { callId, directive } }));
+          });
+        },
         reportProgress(opts: { progress?: number; total?: number; message?: string }) {
           try {
             document.dispatchEvent(

@@ -113,6 +113,22 @@ export interface ToolProgressMessage {
 }
 
 /**
+ * Content script relay → Background: a tool handler asking for a frame-bridge
+ * call on its own tab, and waiting for the result.
+ *
+ * The directive travels the same path as one a handler returns and is validated
+ * the same way; the difference is only that the handler resumes with the result
+ * instead of ending on it. The tab is taken from `sender.tab`, never from the
+ * message, so a call can only reach the tab it came from.
+ */
+export interface ToolBridgeCallMessage {
+  type: 'tool:bridgeCall';
+  dispatchId: string;
+  callId: string;
+  directive: Record<string, unknown>;
+}
+
+/**
  * A `securitypolicyviolation` event reduced in the ISOLATED world for the
  * background. `blockedURI` and `documentOrigin` are origins only; `sourceFile`
  * is kept in full only when its scheme is `chrome-extension:` (the attribution
@@ -261,6 +277,7 @@ export type InternalMessage =
   | PluginLogsMessage
   | PluginReadinessChangedMessage
   | ToolProgressMessage
+  | ToolBridgeCallMessage
   | CspViolationMessage
   | SpGetStateMessage
   | SpConnectionStateMessage

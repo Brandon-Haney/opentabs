@@ -1,4 +1,5 @@
 import type { ConfigStatePlugin, PluginTabInfo, TabState, ToolPermission } from '@opentabs-dev/shared';
+import { runFrameBridgeRpc } from './browser-commands/frame-bridge-rpc.js';
 import { clearAllConfirmationBadges, clearConfirmationBadge, getPendingConfirmations } from './confirmation-badge.js';
 import { buildWsUrl, SERVER_PORT_KEY, WS_CONNECTED_KEY } from './constants.js';
 import { formatCspViolationLogLine, normalizeCspViolationReport } from './csp-violation.js';
@@ -33,7 +34,7 @@ import {
   notifyAffectedPlugins,
   stopReadinessPoll,
 } from './tab-state.js';
-import { notifyDispatchProgress } from './tool-dispatch.js';
+import { extractBridgeDirective, notifyDispatchProgress } from './tool-dispatch.js';
 
 // ---------------------------------------------------------------------------
 // WebSocket connection state
@@ -319,6 +320,36 @@ const handlePluginLogs: MessageHandler = (message, sendResponse) => {
     }
   }
   sendResponse({ ok: true });
+};
+
+/**
+ * Handle tool:bridgeCall — run a frame-bridge call for a tool handler that is
+ * waiting on its result, and answer with it.
+ *
+ * The tab comes from `sender.tab`, so a call reaches only the tab it was sent
+ * from. The directive is validated exactly as one a handler returns, and a
+ * refusal is reported as an error rather than a result, so a handler cannot
+ * mistake a refused write for an applied one.
+ */
+const handleToolBridgeCall: MessageHandler = (message, sendResponse, sender) => {
+  const tabId = sender?.tab?.id;
+  if (typeof tabId !== 'number') {
+    sendResponse({ ok: false, error: 'A frame-bridge call must come from a tab.' });
+    return;
+  }
+  const directive = extractBridgeDirective(message.directive);
+  if (!directive) {
+    sendResponse({ ok: false, error: 'The frame-bridge directive is missing or malformed.' });
+    return;
+  }
+  runFrameBridgeRpc({ tabId, ...directive })
+    .then(result => {
+      if (result.failure !== undefined) sendResponse({ ok: false, error: result.failure });
+      else sendResponse({ ok: true, result });
+    })
+    .catch((err: unknown) => {
+      sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    });
 };
 
 /**
@@ -840,6 +871,7 @@ const backgroundHandlers = new Map<InternalMessage['type'], MessageHandler>([
   ['plugin:logs', handlePluginLogs],
   ['plugin:readinessChanged', handlePluginReadinessChanged],
   ['tool:progress', handleToolProgress],
+  ['tool:bridgeCall', handleToolBridgeCall],
   ['csp:violation', handleCspViolation],
   ['sp:confirmationResponse', handleSpConfirmationResponse],
   ['port-changed', handlePortChanged],

@@ -36,6 +36,18 @@ export interface ProgressOptions {
 export interface ToolHandlerContext {
   /** Report incremental progress during a long-running operation. Fire-and-forget. */
   reportProgress(opts: ProgressOptions): void;
+  /**
+   * Run a frame-bridge call on this tab and resolve with the engine's result,
+   * for a handler that has to act on what the app returned — read a value and
+   * then write it, or turn the payload into the tool's own output.
+   *
+   * Pass the same directive a handler may return instead (`{ __bridge: … }`).
+   * Returning the directive stays the simpler choice when the call's result is
+   * the tool's result. Rejects when the app refuses the call, so a refused write
+   * is never mistaken for an applied one. Present only when the platform running
+   * the tool supports it.
+   */
+  bridge?(directive: unknown): Promise<unknown>;
 }
 
 // ---------------------------------------------------------------------------

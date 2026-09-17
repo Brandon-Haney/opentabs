@@ -1,3 +1,4 @@
+import type { ToolHandlerContext } from '@opentabs-dev/plugin-sdk';
 import type { z } from 'zod';
 import { type bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge } from './bridge.js';
 
@@ -67,3 +68,27 @@ export const workbookRest = (
     projection: { path: 'Result.ResponseBody.0' },
     errorHints: EWA_ERROR_HINTS,
   });
+
+/**
+ * Issue a tunnelled REST call and return its parsed OData body, for a tool that
+ * has to act on the payload rather than hand the raw envelope back.
+ *
+ * Needs `context.bridge`, which the platform provides to a tool handler; a
+ * caller that only needs the envelope should return {@link workbookRest}
+ * instead. Returns null when the call answered with no body (a 204 from a
+ * delete, for example).
+ */
+export const workbookRestCall = async <T>(
+  context: ToolHandlerContext | undefined,
+  verb: WorkbookRestVerb,
+  path: string,
+  body?: Record<string, unknown>,
+): Promise<T | null> => {
+  if (!context?.bridge) {
+    throw new Error('This browser extension is too old to run a workbook call from a tool. Update the extension.');
+  }
+  const result = (await context.bridge(workbookRest(verb, path, body))) as { response?: unknown };
+  const payload = result?.response;
+  if (typeof payload !== 'string' || payload.length === 0) return null;
+  return JSON.parse(payload) as T;
+};

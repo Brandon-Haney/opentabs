@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { addConditionalFormat, buildConditionalFormatOptions, TIME_PERIODS } from './tools/add-conditional-format.js';
 import { buildCopyRangeBody } from './tools/copy-range.js';
 import { COPY_POSITIONS } from './tools/copy-worksheet.js';
@@ -10,7 +10,13 @@ import { CALCULATION_MODES } from './tools/set-calculation-mode.js';
 import { buildPageSetupBody } from './tools/set-page-setup.js';
 import { setSheetView } from './tools/set-sheet-view.js';
 import { commentPath, updateComment } from './tools/update-comment.js';
-import { buildWorkbookRestOptions, qualifiedRange, rangePath, worksheetPath } from './workbook-rest.js';
+import {
+  buildWorkbookRestOptions,
+  qualifiedRange,
+  rangePath,
+  workbookRestCall,
+  worksheetPath,
+} from './workbook-rest.js';
 
 describe('workbook REST paths', () => {
   test('quotes sheet names and addresses as OData strings, doubling apostrophes', () => {
@@ -163,5 +169,31 @@ describe('date_occurring conditional format', () => {
     await expect(
       addConditionalFormat.handle({ worksheet: 'Plugin Lab', address: 'A25', rule: 'date_occurring' }),
     ).rejects.toThrow(/requires "period"/);
+  });
+});
+
+describe('workbookRestCall', () => {
+  test('parses the OData body and hands it to the handler', async () => {
+    const bridge = vi.fn().mockResolvedValue({ response: '{"name":"Lab","position":4}' });
+    await expect(workbookRestCall({ reportProgress: () => {}, bridge }, 'Get', "worksheets('Lab')")).resolves.toEqual({
+      name: 'Lab',
+      position: 4,
+    });
+    expect(bridge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        __bridge: expect.objectContaining({ method: 'ExecuteRichApiRequest' }),
+      }),
+    );
+  });
+
+  test('returns null for a call that answers with no body', async () => {
+    const bridge = vi.fn().mockResolvedValue({ response: '' });
+    await expect(
+      workbookRestCall({ reportProgress: () => {}, bridge }, 'Delete', "worksheets('Lab')"),
+    ).resolves.toBeNull();
+  });
+
+  test('explains that the extension is too old when the platform offers no bridge', async () => {
+    await expect(workbookRestCall({ reportProgress: () => {} }, 'Get', 'worksheets')).rejects.toThrow(/too old/);
   });
 });

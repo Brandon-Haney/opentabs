@@ -1,6 +1,6 @@
 import { defineTool, stripUndefined } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookRestCall, worksheetPath } from '../workbook-rest.js';
 import type { RawWorksheet } from './schemas.js';
 import { mapWorksheet, worksheetSchema } from './schemas.js';
 
@@ -8,7 +8,8 @@ export const updateWorksheet = defineTool({
   name: 'update_worksheet',
   displayName: 'Update Worksheet',
   description:
-    'Update worksheet properties such as name, position, or visibility. Only specified fields are changed; omitted fields remain unchanged.',
+    'Update worksheet properties such as name, position, or visibility. Only specified fields are changed; omitted ' +
+    'fields remain unchanged. Runs inside the open editing session.',
   summary: 'Update worksheet name, position, or visibility',
   icon: 'pencil',
   group: 'Worksheets',
@@ -19,20 +20,14 @@ export const updateWorksheet = defineTool({
     visibility: z.enum(['Visible', 'Hidden', 'VeryHidden']).optional().describe('New visibility state'),
   }),
   output: z.object({ worksheet: worksheetSchema }),
-  handle: async params => {
+  handle: async (params, context) => {
     const body = stripUndefined({
       name: params.new_name,
       position: params.position,
       visibility: params.visibility,
     });
-    const data = await workbookApi<RawWorksheet>(`/worksheets('${encodeURIComponent(params.name)}')`, {
-      method: 'PATCH',
-      // A rename changes the address a replay would target: after a hidden
-      // success the old name no longer exists, so only a non-renaming PATCH
-      // is safe to replay.
-      retryNonIdempotent: params.new_name === undefined,
-      body,
-    });
+    const data = await workbookRestCall<RawWorksheet>(context, 'Patch', worksheetPath(params.name), body);
+    if (!data) throw new Error(`Excel returned nothing for worksheet "${params.name}".`);
     return { worksheet: mapWorksheet(data) };
   },
 });

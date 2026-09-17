@@ -150,6 +150,28 @@ describe('token sources', () => {
     expect(headerOf(requestAt(0).init, 'Authorization')).toBe(`Bearer ${fakeJwt('namespace')}`);
   });
 
+  test('falls back to the SharePoint identity cache, taking the expiry from the JWT', () => {
+    const key = 'Identity.OAuth.i:0h.f|membership|user@live.comms-graph|https://graph.microsoft.com||';
+    localStorage.setItem(
+      key,
+      JSON.stringify({ value: fakeJwt('identity', { exp: nowSec() - 60 }), expiration: Date.now() + 3_600_000 }),
+    );
+    expect(activeTokenSource()).toBeNull();
+    localStorage.setItem(
+      key,
+      JSON.stringify({ value: fakeJwt('identity', { exp: nowSec() + 3600 }), expiration: Date.now() - 60_000 }),
+    );
+    expect(activeTokenSource()).toBe('sharepointIdentity');
+  });
+
+  test('waits for a token the pre-script captures after the call starts', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, { id: 'me' }));
+    const call = api('/me');
+    setTimeout(() => setPreScriptNamespace({ graph: { token: fakeJwt('late'), exp: nowSec() + 3600 } }), 2000);
+    await settle(call);
+    expect(headerOf(requestAt(0).init, 'Authorization')).toBe(`Bearer ${fakeJwt('late')}`);
+  });
+
   test('skips a token that expires within 30 seconds and one whose MSAL expiry is unreadable', () => {
     stubMirrorToken(fakeJwt('mirror'), nowSec() + 10);
     expect(activeTokenSource()).toBeNull();

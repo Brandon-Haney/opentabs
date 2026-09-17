@@ -36,7 +36,7 @@ const GRAPH_MAX_ATTEMPTS = 3;
 
 // --- Auth ---
 //
-// Three token sources, tried in order:
+// Four token sources, tried in order:
 //   1. The Graph token captured by the pre-script from MSAL's token-endpoint
 //      responses, read from the in-page pre-script namespace (set on the
 //      current load). This is the path that works on SharePoint/OneDrive-hosted
@@ -45,6 +45,8 @@ const GRAPH_MAX_ATTEMPTS = 3;
 //      reloads and same-origin tabs for the token's lifetime).
 //   3. A plaintext MSAL access token in localStorage, used by the standalone
 //      `excel.cloud.microsoft` app, which keys its Graph token by client id.
+//   4. SharePoint's own identity cache, where the SharePoint page keeps the
+//      plaintext Graph token it mints for itself, independent of MSAL.
 
 interface CapturedGraphToken {
   token: string;
@@ -52,7 +54,7 @@ interface CapturedGraphToken {
   exp: number;
 }
 
-export const GRAPH_TOKEN_SOURCES = ['preScript', 'localStorageMirror', 'msalPlaintext'] as const;
+export const GRAPH_TOKEN_SOURCES = ['preScript', 'localStorageMirror', 'msalPlaintext', 'sharepointIdentity'] as const;
 export type GraphTokenSource = (typeof GRAPH_TOKEN_SOURCES)[number];
 
 /** Non-secret description of one token source for the diagnose tool. */
@@ -150,10 +152,35 @@ const readMsalPlaintextToken = (): CapturedGraphToken | null => {
   }
 };
 
+/**
+ * The Graph token in SharePoint's identity cache.
+ *
+ * SharePoint pages keep the tokens they mint for their own features under
+ * `Identity.OAuth.<user>ms-graph|https://graph.microsoft.com||`, as plaintext
+ * `{ value, expiration }` (expiration in epoch milliseconds). It is refreshed
+ * when SharePoint itself next needs Graph, so it is a fallback rather than the
+ * primary source. The expiry is read from the JWT, which is authoritative.
+ */
+const readSharePointIdentityToken = (): CapturedGraphToken | null => {
+  const entry = findLocalStorageEntry(
+    key => key.startsWith('Identity.OAuth.') && key.includes('ms-graph|https://graph.microsoft.com|'),
+  );
+  if (!entry) return null;
+  try {
+    const parsed = JSON.parse(entry.value) as Record<string, unknown>;
+    if (typeof parsed.value !== 'string' || parsed.value.length === 0) return null;
+    const exp = decodeJwtClaims(parsed.value)?.exp;
+    return { token: parsed.value, exp: typeof exp === 'number' ? Math.floor(exp) : 0 };
+  } catch {
+    return null;
+  }
+};
+
 const TOKEN_READERS: Record<GraphTokenSource, () => CapturedGraphToken | null> = {
   preScript: readNamespaceToken,
   localStorageMirror: readMirrorToken,
   msalPlaintext: readMsalPlaintextToken,
+  sharepointIdentity: readSharePointIdentityToken,
 };
 
 /** The first source, in GRAPH_TOKEN_SOURCES order, holding a usable token. */
@@ -349,8 +376,15 @@ interface PreparedGraphRequest {
  * timeout signal is shared by every attempt, so retries never extend the
  * caller's budget.
  */
-const prepareGraphRequest = (endpoint: string, options: GraphRequestOptions): PreparedGraphRequest => {
-  const token = getToken();
+const prepareGraphRequest = async (
+  endpoint: string,
+  options: GraphRequestOptions,
+  tokenWait: 'wait' | 'immediate' = 'wait',
+): Promise<PreparedGraphRequest> => {
+  // Right after a load the pre-script may not have seen the page's token mint
+  // yet, so a tool call gives it the same window readiness gets before reporting
+  // an auth error. A diagnostic probe reports the state as it is.
+  const token = getToken() ?? (tokenWait === 'wait' && (await waitForAuth()) ? getToken() : null);
   if (token === null) throw authError('Not authenticated — please log in to Microsoft 365.');
 
   const qs = options.query ? buildQueryString(options.query) : '';
@@ -454,7 +488,7 @@ const classifyGraphFailure = async (response: Response, endpoint: string, attemp
  * whatever the endpoint produces, without duplicating auth and error handling.
  */
 const graphFetch = async (endpoint: string, options: GraphRequestOptions = {}): Promise<Response> => {
-  const { url, init } = prepareGraphRequest(endpoint, options);
+  const { url, init } = await prepareGraphRequest(endpoint, options);
   const tracker = createAttemptTracker();
 
   let response: Response;
@@ -516,8 +550,8 @@ export const probeGraph = (
   endpoint: string,
   query?: Record<string, string>,
 ): Promise<ProbeResult> =>
-  runProbe(name, path, () => {
-    const { url, init } = prepareGraphRequest(endpoint, { query });
+  runProbe(name, path, async () => {
+    const { url, init } = await prepareGraphRequest(endpoint, { query }, 'immediate');
     return fetch(url, init);
   });
 

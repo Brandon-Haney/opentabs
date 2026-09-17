@@ -2,8 +2,12 @@
 
 New work on these tools should follow the capture-driven loop in
 `plugins/powerpoint/docs/office-coauthoring-capture-method.md`, which covers all the
-Office co-authoring apps. Its first Excel step is porting PowerPoint's in-frame
-write log to the EWA interceptor, so gestures can be captured without a HAR export.
+Office co-authoring apps. The EWA interceptor keeps an in-frame write log of the
+workbook's own requests: read `https://<frame host>/__otb_ewa_writelog__` (manifest)
+and `…?entry=<index>` through `browser_fetch_in_frame` with `frameUrlIncludes:
+"xlviewerinternal.aspx"`, so gestures can be captured without a HAR export. After a
+reload, judge saved state only once the editor's "Loading…" bar has cleared; until
+then it draws a cached grid.
 
 The advanced Excel tools driven through the frame bridge (`freeze_panes`,
 `format_range_advanced`, `set_print_area`, `insert_page_break`, `set_hyperlink`,

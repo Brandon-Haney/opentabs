@@ -1,5 +1,6 @@
 import { definePreScript } from '@opentabs-dev/plugin-sdk/pre-script';
 import { parseReloadMarker } from './reload-marker-parse.js';
+import { decodeJwtClaims } from './token-introspection.js';
 
 /**
  * Pre-script for the Excel Online plugin.
@@ -62,6 +63,23 @@ const EWA_URL_MARKER = 'EwaInternalWebService.json/';
  * must match.
  */
 const BRIDGE_REPLAY_DEPTH_GLOBAL = '__otbBridgeReplayDepth';
+/**
+ * URL marker for the write-log read channel. An in-frame `fetch` whose URL
+ * contains it is answered locally, never sent: with no query, a manifest
+ * `{cap, count, dropped, totalBytes, entries}` whose entries are
+ * `{index, ts, bytes, method, url}`, newest first and without bodies; with
+ * `?entry=<index>`, that one request in full. It records every EWA request with a
+ * body the workbook itself issues — the method name, path and body, never its
+ * session headers or query — so a decode can read exactly what a gesture in the grid sent.
+ */
+const EWA_WRITE_LOG_SENTINEL = '__otb_ewa_writelog__';
+/**
+ * Requests the ring buffer retains. EWA interleaves viewport reads with every
+ * edit, so a single gesture spends several slots.
+ */
+const EWA_WRITE_LOG_CAP = 200;
+/** Ceiling on the bytes the ring buffer holds, evicting oldest-first. */
+const EWA_WRITE_LOG_MAX_BYTES = 24_000_000;
 /** Markers making the EWA interceptor idempotent under re-injection. */
 const EWA_FETCH_MARKER = Symbol.for('opentabs.excel-online.ewa.fetch.patched');
 const EWA_XHR_MARKER = Symbol.for('opentabs.excel-online.ewa.xhr.patched');
@@ -71,6 +89,15 @@ interface EwaDonor {
   url: string;
   requestHeaders: Record<string, string>;
   requestBody: string;
+  ts: number;
+}
+
+/** One EWA request as the write log holds it: the request without its session headers. */
+interface EwaWriteRecord {
+  url: string;
+  /** The RPC method, the path segment after the endpoint marker. */
+  method: string;
+  body: string;
   ts: number;
 }
 
@@ -148,6 +175,48 @@ const installEwaDonorInterceptor = (log: {
     }
   };
 
+  // A ring buffer of the workbook's own EWA requests, newest last, surfaced only
+  // through the write-log sentinel. Bytes held and requests evicted are tracked so
+  // the manifest reports a session that outgrew the buffer.
+  const writeLog: EwaWriteRecord[] = [];
+  let writeLogBytes = 0;
+  let droppedWrites = 0;
+
+  const recordWrite = (url: string, requestBody: string): void => {
+    // Reads travel as bodyless GETs; every edit is a POST carrying its arguments.
+    if (requestBody.length === 0) return;
+    const method = url.slice(url.indexOf(EWA_URL_MARKER) + EWA_URL_MARKER.length).split(/[?#]/)[0] ?? '';
+    // The query string carries the session context, so only the path is kept.
+    writeLog.push({ url: url.split('?')[0] ?? url, method, body: requestBody, ts: Date.now() });
+    writeLogBytes += requestBody.length;
+    // A lone request larger than the byte ceiling is kept: it is what a decode came for.
+    while (writeLog.length > EWA_WRITE_LOG_CAP || (writeLog.length > 1 && writeLogBytes > EWA_WRITE_LOG_MAX_BYTES)) {
+      const evicted = writeLog.shift();
+      if (evicted === undefined) break;
+      writeLogBytes -= evicted.body.length;
+      droppedWrites += 1;
+    }
+  };
+
+  /** The write-log manifest, or one full entry when the URL names `?entry=<index>`. */
+  const readWriteLog = (url: string): unknown => {
+    const requested = /[?&]entry=(\d+)/.exec(url);
+    if (requested) return writeLog[writeLog.length - 1 - Number(requested[1])] ?? null;
+    return {
+      cap: EWA_WRITE_LOG_CAP,
+      count: writeLog.length,
+      dropped: droppedWrites,
+      totalBytes: writeLogBytes,
+      entries: [...writeLog].reverse().map((write, index) => ({
+        index,
+        ts: write.ts,
+        bytes: write.body.length,
+        method: write.method,
+        url: write.url,
+      })),
+    };
+  };
+
   const stash = (url: string, requestHeaders: Record<string, string>, requestBody: string): void => {
     try {
       if (!url.includes(EWA_URL_MARKER)) return;
@@ -155,6 +224,7 @@ const installEwaDonorInterceptor = (log: {
       // app does, so nothing is harvested from it — neither the donor nor a
       // token it merely echoes back.
       if ((g[BRIDGE_REPLAY_DEPTH_GLOBAL] ?? 0) > 0) return;
+      recordWrite(url, requestBody);
       stashAadToken(requestBody);
       if (!requestBody.includes('"context"')) return;
       g[EWA_DONOR_GLOBAL] = { url, requestHeaders, requestBody, ts: Date.now() };
@@ -169,6 +239,13 @@ const installEwaDonorInterceptor = (log: {
     const patchedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       try {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+        // Read sentinel: answered locally so the log never reaches the network.
+        if (url.includes(EWA_WRITE_LOG_SENTINEL)) {
+          return new Response(JSON.stringify(readWriteLog(url)), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
         if (url.includes(EWA_URL_MARKER) && init?.method?.toUpperCase() === 'POST') {
           const headers = {
             ...(input instanceof Request ? headersToRecord(input.headers) : {}),
@@ -227,7 +304,7 @@ const installEwaDonorInterceptor = (log: {
     (Xhr as unknown as { [k: symbol]: unknown })[EWA_XHR_MARKER] = true;
   }
 
-  log.info('[excel-online] EwaInternalWebService donor interceptor installed');
+  log.info('[excel-online] EwaInternalWebService donor interceptor and write log installed');
 };
 
 // ---------------------------------------------------------------------------
@@ -260,6 +337,11 @@ const XHR_PATCHED_MARKER = Symbol.for('opentabs.excel-online.xhr.patched');
  * captured token for its lifetime. The adapter reads the same key.
  */
 const LS_TOKEN_KEY = '__opentabs_excel_graph_token';
+/**
+ * How long to trust a Graph Bearer token sniffed off a request header when it is
+ * not a readable JWT and so carries no expiry of its own.
+ */
+const OPAQUE_BEARER_TTL_SEC = 600;
 
 const parseUrl = (url: string): URL | null => {
   try {
@@ -307,6 +389,21 @@ definePreScript(({ set, log }) => {
     } catch {
       /* storage unavailable — the in-page namespace still works for this load */
     }
+  };
+
+  /**
+   * Stash a Bearer token sniffed off a Graph request header. The header carries
+   * no expiry, so the JWT's own `exp` claim is the token's lifetime; an opaque
+   * token is trusted for a short window only.
+   */
+  const stashBearer = (token: string): void => {
+    const exp = decodeJwtClaims(token)?.exp;
+    stash(
+      token,
+      typeof exp === 'number' && Number.isFinite(exp)
+        ? Math.floor(exp)
+        : Math.floor(Date.now() / 1000) + OPAQUE_BEARER_TTL_SEC,
+    );
   };
 
   const extractBearer = (headers: HeadersInit | undefined): string | undefined => {
@@ -361,8 +458,7 @@ definePreScript(({ set, log }) => {
         const header =
           extractBearer(init?.headers) ?? (input instanceof Request ? extractBearer(input.headers) : undefined);
         if (header?.startsWith('Bearer ') && header.length > 'Bearer '.length) {
-          // No expiry available from a request header; trust it for a short window.
-          stash(header.slice('Bearer '.length), Math.floor(Date.now() / 1000) + 600);
+          stashBearer(header.slice('Bearer '.length));
         }
       }
 
@@ -427,7 +523,7 @@ definePreScript(({ set, log }) => {
 
           // Secondary path: outbound Graph request carrying a Bearer header.
           if (isGraphUrl(state.url) && state.bearer?.startsWith('Bearer ')) {
-            stash(state.bearer.slice('Bearer '.length), Math.floor(Date.now() / 1000) + 600);
+            stashBearer(state.bearer.slice('Bearer '.length));
           }
 
           // Primary path: AAD token-endpoint response body.

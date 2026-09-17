@@ -58,6 +58,7 @@ describe('diagnose', () => {
       ['preScript', false],
       ['localStorageMirror', true],
       ['msalPlaintext', false],
+      ['sharepointIdentity', false],
     ]);
     expect(output.tokenSources[1]).toMatchObject({ audience: 'graph.microsoft.com', scopes: ['Files.Read'] });
     expect(output.workbookContext).toEqual({ available: true, source: 'shares' });

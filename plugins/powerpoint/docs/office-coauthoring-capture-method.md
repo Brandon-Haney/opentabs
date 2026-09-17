@@ -50,7 +50,7 @@ DevTools HAR exports work but need a person at the keyboard.
 | App | Live write channel | Write log | Status |
 | --- | --- | --- | --- |
 | PowerPoint | `/pods/PowerPoint.ashx` revisions (JSON objects and properties) | `__otb_pods_writelog__` in the pre-script: a ring buffer of the last 60 writes, 24 MB; manifest, then `?entry=N` | **In use.** The loop runs end to end with no manual steps. |
-| Excel | `EwaInternalWebService` RPC via the frame bridge | none; the pre-script keeps only the latest donor request (`__otbEwaDonor`) | Decodes so far came from HAR captures and the client bundle. **First step: port the pods write log to the EWA interceptor**, so Excel gestures can be captured the same way. |
+| Excel | `EwaInternalWebService` RPC via the frame bridge | `__otb_ewa_writelog__` in the pre-script: the last 200 requests with a body, path only; manifest, then `?entry=N`, against the `xlviewerinternal.aspx` frame | **In use.** Wait for the "Loading…" bar to clear before judging a reload: the grid first renders a cached view. |
 | Word | unproven; WOPI reports `IsPragueDocument` (Fluid, likely socket ops) | none | **Capture first.** Confirm whether the channel is replayable before building anything live. |
 | OneNote | WAC `ObjectModel` command bus | none | Different mechanism; the same loop applies once commands can be observed. |
 
@@ -117,8 +117,7 @@ against the editor frame, as PowerPoint does.
 
 - **All apps:** a slide/sheet/section scope on every tool that finds content by
   text.
-- **Excel:** port the write log, then capture the gaps listed in
-  `excel-online/docs/frame-bridge-gaps.md`.
+- **Excel:** capture the gaps listed in `excel-online/docs/frame-bridge-gaps.md`.
 - **Word:** capture the co-authoring channel and decide whether it is replayable;
   the staged Graph path stays until a live path is proven.
 - **PowerPoint:** shape outline, text box insert and delete, table columns and

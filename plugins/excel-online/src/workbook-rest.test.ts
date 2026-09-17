@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { addConditionalFormat, buildConditionalFormatOptions, TIME_PERIODS } from './tools/add-conditional-format.js';
 import { buildCopyRangeBody } from './tools/copy-range.js';
 import { COPY_POSITIONS } from './tools/copy-worksheet.js';
 import { buildCreatePivotTableBody } from './tools/create-pivot-table.js';
@@ -128,5 +129,39 @@ describe('page setup and sheet view', () => {
 
   test('set_sheet_view refuses a request that changes nothing', async () => {
     await expect(setSheetView.handle({ worksheet: 'Sheet1' })).rejects.toThrow(/show_gridlines/);
+  });
+});
+
+describe('date_occurring conditional format', () => {
+  test('maps each period to the value Excel uses, which is not its documented order', () => {
+    expect(TIME_PERIODS).toEqual({
+      today: 0,
+      yesterday: 1,
+      last_7_days: 2,
+      this_week: 3,
+      last_week: 4,
+      last_month: 5,
+      tomorrow: 6,
+      next_week: 7,
+      next_month: 8,
+      this_month: 9,
+    });
+  });
+
+  test('sends the period as TimePeriodType with the date_occurring command', () => {
+    const options = buildConditionalFormatOptions({
+      worksheet: 'Plugin Lab',
+      address: 'A25',
+      rule: 'date_occurring',
+      period: 'next_month',
+      format: 'yellow_fill',
+    });
+    expect(options.conditionalFormattingOptions).toMatchObject({ Command: 6, TimePeriodType: 8, QuickFormatType: 1 });
+  });
+
+  test('refuses date_occurring without a period', async () => {
+    await expect(
+      addConditionalFormat.handle({ worksheet: 'Plugin Lab', address: 'A25', rule: 'date_occurring' }),
+    ).rejects.toThrow(/requires "period"/);
   });
 });

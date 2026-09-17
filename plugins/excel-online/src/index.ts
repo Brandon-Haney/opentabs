@@ -12,6 +12,7 @@ import { addTableRow } from './tools/add-table-row.js';
 import { addWorksheet } from './tools/add-worksheet.js';
 import { applyCellStyle } from './tools/apply-cell-style.js';
 import { calculateWorkbook } from './tools/calculate-workbook.js';
+import { clearConditionalFormats } from './tools/clear-conditional-formats.js';
 import { clearDataValidation } from './tools/clear-data-validation.js';
 import { clearRange } from './tools/clear-range.js';
 import { clearRangeFilters } from './tools/clear-range-filters.js';
@@ -193,6 +194,7 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     getPageSetup,
     setSheetView,
     clearRangeFilters,
+    clearConditionalFormats,
     reapplyRangeFilters,
     insertPageBreak,
     setHyperlink,

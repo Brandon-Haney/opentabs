@@ -34,7 +34,29 @@ const RULES = {
   bottom_percent: { command: 11, kind: 'count' },
   above_average: { command: 12, kind: 'plain' },
   below_average: { command: 13, kind: 'plain' },
+  date_occurring: { command: 6, kind: 'period' },
 } as const;
+
+/**
+ * `TimePeriodType` for the date_occurring rule. Excel's own order, decoded by
+ * applying each value and reading the rule name back from the Conditional
+ * Formatting pane — it is not the order the menu lists, and not Excel's
+ * documented XlTimePeriods numbering.
+ */
+export const TIME_PERIODS = {
+  today: 0,
+  yesterday: 1,
+  last_7_days: 2,
+  this_week: 3,
+  last_week: 4,
+  last_month: 5,
+  tomorrow: 6,
+  next_week: 7,
+  next_month: 8,
+  this_month: 9,
+} as const;
+
+export type TimePeriodName = keyof typeof TIME_PERIODS;
 
 type HighlightRule = keyof typeof RULES;
 
@@ -140,6 +162,7 @@ interface ConditionalFormatInput {
   count?: number;
   unique?: boolean;
   style?: string;
+  period?: TimePeriodName;
   format: FormatName;
 }
 
@@ -182,6 +205,8 @@ export const buildConditionalFormatOptions = (input: ConditionalFormatInput): Re
       conditionalFormattingOptions.Formula2 = input.value2;
     } else if (def.kind === 'flag') {
       conditionalFormattingOptions.Unique = input.unique ?? false;
+    } else if (def.kind === 'period') {
+      conditionalFormattingOptions.TimePeriodType = TIME_PERIODS[input.period ?? 'today'];
     }
   }
 
@@ -207,7 +232,9 @@ export const addConditionalFormat = defineTool({
     'below_average) take a preset "format" fill; duplicate_values and no_blanks highlight matching cells; ' +
     'and the visual styles data_bar, color_scale, and icon_set take a "style" selecting the exact built-in ' +
     'variant. Provide "value" for single-value comparisons and text_contains, "value" and "value2" for ' +
-    'between/not_between, "count" for top/bottom, and "unique" for duplicate_values. Not available through ' +
+    'between/not_between, "count" for top/bottom, "unique" for duplicate_values, and "period" for date_occurring ' +
+    '(today, yesterday, tomorrow, last_7_days, last_week, this_week, next_week, last_month, this_month, ' +
+    'next_month). Not available through ' +
     "the standard workbook API — driven through Excel's internal service via the frame bridge.",
   summary: 'Add a conditional-formatting rule',
   icon: 'palette',
@@ -247,6 +274,10 @@ export const addConditionalFormat = defineTool({
           'color_scale: green_yellow_red|red_yellow_green|blue_white_red|… (default green_yellow_red). ' +
           'icon_set: directional_3_arrows|shapes_3_traffic_lights_rimmed|ratings_5_stars|… (default directional_3_arrows).',
       ),
+    period: z
+      .enum(Object.keys(TIME_PERIODS) as [TimePeriodName, ...TimePeriodName[]])
+      .optional()
+      .describe('Which dates to highlight — required for the date_occurring rule'),
     format: z
       .enum(Object.keys(FORMATS) as [FormatName, ...FormatName[]])
       .optional()
@@ -275,6 +306,9 @@ export const addConditionalFormat = defineTool({
       if (def.kind === 'count' && params.count === undefined) {
         throw ToolError.validation(`Rule "${params.rule}" requires "count".`);
       }
+      if (def.kind === 'period' && params.period === undefined) {
+        throw ToolError.validation(`Rule "${params.rule}" requires "period": ${Object.keys(TIME_PERIODS).join(', ')}.`);
+      }
     }
 
     return ewaBridge(
@@ -288,6 +322,7 @@ export const addConditionalFormat = defineTool({
         count: params.count,
         unique: params.unique,
         style: params.style,
+        period: params.period,
         format: params.format ?? 'light_red_fill',
       }),
       {

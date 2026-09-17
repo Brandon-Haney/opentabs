@@ -13,6 +13,7 @@ const {
   rangeOfMatch,
   recutForRange,
   segmentsOf,
+  singleRunLayout,
 } = await import('./pods-text-runs.js');
 const { FrameBridgeValidationError } = await import('./frame-bridge-rpc.js');
 
@@ -211,5 +212,25 @@ describe('rangeOfMatch', () => {
   test('rejects an empty match or a non-positive occurrence', () => {
     expect(() => rangeOfMatch(TITLE, '', 1)).toThrow(FrameBridgeValidationError);
     expect(() => rangeOfMatch(TITLE, 'Timeline', 0)).toThrow(FrameBridgeValidationError);
+  });
+});
+
+describe('singleRunLayout', () => {
+  test('drops the boundaries, keeps the first run, and resets the segment flags', () => {
+    const layout = singleRunLayout([
+      469769250,
+      'text',
+      469769746,
+      '58,62',
+      469769819,
+      '111',
+      603987475,
+      '{a1}{1},{b2}{2},{a1}{1}',
+    ]);
+    expect(layout).toEqual([469769250, 'text', 469769819, '1', 603987475, '{a1}{1}']);
+  });
+
+  test('adds no flags to a paragraph that never carried them', () => {
+    expect(singleRunLayout([469769250, 'x', 603987475, '{a1}{1}'])).toEqual([469769250, 'x', 603987475, '{a1}{1}']);
   });
 });

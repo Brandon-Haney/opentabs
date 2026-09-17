@@ -9,19 +9,48 @@
  * supplying the formatting. So a text replacement is the proven
  * copy-verbatim-and-patch-one-property shape applied to the paragraph itself.
  *
- * Like `format_text`, this targets a single-run paragraph: multi-run text would
- * need per-range bookkeeping across runs, which the captured single-run write
- * does not exercise.
+ * A paragraph with more than one run segment takes a different write, decoded
+ * from the editor typing over a whole three-run paragraph
+ * (`PowerPointPasteGivenText`): the editor does not patch the paragraph at all.
+ * It builds a fresh block holding one single-run paragraph with the new text and
+ * swaps it into the container's block list in place of the old block. Patching
+ * the paragraph in place instead leaves its run offsets describing text that is
+ * gone, which crashes the editor client.
  */
 
 import { FrameBridgeValidationError } from './frame-bridge-rpc.js';
 import { type ResolvedTarget, resolveRunFormatTarget } from './pods-action-run-format.js';
 import type { PodsMint, PodsWriteActionSpec } from './pods-actions.js';
 import { sortPropertiesById } from './pods-bridge.js';
-import { CLASS_PARAGRAPH, CLASS_RUN, type PodsModel, PROP_RUN_REF, PROP_TEXT, readProp } from './pods-model.js';
+import {
+  CLASS_PARAGRAPH,
+  CLASS_RUN,
+  type PodsModel,
+  PROP_CONTENT_REFS,
+  PROP_RUN_REF,
+  PROP_TEXT,
+  parseRefList,
+  readProp,
+} from './pods-model.js';
+import {
+  blockParagraphText,
+  buildNewBlock,
+  copyWith,
+  locateTextBlock,
+  TEXT_BLOCK_CLASSES,
+  type TextBlockLocation,
+} from './pods-text-block.js';
 
 /** The client sequence hint the captured Typing write carried. Not server-validated. */
 const REVISION_SEQUENCE = 37;
+
+/** Object slots the block replacement mints under the write GUID. */
+const SLOT_BLOCK_REVISION = 1;
+const SLOT_BLOCK_GROUP = 2;
+const SLOT_BLOCK_TEXT_BODY = 3;
+const SLOT_BLOCK_PARAGRAPH = 4;
+const SLOT_BLOCK_LIST_MARKER = 5;
+const SLOT_BLOCK_RUN = 6;
 
 /** The validated arguments of a `set_text` action. */
 export interface SetTextArgs {
@@ -105,11 +134,7 @@ export const typingParagraphAndRun = (
  * `format_text` but for the text property. A run with no text property (the
  * common case for pre-existing deck text) keeps the paragraph-only Typing shape.
  *
- * Strictly single-run: a multi-run paragraph is REJECTED. A constructed run
- * collapse was tried live — the server accepted it and the editor client
- * crashed. The editor's own captured deletion shows multi-run edits need
- * chained revisions plus a full shape resubmit (see the action catalog), which
- * is not built yet.
+ * Single-run paragraphs only; {@link buildReplaceBlockBody} writes the rest.
  */
 export const buildSetTextBody = (
   target: ResolvedTarget,
@@ -120,8 +145,8 @@ export const buildSetTextBody = (
   const [run, ...extraRuns] = target.textRuns;
   if (!run || extraRuns.length > 0) {
     throw new FrameBridgeValidationError(
-      `set_text replaces single-run text; "${target.paragraphId}" has ${target.textRuns.length} formatting runs. ` +
-        'Replacing multi-run text is not supported: a constructed run collapse crashes the live editor client.',
+      `The in-place Typing write covers single-run text; "${target.paragraphId}" has ${target.textRuns.length} ` +
+        'run segments and must be replaced as a block.',
     );
   }
   const typed = typingParagraphAndRun(target.paragraphProperties, run, newText, `{${guidToken}}{1}`);
@@ -170,6 +195,121 @@ export const buildSetTextBody = (
   };
 };
 
+/** Where a multi-run paragraph's replacement block goes, and what it is modelled on. */
+export interface BlockReplacement extends TextBlockLocation {
+  cellId: string;
+}
+
+/**
+ * Build the block-replacement body: the editor's own write for typing over a
+ * whole multi-run paragraph.
+ *
+ * One revision carrying the action descriptor, the container with the old block's
+ * reference replaced by the new one's, and the new block. The old block is simply
+ * no longer listed — the editor's write does not delete it either.
+ */
+export const buildReplaceBlockBody = (
+  target: ResolvedTarget,
+  block: BlockReplacement,
+  newText: string,
+  guidToken: string,
+  headToken: string,
+  blockOwnerGuid: string,
+  actionDescriptorJson: string,
+  createdTime: string,
+): Record<string, unknown> => {
+  const created = buildNewBlock(block, newText, {
+    guidToken,
+    textBodySlot: SLOT_BLOCK_TEXT_BODY,
+    paragraphSlot: SLOT_BLOCK_PARAGRAPH,
+    listMarkerSlot: SLOT_BLOCK_LIST_MARKER,
+    blockOwnerGuid,
+    createdTime,
+  });
+  const typed = typingParagraphAndRun(
+    created.paragraphProperties,
+    block.run,
+    newText,
+    `{${guidToken}}{${SLOT_BLOCK_RUN}}`,
+  );
+  const blockObjects = created.objects.map(o =>
+    o.ObjectId === created.paragraphId ? { ...o, Properties: typed.paragraphProperties } : o,
+  );
+
+  const blockRefs = block.contentRefTokens.map(ref => (ref === block.blockRef ? created.blockRef : ref));
+  const containerProperties = copyWith(block.containerProperties, new Map([[PROP_CONTENT_REFS, blockRefs.join(',')]]));
+
+  const revision = {
+    Id: `${guidToken}|${SLOT_BLOCK_REVISION}`,
+    FileId: null,
+    RelativePath: null,
+    CellId: block.cellId,
+    ContextId: '00000000-0000-0000-0000-000000000000|0',
+    ExpectedLatestId: '00000000-0000-0000-0000-000000000000|0',
+    BaseId: headToken,
+    RootObjectDescriptors: null,
+    ObjectGroups: [
+      {
+        Id: `${guidToken}|${SLOT_BLOCK_GROUP}`,
+        Objects: [
+          {
+            ObjectId: target.actionDescId,
+            ClassId: 131140,
+            Properties: [134236193, 'true', 335562934, '1', 469780658, actionDescriptorJson, 469780989, 'Typing'],
+          },
+          { ObjectId: block.containerObjectId, ClassId: block.containerClassId, Properties: containerProperties },
+          ...blockObjects,
+          ...(typed.runProperties
+            ? [{ ObjectId: `${guidToken}|${SLOT_BLOCK_RUN}`, ClassId: CLASS_RUN, Properties: typed.runProperties }]
+            : []),
+        ],
+      },
+    ],
+    IsFolderCell: false,
+  };
+
+  return {
+    Mode: 4,
+    srs: [
+      [
+        3,
+        {
+          OperationId: 1,
+          DependentOn: 0,
+          Revisions: [revision],
+          ExpectedLatestId: headToken,
+          Sequence: REVISION_SEQUENCE,
+          PutOnlyCall: false,
+          LocalRenderingParams: null,
+        },
+      ],
+    ],
+  };
+};
+
+/** A resolved `set_text` target: the paragraph, and its block when the write must replace it. */
+export interface SetTextContext {
+  target: ResolvedTarget;
+  /** Present when the paragraph has more than one run segment. */
+  block: BlockReplacement | null;
+}
+
+/** Resolve a `set_text` target on the slide, with its block for when the paragraph needs a block replacement. */
+export const resolveSetTextContext = (model: PodsModel, text: string): SetTextContext => {
+  // Locate first: a replaced block's retired paragraph keeps its old text, so the
+  // first text match is not necessarily the paragraph on the slide.
+  const location = locateTextBlock(model, text);
+  const target = resolveRunFormatTarget(model, text, { paragraphId: location.paragraphId });
+  if (target.textRuns.length <= 1) return { target, block: null };
+  if (location.blockParagraphRefs.length > 1) {
+    throw new FrameBridgeValidationError(
+      `"${text}" has ${target.textRuns.length} run segments and shares its text block with ` +
+        `${location.blockParagraphRefs.length - 1} other paragraph(s), so replacing its block would remove them too.`,
+    );
+  }
+  return { target, block: { ...location, cellId: target.cellId } };
+};
+
 /** The target paragraph's current text, read fresh from a model. */
 const textOfParagraph = (model: PodsModel, paragraphId: string): string | undefined => {
   const paragraph = model.objects.find(o => o.classId === CLASS_PARAGRAPH && o.objectId === paragraphId);
@@ -177,9 +317,9 @@ const textOfParagraph = (model: PodsModel, paragraphId: string): string | undefi
 };
 
 /** The `set_text` action: replace the text of the paragraph matched by its current visible text. */
-export const setTextAction: PodsWriteActionSpec<SetTextArgs, ResolvedTarget> = {
+export const setTextAction: PodsWriteActionSpec<SetTextArgs, SetTextContext> = {
   kind: 'write',
-  classFilter: [CLASS_PARAGRAPH, CLASS_RUN],
+  classFilter: TEXT_BLOCK_CLASSES,
   parseArgs: raw => {
     if (typeof raw.text !== 'string' || raw.text.length === 0) {
       throw new FrameBridgeValidationError('set_text needs `text`: the exact current visible text of the paragraph.');
@@ -197,12 +337,36 @@ export const setTextAction: PodsWriteActionSpec<SetTextArgs, ResolvedTarget> = {
     }
     return { text: raw.text, newText: raw.newText };
   },
-  resolve: (model, args) => resolveRunFormatTarget(model, args.text),
-  build: (ctx, args, mint: PodsMint) => buildSetTextBody(ctx, args.newText, mint.guidToken, mint.headToken),
-  // Applied when the SAME paragraph object now carries the new text. Keyed on the
-  // paragraph id, not a text search, so an unrelated paragraph that happens to
-  // already say `newText` can never confirm this write.
-  isApplied: (model, first, args) => textOfParagraph(model, first.paragraphId) === args.newText,
+  resolve: (model, args) => resolveSetTextContext(model, args.text),
+  build: (ctx, args, mint: PodsMint) =>
+    ctx.block
+      ? buildReplaceBlockBody(
+          ctx.target,
+          ctx.block,
+          args.newText,
+          mint.guidToken,
+          mint.headToken,
+          mint.seed,
+          JSON.stringify({ ActionId: mint.seed, ActionName: 'PowerPointPasteGivenText', ActionTime: mint.actionTime }),
+          mint.actionTime,
+        )
+      : buildSetTextBody(ctx.target, args.newText, mint.guidToken, mint.headToken),
+  // Applied when the change is visible at its own identity, never by a text search,
+  // so an unrelated paragraph that already says `newText` can never confirm it: the
+  // SAME paragraph now carries the text, or — for a block replacement — the old
+  // block is gone from its container and a block it did not list carries the text.
+  isApplied: (model, first, args) => {
+    const { block } = first;
+    if (!block) return textOfParagraph(model, first.target.paragraphId) === args.newText;
+    const container = model.objects.find(o => o.objectId === block.containerObjectId);
+    if (!container) return false;
+    const refs = parseRefList(readProp(container.properties, PROP_CONTENT_REFS) ?? '');
+    const known = new Set(block.contentRefTokens);
+    return (
+      !refs.includes(block.blockRef) &&
+      refs.filter(ref => !known.has(ref)).some(ref => blockParagraphText(model, ref) === args.newText)
+    );
+  },
   // Never auto-re-issued: after a successful apply, the old text is gone, so a
   // re-resolve by it would fail; and a genuinely dropped write should be
   // re-attempted deliberately, against a re-read deck, not blindly.
@@ -210,12 +374,14 @@ export const setTextAction: PodsWriteActionSpec<SetTextArgs, ResolvedTarget> = {
   summarize: (ctx, args) => ({
     text: args.text,
     newText: args.newText,
-    paragraphId: ctx.paragraphId,
-    runId: ctx.textRuns[0]?.objectId ?? '',
+    paragraphId: ctx.target.paragraphId,
+    runId: ctx.target.textRuns[0]?.objectId ?? '',
+    replacedBlock: ctx.block !== null,
   }),
   dryRunExtras: (ctx, args) => ({
     text: args.text,
     newText: args.newText,
-    paragraphId: ctx.paragraphId,
+    paragraphId: ctx.target.paragraphId,
+    replacedBlock: ctx.block !== null,
   }),
 };

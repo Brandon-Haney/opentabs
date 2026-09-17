@@ -26,8 +26,11 @@ import {
   actionDescIdOf,
   CLASS_PARAGRAPH,
   CLASS_RUN,
+  CLASS_SLIDE,
   cellIdOf,
   findPresentationRoot,
+  findSlideAt,
+  isOnSlide,
   type PodsModel,
   type PodsObject,
   PROP_RUN_REF,
@@ -78,6 +81,8 @@ export interface RunFormatChanges {
 export interface RunFormatArgs {
   /** Exact visible text of the target paragraph. */
   text: string;
+  /** The 1-based slide to look on, for text that also appears on another slide. */
+  slideIndex?: number;
   /** The stretch to format, as a substring of the paragraph; the whole paragraph when absent. */
   match?: { value: string; occurrence: number };
   changes: RunFormatChanges;
@@ -176,13 +181,26 @@ export interface ResolvedTarget {
 /**
  * Find the paragraph whose visible text matches exactly, and its runs. Errors name
  * nearby text so a near-miss is a one-step fix rather than a guessing game.
+ *
+ * `scope.paragraphId` pins the match to one paragraph object, for callers that have
+ * already told a paragraph on the slide apart from a retired one with the same text;
+ * `scope.slideIndex` limits it to one slide, for text a copied slide repeats.
  */
-export const resolveRunFormatTarget = (model: PodsModel, text: string): ResolvedTarget => {
+export const resolveRunFormatTarget = (
+  model: PodsModel,
+  text: string,
+  scope: { paragraphId?: string; slideIndex?: number } = {},
+): ResolvedTarget => {
   const root = findPresentationRoot(model);
   const byId = new Map(model.objects.map(o => [o.objectId, o]));
+  const slide = scope.slideIndex === undefined ? undefined : findSlideAt(model, scope.slideIndex).slide;
 
   const paragraph = model.objects.find(
-    o => o.classId === CLASS_PARAGRAPH && readProp(o.properties, PROP_TEXT) === text,
+    o =>
+      o.classId === CLASS_PARAGRAPH &&
+      readProp(o.properties, PROP_TEXT) === text &&
+      (scope.paragraphId === undefined || o.objectId === scope.paragraphId) &&
+      (slide === undefined || isOnSlide(o, slide)),
   );
   if (!paragraph) {
     const samples = model.objects
@@ -416,6 +434,15 @@ const parseMatch = (raw: Record<string, unknown>): RunFormatArgs['match'] => {
   return { value: raw.match, occurrence };
 };
 
+/** The optional 1-based slide a text action is limited to. */
+const parseSlideIndex = (raw: Record<string, unknown>): { slideIndex?: number } => {
+  if (raw.slideIndex === undefined) return {};
+  if (typeof raw.slideIndex !== 'number' || !Number.isInteger(raw.slideIndex) || raw.slideIndex < 1) {
+    throw new FrameBridgeValidationError('`slideIndex` must be a 1-based slide number.');
+  }
+  return { slideIndex: raw.slideIndex };
+};
+
 const parseFormatArgs = (raw: Record<string, unknown>): RunFormatArgs => {
   const text = requireText(raw);
   const match = parseMatch(raw);
@@ -446,10 +473,10 @@ const parseFormatArgs = (raw: Record<string, unknown>): RunFormatArgs => {
     ...(requested.colorHex !== undefined ? { colorHex: requested.colorHex } : {}),
     ...(requested.font !== undefined ? { font: requested.font } : {}),
   };
-  return { text, ...(match !== undefined ? { match } : {}), changes, requested };
+  return { text, ...parseSlideIndex(raw), ...(match !== undefined ? { match } : {}), changes, requested };
 };
 
-const CLASS_FILTER = [CLASS_PARAGRAPH, CLASS_RUN];
+const CLASS_FILTER = [CLASS_PARAGRAPH, CLASS_RUN, CLASS_SLIDE];
 
 /** The segments a range covers, in order. */
 const coveredSegments = (target: ResolvedTarget, range: TextRange): RunSegment[] =>
@@ -462,7 +489,7 @@ const coveredSegments = (target: ResolvedTarget, range: TextRange): RunSegment[]
  */
 const isRangeFormatted = (model: PodsModel, args: RunFormatArgs): boolean => {
   try {
-    const state = resolveRunFormatTarget(model, args.text);
+    const state = resolveRunFormatTarget(model, args.text, { slideIndex: args.slideIndex });
     const covered = coveredSegments(state, rangeOf(state, args));
     if (covered.length === 0) return false;
     return covered.every(segment => {
@@ -495,7 +522,7 @@ export const formatTextAction: PodsWriteActionSpec<RunFormatArgs, ResolvedTarget
   kind: 'write',
   classFilter: CLASS_FILTER,
   parseArgs: parseFormatArgs,
-  resolve: (model, args) => resolveRunFormatTarget(model, args.text),
+  resolve: (model, args) => resolveRunFormatTarget(model, args.text, { slideIndex: args.slideIndex }),
   build: (ctx, args, mint: PodsMint) =>
     buildRunFormatBody(ctx, args.changes, rangeOf(ctx, args), mint.guidToken, mint.headToken),
   isApplied: (model, _first, args) => isRangeFormatted(model, args),
@@ -517,12 +544,13 @@ export const setFontSizeAction: PodsWriteActionSpec<RunFormatArgs, ResolvedTarge
     const match = parseMatch(raw);
     return {
       text,
+      ...parseSlideIndex(raw),
       ...(match !== undefined ? { match } : {}),
       changes: { sizeHalfPt: Math.round(raw.sizePt * 2) },
       requested: { sizePt: raw.sizePt },
     };
   },
-  resolve: (model, args) => resolveRunFormatTarget(model, args.text),
+  resolve: (model, args) => resolveRunFormatTarget(model, args.text, { slideIndex: args.slideIndex }),
   build: (ctx, args, mint: PodsMint) =>
     buildRunFormatBody(ctx, args.changes, rangeOf(ctx, args), mint.guidToken, mint.headToken),
   isApplied: (model, _first, args) => isRangeFormatted(model, args),

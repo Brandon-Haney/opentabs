@@ -6,7 +6,7 @@ export const addParagraph = defineTool({
   name: 'add_paragraph',
   displayName: 'Add Paragraph',
   description:
-    'Append a new line of text to a shape on the open slide — the same thing a person does by clicking at the end ' +
+    'Append a new line of text to a shape or the speaker notes of the open deck — the same thing a person does by clicking at the end ' +
     'of a line, pressing Enter, and typing. Name the paragraph to append after with `after` (its exact visible ' +
     'text) and the new line with `text`; the new paragraph inherits that paragraph’s formatting. Use ' +
     '`get_live_outline` to see the exact paragraph text, and call this once per line — `text` cannot contain line ' +

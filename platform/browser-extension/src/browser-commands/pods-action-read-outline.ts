@@ -15,6 +15,7 @@
 import type { PodsReadActionSpec } from './pods-actions.js';
 import {
   CLASS_PARAGRAPH,
+  CLASS_PLACEHOLDER_SHAPE,
   CLASS_RENDER_SHAPE,
   CLASS_RUN,
   CLASS_SLIDE,
@@ -95,7 +96,7 @@ export const reduceOutline = (model: PodsModel): Record<string, unknown> => {
   // with the same text.
   const shapeOfTextBody = new Map<string, string>();
   for (const o of model.objects) {
-    if (o.classId !== CLASS_RENDER_SHAPE) continue;
+    if (o.classId !== CLASS_RENDER_SHAPE && o.classId !== CLASS_PLACEHOLDER_SHAPE) continue;
     const name = readProp(o.properties, PROP_SHAPE_NAME);
     if (name === undefined) continue;
     for (const token of parseRefList(readProp(o.properties, PROP_CONTENT_REFS) ?? '')) {
@@ -148,7 +149,7 @@ export const reduceOutline = (model: PodsModel): Record<string, unknown> => {
 /** The `read_outline` action: the live deck reduced to text, formatting, and structure. */
 export const readOutlineAction: PodsReadActionSpec<Record<string, never>> = {
   kind: 'read',
-  classFilter: [CLASS_SLIDE, CLASS_RENDER_SHAPE, CLASS_TEXT_BODY, CLASS_PARAGRAPH, CLASS_RUN],
+  classFilter: [CLASS_SLIDE, CLASS_RENDER_SHAPE, CLASS_PLACEHOLDER_SHAPE, CLASS_TEXT_BODY, CLASS_PARAGRAPH, CLASS_RUN],
   parseArgs: () => ({}),
   read: model => reduceOutline(model),
 };

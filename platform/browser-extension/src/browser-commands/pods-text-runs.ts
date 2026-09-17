@@ -21,6 +21,7 @@
  */
 
 import { FrameBridgeValidationError } from './frame-bridge-rpc.js';
+import { PROP_RUN_REF, parseRefList, readProp } from './pods-model.js';
 
 /** Paragraph property holding the run-boundary offsets; absent on a single-run paragraph. */
 export const PROP_RUN_BOUNDARIES = 469769746;
@@ -58,6 +59,36 @@ export const parseRunBoundaries = (value: string | undefined): number[] => {
     }
     return offset;
   });
+};
+
+/**
+ * Per-segment flag string: one character per run segment (`"11"` on a two-run
+ * paragraph, `"1"` on a single run). Absent on paragraphs that never carried one.
+ */
+export const PROP_RUN_SEGMENT_FLAGS = 469769819;
+
+/**
+ * Rewrite a paragraph's run layout so ONE run formats all of its text.
+ *
+ * Every write that puts new text into a paragraph must do this. A paragraph's
+ * boundary offsets, run references and segment flags describe the text it held
+ * when it was read; carried over onto different text they name offsets past its
+ * end, and the editor client crashes applying the write while the server accepts
+ * it. The editor's own replacement of a three-run paragraph writes exactly this
+ * layout: no boundaries, the first segment's run, and flags `"1"`.
+ */
+export const singleRunLayout = (properties: (string | number)[]): (string | number)[] => {
+  const firstRef = parseRefList(readProp(properties, PROP_RUN_REF) ?? '')[0];
+  const rewritten: (string | number)[] = [];
+  for (let i = 0; i + 1 < properties.length; i += 2) {
+    const key = properties[i];
+    const value = properties[i + 1];
+    if (key === undefined || value === undefined || key === PROP_RUN_BOUNDARIES) continue;
+    if (key === PROP_RUN_REF && firstRef !== undefined) rewritten.push(key, firstRef);
+    else if (key === PROP_RUN_SEGMENT_FLAGS) rewritten.push(key, '1');
+    else rewritten.push(key, value);
+  }
+  return rewritten;
 };
 
 /** Serialize boundary offsets back to the wire form; an empty list means the property is dropped. */

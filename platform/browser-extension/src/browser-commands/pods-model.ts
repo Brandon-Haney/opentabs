@@ -76,6 +76,12 @@ export const CLASS_TEXT_BODY = 393229;
 export const CLASS_PARAGRAPH = 393230;
 export const CLASS_RUN = 1179725;
 export const CLASS_RENDER_SHAPE = 1074135132;
+/**
+ * A placeholder shape outside the slide canvas: a slide's speaker notes ("Notes
+ * Placeholder 2") and the master's placeholders. It holds text bodies exactly as a
+ * slide shape does, and carries the same geometry and name properties.
+ */
+export const CLASS_PLACEHOLDER_SHAPE = 393326;
 
 /** Well-known pods property ids. */
 export const PROP_TEXT = 469769250;
@@ -138,6 +144,42 @@ export const slideRefsOf = (root: PodsObject): { slideList: string; slideRefs: s
   }
   return { slideList, slideRefs: parseRefList(slideList) };
 };
+
+/** Find the slide object (`393227`) the root's slide list names at a 1-based position. */
+export const findSlideAt = (
+  model: PodsModel,
+  slideIndex: number,
+): { slide: PodsObject; slideRef: string; root: PodsObject } => {
+  const root = findPresentationRoot(model);
+  const { slideRefs } = slideRefsOf(root);
+  if (!Number.isInteger(slideIndex) || slideIndex < 1 || slideIndex > slideRefs.length) {
+    throw new FrameBridgeValidationError(
+      `Slide ${slideIndex} is out of range; the deck has ${slideRefs.length} slide(s).`,
+    );
+  }
+  const slideRef = slideRefs[slideIndex - 1] as string;
+  const slideObjectId = refToObjectId(slideRef);
+  const slide = slideObjectId ? model.objects.find(o => o.objectId === slideObjectId) : undefined;
+  if (!slide || slide.classId !== CLASS_SLIDE) {
+    throw new FrameBridgeValidationError(
+      `Slide ${slideIndex} (${slideRef}) has no slide object (ClassId ${CLASS_SLIDE}) in the live model.`,
+    );
+  }
+  return { slide, slideRef, root };
+};
+
+/** The creation ids every object on a slide carries: the slide's own `335562805`/`335562806`. */
+const PROP_SLIDE_SID = 335562805;
+const PROP_SLIDE_CID = 335562806;
+
+/**
+ * Whether `object` belongs to `slide`. Every shape, text body, paragraph, table,
+ * row and cell carries its slide's creation ids, which is what tells a slide's
+ * text apart from the same text on a copy of that slide.
+ */
+export const isOnSlide = (object: PodsObject, slide: PodsObject): boolean =>
+  readProp(object.properties, PROP_SLIDE_SID) === readProp(slide.properties, PROP_SLIDE_SID) &&
+  readProp(object.properties, PROP_SLIDE_CID) === readProp(slide.properties, PROP_SLIDE_CID);
 
 /** The slide's storage cell id, derived from the presentation root (`<root guid>|3`). */
 export const cellIdOf = (root: PodsObject): string => `${guidOf(root.objectId)}|3`;

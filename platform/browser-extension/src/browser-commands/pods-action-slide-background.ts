@@ -25,10 +25,9 @@ import {
   CLASS_SLIDE,
   cellIdOf,
   findPresentationRoot,
+  findSlideAt,
   type PodsModel,
-  type PodsObject,
   readProp,
-  refToObjectId,
   slideRefsOf,
 } from './pods-model.js';
 
@@ -76,29 +75,6 @@ const bgColorValue = (colorHex: string): string => `#${colorHex},,,`;
 /** The structured colour json the editor writes alongside the string form, key order matching its capture. */
 const bgColorJson = (colorHex: string): string =>
   JSON.stringify({ Alpha: 100, ColorLuminance: 0, FTintColor: false, RGBColor: colorHex, ThemeColor: -1 });
-
-/** Find the slide object (`393227`) the root's slide list names at a 1-based position. */
-const findSlideAt = (
-  model: PodsModel,
-  slideIndex: number,
-): { slide: PodsObject; slideRef: string; root: PodsObject } => {
-  const root = findPresentationRoot(model);
-  const { slideRefs } = slideRefsOf(root);
-  if (!Number.isInteger(slideIndex) || slideIndex < 1 || slideIndex > slideRefs.length) {
-    throw new FrameBridgeValidationError(
-      `set_slide_background index ${slideIndex} is out of range; the deck has ${slideRefs.length} slide(s).`,
-    );
-  }
-  const slideRef = slideRefs[slideIndex - 1] as string;
-  const slideObjectId = refToObjectId(slideRef);
-  const slide = slideObjectId ? model.objects.find(o => o.objectId === slideObjectId) : undefined;
-  if (!slide || slide.classId !== CLASS_SLIDE) {
-    throw new FrameBridgeValidationError(
-      `Slide ${slideIndex} (${slideRef}) has no slide object (ClassId ${CLASS_SLIDE}) in the live model.`,
-    );
-  }
-  return { slide, slideRef, root };
-};
 
 /**
  * Build the `FormatBackgroundSolidFill` revision body with identity placeholders.

@@ -102,15 +102,22 @@ const propsOf = (o: Obj): Map<number, string> => {
 };
 const build = (withRunText = false, text = 'Next milestone') =>
   buildAddParagraphBody(ctx(withRunText), text, GUID, HEAD, OWNER, ACTION_JSON, CREATED);
+const onlyRevision = (body: Record<string, unknown>) => {
+  const revisions = revisionsOf(body);
+  expect(revisions).toHaveLength(1);
+  return revisions[0] as Record<string, unknown>;
+};
+const objects = (withRunText = false, text = 'Next milestone') => objectsOf(onlyRevision(build(withRunText, text)));
 
 describe('resolveAddParagraphContext', () => {
   test('walks paragraph to text body to shape, and finds the run', () => {
     const resolved = ctx();
-    expect(resolved.sourceParagraphId).toBe(PARAGRAPH_ID);
-    expect(resolved.shapeObjectId).toBe(SHAPE_ID);
+    expect(resolved.paragraphId).toBe(PARAGRAPH_ID);
+    expect(resolved.containerObjectId).toBe(SHAPE_ID);
+    expect(resolved.containerClassId).toBe(1074135132);
     expect(resolved.shapeName).toBe('Title 1');
-    expect(resolved.sourceRun.objectId).toBe(RUN_ID);
-    expect(resolved.sourceRunRef).toBe(RUN_REF);
+    expect(resolved.run.objectId).toBe(RUN_ID);
+    expect(resolved.blockRef).toBe('{9d6d4a29-58d3-4c6f-bdb7-70296063d69b}{88}');
     expect(resolved.contentRefTokens).toEqual(['{9d6d4a29-58d3-4c6f-bdb7-70296063d69b}{88}']);
   });
 
@@ -129,10 +136,22 @@ describe('resolveAddParagraphContext', () => {
     expect(() => resolveAddParagraphContext(orphaned, TITLE)).toThrow(/no text body/);
   });
 
-  test('fails when no shape claims the text body', () => {
+  test('reaches speaker notes, whose text lives in a notes placeholder shape (393326)', () => {
+    const notes = model();
+    const shape = notes.objects.find(o => o.objectId === SHAPE_ID);
+    if (shape) shape.classId = 393326;
+    const resolved = resolveAddParagraphContext(notes, TITLE);
+    expect(resolved.containerClassId).toBe(393326);
+    const written = objectsOf(
+      onlyRevision(buildAddParagraphBody(resolved, 'Speaker note', GUID, HEAD, OWNER, ACTION_JSON, CREATED)),
+    );
+    expect(written.find(o => o.ObjectId === SHAPE_ID)?.ClassId).toBe(393326);
+  });
+
+  test('fails when no shape or table cell claims the text body', () => {
     const orphaned = model();
     orphaned.objects = orphaned.objects.filter(o => o.classId !== 1074135132);
-    expect(() => resolveAddParagraphContext(orphaned, TITLE)).toThrow(/No shape/);
+    expect(() => resolveAddParagraphContext(orphaned, TITLE)).toThrow(/No shape, notes placeholder or table cell/);
   });
 
   test('fails when the paragraph references no run', () => {
@@ -143,52 +162,70 @@ describe('resolveAddParagraphContext', () => {
 });
 
 describe('buildAddParagraphBody', () => {
-  test('sends three revisions chained base-to-id in one request', () => {
-    const revisions = revisionsOf(build());
-    expect(revisions).toHaveLength(3);
-    expect(revisions[0]?.BaseId).toBe(HEAD);
-    expect(revisions[1]?.BaseId).toBe(revisions[0]?.Id);
-    expect(revisions[2]?.BaseId).toBe(revisions[1]?.Id);
-    expect(new Set(revisions.map(r => r.Id)).size).toBe(3);
+  test('sends one revision based on the head, naming the paragraph’s own cell', () => {
+    const revision = onlyRevision(build());
+    expect(revision.BaseId).toBe(HEAD);
+    expect(revision.CellId).toBe('23069e19-9218-5ae4-9815-d8ceaade97df|3');
   });
 
-  test('every revision names the target paragraph’s own cell', () => {
-    for (const revision of revisionsOf(build())) {
-      expect(revision.CellId).toBe('23069e19-9218-5ae4-9815-d8ceaade97df|3');
-    }
-  });
-
-  test('appends one block to the shape and changes nothing else about it', () => {
-    const shape = objectsOf(revisionsOf(build())[0] as Record<string, unknown>).find(o => o.ClassId === 1074135132);
+  test('adds one block to the shape and changes nothing else about it', () => {
+    const shape = objects().find(o => o.ClassId === 1074135132);
     expect(shape?.ObjectId).toBe(SHAPE_ID);
     const props = propsOf(shape as Obj);
-    expect(props.get(603986976)).toBe(`{9d6d4a29-58d3-4c6f-bdb7-70296063d69b}{88},{${GUID}}{6}`);
+    expect(props.get(603986976)).toBe(`{9d6d4a29-58d3-4c6f-bdb7-70296063d69b}{88},{${GUID}}{4}`);
     expect(props.get(469780826)).toBe('Title 1');
     expect(props.size).toBe(2);
   });
 
+  test('places the new block directly after the source block, not at the end of the shape', () => {
+    const middle = model();
+    const shape = middle.objects.find(o => o.objectId === SHAPE_ID);
+    if (shape) {
+      shape.properties = [
+        469780826,
+        'Title 1',
+        603986976,
+        '{9d6d4a29-58d3-4c6f-bdb7-70296063d69b}{88},{ffffffff-0000-0000-0000-000000000000}{1}',
+      ];
+    }
+    const body = buildAddParagraphBody(
+      resolveAddParagraphContext(middle, TITLE),
+      'x',
+      GUID,
+      HEAD,
+      OWNER,
+      ACTION_JSON,
+      CREATED,
+    );
+    const written = objectsOf(onlyRevision(body)).find(o => o.ClassId === 1074135132);
+    expect(propsOf(written as Obj).get(603986976)).toBe(
+      `{9d6d4a29-58d3-4c6f-bdb7-70296063d69b}{88},{${GUID}}{4},{ffffffff-0000-0000-0000-000000000000}{1}`,
+    );
+  });
+
   test('resubmits the source paragraph unchanged', () => {
-    const objects = objectsOf(revisionsOf(build())[0] as Record<string, unknown>);
-    const source = objects.find(o => o.ObjectId === PARAGRAPH_ID);
+    const source = objects().find(o => o.ObjectId === PARAGRAPH_ID);
     expect(propsOf(source as Obj).get(469769250)).toBe(TITLE);
     expect(propsOf(source as Obj).get(469780757)).toBe('{"Lines":[39]}');
   });
 
   test('creates a text body that owns the new paragraph and inherits the slide identity', () => {
-    const body = objectsOf(revisionsOf(build())[0] as Record<string, unknown>).find(o => o.ClassId === 393229);
-    expect(body?.ObjectId).toBe(`${GUID}|6`);
+    const body = objects().find(o => o.ClassId === 393229);
+    expect(body?.ObjectId).toBe(`${GUID}|4`);
     const props = propsOf(body as Obj);
     expect(props.get(603986975)).toBe(`{${GUID}}{1}`);
     expect(props.get(469780482)).toBe(OWNER);
     expect(props.get(201333763)).toBe('1');
     expect(props.get(335551753)).toBe(CREATED);
     expect(props.get(335551866)).toBe(CREATED);
-    // Inherited from the paragraph already in the shape.
     expect(props.get(335562753)).toBe('58');
     expect(props.get(335562805)).toBe('2147483523');
     expect(props.get(335562806)).toBe('857146763');
     expect(props.get(469780968)).toBe('Slide');
     expect(props.get(335559683)).toBe('0');
+    // A title carries no list marker, so none is referenced or minted.
+    expect(props.has(603986982)).toBe(false);
+    expect(objects().some(o => o.ClassId === 393234)).toBe(false);
   });
 
   test("inherits the source's own end-mark when it has one, over its run reference", () => {
@@ -196,78 +233,112 @@ describe('buildAddParagraphBody', () => {
     const paragraph = withEndMark.objects.find(o => o.objectId === PARAGRAPH_ID);
     if (paragraph) paragraph.properties = [...sourceParagraphProperties(), 536886591, '{4efeeb47}{60}'];
     const resolved = resolveAddParagraphContext(withEndMark, TITLE);
-    expect(resolved.sourceEndMarkRef).toBe('{4efeeb47}{60}');
+    expect(resolved.endMarkRef).toBe('{4efeeb47}{60}');
     const created = objectsOf(
-      revisionsOf(buildAddParagraphBody(resolved, 'x', GUID, HEAD, OWNER, ACTION_JSON, CREATED))[0] as Record<
-        string,
-        unknown
-      >,
+      onlyRevision(buildAddParagraphBody(resolved, 'x', GUID, HEAD, OWNER, ACTION_JSON, CREATED)),
     ).find(o => o.ObjectId === `${GUID}|1`);
     expect(propsOf(created as Obj).get(536886591)).toBe('{4efeeb47}{60}');
-    // The body-text run is still the source's, which the capture shows directly.
     expect(propsOf(created as Obj).get(603987475)).toBe(RUN_REF);
   });
 
-  test("falls back to the source's run when it carries no end-mark, as the capture did", () => {
-    expect(ctx().sourceEndMarkRef).toBe(RUN_REF);
+  test("falls back to the source's run when it carries no end-mark", () => {
+    expect(ctx().endMarkRef).toBe(RUN_REF);
   });
 
-  test('creates an empty paragraph owned by the new block, inheriting the source run', () => {
-    const objects = objectsOf(revisionsOf(build())[0] as Record<string, unknown>);
-    const created = objects.find(o => o.ObjectId === `${GUID}|1`);
+  test('creates the paragraph carrying its text, owned by the new block', () => {
+    const created = objects().find(o => o.ObjectId === `${GUID}|1`);
     const props = propsOf(created as Obj);
     expect(created?.ClassId).toBe(393230);
-    expect(props.get(469769250)).toBe('');
+    expect(props.get(469769250)).toBe('Next milestone');
     expect(props.get(469780482)).toBe(OWNER);
     expect(props.get(603987475)).toBe(RUN_REF);
-    // endOfParagraphFormatting — the caret at the end inherits the source run.
-    expect(props.get(536886591)).toBe(RUN_REF);
+    expect(props.get(469780757)).toBe('{"Lines":[15]}');
     expect(props.get(335559732)).toBe('0');
   });
 
-  test('second revision corrects the inherited line lengths to a single empty line', () => {
-    const objects = objectsOf(revisionsOf(build())[1] as Record<string, unknown>);
-    expect(objects).toHaveLength(1);
-    expect(objects[0]?.ObjectId).toBe(`${GUID}|1`);
-    expect(propsOf(objects[0] as Obj).get(469780757)).toBe('{"Lines":[1]}');
+  test('gives the new paragraph a single-run layout when the source is split into runs', () => {
+    // The crash this prevents: the source's offsets (59) copied onto a shorter
+    // paragraph point past its end, and the editor client dies applying the write.
+    const multiRun = model();
+    const paragraph = multiRun.objects.find(o => o.objectId === PARAGRAPH_ID);
+    if (paragraph) {
+      paragraph.properties = [
+        ...sourceParagraphProperties().slice(0, -2),
+        469769746,
+        '20',
+        469769819,
+        '11',
+        603987475,
+        `${RUN_REF},{4efeeb47-de77-4081-a870-b0e9ad47aabf}{59}`,
+      ];
+    }
+    const body = buildAddParagraphBody(
+      resolveAddParagraphContext(multiRun, TITLE),
+      'Short',
+      GUID,
+      HEAD,
+      OWNER,
+      ACTION_JSON,
+      CREATED,
+    );
+    const created = objectsOf(onlyRevision(body)).find(o => o.ObjectId === `${GUID}|1`);
+    const props = propsOf(created as Obj);
+    expect(props.has(469769746)).toBe(false);
+    expect(props.get(469769819)).toBe('1');
+    expect(props.get(603987475)).toBe(RUN_REF);
+    // The source keeps its own layout.
+    const source = objectsOf(onlyRevision(body)).find(o => o.ObjectId === PARAGRAPH_ID);
+    expect(propsOf(source as Obj).get(469769746)).toBe('20');
   });
 
-  test('third revision types the text into the created paragraph', () => {
-    const objects = objectsOf(revisionsOf(build()).at(-1) as Record<string, unknown>);
-    expect(objects).toHaveLength(1);
-    const props = propsOf(objects[0] as Obj);
-    expect(props.get(469769250)).toBe('Next milestone');
-    // The shared run carries no text of its own, so it stays shared.
-    expect(props.get(603987475)).toBe(RUN_REF);
+  test('copies the source block’s list marker into the new block', () => {
+    const bulleted = model();
+    const body = bulleted.objects.find(o => o.objectId === TEXT_BODY_ID);
+    if (body) body.properties = [...body.properties, 603986982, '{4efeeb47-de77-4081-a870-b0e9ad47aabf}{70}'];
+    bulleted.objects.push({
+      classId: 393234,
+      objectId: '4efeeb47-de77-4081-a870-b0e9ad47aabf|70',
+      properties: [469769242, '8226', 469780482, 'source-owner'],
+    });
+    const written = objectsOf(
+      onlyRevision(
+        buildAddParagraphBody(
+          resolveAddParagraphContext(bulleted, TITLE),
+          'x',
+          GUID,
+          HEAD,
+          OWNER,
+          ACTION_JSON,
+          CREATED,
+        ),
+      ),
+    );
+    expect(propsOf(written.find(o => o.ClassId === 393229) as Obj).get(603986982)).toBe(`{${GUID}}{5}`);
+    const marker = written.find(o => o.ClassId === 393234);
+    expect(marker?.ObjectId).toBe(`${GUID}|5`);
+    expect(propsOf(marker as Obj).get(469769242)).toBe('8226');
+    expect(propsOf(marker as Obj).get(469780482)).toBe(OWNER);
   });
 
   test('mints a replacement run when the shared run carries its own text', () => {
-    const objects = objectsOf(revisionsOf(build(true)).at(-1) as Record<string, unknown>);
-    expect(objects).toHaveLength(2);
-    const paragraph = objects.find(o => o.ClassId === 393230);
-    const run = objects.find(o => o.ClassId === 1179725);
-    expect(run?.ObjectId).toBe(`${GUID}|9`);
+    const written = objects(true);
+    const paragraph = written.find(o => o.ClassId === 393230 && o.ObjectId === `${GUID}|1`);
+    const run = written.find(o => o.ClassId === 1179725);
+    expect(run?.ObjectId).toBe(`${GUID}|6`);
     expect(propsOf(run as Obj).get(469769250)).toBe('Next milestone');
     expect(propsOf(run as Obj).get(268442635)).toBe('4400');
-    // The paragraph points at the replacement, so its text and its run's cannot diverge.
-    expect(propsOf(paragraph as Obj).get(603987475)).toBe(`{${GUID}}{9}`);
+    expect(propsOf(paragraph as Obj).get(603987475)).toBe(`{${GUID}}{6}`);
   });
 
-  test('names the action NewLine, and only on the first revision', () => {
-    const revisions = revisionsOf(build());
-    const descriptor = objectsOf(revisions[0] as Record<string, unknown>).find(o => o.ClassId === 131140);
+  test('names the action NewLine', () => {
+    const descriptor = objects().find(o => o.ClassId === 131140);
     expect(propsOf(descriptor as Obj).get(469780989)).toBe('NewLine');
-    for (const revision of revisions.slice(1)) {
-      expect(objectsOf(revision).some(o => o.ClassId === 131140)).toBe(false);
-    }
   });
 
   test('sorts every property list ascending by id, as the wire carries them', () => {
-    for (const revision of revisionsOf(build(true))) {
-      for (const object of objectsOf(revision)) {
-        const ids = object.Properties.filter((_, i) => i % 2 === 0);
-        expect(ids).toEqual([...ids].sort((a, b) => Number(a) - Number(b)));
-      }
+    for (const object of objects(true)) {
+      const ids = object.Properties.filter((_, i) => i % 2 === 0);
+      expect(ids).toEqual([...ids].sort((a, b) => Number(a) - Number(b)));
     }
   });
 });
@@ -318,9 +389,7 @@ describe('addParagraphAction', () => {
     expect(addParagraphAction.isApplied(applied('Cutover'), ctx(), { after: TITLE, text: 'Cutover' })).toBe(true);
   });
 
-  test('does not confirm on a new block whose paragraph is still empty', () => {
-    // The chained revisions are accepted individually, so a dropped typing
-    // revision leaves the block in place with nothing in it.
+  test('does not confirm on a new block whose paragraph does not carry the text', () => {
     expect(addParagraphAction.isApplied(applied(''), ctx(), { after: TITLE, text: 'Cutover' })).toBe(false);
   });
 

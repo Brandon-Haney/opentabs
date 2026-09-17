@@ -20,13 +20,23 @@ import { FrameBridgeValidationError } from './frame-bridge-rpc.js';
 import { addParagraphAction } from './pods-action-add-paragraph.js';
 import { addSlideAction } from './pods-action-add-slide.js';
 import { alignTextAction } from './pods-action-align-text.js';
+import { deleteParagraphAction } from './pods-action-delete-paragraph.js';
 import { deleteSlideAction } from './pods-action-delete-slide.js';
 import { setHyperlinkAction } from './pods-action-hyperlink.js';
 import { moveSlideAction } from './pods-action-move-slide.js';
 import { readOutlineAction } from './pods-action-read-outline.js';
 import { formatTextAction, setFontSizeAction } from './pods-action-run-format.js';
 import { setTextAction } from './pods-action-set-text.js';
+import {
+  duplicateShapeAction,
+  moveShapeAction,
+  readSlideLayoutAction,
+  resizeShapeAction,
+  setShapeFillAction,
+  setTableHeightAction,
+} from './pods-action-shapes.js';
 import { slideBackgroundAction } from './pods-action-slide-background.js';
+import { addTableRowAction, deleteTableRowAction } from './pods-action-table-row.js';
 import { freshAfterFirst, type PodsBridgeResult, runPodsWriteConfirmed } from './pods-bridge.js';
 import { type PodsModel, PodsStreamCompactedError, readPodsModel } from './pods-model.js';
 import { reloadEditorSession } from './pods-open-editor.js';
@@ -113,12 +123,21 @@ const PODS_ACTIONS: Record<string, PodsWriteActionSpec<unknown, unknown> | PodsR
   align_text: alignTextAction,
   set_text: setTextAction,
   add_paragraph: addParagraphAction,
+  add_table_row: addTableRowAction,
+  delete_table_row: deleteTableRowAction,
+  delete_paragraph: deleteParagraphAction,
   add_slide: addSlideAction,
   delete_slide: deleteSlideAction,
   move_slide: moveSlideAction,
   set_slide_background: slideBackgroundAction,
   set_hyperlink: setHyperlinkAction,
   read_outline: readOutlineAction,
+  read_slide_layout: readSlideLayoutAction,
+  move_shape: moveShapeAction,
+  resize_shape: resizeShapeAction,
+  duplicate_shape: duplicateShapeAction,
+  set_table_height: setTableHeightAction,
+  set_shape_fill: setShapeFillAction,
 };
 
 /** The `__podsAction` directive, validated by `tool-dispatch`. */

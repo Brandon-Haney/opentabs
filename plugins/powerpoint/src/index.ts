@@ -8,6 +8,7 @@ import { addShape } from './tools/add-shape.js';
 import { addSlide } from './tools/add-slide.js';
 import { addSlideLive } from './tools/add-slide-live.js';
 import { addTable } from './tools/add-table.js';
+import { addTableRow } from './tools/add-table-row.js';
 import { addTextBox } from './tools/add-text-box.js';
 import { alignText } from './tools/align-text.js';
 import { commitPresentationTool } from './tools/commit-presentation.js';
@@ -16,13 +17,16 @@ import { createFolder } from './tools/create-folder.js';
 import { createPresentation } from './tools/create-presentation.js';
 import { createSharingLink } from './tools/create-sharing-link.js';
 import { deleteItem } from './tools/delete-item.js';
+import { deleteParagraph } from './tools/delete-paragraph.js';
 import { deletePermission } from './tools/delete-permission.js';
 import { deleteShape } from './tools/delete-shape.js';
 import { deleteSlide } from './tools/delete-slide.js';
 import { deleteSlideLive } from './tools/delete-slide-live.js';
+import { deleteTableRow } from './tools/delete-table-row.js';
 import { diagnose } from './tools/diagnose.js';
 import { discardPresentationTool } from './tools/discard-presentation.js';
 import { duplicateShape } from './tools/duplicate-shape.js';
+import { duplicateShapeLive } from './tools/duplicate-shape-live.js';
 import { duplicateSlide as duplicateSlideTool } from './tools/duplicate-slide.js';
 import { fitText } from './tools/fit-text.js';
 import { formatText } from './tools/format-text.js';
@@ -47,18 +51,23 @@ import { listSharedWithMe } from './tools/list-shared-with-me.js';
 import { listSlideLayouts } from './tools/list-slide-layouts.js';
 import { listVersions } from './tools/list-versions.js';
 import { moveItem } from './tools/move-item.js';
+import { moveShape } from './tools/move-shape.js';
 import { moveSlide } from './tools/move-slide.js';
 import { moveSlideLive } from './tools/move-slide-live.js';
 import { openInEditor } from './tools/open-in-editor.js';
 import { openPresentationTool } from './tools/open-presentation.js';
+import { readSlideLayout } from './tools/read-slide-layout.js';
 import { reauthenticate } from './tools/reauthenticate.js';
 import { renameItem } from './tools/rename-item.js';
+import { resizeShape } from './tools/resize-shape.js';
 import { searchFiles } from './tools/search-files.js';
 import { setFontSize } from './tools/set-font-size.js';
 import { setHyperlink } from './tools/set-hyperlink.js';
 import { setPlaceholderText } from './tools/set-placeholder-text.js';
 import { setSlideBackground } from './tools/set-slide-background.js';
 import { setSlideHiddenTool } from './tools/set-slide-hidden.js';
+import { setShapeFill } from './tools/set-shape-fill.js';
+import { setTableHeight } from './tools/set-table-height.js';
 import { setText } from './tools/set-text.js';
 import { updateShape } from './tools/update-shape.js';
 import { updateSlideNotes } from './tools/update-slide-notes.js';
@@ -108,6 +117,15 @@ class PowerPointPlugin extends OpenTabsPlugin {
     setHyperlink,
     addSlideLive,
     addParagraph,
+    addTableRow,
+    deleteTableRow,
+    deleteParagraph,
+    readSlideLayout,
+    moveShape,
+    resizeShape,
+    duplicateShapeLive,
+    setTableHeight,
+    setShapeFill,
     deleteSlideLive,
     moveSlideLive,
     setSlideBackground,

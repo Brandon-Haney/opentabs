@@ -6,11 +6,12 @@ export const setText = defineTool({
   name: 'set_text',
   displayName: 'Set Text',
   description:
-    'Replace the text of a paragraph on the open slide, targeting it by its exact current visible text. The ' +
+    'Replace the text of a paragraph on the open deck — on a slide or in its speaker notes — targeting it by its exact current visible text. The ' +
     'formatting (size, color, font, bold…) is preserved — only the words change. This writes into the live ' +
     'co-authoring session, so the change appears in the open editor within seconds; it edits the deck in place ' +
     'while it is open. The `text` must match one paragraph exactly (use `get_live_outline` to see the current ' +
-    'text); paragraphs with mixed formatting (multiple runs) and multi-line replacements are not supported. ' +
+    'text). A paragraph with mixed formatting takes the formatting of its first stretch, as it does when you type ' +
+    'over it in the editor. Multi-line replacements are not supported. ' +
     'Works on text that is really on a slide — an EMPTY placeholder’s prompt text ("Click to add title") cannot ' +
     'be filled this way; the server drops such writes. Pass `dry_run: true` to construct and return the revision ' +
     'without writing it. The deck must be open and active in the browser.',

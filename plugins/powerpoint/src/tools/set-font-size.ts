@@ -35,8 +35,14 @@ export const setFontSize = defineTool({
         'Which occurrence of `match` to resize when it appears more than once, counting from 1. Defaults to the first.',
       ),
     size_pt: z.number().positive().describe('The new font size in points, e.g. 24.'),
+    slide: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe('The 1-based slide the text is on. Pass it when the same text appears on more than one slide.'),
   }),
   output: podsSetFontSizeOutputSchema,
   handle: async params =>
-    podsSetFontSize(params.text, params.size_pt, { match: params.match, occurrence: params.occurrence }),
+    podsSetFontSize(params.text, params.size_pt, { match: params.match, occurrence: params.occurrence, slideIndex: params.slide }),
 });

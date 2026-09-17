@@ -238,13 +238,17 @@ export const podsSetFontSizeOutputSchema = z.object({
 export interface TextMatch {
   match?: string;
   occurrence?: number;
+  /** The 1-based slide to look on, for text that also appears on another slide. */
+  slideIndex?: number;
 }
 
 /** The match arguments, dropped entirely when the caller named no substring. */
-const matchArgs = (target: TextMatch): Record<string, unknown> =>
-  target.match === undefined
+const matchArgs = (target: TextMatch): Record<string, unknown> => ({
+  ...(target.slideIndex !== undefined ? { slideIndex: target.slideIndex } : {}),
+  ...(target.match === undefined
     ? {}
-    : { match: target.match, ...(target.occurrence !== undefined ? { occurrence: target.occurrence } : {}) };
+    : { match: target.match, ...(target.occurrence !== undefined ? { occurrence: target.occurrence } : {}) }),
+});
 
 /**
  * Build the `set_font_size` action directive: resize the paragraph whose visible
@@ -329,6 +333,10 @@ export const podsSetTextOutputSchema = z.object({
   newText: z.string().describe('The replacement text that was written.'),
   paragraphId: z.string().describe('The object id of the paragraph that was rewritten.'),
   runId: z.string().optional().describe('The run that keeps supplying the formatting.'),
+  replacedBlock: z
+    .boolean()
+    .optional()
+    .describe('True when a multi-run paragraph was replaced by a new single-run paragraph, as the editor does.'),
   dryRun: z.boolean().optional().describe('True when this was a dry run (constructed but not written).'),
   body: z.unknown().optional().describe('The constructed revision (dry run only), for inspection.'),
 });
@@ -363,6 +371,135 @@ export const podsAddParagraph = (
   text: string,
   dryRun = false,
 ): z.infer<typeof podsAddParagraphOutputSchema> => podsAction('add_paragraph', { after, text }, dryRun);
+
+/** What the agent receives after the `add_table_row` engine runs (write result, or a dry-run body). */
+export const podsAddTableRowOutputSchema = z.object({
+  ...podsActionResultShape,
+  after: z.string().optional().describe('The cell text naming the row the new one was inserted below.'),
+  cells: z.array(z.string()).optional().describe('The texts written into the new cells, left to right.'),
+  columns: z.number().int().optional().describe('How many cells the new row has.'),
+  rowsBefore: z.number().int().optional().describe('The row count before the insert.'),
+  dryRun: z.boolean().optional().describe('True when this was a dry run (constructed but not written).'),
+  body: z.unknown().optional().describe('The constructed revision (dry run only), for inspection.'),
+});
+
+/**
+ * Build the `add_table_row` action directive: insert a row below the table row
+ * holding the cell text `after`, filling its cells from `cells`. With `dryRun`,
+ * the engine constructs and returns the revision without writing.
+ */
+export const podsAddTableRow = (
+  after: string,
+  cells: string[],
+  dryRun = false,
+): z.infer<typeof podsAddTableRowOutputSchema> => podsAction('add_table_row', { after, cells }, dryRun);
+
+/** What the agent receives after the `delete_table_row` engine runs (write result, or a dry-run body). */
+export const podsDeleteTableRowOutputSchema = z.object({
+  ...podsActionResultShape,
+  row: z.string().optional().describe('The cell text naming the row that was removed.'),
+  rowsBefore: z.number().int().optional().describe('The row count before the delete.'),
+  dryRun: z.boolean().optional().describe('True when this was a dry run (constructed but not written).'),
+  body: z.unknown().optional().describe('The constructed revision (dry run only), for inspection.'),
+});
+
+/** Build the `delete_table_row` action directive: remove the table row holding the cell text `row`. */
+export const podsDeleteTableRow = (row: string, dryRun = false): z.infer<typeof podsDeleteTableRowOutputSchema> =>
+  podsAction('delete_table_row', { row }, dryRun);
+
+/** What the agent receives after the `delete_paragraph` engine runs (write result, or a dry-run body). */
+export const podsDeleteParagraphOutputSchema = z.object({
+  ...podsActionResultShape,
+  text: z.string().optional().describe('The text of the paragraph that was removed.'),
+  paragraphId: z.string().optional().describe('The object id of the removed paragraph.'),
+  blocksBefore: z.number().int().optional().describe('How many paragraphs its shape or cell held before.'),
+  dryRun: z.boolean().optional().describe('True when this was a dry run (constructed but not written).'),
+  body: z.unknown().optional().describe('The constructed revision (dry run only), for inspection.'),
+});
+
+/** Build the `delete_paragraph` action directive: remove the paragraph whose visible text is `text`. */
+export const podsDeleteParagraph = (text: string, dryRun = false): z.infer<typeof podsDeleteParagraphOutputSchema> =>
+  podsAction('delete_paragraph', { text }, dryRun);
+
+/** Where one shape sits on a slide, in inches. */
+const shapeLayoutSchema = z.object({
+  name: z.string().describe('The shape name — pass it as `shape` to the layout tools.'),
+  occurrence: z.number().int().describe('1-based among shapes sharing this name on the slide.'),
+  kind: z.enum(['table', 'shape']),
+  left: z.number(),
+  top: z.number(),
+  width: z.number(),
+  height: z.number(),
+  fillHex: z.string().nullable().describe('Solid fill colour as RRGGBB, or null.'),
+  text: z.string().describe('The shape’s text, paragraphs joined by newlines; empty for a table.'),
+  rows: z
+    .array(z.object({ height: z.number(), firstCell: z.string() }))
+    .optional()
+    .describe('For a table: each row’s height and the text of its first cell.'),
+});
+
+/** What the agent receives after `read_slide_layout` runs. */
+export const podsReadSlideLayoutOutputSchema = z.object({
+  action: z.string().optional(),
+  slideIndex: z.number().int(),
+  slideWidth: z.number().describe('Slide width in inches.'),
+  slideHeight: z.number().describe('Slide height in inches.'),
+  units: z.string(),
+  shapes: z.array(shapeLayoutSchema),
+});
+
+/** Read every shape's position and size on the 1-based slide `slideIndex`. */
+export const podsReadSlideLayout = (slideIndex: number): z.infer<typeof podsReadSlideLayoutOutputSchema> =>
+  podsAction('read_slide_layout', { slideIndex });
+
+/** What the agent receives after a shape layout write runs (write result, or a dry-run body). */
+export const podsShapeLayoutOutputSchema = z
+  .object({
+    ...podsActionResultShape,
+    slideIndex: z.number().int().optional(),
+    shape: z.string().optional(),
+    dryRun: z.boolean().optional().describe('True when this was a dry run (constructed but not written).'),
+    body: z.unknown().optional().describe('The constructed revision (dry run only), for inspection.'),
+  })
+  .passthrough();
+
+/** Identifies a shape on a slide by name. */
+export interface ShapeTarget {
+  slideIndex: number;
+  shape: string;
+  occurrence?: number;
+}
+
+export const podsMoveShape = (
+  target: ShapeTarget,
+  position: { left?: number; top?: number },
+  dryRun = false,
+): z.infer<typeof podsShapeLayoutOutputSchema> => podsAction('move_shape', { ...target, ...position }, dryRun);
+
+export const podsResizeShape = (
+  target: ShapeTarget,
+  size: { width?: number; height?: number },
+  dryRun = false,
+): z.infer<typeof podsShapeLayoutOutputSchema> => podsAction('resize_shape', { ...target, ...size }, dryRun);
+
+export const podsDuplicateShape = (
+  target: ShapeTarget,
+  copy: { left?: number; top?: number },
+  dryRun = false,
+): z.infer<typeof podsShapeLayoutOutputSchema> => podsAction('duplicate_shape', { ...target, ...copy }, dryRun);
+
+export const podsSetShapeFill = (
+  target: ShapeTarget,
+  colorHex: string,
+  dryRun = false,
+): z.infer<typeof podsShapeLayoutOutputSchema> => podsAction('set_shape_fill', { ...target, colorHex }, dryRun);
+
+export const podsSetTableHeight = (
+  slideIndex: number,
+  table: string,
+  height: number,
+  dryRun = false,
+): z.infer<typeof podsShapeLayoutOutputSchema> => podsAction('set_table_height', { slideIndex, table, height }, dryRun);
 
 /** What the agent receives after the `add_slide` engine runs (write result, or a dry-run body). */
 export const podsAddSlideOutputSchema = z.object({

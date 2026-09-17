@@ -19,6 +19,12 @@ export const formatText = defineTool({
   group: 'Slides',
   input: z
     .object({
+      slide: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe('The 1-based slide the text is on. Pass it when the same text appears on more than one slide.'),
       text: z
         .string()
         .min(1)
@@ -71,6 +77,6 @@ export const formatText = defineTool({
         colorHex: params.color?.replace('#', '').toUpperCase(),
         font: params.font,
       },
-      { match: params.match, occurrence: params.occurrence },
+      { match: params.match, occurrence: params.occurrence, slideIndex: params.slide },
     ),
 });

@@ -14,6 +14,7 @@ import { applyCellStyle } from './tools/apply-cell-style.js';
 import { calculateWorkbook } from './tools/calculate-workbook.js';
 import { clearDataValidation } from './tools/clear-data-validation.js';
 import { clearRange } from './tools/clear-range.js';
+import { clearRangeFilters } from './tools/clear-range-filters.js';
 import { clearTableFilters } from './tools/clear-table-filters.js';
 import { convertTableToRange } from './tools/convert-table-to-range.js';
 import { copyRange } from './tools/copy-range.js';
@@ -64,6 +65,7 @@ import { listTables } from './tools/list-tables.js';
 import { listWorksheets } from './tools/list-worksheets.js';
 import { mergeCells } from './tools/merge-cells.js';
 import { protectWorksheet } from './tools/protect-worksheet.js';
+import { reapplyRangeFilters } from './tools/reapply-range-filters.js';
 import { reauthenticate } from './tools/reauthenticate.js';
 import { refreshAllConnections } from './tools/refresh-all-connections.js';
 import { refreshPivot } from './tools/refresh-pivot.js';
@@ -190,6 +192,8 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     setPageSetup,
     getPageSetup,
     setSheetView,
+    clearRangeFilters,
+    reapplyRangeFilters,
     insertPageBreak,
     setHyperlink,
     addComment,

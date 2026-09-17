@@ -66,13 +66,24 @@ const LS_TOKEN_KEY = '__opentabs_word_graph_token';
  * `{index, ts, bytes, method, url}`, newest first and without bodies; with
  * `?entry=<index>`, that one request in full.
  *
- * Word's live write channel is not decoded yet, so unlike the other two this
- * records every request the editor sends that carries a body, whatever the
- * endpoint: the point is to learn what Word's editor talks to, and whether it
- * tunnels its own object model the way Excel's does. Narrow it to the channel
- * once that is known.
+ * Word's live channel turned out to be the same Cobalt revision protocol
+ * PowerPoint uses — `/we/OneNote.ashx` carries `{Mode, srs:[[3, {Revision:
+ * {ObjectGroups…}}]]}` for a write and `[[2, …]]` for a poll, with the same
+ * object classes and property ids — so the log is scoped to that endpoint.
  */
 const WORD_WRITE_LOG_SENTINEL = '__otb_word_writelog__';
+/**
+ * URL marker for the head-read channel. An in-frame `fetch` whose URL contains
+ * it is answered with the latest co-authoring head, which the editor holds
+ * client-side and sends on its polls but no response echoes. Chaining an edit
+ * onto the live document needs it as the revision to build on. The answer also
+ * describes the stashed donor, so a replay that finds none can say why.
+ */
+const WORD_HEAD_SENTINEL = '__otb_word_head__';
+/** Frame-local global the freshest `/we/OneNote.ashx` request is stashed under. */
+const WORD_DONOR_GLOBAL = '__otbWordDonor';
+/** Path of the co-authoring channel, named for the app that first used the protocol. */
+const WORD_CHANNEL_PATH = '/we/OneNote.ashx';
 /** Requests the ring buffer retains. */
 const WORD_WRITE_LOG_CAP = 200;
 /** Ceiling on the bytes the ring buffer holds, evicting oldest-first. */
@@ -81,13 +92,55 @@ const WORD_WRITE_LOG_MAX_BYTES = 24_000_000;
 const EDITOR_FETCH_MARKER = Symbol.for('opentabs.microsoft-word.editor.fetch.patched');
 const EDITOR_XHR_MARKER = Symbol.for('opentabs.microsoft-word.editor.xhr.patched');
 
-/** One request as the write log holds it: no headers, so no session credentials leave the frame. */
+/**
+ * One request as the write log holds it. Headers are dropped, but Word's own
+ * channel carries a WOPI access token inside the body, so a record is not
+ * credential-free: it is diagnostic material, readable only through the
+ * in-frame sentinel, and belongs nowhere else.
+ */
 interface WordWriteRecord {
   url: string;
   method: string;
   body: string;
   ts: number;
 }
+
+/**
+ * The freshest channel request, for an in-frame replay. It keeps the session
+ * headers, so unlike a log record it never leaves the frame: the frame-bridge
+ * engine reads this global inside the frame and posts from there.
+ */
+interface WordDonor {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body: string;
+  ts: number;
+}
+
+/** Normalize any `HeadersInit` form into a plain name-value map. */
+const headersToRecord = (headers: unknown): Record<string, string> => {
+  const record: Record<string, string> = {};
+  if (!headers) return record;
+  if (headers instanceof Headers) {
+    headers.forEach((value, name) => {
+      record[name] = value;
+    });
+    return record;
+  }
+  if (Array.isArray(headers)) {
+    for (const entry of headers as string[][]) {
+      if (typeof entry[0] === 'string' && typeof entry[1] === 'string') record[entry[0]] = entry[1];
+    }
+    return record;
+  }
+  if (typeof headers === 'object') {
+    for (const [name, value] of Object.entries(headers as Record<string, unknown>)) {
+      if (typeof value === 'string') record[name] = value;
+    }
+  }
+  return record;
+};
 
 /** True when this frame is Word's own Office Web Apps editor frame. */
 const isWordEditorFrame = (): boolean => {
@@ -110,21 +163,49 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
   const g = globalThis as {
     fetch: typeof fetch & { [EDITOR_FETCH_MARKER]?: true };
     XMLHttpRequest: typeof XMLHttpRequest;
+    [WORD_DONOR_GLOBAL]?: WordDonor;
   };
 
   const writeLog: WordWriteRecord[] = [];
   let writeLogBytes = 0;
   let droppedWrites = 0;
+  // The latest co-authoring head, read from the editor's own polls. Closure
+  // scoped, surfaced only through the read sentinel below.
+  let latestHead: { head: string; ts: number } | null = null;
+
+  /**
+   * A poll (`srs[0][0] === 2`) carries the client's current head as
+   * `ExpectedLatestRevisionId`. That is the only place it appears: a poll
+   * response omits it when the client is already up to date.
+   */
+  const captureHead = (body: string): void => {
+    try {
+      const parsed = JSON.parse(body) as {
+        srs?: [number, { ExpectedLatestRevisionId?: unknown }][];
+      };
+      const sr = parsed.srs?.[0];
+      if (sr && sr[0] === 2 && typeof sr[1]?.ExpectedLatestRevisionId === 'string') {
+        latestHead = { head: sr[1].ExpectedLatestRevisionId, ts: Date.now() };
+      }
+    } catch {
+      /* non-JSON or unexpected shape — leave the last known head in place */
+    }
+  };
 
   const record = (url: string, method: string, body: string): void => {
     // Reads travel as bodyless GETs; an edit carries its arguments in a body.
     if (body.length === 0) return;
+    // The editor opens these with a URL relative to the channel, so the path is
+    // only visible once it is resolved against the frame — filtering on the raw
+    // argument matched nothing.
     let absolute: string;
     try {
       absolute = new URL(url, location.href).href;
     } catch {
       absolute = url;
     }
+    if (!absolute.includes(WORD_CHANNEL_PATH)) return;
+    captureHead(body);
     // The query string carries session context, so only the path is kept.
     writeLog.push({ url: absolute.split('?')[0] ?? absolute, method, body, ts: Date.now() });
     writeLogBytes += body.length;
@@ -155,6 +236,37 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
     };
   };
 
+  /**
+   * Keep the freshest channel request for a replay. The editor opens these with
+   * a URL relative to the channel, so it is resolved against the frame before
+   * matching and stashed absolute — a replay needs the whole URL.
+   */
+  const stashDonor = (url: string, method: string, headers: Record<string, string>, body: string): void => {
+    try {
+      let absolute: string;
+      try {
+        absolute = new URL(url, location.href).href;
+      } catch {
+        absolute = url;
+      }
+      if (!absolute.includes(WORD_CHANNEL_PATH) || method.toUpperCase() !== 'POST' || body.length === 0) return;
+      g[WORD_DONOR_GLOBAL] = { url: absolute, method, headers, body, ts: Date.now() };
+    } catch {
+      /* observation only */
+    }
+  };
+
+  /**
+   * What is known about the stashed donor, for diagnosis. Header *names* say
+   * whether the session credentials were captured; their values stay in the
+   * frame, so nothing here can authenticate a request.
+   */
+  const describeDonor = (): unknown => {
+    const donor = g[WORD_DONOR_GLOBAL];
+    if (!donor) return null;
+    return { ts: donor.ts, bytes: donor.body.length, headerNames: Object.keys(donor.headers).sort() };
+  };
+
   if (!g.fetch[EDITOR_FETCH_MARKER]) {
     const origFetch = g.fetch;
     const patched = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -166,8 +278,21 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
             headers: { 'content-type': 'application/json' },
           });
         }
+        if (url.includes(WORD_HEAD_SENTINEL)) {
+          return new Response(JSON.stringify({ ...latestHead, donor: describeDonor() }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
         const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
-        record(url, method, typeof init?.body === 'string' ? init.body : '');
+        const body = typeof init?.body === 'string' ? init.body : '';
+        record(url, method, body);
+        stashDonor(
+          url,
+          method,
+          headersToRecord(init?.headers ?? (input instanceof Request ? input.headers : undefined)),
+          body,
+        );
       } catch {
         /* observation only: never disturb the editor's own request */
       }
@@ -181,8 +306,9 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
   if (!Xhr[EDITOR_XHR_MARKER]) {
     const origOpen = Xhr.prototype.open;
     const origSend = Xhr.prototype.send;
+    const origSetRequestHeader = Xhr.prototype.setRequestHeader;
     const STATE = Symbol('opentabs.microsoft-word.editor.xhr.state');
-    type XhrWithState = XMLHttpRequest & { [STATE]?: { url: string; method: string } };
+    type XhrWithState = XMLHttpRequest & { [STATE]?: { url: string; method: string; headers: Record<string, string> } };
     type XhrOpenRest = [async?: boolean, username?: string | null, password?: string | null];
 
     Xhr.prototype.open = function patchedOpen(
@@ -191,16 +317,24 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
       url: string | URL,
       ...rest: XhrOpenRest
     ) {
-      this[STATE] = { url: typeof url === 'string' ? url : url.href, method };
+      this[STATE] = { url: typeof url === 'string' ? url : url.href, method, headers: {} };
       const forward = origOpen as (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) => void;
       return forward.call(this, method, url, ...rest);
     } as typeof Xhr.prototype.open;
+
+    Xhr.prototype.setRequestHeader = function patchedSetRequestHeader(this: XhrWithState, name: string, value: string) {
+      const state = this[STATE];
+      if (state) state.headers[name] = value;
+      return origSetRequestHeader.call(this, name, value);
+    };
 
     Xhr.prototype.send = function patchedSend(this: XhrWithState, body?: Document | XMLHttpRequestBodyInit | null) {
       const state = this[STATE];
       if (state) {
         try {
-          record(state.url, state.method, typeof body === 'string' ? body : '');
+          const text = typeof body === 'string' ? body : '';
+          record(state.url, state.method, text);
+          stashDonor(state.url, state.method, state.headers, text);
         } catch {
           /* observation only */
         }
@@ -211,7 +345,7 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
     Xhr[EDITOR_XHR_MARKER] = true;
   }
 
-  log.info('[microsoft-word] editor-frame write log installed');
+  log.info('[microsoft-word] editor-frame write log and donor installed');
 };
 
 const parseUrl = (url: string): URL | null => {

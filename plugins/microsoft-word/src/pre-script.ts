@@ -91,6 +91,13 @@ const WORD_HEAD_SENTINEL = '__otb_word_head__';
 const WORD_MODEL_SENTINEL = '__otb_word_model__';
 /** Ceiling on the retained response; a larger one is kept as its head, which carries the object groups. */
 const WORD_MODEL_MAX_BYTES = 4_000_000;
+/**
+ * Longest property value the digest keeps. The model is mostly bulk — access
+ * tokens, theme palettes, embedded XML — around a thin layer of structure, so a
+ * digest that keeps every property but truncates each one is a fraction of the
+ * size and loses nothing about how the document is shaped.
+ */
+const DIGEST_VALUE_MAX = 120;
 /** Frame-local global the freshest `/we/OneNote.ashx` request is stashed under. */
 const WORD_DONOR_GLOBAL = '__otbWordDonor';
 /** Path of the co-authoring channel, named for the app that first used the protocol. */
@@ -293,6 +300,59 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
     };
   };
 
+  /**
+   * The model reduced to its structure: every object with its class, id and
+   * properties, each value truncated, plus a count per class. Reducing it here
+   * rather than after it leaves the frame keeps a large model readable.
+   */
+  const digestModel = (): unknown => {
+    if (!latestModel) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(latestModel.body);
+    } catch {
+      return { ts: latestModel.ts, bytes: latestModel.bytes, error: 'response did not parse as JSON' };
+    }
+
+    // `Objects` arrays sit several envelopes deep and in more than one place
+    // (one per cell), so collect them wherever they appear.
+    const objects: { ClassId?: unknown; ObjectId?: unknown; Properties?: unknown }[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item);
+        return;
+      }
+      if (node === null || typeof node !== 'object') return;
+      for (const [key, value] of Object.entries(node)) {
+        if (key === 'Objects' && Array.isArray(value)) objects.push(...value);
+        else walk(value);
+      }
+    };
+    walk(parsed);
+
+    const shorten = (value: unknown): string => {
+      const text = typeof value === 'string' ? value : JSON.stringify(value);
+      if (typeof text !== 'string') return String(value);
+      return text.length > DIGEST_VALUE_MAX ? `${text.slice(0, DIGEST_VALUE_MAX)}…+${text.length}` : text;
+    };
+
+    const classCounts: Record<string, number> = {};
+    const rows = objects.map(object => {
+      const classId = String(object.ClassId);
+      classCounts[classId] = (classCounts[classId] ?? 0) + 1;
+      const props: Record<string, string> = {};
+      // Properties travel as a flat [id, value, id, value, …] pair list.
+      if (Array.isArray(object.Properties)) {
+        for (let i = 0; i + 1 < object.Properties.length; i += 2) {
+          props[String(object.Properties[i])] = shorten(object.Properties[i + 1]);
+        }
+      }
+      return { classId: object.ClassId, objectId: object.ObjectId, props };
+    });
+
+    return { ts: latestModel.ts, bytes: latestModel.bytes, objectCount: rows.length, classCounts, objects: rows };
+  };
+
   const describeDonor = (): unknown => {
     const donor = g[WORD_DONOR_GLOBAL];
     if (!donor) return null;
@@ -317,7 +377,7 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
           });
         }
         if (url.includes(WORD_MODEL_SENTINEL)) {
-          return new Response(JSON.stringify(latestModel), {
+          return new Response(JSON.stringify(url.includes('digest') ? digestModel() : latestModel), {
             status: 200,
             headers: { 'content-type': 'application/json' },
           });

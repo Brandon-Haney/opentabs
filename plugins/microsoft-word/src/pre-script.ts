@@ -80,6 +80,17 @@ const WORD_WRITE_LOG_SENTINEL = '__otb_word_writelog__';
  * describes the stashed donor, so a replay that finds none can say why.
  */
 const WORD_HEAD_SENTINEL = '__otb_word_head__';
+/**
+ * URL marker for the model-read channel, answered with the most recent channel
+ * *response*. A write has to name the objects it edits and append itself to the
+ * container's child list, and the only place the document's current object
+ * model appears is in what the server sends back — the request log holds the
+ * other half of the conversation. One response is kept rather than a log of
+ * them, because the model is large and only the newest is meaningful.
+ */
+const WORD_MODEL_SENTINEL = '__otb_word_model__';
+/** Ceiling on the retained response; a larger one is kept as its head, which carries the object groups. */
+const WORD_MODEL_MAX_BYTES = 4_000_000;
 /** Frame-local global the freshest `/we/OneNote.ashx` request is stashed under. */
 const WORD_DONOR_GLOBAL = '__otbWordDonor';
 /** Path of the co-authoring channel, named for the app that first used the protocol. */
@@ -261,6 +272,27 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
    * whether the session credentials were captured; their values stay in the
    * frame, so nothing here can authenticate a request.
    */
+  /** The newest channel response, holding the document's current object model. */
+  let latestModel: { ts: number; bytes: number; truncated: boolean; body: string } | null = null;
+
+  /**
+   * Keep a channel response, trimmed to a bound so a large model cannot pin
+   * memory. Only a response carrying `ObjectGroups` is kept: the server answers
+   * most polls with a bare ack, and the model arrives once when the document
+   * loads, so keeping literally the newest response would discard it within
+   * seconds of the editor opening.
+   */
+  const recordResponse = (absolute: string, text: string): void => {
+    if (!absolute.includes(WORD_CHANNEL_PATH) || text.length === 0) return;
+    if (!text.includes('"ObjectGroups"')) return;
+    latestModel = {
+      ts: Date.now(),
+      bytes: text.length,
+      truncated: text.length > WORD_MODEL_MAX_BYTES,
+      body: text.slice(0, WORD_MODEL_MAX_BYTES),
+    };
+  };
+
   const describeDonor = (): unknown => {
     const donor = g[WORD_DONOR_GLOBAL];
     if (!donor) return null;
@@ -284,6 +316,12 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
             headers: { 'content-type': 'application/json' },
           });
         }
+        if (url.includes(WORD_MODEL_SENTINEL)) {
+          return new Response(JSON.stringify(latestModel), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
         const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
         const body = typeof init?.body === 'string' ? init.body : '';
         record(url, method, body);
@@ -296,7 +334,22 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
       } catch {
         /* observation only: never disturb the editor's own request */
       }
-      return origFetch(input, init);
+      const response = await origFetch(input, init);
+      try {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+        const absolute = new URL(url, location.href).href;
+        if (absolute.includes(WORD_CHANNEL_PATH)) {
+          // Read the copy, so the editor still gets an unconsumed body.
+          void response
+            .clone()
+            .text()
+            .then(text => recordResponse(absolute, text))
+            .catch(() => {});
+        }
+      } catch {
+        /* observation only */
+      }
+      return response;
     };
     (patched as typeof patched & { [EDITOR_FETCH_MARKER]: true })[EDITOR_FETCH_MARKER] = true;
     g.fetch = patched as typeof fetch & { [EDITOR_FETCH_MARKER]?: true };
@@ -335,6 +388,13 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
           const text = typeof body === 'string' ? body : '';
           record(state.url, state.method, text);
           stashDonor(state.url, state.method, state.headers, text);
+          this.addEventListener('load', () => {
+            try {
+              recordResponse(new URL(state.url, location.href).href, this.responseText);
+            } catch {
+              /* a non-text responseType throws on access — nothing to keep */
+            }
+          });
         } catch {
           /* observation only */
         }

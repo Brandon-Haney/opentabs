@@ -205,6 +205,32 @@ describe('describeBridgeFailure', () => {
     expect(describeBridgeFailure({ ...ok, errors: ['something unexpected'] })).toContain('unknown error');
   });
 
+  // The REST form of the object-model tunnel reports a refusal as its own status
+  // inside the 200 envelope, with an OData error body.
+  test('reports a tunnelled REST status of 400 or above with its OData error', () => {
+    const message = describeBridgeFailure({
+      ...ok,
+      response: {
+        Result: {
+          ResponseStatusCode: 404,
+          ResponseBody: ['{"error":{"code":"ItemNotFound","message":"The requested resource was not found."}}'],
+        },
+      },
+    });
+    expect(message).toContain('404');
+    expect(message).toContain('ItemNotFound');
+    expect(message).toContain('was not found');
+  });
+
+  test('accepts a tunnelled REST success and a non-JSON error body', () => {
+    expect(
+      describeBridgeFailure({ ...ok, response: { Result: { ResponseStatusCode: 200, ResponseBody: ['{}'] } } }),
+    ).toBeNull();
+    expect(
+      describeBridgeFailure({ ...ok, response: { Result: { ResponseStatusCode: 500, ResponseBody: ['oops'] } } }),
+    ).toContain('HTTP 500');
+  });
+
   test('reports an HTTP-level failure', () => {
     expect(describeBridgeFailure({ ...ok, ok: false, status: 500 })).toContain('500');
   });

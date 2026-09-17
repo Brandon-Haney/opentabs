@@ -1,0 +1,69 @@
+import type { z } from 'zod';
+import { type bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge } from './bridge.js';
+
+/**
+ * The workbook REST API tunnelled through `ExecuteRichApiRequest`.
+ *
+ * Excel's editor frame answers Office.js-style REST calls — the resource paths
+ * the Graph workbook API uses (`worksheets('Sheet1')/range(address='A1')`), plus
+ * methods Graph v1.0 lacks (`copyFrom`, `replaceAll`, `pivotTables/add`) — inside
+ * the live co-authoring session. A call runs in milliseconds and needs no Graph
+ * token. The outcome comes back as `Result.ResponseStatusCode` with an OData body
+ * inside a 200 envelope; the frame-bridge engine reports a status of 400 or above
+ * as a failure.
+ *
+ * A property this surface does not support is ignored without an error (a PATCH
+ * of `showGridlines` answers 200 and changes nothing), so a tool built on it must
+ * be verified live against the workbook, not against the response.
+ */
+
+/** HTTP verbs the tunnel accepts, in the casing Excel's own requests use. */
+export type WorkbookRestVerb = 'Get' | 'Post' | 'Patch' | 'Delete';
+
+/** `RequestFlags` Excel's own reads send. */
+const READ_FLAGS = 256;
+/** `RequestFlags` for a call that changes the workbook. */
+const WRITE_FLAGS = 1;
+
+/** Quote a value for an OData key or function argument, doubling any `'`. */
+const odataString = (value: string): string => `'${value.replace(/'/g, "''")}'`;
+
+/** A worksheet segment of a resource path. */
+export const worksheetPath = (worksheet: string): string => `worksheets(${odataString(worksheet)})`;
+
+/** A range segment of a resource path under its worksheet. */
+export const rangePath = (worksheet: string, address: string): string =>
+  `${worksheetPath(worksheet)}/range(address=${odataString(address)})`;
+
+/** A sheet-qualified range reference, quoting the sheet name when Excel requires it. */
+export const qualifiedRange = (worksheet: string, address: string): string =>
+  /^[A-Za-z_][A-Za-z0-9_]*$/.test(worksheet) ? `${worksheet}!${address}` : `${odataString(worksheet)}!${address}`;
+
+/** The `ExecuteRichApiRequest` options for one REST call. */
+export const buildWorkbookRestOptions = (
+  verb: WorkbookRestVerb,
+  path: string,
+  body?: Record<string, unknown>,
+): Record<string, unknown> => ({
+  request: {
+    HttpMethod: verb,
+    PathAndQuery: path,
+    RequestHeaders: body === undefined ? null : [{ Name: 'Content-Type', Value: 'application/json' }],
+    RequestBody: body === undefined ? '' : JSON.stringify(body),
+    RequestFlags: verb === 'Get' ? READ_FLAGS : WRITE_FLAGS,
+  },
+});
+
+/**
+ * Issue one tunnelled REST call. The tool result's `response` is the OData body
+ * as a JSON string, which is all a caller needs from the envelope.
+ */
+export const workbookRest = (
+  verb: WorkbookRestVerb,
+  path: string,
+  body?: Record<string, unknown>,
+): z.infer<typeof bridgeOutputSchema> =>
+  ewaBridge('ExecuteRichApiRequest', buildWorkbookRestOptions(verb, path, body), {
+    projection: { path: 'Result.ResponseBody.0' },
+    errorHints: EWA_ERROR_HINTS,
+  });

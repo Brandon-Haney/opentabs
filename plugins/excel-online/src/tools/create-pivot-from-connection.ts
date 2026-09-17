@@ -2,7 +2,8 @@ import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { parseBoundedRange } from '../a1.js';
 import { bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge, richApiRequest } from '../bridge.js';
-import { CUBE_COMMAND, powerBiConnectionString, qualifyDestination } from '../powerbi-connection.js';
+import { CUBE_COMMAND, powerBiConnectionString } from '../powerbi-connection.js';
+import { qualifiedRange } from '../workbook-rest.js';
 
 /**
  * Lowest row (one-based) a cube PivotTable can be anchored at.
@@ -139,7 +140,7 @@ export const createPivotFromConnection = defineTool({
           params.connection_name ?? `PowerBI_${base}`,
           params.dataset_id,
           params.pivot_name ?? `Pivot_${base}`,
-          qualifyDestination(params.worksheet, anchor),
+          qualifiedRange(params.worksheet, anchor),
         ),
       ),
       { errorHints: EWA_ERROR_HINTS },

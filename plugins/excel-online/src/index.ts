@@ -16,8 +16,10 @@ import { clearDataValidation } from './tools/clear-data-validation.js';
 import { clearRange } from './tools/clear-range.js';
 import { clearTableFilters } from './tools/clear-table-filters.js';
 import { convertTableToRange } from './tools/convert-table-to-range.js';
+import { copyRange } from './tools/copy-range.js';
 import { createChart } from './tools/create-chart.js';
 import { createPivotFromConnection } from './tools/create-pivot-from-connection.js';
+import { createPivotTable } from './tools/create-pivot-table.js';
 import { createTable } from './tools/create-table.js';
 import { deleteChart } from './tools/delete-chart.js';
 import { deleteRange } from './tools/delete-range.js';
@@ -62,12 +64,14 @@ import { refreshAllConnections } from './tools/refresh-all-connections.js';
 import { refreshPivot } from './tools/refresh-pivot.js';
 import { removeDuplicates } from './tools/remove-duplicates.js';
 import { removePivotField } from './tools/remove-pivot-field.js';
+import { replaceText } from './tools/replace-text.js';
 import { setBorders } from './tools/set-borders.js';
 import { setDimensions } from './tools/set-dimensions.js';
 import { setHyperlink } from './tools/set-hyperlink.js';
 import { setNumberFormat } from './tools/set-number-format.js';
 import { setPivotFilter } from './tools/set-pivot-filter.js';
 import { setPrintArea } from './tools/set-print-area.js';
+import { setTabColor } from './tools/set-tab-color.js';
 import { sortRange } from './tools/sort-range.js';
 import { textToColumns } from './tools/text-to-columns.js';
 import { toggleRangeAutofilter } from './tools/toggle-range-autofilter.js';
@@ -164,6 +168,10 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     freezePanes,
     formatRangeAdvanced,
     setPrintArea,
+    copyRange,
+    replaceText,
+    createPivotTable,
+    setTabColor,
     insertPageBreak,
     setHyperlink,
     addComment,

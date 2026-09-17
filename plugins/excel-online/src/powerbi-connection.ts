@@ -38,11 +38,3 @@ export const CUBE_COMMAND = ['Model', 'Cube'] as const;
 
 /** `DataConnections.Add` command type for a connection whose command is a DAX query. */
 export const DAX_COMMAND_TYPE = 4;
-
-/**
- * Qualify a destination cell with its sheet, quoting the name when it contains
- * anything that would break the reference. An unquoted sheet name with a space
- * is rejected as an invalid argument.
- */
-export const qualifyDestination = (worksheet: string, cell: string): string =>
-  /^[A-Za-z0-9_]+$/.test(worksheet) ? `${worksheet}!${cell}` : `'${worksheet.replace(/'/g, "''")}'!${cell}`;

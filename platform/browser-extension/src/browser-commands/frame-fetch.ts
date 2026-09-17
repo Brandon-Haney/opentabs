@@ -329,14 +329,28 @@ export const fetchInFrame = async (
             const full = project(envelope);
             const isList = Array.isArray(full);
             const projected = isList ? (full as unknown[]).slice(0, maxItems) : full;
-            // The envelope minus its payload: the error fields that decide
-            // success or failure are all outside `Result`, and `Result` is the
-            // part that does not fit.
-            const { Result: _payload, ...rest } = envelope as Record<string, unknown>;
+            // The envelope minus its payload, which is the part that does not
+            // fit. `Result` keeps only what reports a refusal from inside it: a
+            // tunnelled call's own status, and the response-body entries that
+            // carry an error (an object-model batch's `Error`, or the OData
+            // error string a failed REST call returns).
+            const { Result: payload, ...rest } = envelope as Record<string, unknown>;
+            const result = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+            const status = typeof result.ResponseStatusCode === 'number' ? result.ResponseStatusCode : undefined;
+            const bodyEntries = Array.isArray(result.ResponseBody) ? (result.ResponseBody as unknown[]) : [];
+            const errorEntries = bodyEntries.filter(entry =>
+              typeof entry === 'string'
+                ? status !== undefined && status >= 400
+                : Boolean(entry && typeof entry === 'object' && (entry as Record<string, unknown>).Error),
+            );
+            const judged =
+              status !== undefined || errorEntries.length > 0
+                ? { ...rest, Result: { ResponseStatusCode: status, ResponseBody: errorEntries } }
+                : rest;
             return {
               status: response.status,
               ok: response.ok,
-              body: JSON.stringify({ d: rest }),
+              body: JSON.stringify({ d: judged }),
               projected,
               ...(isList ? { projectedTotal: (full as unknown[]).length } : {}),
               rawLength: text.length,

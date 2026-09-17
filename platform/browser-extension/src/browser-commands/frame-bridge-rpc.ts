@@ -360,6 +360,30 @@ export const describeBridgeFailure = (
     }
   }
 
+  // The REST form of the same tunnel reports its outcome as an HTTP status of its
+  // own, again inside a 200 envelope: `Result.ResponseStatusCode` with an OData
+  // `{ error: { code, message } }` body.
+  const tunnelledStatus = nested(result.response, 'Result', 'ResponseStatusCode');
+  if (typeof tunnelledStatus === 'number' && tunnelledStatus >= 400) {
+    const body = Array.isArray(responseBody) && typeof responseBody[0] === 'string' ? responseBody[0] : '';
+    let code = `HTTP ${tunnelledStatus}`;
+    let detail: string | undefined;
+    try {
+      const error = (JSON.parse(body) as { error?: Record<string, unknown> }).error;
+      if (error) {
+        code = stringProp(error, 'code') ?? code;
+        detail = stringProp(error, 'message');
+      }
+    } catch {
+      /* a non-JSON error body leaves the status as the only description */
+    }
+    return withHint(
+      `The application refused the operation (${tunnelledStatus}): ${code}${detail ? ` — "${detail}"` : ''}.`,
+      code,
+      errorHints,
+    );
+  }
+
   if (!result.ok) {
     return `The replayed request failed at the HTTP level (status ${result.status}). Nothing was applied.`;
   }

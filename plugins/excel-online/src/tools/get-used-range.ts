@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { RawRange } from './schemas.js';
 import { mapRange, rangeSchema } from './schemas.js';
 
@@ -16,8 +16,12 @@ export const getUsedRange = defineTool({
     worksheet: z.string().describe('Worksheet name (e.g., "Sheet1")'),
   }),
   output: z.object({ range: rangeSchema }),
-  handle: async params => {
-    const data = await workbookApi<RawRange>(`/worksheets('${encodeURIComponent(params.worksheet)}')/usedRange`);
+  handle: async (params, context) => {
+    const data = await workbookCall<RawRange>(
+      context,
+      'GET',
+      `/worksheets('${encodeURIComponent(params.worksheet)}')/usedRange`,
+    );
     return { range: mapRange(data) };
   },
 });

@@ -14,6 +14,7 @@ import {
   buildWorkbookRestOptions,
   qualifiedRange,
   rangePath,
+  sessionPath,
   workbookRestCall,
   worksheetPath,
 } from './workbook-rest.js';
@@ -195,5 +196,14 @@ describe('workbookRestCall', () => {
 
   test('explains that the extension is too old when the platform offers no bridge', async () => {
     await expect(workbookRestCall({ reportProgress: () => {} }, 'Get', 'worksheets')).rejects.toThrow(/too old/);
+  });
+});
+
+describe('workbookCall paths', () => {
+  test('drops the leading slash and decodes what Graph escaped, which the session matches literally', () => {
+    expect(sessionPath("/worksheets('Plugin%20Lab')/usedRange")).toBe("worksheets('Plugin Lab')/usedRange");
+    expect(sessionPath("/worksheets('Sheet1')/range(address='A1%3AD5')")).toBe(
+      "worksheets('Sheet1')/range(address='A1:D5')",
+    );
   });
 });

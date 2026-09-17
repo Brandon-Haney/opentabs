@@ -1,6 +1,7 @@
 import type { ToolHandlerContext } from '@opentabs-dev/plugin-sdk';
 import type { z } from 'zod';
 import { type bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge } from './bridge.js';
+import { workbookApi } from './excel-api.js';
 
 /**
  * The workbook REST API tunnelled through `ExecuteRichApiRequest`.
@@ -91,4 +92,47 @@ export const workbookRestCall = async <T>(
   const payload = result?.response;
   if (typeof payload !== 'string' || payload.length === 0) return null;
   return JSON.parse(payload) as T;
+};
+
+/**
+ * A workbook-relative Graph path as the session wants it: no leading slash, and
+ * percent-escapes decoded, since the session matches names literally. A name
+ * containing a literal `%` followed by two hex digits would be decoded too, which
+ * Excel does not allow in a sheet name.
+ */
+export const sessionPath = (path: string): string =>
+  path.replace(/^\//, '').replace(/%[0-9A-Fa-f]{2}/g, encoded => decodeURIComponent(encoded));
+
+/** Graph's workbook verbs, as the tools already spell them. */
+type WorkbookVerb = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+
+const REST_VERBS: Record<WorkbookVerb, WorkbookRestVerb> = {
+  GET: 'Get',
+  POST: 'Post',
+  PATCH: 'Patch',
+  DELETE: 'Delete',
+};
+
+/**
+ * Call the workbook API for a tool that needs the payload, through the open
+ * editing session when the platform allows it and through Graph otherwise.
+ *
+ * The two speak the same resource paths, so a tool passes one workbook-relative
+ * path (`/worksheets('Sheet1')/usedRange`) either way. Graph wants the names in
+ * such a path percent-encoded and the session wants them literal — the session
+ * reads `worksheets('Plugin%20Lab')` as a sheet that does not exist — so the
+ * encoding is undone on the way through. The session is the better
+ * path: it answers in milliseconds, needs no Graph token, and keeps working on a
+ * workbook whose Graph calls are timing out under co-authoring. Graph remains
+ * the fallback for an extension too old to offer `context.bridge`.
+ */
+export const workbookCall = async <T>(
+  context: ToolHandlerContext | undefined,
+  method: WorkbookVerb,
+  path: string,
+  body?: Record<string, unknown>,
+): Promise<T> => {
+  if (!context?.bridge) return workbookApi<T>(path, { method, body });
+  const result = await workbookRestCall<T>(context, REST_VERBS[method], sessionPath(path), body);
+  return (result ?? ({} as T)) as T;
 };

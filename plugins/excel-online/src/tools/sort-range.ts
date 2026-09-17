@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { rangePath, workbookApi } from '../excel-api.js';
+import { rangePath } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 
 export const sortRange = defineTool({
   name: 'sort_range',
@@ -27,20 +28,16 @@ export const sortRange = defineTool({
   output: z.object({
     success: z.boolean().describe('Whether the operation succeeded'),
   }),
-  handle: async params => {
+  handle: async (params, context) => {
     const fields = params.fields.map(f => ({
       key: f.key,
       ascending: f.ascending ?? true,
     }));
-    await workbookApi(`${rangePath(params.worksheet, params.address)}/sort/apply`, {
-      method: 'POST',
-      retryNonIdempotent: true,
-      body: {
-        fields,
-        matchCase: false,
-        hasHeaders: params.has_headers ?? false,
-        method: 'PinYin',
-      },
+    await workbookCall(context, 'POST', `${rangePath(params.worksheet, params.address)}/sort/apply`, {
+      fields,
+      matchCase: false,
+      hasHeaders: params.has_headers ?? false,
+      method: 'PinYin',
     });
     return { success: true };
   },

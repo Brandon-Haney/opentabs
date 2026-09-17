@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { rangePath, workbookApi } from '../excel-api.js';
+import { rangePath } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { GraphListResponse, RawBorder, RawRange, RawRangeFormat } from './schemas.js';
 import { mapRange, mapRangeFormat, rangeFormatSchema, rangeSchema } from './schemas.js';
 
@@ -24,17 +25,16 @@ export const getRange = defineTool({
     range: rangeSchema,
     format: rangeFormatSchema.optional().describe('Visual formatting, present when include_format=true'),
   }),
-  handle: async params => {
+  handle: async (params, context) => {
     const base = rangePath(params.worksheet, params.address);
-    const data = await workbookApi<RawRange>(base);
+    const data = await workbookCall<RawRange>(context, 'GET', base);
     if (!params.include_format) return { range: mapRange(data) };
-    const format = await workbookApi<RawRangeFormat>(`${base}/format`, {
-      query: {
-        $select: 'columnWidth,rowHeight,horizontalAlignment,verticalAlignment,wrapText',
-        $expand: 'fill,font',
-      },
-    });
-    const borders = await workbookApi<GraphListResponse<RawBorder>>(`${base}/format/borders`);
+    const format = await workbookCall<RawRangeFormat>(
+      context,
+      'GET',
+      `${base}/format?$select=columnWidth,rowHeight,horizontalAlignment,verticalAlignment,wrapText&$expand=fill,font`,
+    );
+    const borders = await workbookCall<GraphListResponse<RawBorder>>(context, 'GET', `${base}/format/borders`);
     return { range: mapRange(data), format: mapRangeFormat(format, borders.value ?? []) };
   },
 });

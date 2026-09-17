@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { rangePath, workbookApi } from '../excel-api.js';
+import { rangePath } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 
 export const clearRange = defineTool({
   name: 'clear_range',
@@ -18,11 +19,9 @@ export const clearRange = defineTool({
   output: z.object({
     success: z.boolean().describe('Whether the operation succeeded'),
   }),
-  handle: async params => {
-    await workbookApi(`${rangePath(params.worksheet, params.address)}/clear`, {
-      method: 'POST',
-      retryNonIdempotent: true,
-      body: { applyTo: params.apply_to ?? 'All' },
+  handle: async (params, context) => {
+    await workbookCall(context, 'POST', `${rangePath(params.worksheet, params.address)}/clear`, {
+      applyTo: params.apply_to ?? 'All',
     });
     return { success: true };
   },

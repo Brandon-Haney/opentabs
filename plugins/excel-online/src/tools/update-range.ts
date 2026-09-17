@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { rangePath, workbookApi } from '../excel-api.js';
+import { rangePath } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { RawRange } from './schemas.js';
 import { mapRange, rangeSchema } from './schemas.js';
 
@@ -29,16 +30,12 @@ export const updateRange = defineTool({
       .describe('2D array of number format codes (e.g., "0.00", "m/d/yyyy")'),
   }),
   output: z.object({ range: rangeSchema }),
-  handle: async params => {
+  handle: async (params, context) => {
     const body: Record<string, unknown> = {};
     if (params.values !== undefined) body.values = params.values;
     if (params.formulas !== undefined) body.formulas = params.formulas;
     if (params.number_format !== undefined) body.numberFormat = params.number_format;
-    const data = await workbookApi<RawRange>(rangePath(params.worksheet, params.address), {
-      method: 'PATCH',
-      body,
-      retryNonIdempotent: true,
-    });
+    const data = await workbookCall<RawRange>(context, 'PATCH', rangePath(params.worksheet, params.address), body);
     return { range: mapRange(data) };
   },
 });

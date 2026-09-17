@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { RawTableRow } from './schemas.js';
 import { mapTableRow, tableRowSchema } from './schemas.js';
 
@@ -18,11 +18,16 @@ export const addTableRow = defineTool({
     index: z.number().int().min(0).optional().describe('Zero-based insertion index. Appends at end if omitted.'),
   }),
   output: z.object({ row: tableRowSchema }),
-  handle: async params => {
-    const data = await workbookApi<RawTableRow>(`/tables('${encodeURIComponent(params.table)}')/rows`, {
-      method: 'POST',
-      body: { values: params.values, index: params.index ?? null },
-    });
+  handle: async (params, context) => {
+    const data = await workbookCall<RawTableRow>(
+      context,
+      'POST',
+      `/tables('${encodeURIComponent(params.table)}')/rows`,
+      {
+        values: params.values,
+        index: params.index ?? null,
+      },
+    );
     return { row: mapTableRow(data) };
   },
 });

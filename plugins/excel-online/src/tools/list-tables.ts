@@ -1,8 +1,8 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
 import { hasPivotTableParts } from '../pivot-model.js';
 import { fetchWorkbookPartNames } from '../workbook-package.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { GraphListResponse, RawTable } from './schemas.js';
 import { mapTable, tableSchema } from './schemas.js';
 
@@ -26,19 +26,24 @@ export const listTables = defineTool({
     tables: z.array(tableSchema).describe('Excel Tables matching the query'),
     pivot_tables_present: z
       .boolean()
+      .nullable()
       .describe(
-        'True when the workbook contains at least one PivotTable anywhere. Workbook-scoped, not narrowed by the worksheet filter — use list_pivot_tables for per-sheet detail.',
+        'True when the workbook contains at least one PivotTable anywhere. Workbook-scoped, not narrowed by the worksheet filter — use list_pivot_tables for per-sheet detail. Null when the check could not run, which says nothing either way.',
       ),
   }),
-  handle: async params => {
+  handle: async (params, context) => {
     const path = params.worksheet ? `/worksheets('${encodeURIComponent(params.worksheet)}')/tables` : '/tables';
+    // The tables come from the open session; the PivotTable check reads the saved
+    // file through Graph, which a session can outlive (an expired token, or a
+    // workbook Graph is refusing). Losing the flag should not lose the list, so
+    // the check is allowed to fail on its own.
     const [data, partNames] = await Promise.all([
-      workbookApi<GraphListResponse<RawTable>>(path),
-      fetchWorkbookPartNames(),
+      workbookCall<GraphListResponse<RawTable>>(context, 'GET', path),
+      fetchWorkbookPartNames().catch(() => null),
     ]);
     return {
       tables: (data.value ?? []).map(mapTable),
-      pivot_tables_present: hasPivotTableParts(partNames),
+      pivot_tables_present: partNames === null ? null : hasPivotTableParts(partNames),
     };
   },
 });

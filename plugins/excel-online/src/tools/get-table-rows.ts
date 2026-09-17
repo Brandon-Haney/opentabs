@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { GraphListResponse, RawTableRow } from './schemas.js';
 import { mapTableRow, tableRowSchema } from './schemas.js';
 
@@ -16,8 +16,10 @@ export const getTableRows = defineTool({
     table: z.string().describe('Table name or ID'),
   }),
   output: z.object({ rows: z.array(tableRowSchema) }),
-  handle: async params => {
-    const data = await workbookApi<GraphListResponse<RawTableRow>>(
+  handle: async (params, context) => {
+    const data = await workbookCall<GraphListResponse<RawTableRow>>(
+      context,
+      'GET',
       `/tables('${encodeURIComponent(params.table)}')/rows`,
     );
     return { rows: (data.value ?? []).map(mapTableRow) };

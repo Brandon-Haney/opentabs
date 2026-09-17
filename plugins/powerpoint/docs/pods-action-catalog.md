@@ -58,12 +58,14 @@ range-bold capture; see "How a paragraph holds more than one format" below.
 | `ToggleBulletsList` | ◑ | paragraph + `393229`/`393234` list objects |
 | `ToggleNumberedList` | ◑ | paragraph + numbering objects |
 | `DemoteIndent` / `PromoteIndent` | ◑ | paragraph outline level |
-| `NewLine` | ● BUILT 2026-09-03 | `add_paragraph`. Splits a paragraph; two chained revisions, and it appends a new text-body block to the shape. A third chained revision types the text in. See below. |
+| `NewLine` | ● BUILT 2026-09-03, rebuilt 2026-09-17 | `add_paragraph`. Adds a new text-body block directly after the source paragraph's block, born carrying its text in one revision. See "Text blocks" below. |
 
 ## Text content
 | Action | Build | Wire |
 | --- | --- | --- |
-| `Typing` | ✅ (`set_text`) | Far simpler than feared: an action descriptor (3-prop form, no ActionId json) plus the paragraph `393230` resubmitted with its FULL property list, text `469769250` carrying the paragraph's entire new text, properties sorted ascending. NO run object is written — the run-refs (`603987475`, end-mark `536886591`) keep pointing at the existing runs, which keep supplying the formatting. The flag props (`134236461/462/479`) and `469780757` `{"Lines":[…]}` are ordinary paragraph properties present in the read model, copied verbatim. Proven live 2026-08-16 (set + revert, both `applied:true`, survived a session reload). Single-run paragraphs only; multi-run needs per-range bookkeeping the capture does not exercise. Sequence 37. |
+| `Typing` | ✅ (`set_text`) | Far simpler than feared: an action descriptor (3-prop form, no ActionId json) plus the paragraph `393230` resubmitted with its FULL property list, text `469769250` carrying the paragraph's entire new text, properties sorted ascending. NO run object is written — the run-refs (`603987475`, end-mark `536886591`) keep pointing at the existing runs, which keep supplying the formatting. The flag props (`134236461/462/479`) and `469780757` `{"Lines":[…]}` are ordinary paragraph properties present in the read model, copied verbatim. Proven live 2026-08-16 (set + revert, both `applied:true`, survived a session reload). Single-run paragraphs only; a multi-run paragraph is replaced as a block (see `PowerPointPasteGivenText`). Sequence 37. |
+| `PowerPointPasteGivenText` (type over a whole multi-run paragraph) | ✅ (`set_text`, multi-run path) 2026-09-17 | The editor does NOT patch the paragraph. ONE revision: action descriptor (`469780989:"Typing"`); the shape resubmitted with the old block's reference in `603986976` REPLACED by a new one; a new text body `393229`; a new list marker `393234` (when the old block had one, referenced by `603986982`); and a new paragraph `393230` carrying the new text with a single-run layout — no `469769746`, one run ref (the first segment's), `469769819:"1"`, `469780757:{"Lines":[len+1]}`. The old block is simply no longer listed. Captured on a three-run bullet in `Content Placeholder 1`. |
+| `DeleteKey` (remove whole paragraphs) | ✅ (`delete_paragraph`) 2026-09-17 | The container resubmitted with the removed paragraphs' blocks dropped from `603986976`; retired blocks stay in the model unlisted. A selection that reaches into the next paragraph also merges that paragraph into the previous one (its text appended, boundaries and flags extended), which `delete_paragraph` never does. |
 | `BackspaceCharacter` | superseded | inverse of typing — subsumed by the `Typing`/`set_text` whole-text replacement |
 | `Backspace` (multi-run select-all delete) | ○ exemplar captured 2026-08-16 | The editor's own multi-run text deletion, captured live via the last-write sentinel: ONE POST carrying TWO CHAINED revisions (revision 2's `BaseId` = revision 1's `Id` — intra-POST chaining, previously unseen). Rev 1: action descriptor `Backspace` (WITH the `469780658` ActionId json) + the paragraph with text `""` and its run-ref/end-mark COLLAPSED to a single run. Rev 2 (based on rev 1): the SHAPE `1074135132` resubmitted with its full updated state (timestamp, paragraph-ref list `603995142`, text-body ref) + the paragraph again with `Lines:[1]`. The shape-level resubmit is the piece our constructed run-collapse lacked — and its absence is what crashed the editor client. Also decoded the crash's sibling symptom: our `set_text` leaves the referenced run's own text (`469769250` on the run) stale, and the editor reconciles the paragraph/run divergence by splitting in a second run — and fights manual deletions until a reload. Fixes to build: sync the run's text in the same revision (prevents divergence), and use this exemplar's chained-revision + shape-resubmit shape for multi-run edits. Sequence 6. |
 | placeholder materialization (type into an EMPTY placeholder) | ○ needs ring-buffer capture | Captured live 2026-08-16 via the last-write sentinel: the FINAL revision of the burst writes the shape `1074135132` DIRECTLY (~70 props: corner-point geometry `469780576`, transform matrix `469780756`, EMU anchor rect `469780886`, timestamp `335551866`, author-stamp json `469780706`, creation guid `469780944`, paragraph-ref list `603995142`, text-body ref `603986976`) plus the paragraph `393230` with the typed text — whose run-ref points at runs created by EARLIER revisions of the same burst, which the single-slot sentinel does not retain. So `1074135132` IS writable (correcting the earlier render-only classification), and materialization is a multi-revision burst needing the ring-buffer capture channel to decode fully. Until then: an empty placeholder's prompt paragraphs refuse/no-op our writes; once ANY keystroke materializes the placeholder, `set_text` on its real text is proven live. |
@@ -72,8 +74,12 @@ range-bold capture; see "How a paragraph holds more than one format" below.
 | Action | Build | Wire |
 | --- | --- | --- |
 | `InsertShapeAtSpecifiedLocation` | ○ | new `1074135132` shape + `393227` at x/y/w/h |
+| **Geometry units** | decoded 2026-09-17 | left `335551508`, top `335551509`, width `335551515`, height `335551516`, all in **half-inches** (an 11.32" x 5.72" table frame reads 22.64 x 11.44); `335563038`/`335563037` mirror left/top. `read_slide_layout` reports them in inches. |
+| `MoveShapes` | ✅ (`move_shape`) 2026-09-17 | The shape resubmitted with new absolute left/top in both pairs. |
+| `ResizeShapes` | ✅ (`resize_shape`) 2026-09-17 | NOT absolute: the shape resubmitted with `469780600` `{"EastDelta":20,"NorthDelta":0,"SouthDelta":0,"WestDelta":0}`, edge deltas in 90-dpi pixels, and the old size properties; the server applies the delta. Not idempotent. |
+| `DuplicateShape` | ✅ (`duplicate_shape_live`) 2026-09-17 | The slide `393227` with the copy appended to `603986976`; the copy (shape id `335562753:"0"`, fresh `469780944` creation guid, back-references `536889494` slide and `536889495` source); its text bodies and paragraphs; and its paragraph-level style objects `131073` (listed in `603995142`). Runs are shared. The action label `469780989` is empty — the name is only in the `469780658` json. A name written with the copy is dropped on save, so the tool offers none. |
 | `MoveShapes` | ◑ | shape geometry (`a:xfrm` equivalent props) |
-| `ApplyShapeFillColor` | ◑ | shape fill color |
+| `ApplyShapeFillColor` | ✅ (`set_shape_fill`) 2026-09-17 | ONE POST, two chained revisions, both resubmitting the shape with `469780718` = `{"solidFillField":{"srgbClrField":{"valField":[r,g,b]}}}` and the style colour `469780771` cleared to `""`. The first has an empty action label; the second (label `ApplyShapeFillColor`, based on the first) also carries the picker record `469780594` = `{"Alpha":100,"ColorLuminance":0,"FTintColor":false,"RGBColor":"RRGGBB","ThemeColor":-1}`. |
 | `ApplyShapeOutlineColor` | ◑ | shape line color |
 | `ApplyShapeStyle` | ◑ | shape style ref |
 | `PowerPointTextAnchoringTop/Middle/Bottom` | ◑ | shape vertical text anchor |
@@ -82,9 +88,44 @@ range-bold capture; see "How a paragraph holds more than one format" below.
 | Action | Build | Wire |
 | --- | --- | --- |
 | `PowerPointInsertTable` | ○ | new table graphic-frame |
+| `DeleteRow` | ✅ (`delete_table_row`) 2026-09-17 | ONE revision, ~1.8 KB: the table `393250` resubmitted with the row ref dropped from `603986976`, row count `335551831` lowered by one, and `335551866` stamped. The row and its cells are not written — they stay in the model, unlisted, so text lookups must skip cells whose row the table no longer lists. |
+| `InsertRowBelow` | ✅ (`add_table_row`) 2026-09-17 | ONE revision, ~22 KB for 4 columns. The table `393250` with the new row ref inserted after the source row in `603986976` and row count `335551831` raised by one (columns `335551832`, column ids `469780712`, both unchanged). A new row `393251` copied from the source row with fresh row ids `469780485` and `469780523` (8 hex digits + zero groups). Per column: a cell `393252` copied from the source row's cell (borders `469780521`, fill, margins) with the new row id `469780485` and its column id `469780486`; a text body `393229` and an empty paragraph `393230` that both carry the row and column ids, the paragraph's run ref and end mark pointing at the cell-above's run. |
 | `ApplyTableStyle` | ◑ | table style GUID |
 | `ApplyTableStyleOption` | ◑ | header/band toggles |
 | `PowerPointCellShadingColor` | ◑ | cell `393252` fill |
+| `SetTableHeight` | ✅ (`set_table_height`) 2026-09-17 | Every row `393251` resubmitted with `335562771` (row height, half-inches) scaled by the same factor; table and frame not written. Rows never render shorter than their text — shrink the text first. |
+| table frame → table | decoded 2026-09-17 | A table's graphic frame is a `1074135132` shape whose content reference names an empty text body plus a wrapper the model read does not keep. The table `393250` records its frame's origin in `469780522` (`"left,top"`, half-inches, kept in step when the frame moves), which is how `read_slide_layout` pairs them. |
+
+## Text blocks, and the crash they explain (decoded 2026-09-17)
+
+A shape's (or table cell's) `603986976` is a list of text blocks, and the editor never
+grows a block in place: Enter adds a block after the current one, and typing over a
+whole multi-run paragraph swaps its block for a new one. `pods-text-block.ts` builds
+both.
+
+**Per-segment flags.** `469769819` holds one character per run segment (`"11"` on a
+two-run paragraph). With `469769746` (boundaries) and `603987475` (refs) it is the third
+property describing a paragraph's run layout.
+
+**The `add_paragraph` crash.** The first build copied the source paragraph's run layout
+onto the new paragraph. Appending a 28-character line after a paragraph split at offset
+59 wrote a boundary past the end of the text: the server accepted it, `applied` read
+back true, the editor client showed "Sorry, we ran into a problem", and after a reload
+the paragraph was gone. Every write that gives a paragraph new text now gives it a
+single-run layout (`singleRunLayout` in `pods-text-runs.ts`), which is what the editor's
+own writes do.
+
+**Retired objects keep their text.** A replaced block's old paragraph and a deleted row's cells stay in the model with their text, so every text lookup walks up to a container that is still listed (and, for a cell, a row its table still lists) before using a match.
+
+**List markers.** The editor mints a `393234` list marker for blocks it creates by typing, and in the pasted Douglasville slides those render as an orange `•` instead of the deck's `»`. Blocks without one inherit the master style. New blocks copy their neighbour's marker only when it has one, so they match the neighbour.
+
+**Speaker notes are ordinary text blocks.** A slide's notes live in a placeholder shape of class `393326` ("Notes Placeholder 2"), which lists text-body blocks in `603986976` exactly like a slide shape, and its objects carry the slide's own creation ids. The editor's Enter in the notes pane is the same `NewLine` write as on the slide, so `add_paragraph`, `set_text`, `delete_paragraph` and the run formatters reach notes once the text lookup accepts that container class (verified live on slide 5, 2026-09-17). The same class holds the master's placeholders.
+
+**Copied slides repeat their text.** A slide pasted from another carries the same paragraph text as its source, so a text lookup must be scoped to a slide. Every object carries its slide's creation ids `335562805`/`335562806`; `set_table_height` requires a slide, and `format_text`/`set_font_size` take an optional one.
+
+**Many "multi-run" paragraphs are one format.** Pasted text often splits a paragraph at
+line-wrap points with every segment naming the SAME run (`{…}{33},{…}{33}`), so an
+agent sees "multiple runs" on text that looks uniform.
 
 ## How a paragraph holds more than one format (decoded 2026-09-03)
 
@@ -115,7 +156,7 @@ The two-run paragraph in the same deck (`"04/29 - PILOT GO -- NO GO"`) carries
 | Action | Build | Wire |
 | --- | --- | --- |
 | **range format** (select part of a paragraph, then Bold/size/colour/…) | ○ decoded, ready to build | ONE revision, three objects: the action descriptor; the paragraph resubmitted with a new `469769746` and a rewritten `603987475`; and **one new `1179725` run** that is a verbatim copy of the covering run's property list with only the requested properties overridden. The head and tail segments keep pointing at the original run object, so nothing else is touched. Exemplar: `Bold`, `Sequence 5`, 2,650 bytes. |
-| **`NewLine`** (Enter — paragraph split) | ● built as `add_paragraph` | ONE POST carrying **two chained revisions** (`rev2.BaseId = rev1.Id`). Rev 1: action descriptor (`469780989:"NewLine"`, while the `469780658` json calls it `"Enter"`); the **shape `1074135132` resubmitted with a second text-body reference appended to `603986976`**; the source paragraph; a **new text body `393229`** whose `603986975` names the new paragraph; and the new paragraph `393230` with `469769250:""`, its run-ref and `536886591` pointing at the source paragraph's run. Rev 2: the new paragraph again with `469780757:{"Lines":[1]}`. So a split appends a text-body BLOCK to the shape — a shape's `603986976` is a list of blocks, not a single one. Exemplar: 6,926 bytes. |
+| **`NewLine`** (Enter — paragraph split) | ● built as `add_paragraph` | (The 2026-09-17 capture of an Enter mid-paragraph in a bulleted placeholder confirmed the block model and showed the new block inserted directly after the source's, with a copied `393234` list marker; the split paragraph re-cuts its boundaries to fit.) The first capture: ONE POST carrying **two chained revisions** (`rev2.BaseId = rev1.Id`). Rev 1: action descriptor (`469780989:"NewLine"`, while the `469780658` json calls it `"Enter"`); the **shape `1074135132` resubmitted with a second text-body reference appended to `603986976`**; the source paragraph; a **new text body `393229`** whose `603986975` names the new paragraph; and the new paragraph `393230` with `469769250:""`, its run-ref and `536886591` pointing at the source paragraph's run. Rev 2: the new paragraph again with `469780757:{"Lines":[1]}`. So a split appends a text-body BLOCK to the shape — a shape's `603986976` is a list of blocks, not a single one. Exemplar: 6,926 bytes. |
 | **hyperlink** (Ctrl+K) | ○ decoded, ready to build | See below — it is a field code, and it carries **no action name at all**. |
 
 ### What one capture of `NewLine` could not tell us

@@ -54,6 +54,166 @@ const XHR_PATCHED_MARKER = Symbol.for('opentabs.microsoft-word.xhr.patched');
  */
 const LS_TOKEN_KEY = '__opentabs_word_graph_token';
 
+// ---------------------------------------------------------------------------
+// Editor-frame discovery log (Office Web Apps frame)
+// ---------------------------------------------------------------------------
+
+/**
+ * URL marker for the write-log read channel, the counterpart of PowerPoint's
+ * `__otb_pods_writelog__` and Excel's `__otb_ewa_writelog__`. An in-frame
+ * `fetch` whose URL contains it is answered locally, never sent: with no query a
+ * manifest `{cap, count, dropped, totalBytes, entries}` of
+ * `{index, ts, bytes, method, url}`, newest first and without bodies; with
+ * `?entry=<index>`, that one request in full.
+ *
+ * Word's live write channel is not decoded yet, so unlike the other two this
+ * records every request the editor sends that carries a body, whatever the
+ * endpoint: the point is to learn what Word's editor talks to, and whether it
+ * tunnels its own object model the way Excel's does. Narrow it to the channel
+ * once that is known.
+ */
+const WORD_WRITE_LOG_SENTINEL = '__otb_word_writelog__';
+/** Requests the ring buffer retains. */
+const WORD_WRITE_LOG_CAP = 200;
+/** Ceiling on the bytes the ring buffer holds, evicting oldest-first. */
+const WORD_WRITE_LOG_MAX_BYTES = 24_000_000;
+/** Markers making the editor-frame interceptor idempotent under re-injection. */
+const EDITOR_FETCH_MARKER = Symbol.for('opentabs.microsoft-word.editor.fetch.patched');
+const EDITOR_XHR_MARKER = Symbol.for('opentabs.microsoft-word.editor.xhr.patched');
+
+/** One request as the write log holds it: no headers, so no session credentials leave the frame. */
+interface WordWriteRecord {
+  url: string;
+  method: string;
+  body: string;
+  ts: number;
+}
+
+/** True when this frame is Word's own Office Web Apps editor frame. */
+const isWordEditorFrame = (): boolean => {
+  try {
+    // Office Web Apps serves each app from `<region>-<app>.officeapps.live.com`
+    // (e.g. `usc-word.officeapps.live.com`). Scope to Word's host so this never
+    // installs in a sibling app's editor, which shares the domain.
+    const host = location.hostname.toLowerCase();
+    return host.endsWith('officeapps.live.com') && host.includes('word');
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Record every bodied request the Word editor issues, and answer the read
+ * sentinel locally. Defensive throughout: never throws into page code.
+ */
+const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): void }): void => {
+  const g = globalThis as {
+    fetch: typeof fetch & { [EDITOR_FETCH_MARKER]?: true };
+    XMLHttpRequest: typeof XMLHttpRequest;
+  };
+
+  const writeLog: WordWriteRecord[] = [];
+  let writeLogBytes = 0;
+  let droppedWrites = 0;
+
+  const record = (url: string, method: string, body: string): void => {
+    // Reads travel as bodyless GETs; an edit carries its arguments in a body.
+    if (body.length === 0) return;
+    let absolute: string;
+    try {
+      absolute = new URL(url, location.href).href;
+    } catch {
+      absolute = url;
+    }
+    // The query string carries session context, so only the path is kept.
+    writeLog.push({ url: absolute.split('?')[0] ?? absolute, method, body, ts: Date.now() });
+    writeLogBytes += body.length;
+    while (writeLog.length > WORD_WRITE_LOG_CAP || (writeLog.length > 1 && writeLogBytes > WORD_WRITE_LOG_MAX_BYTES)) {
+      const evicted = writeLog.shift();
+      if (evicted === undefined) break;
+      writeLogBytes -= evicted.body.length;
+      droppedWrites += 1;
+    }
+  };
+
+  /** The manifest, or one full entry when the URL names `?entry=<index>`. */
+  const readWriteLog = (url: string): unknown => {
+    const requested = /[?&]entry=(\d+)/.exec(url);
+    if (requested) return writeLog[writeLog.length - 1 - Number(requested[1])] ?? null;
+    return {
+      cap: WORD_WRITE_LOG_CAP,
+      count: writeLog.length,
+      dropped: droppedWrites,
+      totalBytes: writeLogBytes,
+      entries: [...writeLog].reverse().map((write, index) => ({
+        index,
+        ts: write.ts,
+        bytes: write.body.length,
+        method: write.method,
+        url: write.url,
+      })),
+    };
+  };
+
+  if (!g.fetch[EDITOR_FETCH_MARKER]) {
+    const origFetch = g.fetch;
+    const patched = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      try {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+        if (url.includes(WORD_WRITE_LOG_SENTINEL)) {
+          return new Response(JSON.stringify(readWriteLog(url)), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+        record(url, method, typeof init?.body === 'string' ? init.body : '');
+      } catch {
+        /* observation only: never disturb the editor's own request */
+      }
+      return origFetch(input, init);
+    };
+    (patched as typeof patched & { [EDITOR_FETCH_MARKER]: true })[EDITOR_FETCH_MARKER] = true;
+    g.fetch = patched as typeof fetch & { [EDITOR_FETCH_MARKER]?: true };
+  }
+
+  const Xhr = g.XMLHttpRequest as typeof XMLHttpRequest & { [k: symbol]: unknown };
+  if (!Xhr[EDITOR_XHR_MARKER]) {
+    const origOpen = Xhr.prototype.open;
+    const origSend = Xhr.prototype.send;
+    const STATE = Symbol('opentabs.microsoft-word.editor.xhr.state');
+    type XhrWithState = XMLHttpRequest & { [STATE]?: { url: string; method: string } };
+    type XhrOpenRest = [async?: boolean, username?: string | null, password?: string | null];
+
+    Xhr.prototype.open = function patchedOpen(
+      this: XhrWithState,
+      method: string,
+      url: string | URL,
+      ...rest: XhrOpenRest
+    ) {
+      this[STATE] = { url: typeof url === 'string' ? url : url.href, method };
+      const forward = origOpen as (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) => void;
+      return forward.call(this, method, url, ...rest);
+    } as typeof Xhr.prototype.open;
+
+    Xhr.prototype.send = function patchedSend(this: XhrWithState, body?: Document | XMLHttpRequestBodyInit | null) {
+      const state = this[STATE];
+      if (state) {
+        try {
+          record(state.url, state.method, typeof body === 'string' ? body : '');
+        } catch {
+          /* observation only */
+        }
+      }
+      return origSend.call(this, body ?? null);
+    };
+
+    Xhr[EDITOR_XHR_MARKER] = true;
+  }
+
+  log.info('[microsoft-word] editor-frame write log installed');
+};
+
 const parseUrl = (url: string): URL | null => {
   try {
     return new URL(url);
@@ -70,6 +230,14 @@ const isTokenEndpointUrl = (url: string): boolean => {
 };
 
 definePreScript(({ set, log }) => {
+  // In the Office Web Apps document frame the page is not the plugin's own
+  // origin, so there is no Graph token to capture. Record what the editor sends
+  // instead, so its live channel can be decoded.
+  if (isWordEditorFrame()) {
+    installWordEditorLog(log);
+    return;
+  }
+
   const reloadMarker = parseReloadMarker(location.search, Date.now());
   if (reloadMarker) {
     set('reloadMarker', reloadMarker);

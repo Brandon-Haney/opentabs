@@ -20,6 +20,31 @@ const frameRegistrationId = (pluginName: string): string => `opentabs-pre-${plug
 const SAFE_PRE_SCRIPT_FILENAME = /^adapters\/[a-z0-9][a-z0-9-]*-prescript-[0-9a-f]{8}\.js$/;
 
 /**
+ * Tail of the pending work for each plugin, keyed by plugin name.
+ *
+ * Registering a pre-script is an unregister followed by a register, and Chrome
+ * offers no atomic replace. Two callers working on the same plugin — a
+ * `plugin.update` arriving while a startup `syncPreScripts` is still running —
+ * interleave those halves: one call's unregister removes what the other is
+ * about to register, so one fails with "Nonexistent script ID" and the other
+ * with "Duplicate script ID", and whichever registration survives may name the
+ * previous build's file. Chaining per plugin makes the pair atomic against
+ * other work on the same plugin while leaving unrelated plugins concurrent.
+ */
+const pluginQueues = new Map<string, Promise<void>>();
+
+/** Run `task` after all work already queued for `pluginName`, whatever its outcome. */
+const runForPlugin = (pluginName: string, task: () => Promise<void>): Promise<void> => {
+  const queued = (pluginQueues.get(pluginName) ?? Promise.resolve()).then(task, task);
+  // Drop the entry once it is the last one, so the map tracks only live work.
+  const tracked = queued.finally(() => {
+    if (pluginQueues.get(pluginName) === tracked) pluginQueues.delete(pluginName);
+  });
+  pluginQueues.set(pluginName, tracked);
+  return tracked;
+};
+
+/**
  * Retrieve IDs of all currently registered opentabs pre-script content scripts.
  * Filters by the 'opentabs-pre-' prefix to avoid touching unrelated registrations.
  */
@@ -60,7 +85,11 @@ const unregisterIfPresent = async (ids: string[]): Promise<void> => {
  * console.warn if `preScriptFile` is absent or fails the safe filename check —
  * preventing path traversal from a compromised MCP server.
  */
-const upsertPreScript = async (meta: PluginMeta): Promise<void> => {
+const upsertPreScript = (meta: PluginMeta): Promise<void> =>
+  runForPlugin(meta.name, () => upsertPreScriptExclusive(meta));
+
+/** The body of `upsertPreScript`, run with exclusive access to the plugin's registrations. */
+const upsertPreScriptExclusive = async (meta: PluginMeta): Promise<void> => {
   if (!meta.preScriptFile) return;
 
   if (!SAFE_PRE_SCRIPT_FILENAME.test(meta.preScriptFile)) {
@@ -136,9 +165,8 @@ const upsertPreScript = async (meta: PluginMeta): Promise<void> => {
  * Unregister the pre-script content script for a plugin.
  * Swallows errors — safe to call even if no registration exists.
  */
-const removePreScript = async (pluginName: string): Promise<void> => {
-  await unregisterIfPresent([registrationId(pluginName), frameRegistrationId(pluginName)]);
-};
+const removePreScript = (pluginName: string): Promise<void> =>
+  runForPlugin(pluginName, () => unregisterIfPresent([registrationId(pluginName), frameRegistrationId(pluginName)]));
 
 /**
  * Synchronize registered pre-script content scripts to match the given plugin set.

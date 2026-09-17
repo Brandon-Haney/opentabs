@@ -121,6 +121,30 @@ describe('upsertPreScript', () => {
       // frames id is excluded so the call does not reject atomically.
       expect(mockUnregisterContentScripts).toHaveBeenCalledWith({ ids: ['opentabs-pre-prescript-test'] });
     });
+
+    test('leaves the newest file registered when two callers upsert the same plugin at once', async () => {
+      // Chrome as it actually behaves: one registry, rejecting a duplicate id
+      // and an absent id. Without serialization the two callers interleave
+      // their unregister/register halves and one of them throws.
+      const registry = new Map<string, string>();
+      mockGetRegisteredContentScripts.mockImplementation(async () => [...registry.keys()].map(id => ({ id })));
+      mockUnregisterContentScripts.mockImplementation(async ({ ids }) => {
+        for (const id of ids) if (!registry.has(id)) throw new Error(`Nonexistent script ID '${id}'`);
+        for (const id of ids) registry.delete(id);
+      });
+      mockRegisterContentScripts.mockImplementation(async scripts => {
+        for (const s of scripts as { id: string; js: string[] }[]) {
+          if (registry.has(s.id)) throw new Error(`Duplicate script ID '${s.id}'`);
+        }
+        for (const s of scripts as { id: string; js: string[] }[]) registry.set(s.id, s.js[0] ?? '');
+      });
+
+      const meta = { ...baseMeta(), preScriptFile: 'adapters/prescript-test-prescript-a1b2c3d4.js' };
+      const newer = { ...baseMeta(), preScriptFile: 'adapters/prescript-test-prescript-b2c3d4e5.js' };
+      await Promise.all([upsertPreScript(meta), upsertPreScript(newer)]);
+
+      expect(registry.get('opentabs-pre-prescript-test')).toBe('adapters/prescript-test-prescript-b2c3d4e5.js');
+    });
   });
 
   describe('absent preScriptFile', () => {

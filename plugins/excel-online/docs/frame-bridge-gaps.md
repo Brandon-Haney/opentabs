@@ -26,10 +26,17 @@ Verified live (each checked after a reload): `range/copyFrom`, `range/replaceAll
 `application` PATCH `calculationMode`, `worksheets/{name}/copy` (`Beginning`/`End`;
 `relativeTo` is refused), `names/add`, name DELETE, worksheet DELETE.
 
-Not served: `worksheets/{name}/findAll` and `range/find` (MethodNotAllowed). Silently
-ignored (200, no change): worksheet `showGridlines`, `pageLayout` PATCH. An ignored
-property is indistinguishable from an applied one in the response, so verify every
-new property in the workbook.
+Also verified: worksheet `showGridlines`/`showHeadings`, the whole `pageLayout`
+(orientation, paper size, margins, centering, printed gridlines and headings, zoom as
+`scale` or `horizontalFitToPages`/`verticalFitToPages`), `range/format/borders({side})`
+one side per request, the worksheet `autoFilter` (`apply`, `reapply`, `clearCriteria`),
+`range/conditionalFormats/clearAll`, and `names/add`.
+
+Not served: `worksheets/{name}/findAll` and `range/find` (MethodNotAllowed), and
+`$batch`. A PATCH echoes only the resource's default fields, so an accepted property is
+usually missing from the reply — read it back with `$select` rather than concluding it
+was ignored. Once an idle tab's session expires every call answers `InternalErrorEwr`,
+including reads; reload the workbook.
 
 The advanced Excel tools driven through the frame bridge (`freeze_panes`,
 `format_range_advanced`, `set_print_area`, `insert_page_break`, `set_hyperlink`,

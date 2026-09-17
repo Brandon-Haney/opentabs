@@ -12,9 +12,9 @@ import { type bridgeOutputSchema, EWA_ERROR_HINTS, ewaBridge } from './bridge.js
  * inside a 200 envelope; the frame-bridge engine reports a status of 400 or above
  * as a failure.
  *
- * A property this surface does not support is ignored without an error (a PATCH
- * of `showGridlines` answers 200 and changes nothing), so a tool built on it must
- * be verified live against the workbook, not against the response.
+ * A PATCH echoes only the resource's default fields, so a property it accepted is
+ * usually absent from the reply. Read it back with `$select` to confirm what
+ * applied rather than reading the response of the write.
  */
 
 /** HTTP verbs the tunnel accepts, in the casing Excel's own requests use. */

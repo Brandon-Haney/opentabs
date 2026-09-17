@@ -1,5 +1,10 @@
 # Frame-bridge tools — known gaps and future work
 
+New work on these tools should follow the capture-driven loop in
+`plugins/powerpoint/docs/office-coauthoring-capture-method.md`, which covers all the
+Office co-authoring apps. Its first Excel step is porting PowerPoint's in-frame
+write log to the EWA interceptor, so gestures can be captured without a HAR export.
+
 The advanced Excel tools driven through the frame bridge (`freeze_panes`,
 `format_range_advanced`, `set_print_area`, `insert_page_break`, `set_hyperlink`,
 `add_comment`, `add_conditional_format`, `apply_cell_style`, the plain-range filter

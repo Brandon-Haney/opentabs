@@ -85,6 +85,15 @@ Two rules follow, and they are what keep this from being a slogan:
    most for a PUT that retries: a replay after a hidden success will happily
    overwrite whatever landed in between unless the eTag stops it.
 
+## How to extend a plugin: the capture-driven loop
+
+Build every live write from the editor's own captured write, not from a guess:
+reproduce on a test document, capture the gesture from an in-frame write log,
+diff against the builder, build the smallest faithful write, test it live with a
+screenshot and a reload, and record the decode. The method, the per-app capture
+infrastructure (PowerPoint has a write log; Excel and Word need one ported) and
+the lessons that hold across apps are in [[office-coauthoring-capture-method.md]].
+
 ## Auth: the token is minted once, on a cold load
 
 - The page mints a **Microsoft Graph** token only on a **cold page load**. Capture

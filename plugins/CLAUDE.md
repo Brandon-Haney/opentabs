@@ -75,6 +75,13 @@ The Microsoft plugins share such site-specific modules. `plugins/outlook/src` ho
 
 To change a shared module, edit it in `plugins/outlook/src`, update its test there, and copy the file unchanged into every plugin in its row. `scripts/check-shared-plugin-modules.ts` (run by `npm run check:plugins` and `npm run check`) fails when a copy is missing or differs by a single byte, when a shared module's test appears outside `plugins/outlook`, or when any plugin ships `src/fetch-with-retry.ts` or its test — `fetchWithRetry` is an SDK export, so no plugin-local copy may exist. The manifest in that script is the source of truth for which plugins carry which files; extend it when a new plugin adopts a shared module.
 
+## Microsoft Office Web App Plugins
+
+PowerPoint, Excel, Word and OneNote share one architecture: a SharePoint page hosting a cross-origin editor frame that writes through a co-authoring channel. Two docs in `plugins/powerpoint/docs/` apply to all of them:
+
+- `microsoft-office-web-apps.md` — the field guide: frames, auth, transports, and why content writes go through co-authoring.
+- `office-coauthoring-capture-method.md` — how to extend these plugins: capture the editor's own write for a gesture, build from it, and verify every edit with a screenshot and a reload.
+
 ## Plugin Settings (configSchema)
 
 Plugins can declare a `configSchema` to let users provide instance-specific configuration (e.g., the URL of their self-hosted instance). Declare it on the plugin class and in `package.json`:

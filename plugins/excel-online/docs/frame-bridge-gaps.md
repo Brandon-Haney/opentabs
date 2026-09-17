@@ -55,19 +55,24 @@ the quick menus — `greater_than_or_equal` (Command 68), `less_than_or_equal` (
 command map (`Ha.cMd`); their codes were captured from live New-Rule requests (they use
 `Command` 68–71, not the low unused slots one might guess). No open operator gap remains.
 
-## 2. Conditional formatting — `date_occurring` time periods
+## 2. Conditional formatting — `date_occurring` time periods — solved
 
-The "A Date Occurring" highlight rule (`Command 6`) is wired but not exposed, because
-its `TimePeriodType` sub-enum (yesterday / today / tomorrow / last 7 days / last week /
-this week / next week / last month / this month / next month) is undecoded — it lives
-in the same unreachable RuleEditor pane chunk. The request field name (`TimePeriodType`)
-is confirmed; only the integer values are missing.
+The "A Date Occurring" rule (`Command 6`) is exposed as `add_conditional_format`'s
+`date_occurring` rule with a `period`. One period was captured from the Conditional
+Formatting pane; the rest were decoded by applying each `TimePeriodType` and reading
+the resulting rule's name back from that pane. The order is neither the menu's nor
+Excel's documented `XlTimePeriods`:
 
-**To resolve:** capture one `date_occurring` rule per period. Network capture of the
-Office Web Apps frame is a cross-origin child target, so it is only recorded if the
-**page is refreshed after enabling capture** (the debugger's `setAutoAttach` attaches
-to the frame on its next load; an already-loaded frame is missed). With that, apply one
-rule per period in the New Rule dialog and read `TimePeriodType` from each request.
+| Value | Period | Value | Period |
+| --- | --- | --- | --- |
+| 0 | today | 5 | last month |
+| 1 | yesterday | 6 | tomorrow |
+| 2 | last 7 days | 7 | next week |
+| 3 | this week | 8 | next month |
+| 4 | last week | 9 | this month |
+
+Clearing rules is `range/conditionalFormats/clearAll` on the in-session REST API
+(`clear_conditional_formats`), which removes every rule overlapping the range.
 
 ## 3. AutoFilter on a plain range — solved via the frame bridge
 

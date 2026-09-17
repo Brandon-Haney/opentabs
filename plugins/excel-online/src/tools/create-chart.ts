@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { RawChart } from './schemas.js';
 import { chartSchema, mapChart } from './schemas.js';
 
@@ -24,15 +24,13 @@ export const createChart = defineTool({
       .describe('How data series are organized (default "Auto")'),
   }),
   output: z.object({ chart: chartSchema }),
-  handle: async params => {
-    const data = await workbookApi<RawChart>(`/worksheets('${encodeURIComponent(params.worksheet)}')/charts/Add`, {
-      method: 'POST',
-      body: {
-        type: params.type,
-        sourceData: params.source_data,
-        seriesBy: params.series_by ?? 'Auto',
-      },
-    });
+  handle: async (params, context) => {
+    const data = await workbookCall<RawChart>(
+      context,
+      'POST',
+      `/worksheets('${encodeURIComponent(params.worksheet)}')/charts/Add`,
+      { type: params.type, sourceData: params.source_data, seriesBy: params.series_by ?? 'Auto' },
+    );
     return { chart: mapChart(data) };
   },
 });

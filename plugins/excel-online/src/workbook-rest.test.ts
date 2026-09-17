@@ -13,6 +13,7 @@ import { commentPath, updateComment } from './tools/update-comment.js';
 import {
   buildWorkbookRestOptions,
   qualifiedRange,
+  quoteSheetInAddress,
   rangePath,
   sessionPath,
   workbookRestCall,
@@ -205,5 +206,14 @@ describe('workbookCall paths', () => {
     expect(sessionPath("/worksheets('Sheet1')/range(address='A1%3AD5')")).toBe(
       "worksheets('Sheet1')/range(address='A1:D5')",
     );
+  });
+});
+
+describe('quoteSheetInAddress', () => {
+  test('quotes a sheet name the session would otherwise refuse, and leaves the rest alone', () => {
+    expect(quoteSheetInAddress('Plugin Lab!F1:I5')).toBe("'Plugin Lab'!F1:I5");
+    expect(quoteSheetInAddress('Sheet1!A1:D10')).toBe('Sheet1!A1:D10');
+    expect(quoteSheetInAddress("'Already Quoted'!A1")).toBe("'Already Quoted'!A1");
+    expect(quoteSheetInAddress('A1:D10')).toBe('A1:D10');
   });
 });

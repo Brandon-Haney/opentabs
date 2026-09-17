@@ -1,6 +1,6 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { RawTable } from './schemas.js';
 import { mapTable, tableSchema } from './schemas.js';
 
@@ -25,7 +25,7 @@ export const updateTable = defineTool({
     highlight_last_column: z.boolean().optional().describe('Emphasize the last column'),
   }),
   output: z.object({ table: tableSchema }),
-  handle: async params => {
+  handle: async (params, context) => {
     const body: Record<string, unknown> = {};
     if (params.new_name !== undefined) body.name = params.new_name;
     if (params.style !== undefined) body.style = params.style;
@@ -39,14 +39,7 @@ export const updateTable = defineTool({
     if (Object.keys(body).length === 0) {
       throw ToolError.validation('Provide at least one property to update.');
     }
-    const data = await workbookApi<RawTable>(`/tables('${encodeURIComponent(params.table)}')`, {
-      method: 'PATCH',
-      // A rename changes the address a replay would target when the table is
-      // addressed by name: after a hidden success the old name no longer
-      // exists, so only a non-renaming PATCH is safe to replay.
-      retryNonIdempotent: params.new_name === undefined,
-      body,
-    });
+    const data = await workbookCall<RawTable>(context, 'PATCH', `/tables('${encodeURIComponent(params.table)}')`, body);
     return { table: mapTable(data) };
   },
 });

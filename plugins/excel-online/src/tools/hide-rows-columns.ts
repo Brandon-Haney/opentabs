@@ -1,6 +1,7 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { rangePath, workbookApi } from '../excel-api.js';
+import { rangePath } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 
 const COLUMN_SPAN_RE = /^[A-Za-z]{1,3}(:[A-Za-z]{1,3})?$/;
 const ROW_SPAN_RE = /^\d+(:\d+)?$/;
@@ -29,7 +30,7 @@ export const hideRowsColumns = defineTool({
     success: z.boolean().describe('Whether the operation succeeded'),
     requests_sent: z.number().int().describe('Number of API requests issued'),
   }),
-  handle: async params => {
+  handle: async (params, context) => {
     const columns = params.columns ?? [];
     const rows = params.rows ?? [];
     if (columns.length === 0 && rows.length === 0) {
@@ -46,21 +47,21 @@ export const hideRowsColumns = defineTool({
       }
     }
 
+    // A whole-row or whole-column range echoes every cell it covers, which the
+    // session refuses as too large a response; selecting one field keeps the
+    // echo to the address.
+    const echo = '?$select=address';
     const hidden = params.hidden ?? true;
     let sent = 0;
     for (const span of columns) {
-      await workbookApi(rangePath(params.worksheet, toSpanAddress(span)), {
-        method: 'PATCH',
-        retryNonIdempotent: true,
-        body: { columnHidden: hidden },
+      await workbookCall(context, 'PATCH', `${rangePath(params.worksheet, toSpanAddress(span))}${echo}`, {
+        columnHidden: hidden,
       });
       sent++;
     }
     for (const span of rows) {
-      await workbookApi(rangePath(params.worksheet, toSpanAddress(span)), {
-        method: 'PATCH',
-        retryNonIdempotent: true,
-        body: { rowHidden: hidden },
+      await workbookCall(context, 'PATCH', `${rangePath(params.worksheet, toSpanAddress(span))}${echo}`, {
+        rowHidden: hidden,
       });
       sent++;
     }

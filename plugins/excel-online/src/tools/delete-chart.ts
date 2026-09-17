@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 
 export const deleteChart = defineTool({
   name: 'delete_chart',
@@ -16,10 +16,11 @@ export const deleteChart = defineTool({
   output: z.object({
     success: z.boolean().describe('Whether the operation succeeded'),
   }),
-  handle: async params => {
-    await workbookApi(
+  handle: async (params, context) => {
+    await workbookCall(
+      context,
+      'DELETE',
       `/worksheets('${encodeURIComponent(params.worksheet)}')/charts('${encodeURIComponent(params.chart)}')`,
-      { method: 'DELETE' },
     );
     return { success: true };
   },

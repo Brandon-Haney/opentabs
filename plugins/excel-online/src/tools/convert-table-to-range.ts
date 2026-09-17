@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { RawRange } from './schemas.js';
 import { mapRange, rangeSchema } from './schemas.js';
 
@@ -16,11 +16,13 @@ export const convertTableToRange = defineTool({
     table: z.string().describe('Table name or ID'),
   }),
   output: z.object({ range: rangeSchema }),
-  handle: async params => {
-    const data = await workbookApi<RawRange>(`/tables('${encodeURIComponent(params.table)}')/convertToRange`, {
-      method: 'POST',
-      body: {},
-    });
+  handle: async (params, context) => {
+    const data = await workbookCall<RawRange>(
+      context,
+      'POST',
+      `/tables('${encodeURIComponent(params.table)}')/convertToRange`,
+      {},
+    );
     return { range: mapRange(data) };
   },
 });

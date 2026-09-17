@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 
 export const unprotectWorksheet = defineTool({
   name: 'unprotect_worksheet',
@@ -15,11 +15,13 @@ export const unprotectWorksheet = defineTool({
   output: z.object({
     success: z.boolean().describe('Whether the operation succeeded'),
   }),
-  handle: async params => {
-    await workbookApi(`/worksheets('${encodeURIComponent(params.worksheet)}')/protection/unprotect`, {
-      method: 'POST',
-      body: {},
-    });
+  handle: async (params, context) => {
+    await workbookCall(
+      context,
+      'POST',
+      `/worksheets('${encodeURIComponent(params.worksheet)}')/protection/unprotect`,
+      {},
+    );
     return { success: true };
   },
 });

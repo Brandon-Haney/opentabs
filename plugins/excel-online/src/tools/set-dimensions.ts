@@ -91,7 +91,9 @@ export const setDimensions = defineTool({
     }
 
     // Every operation goes through one batched round trip rather than one
-    // request each. Progress reports also extend the dispatch budget, which
+    // request each. This is the one workbook tool still on Graph: the open
+    // session refuses `$batch`, and sending each width, height and autofit as
+    // its own call would trade one round trip for dozens. Progress reports also extend the dispatch budget, which
     // matters for inputs large enough to need several batches. Setting a width
     // or height and autofitting to content all land on the same state when
     // replayed, so the batch is safe to retry after a transient failure.

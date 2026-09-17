@@ -41,6 +41,19 @@ export const rangePath = (worksheet: string, address: string): string =>
 export const qualifiedRange = (worksheet: string, address: string): string =>
   /^[A-Za-z_][A-Za-z0-9_]*$/.test(worksheet) ? `${worksheet}!${address}` : `${odataString(worksheet)}!${address}`;
 
+/**
+ * A sheet-qualified address with its sheet name quoted when Excel requires it.
+ * Graph accepts `Plugin Lab!F1:I5`; the session refuses it as an invalid
+ * argument, and wants `'Plugin Lab'!F1:I5`.
+ */
+export const quoteSheetInAddress = (address: string): string => {
+  const separator = address.lastIndexOf('!');
+  if (separator === -1) return address;
+  const sheet = address.slice(0, separator);
+  if (sheet.startsWith("'")) return address;
+  return `${qualifiedRange(sheet, address.slice(separator + 1))}`;
+};
+
 /** The `ExecuteRichApiRequest` options for one REST call. */
 export const buildWorkbookRestOptions = (
   verb: WorkbookRestVerb,

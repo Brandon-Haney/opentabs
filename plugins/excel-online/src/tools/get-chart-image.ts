@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 
 export const getChartImage = defineTool({
   name: 'get_chart_image',
@@ -24,7 +24,7 @@ export const getChartImage = defineTool({
     image_base64: z.string().describe('Base64-encoded PNG image data (no data-URI prefix)'),
     mime_type: z.string().describe('Image MIME type (always "image/png")'),
   }),
-  handle: async params => {
+  handle: async (params, context) => {
     const base = `/worksheets('${encodeURIComponent(params.worksheet)}')/charts('${encodeURIComponent(params.chart)}')`;
     // The image() function only accepts arguments when they are provided; an
     // empty argument list (`image()`) is rejected, so fall back to the bare
@@ -35,7 +35,7 @@ export const getChartImage = defineTool({
     if (params.fitting_mode !== undefined) args.push(`fittingMode='${params.fitting_mode}'`);
     const endpoint = args.length > 0 ? `${base}/image(${args.join(',')})` : `${base}/image`;
 
-    const data = await workbookApi<{ value?: string }>(endpoint);
+    const data = await workbookCall<{ value?: string }>(context, 'GET', endpoint);
     return { image_base64: data.value ?? '', mime_type: 'image/png' };
   },
 });

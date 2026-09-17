@@ -1,6 +1,6 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { RawChart } from './schemas.js';
 import { chartSchema, mapChart } from './schemas.js';
 
@@ -23,7 +23,7 @@ export const updateChart = defineTool({
     width: z.number().positive().optional().describe('Chart width in points'),
   }),
   output: z.object({ chart: chartSchema }),
-  handle: async params => {
+  handle: async (params, context) => {
     const base = `/worksheets('${encodeURIComponent(params.worksheet)}')/charts('${encodeURIComponent(params.chart)}')`;
 
     const titleBody: Record<string, unknown> = {};
@@ -41,15 +41,15 @@ export const updateChart = defineTool({
     }
 
     if (Object.keys(titleBody).length > 0) {
-      await workbookApi(`${base}/title`, { method: 'PATCH', body: titleBody, retryNonIdempotent: true });
+      await workbookCall(context, 'PATCH', `${base}/title`, titleBody);
     }
 
     // The chart PATCH returns the updated chart entity; when only the title
     // changed, read the chart back so the response still reflects current state.
     const chart =
       Object.keys(positionBody).length > 0
-        ? await workbookApi<RawChart>(base, { method: 'PATCH', body: positionBody, retryNonIdempotent: true })
-        : await workbookApi<RawChart>(base);
+        ? await workbookCall<RawChart>(context, 'PATCH', base, positionBody)
+        : await workbookCall<RawChart>(context, 'GET', base);
     return { chart: mapChart(chart) };
   },
 });

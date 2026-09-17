@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 
 export const protectWorksheet = defineTool({
   name: 'protect_worksheet',
@@ -26,7 +26,7 @@ export const protectWorksheet = defineTool({
   output: z.object({
     success: z.boolean().describe('Whether the operation succeeded'),
   }),
-  handle: async params => {
+  handle: async (params, context) => {
     const optionMap: Record<string, boolean | undefined> = {
       allowFormatCells: params.allow_format_cells,
       allowFormatColumns: params.allow_format_columns,
@@ -44,10 +44,12 @@ export const protectWorksheet = defineTool({
       if (value !== undefined) options[key] = value;
     }
     const body = Object.keys(options).length > 0 ? { options } : {};
-    await workbookApi(`/worksheets('${encodeURIComponent(params.worksheet)}')/protection/protect`, {
-      method: 'POST',
+    await workbookCall(
+      context,
+      'POST',
+      `/worksheets('${encodeURIComponent(params.worksheet)}')/protection/protect`,
       body,
-    });
+    );
     return { success: true };
   },
 });

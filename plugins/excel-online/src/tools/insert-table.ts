@@ -1,7 +1,7 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { buildRangeAddress, parseBoundedRange } from '../a1.js';
-import { workbookApi } from '../excel-api.js';
+import { qualifiedRange, workbookCall } from '../workbook-rest.js';
 import type { RawTable } from './schemas.js';
 import { mapTable, tableSchema } from './schemas.js';
 
@@ -25,7 +25,7 @@ export const insertTable = defineTool({
     show_totals: z.boolean().optional().describe('Show a total row beneath the table'),
   }),
   output: z.object({ table: tableSchema, address: z.string().describe('The range the table occupies in A1 notation') }),
-  handle: async params => {
+  handle: async (params, context) => {
     const width = params.headers.length;
     const badRow = params.rows.findIndex(row => row.length !== width);
     if (badRow !== -1) {
@@ -42,15 +42,16 @@ export const insertTable = defineTool({
       endCol: anchor.startCol + width - 1,
     });
 
-    await workbookApi(`/worksheets('${encodeURIComponent(params.worksheet)}')/range(address='${fullAddress}')`, {
-      method: 'PATCH',
-      retryNonIdempotent: true,
-      body: { values: [params.headers, ...params.rows] },
-    });
+    await workbookCall(
+      context,
+      'PATCH',
+      `/worksheets('${encodeURIComponent(params.worksheet)}')/range(address='${fullAddress}')`,
+      { values: [params.headers, ...params.rows] },
+    );
 
-    let table = await workbookApi<RawTable>('/tables/add', {
-      method: 'POST',
-      body: { address: `${params.worksheet}!${fullAddress}`, hasHeaders: true },
+    let table = await workbookCall<RawTable>(context, 'POST', '/tables/add', {
+      address: qualifiedRange(params.worksheet, fullAddress),
+      hasHeaders: true,
     });
 
     const patch: Record<string, unknown> = {};
@@ -58,11 +59,7 @@ export const insertTable = defineTool({
     if (params.show_filter_button !== undefined) patch.showFilterButton = params.show_filter_button;
     if (params.show_totals !== undefined) patch.showTotals = params.show_totals;
     if (Object.keys(patch).length > 0 && table.id) {
-      table = await workbookApi<RawTable>(`/tables('${encodeURIComponent(table.id)}')`, {
-        method: 'PATCH',
-        retryNonIdempotent: true,
-        body: patch,
-      });
+      table = await workbookCall<RawTable>(context, 'PATCH', `/tables('${encodeURIComponent(table.id)}')`, patch);
     }
 
     return { table: mapTable(table), address: `${params.worksheet}!${fullAddress}` };

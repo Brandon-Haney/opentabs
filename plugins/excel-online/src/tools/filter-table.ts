@@ -1,6 +1,6 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 
 /**
  * Resource path to a table column's filter. A column is addressed by header
@@ -71,17 +71,13 @@ export const filterTable = defineTool({
   output: z.object({
     success: z.boolean().describe('Whether the filter was applied'),
   }),
-  handle: async params => {
+  handle: async (params, context) => {
     const criteria = buildCriteria(params);
     if (criteria === null) {
       throw ToolError.validation('Provide "values" or "criterion1" to define how the column should be filtered.');
     }
 
-    await workbookApi(columnFilterPath(params.table, params.column), {
-      method: 'POST',
-      retryNonIdempotent: true,
-      body: { criteria },
-    });
+    await workbookCall(context, 'POST', columnFilterPath(params.table, params.column), { criteria });
 
     return { success: true };
   },

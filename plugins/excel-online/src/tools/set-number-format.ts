@@ -1,7 +1,8 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { parseBoundedRange } from '../a1.js';
-import { rangePath, workbookApi } from '../excel-api.js';
+import { rangePath } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 
 /**
  * Upper bound on cells a single call may format. The Graph `numberFormat`
@@ -63,7 +64,7 @@ export const setNumberFormat = defineTool({
   output: z.object({
     cells_formatted: z.number().int().describe('Number of cells whose number format was set'),
   }),
-  handle: async params => {
+  handle: async (params, context) => {
     if ((params.format === undefined) === (params.formats === undefined)) {
       throw ToolError.validation('Provide exactly one of "format" (uniform) or "formats" (per-cell 2D array).');
     }
@@ -92,11 +93,7 @@ export const setNumberFormat = defineTool({
       numberFormat = formats.map(row => row.map(resolveFormat));
     }
 
-    await workbookApi(rangePath(params.worksheet, params.address), {
-      method: 'PATCH',
-      retryNonIdempotent: true,
-      body: { numberFormat },
-    });
+    await workbookCall(context, 'PATCH', rangePath(params.worksheet, params.address), { numberFormat });
     return { cells_formatted: cellCount };
   },
 });

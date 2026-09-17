@@ -32,8 +32,15 @@ Also verified: worksheet `showGridlines`/`showHeadings`, the whole `pageLayout`
 one side per request, the worksheet `autoFilter` (`apply`, `reapply`, `clearCriteria`),
 `range/conditionalFormats/clearAll`, and `names/add`.
 
+Two shapes differ from Graph's. A sheet-qualified address must have its sheet
+name quoted — `'Plugin Lab'!F1:I5`, where Graph accepts it bare — or `tables/add`
+refuses it as an invalid argument. And a write to a whole row or column echoes
+every cell it covers, which comes back as `ResponsePayloadSizeLimitExceeded`;
+appending `?$select=address` keeps the echo small.
+
 Not served: `worksheets/{name}/findAll` and `range/find` (MethodNotAllowed), and
-`$batch`. A PATCH echoes only the resource's default fields, so an accepted property is
+`$batch` — which is why `set_dimensions` stays on Graph, where one batch beats
+dozens of calls. A PATCH echoes only the resource's default fields, so an accepted property is
 usually missing from the reply — read it back with `$select` rather than concluding it
 was ignored. Once an idle tab's session expires every call answers `InternalErrorEwr`,
 including reads; reload the workbook.

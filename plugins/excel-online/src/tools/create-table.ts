@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { quoteSheetInAddress, workbookCall } from '../workbook-rest.js';
 import type { RawTable } from './schemas.js';
 import { mapTable, tableSchema } from './schemas.js';
 
@@ -19,23 +19,16 @@ export const createTable = defineTool({
     show_filter_button: z.boolean().optional().describe('Show filter dropdown buttons on the header row'),
   }),
   output: z.object({ table: tableSchema }),
-  handle: async params => {
-    let data = await workbookApi<RawTable>('/tables/add', {
-      method: 'POST',
-      body: {
-        address: params.address,
-        hasHeaders: params.has_headers ?? true,
-      },
+  handle: async (params, context) => {
+    let data = await workbookCall<RawTable>(context, 'POST', '/tables/add', {
+      address: quoteSheetInAddress(params.address),
+      hasHeaders: params.has_headers ?? true,
     });
     if ((params.style !== undefined || params.show_filter_button !== undefined) && data.id) {
       const body: Record<string, unknown> = {};
       if (params.style !== undefined) body.style = params.style;
       if (params.show_filter_button !== undefined) body.showFilterButton = params.show_filter_button;
-      data = await workbookApi<RawTable>(`/tables('${encodeURIComponent(data.id)}')`, {
-        method: 'PATCH',
-        body,
-        retryNonIdempotent: true,
-      });
+      data = await workbookCall<RawTable>(context, 'PATCH', `/tables('${encodeURIComponent(data.id)}')`, body);
     }
     return { table: mapTable(data) };
   },

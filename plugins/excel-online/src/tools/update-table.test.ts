@@ -1,77 +1,32 @@
-/**
- * @vitest-environment jsdom
- * @vitest-environment-options {"url": "https://excel.cloud.microsoft/open/onedrive/?driveId=drive-1&docId=item-1"}
- */
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { updateTable } from './update-table.js';
 
-vi.mock('@opentabs-dev/plugin-sdk', async importOriginal => ({
-  ...(await importOriginal<typeof import('@opentabs-dev/plugin-sdk')>()),
-  log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-}));
+/**
+ * The tool sends one in-session call and reads the table back out of it. The
+ * replay policy these tests used to cover belonged to the Graph path, which
+ * retried a transient status and had to hold back a rename; the in-session call
+ * is issued once, so only what it sends and what it returns matter.
+ */
+describe('update_table', () => {
+  const context = (response: unknown) => ({ reportProgress: () => {}, bridge: vi.fn().mockResolvedValue(response) });
 
-const LS_TOKEN_KEY = '__opentabs_excel_graph_token';
-const TABLE_URL = "https://graph.microsoft.com/v1.0/drives/drive-1/items/item-1/workbook/tables('Sales')";
+  test('sends only the properties given, and returns the table Excel answered with', async () => {
+    const ctx = context({ response: '{"id":"t1","name":"Sales","style":"TableStyleMedium9"}' });
+    const output = await updateTable.handle({ table: 'Sales', style: 'TableStyleMedium9' }, ctx);
 
-const respond = (status: number, body: unknown = null): Response =>
-  new Response(body === null ? null : JSON.stringify(body), {
-    status,
-    headers: body === null ? {} : { 'content-type': 'application/json' },
-  });
-
-/** Resolves `promise` while draining the retry sleeps scheduled under fake timers. */
-const settle = async <T>(promise: Promise<T>): Promise<T> => {
-  const outcome = promise.then(
-    value => ({ ok: true as const, value }),
-    (error: unknown) => ({ ok: false as const, error }),
-  );
-  await vi.runAllTimersAsync();
-  const result = await outcome;
-  if (result.ok) return result.value;
-  throw result.error;
-};
-
-let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
-
-beforeEach(() => {
-  vi.useFakeTimers();
-  fetchMock = vi.fn<typeof fetch>();
-  vi.stubGlobal('fetch', fetchMock);
-  localStorage.setItem(LS_TOKEN_KEY, JSON.stringify({ token: 'tok', exp: Math.floor(Date.now() / 1000) + 3600 }));
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.useRealTimers();
-  localStorage.clear();
-});
-
-describe('update_table replay policy', () => {
-  test('replays a PATCH that does not rename the table', async () => {
-    fetchMock
-      .mockResolvedValueOnce(respond(503))
-      .mockResolvedValueOnce(respond(200, { id: 't1', name: 'Sales', style: 'TableStyleMedium9' }));
-    const output = await settle(updateTable.handle({ table: 'Sales', style: 'TableStyleMedium9' }));
     expect(output.table.style).toBe('TableStyleMedium9');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    for (const call of fetchMock.mock.calls) {
-      expect(String(call[0])).toBe(TABLE_URL);
-      expect(call[1]?.method).toBe('PATCH');
-      expect(call[1]?.body).toBe('{"style":"TableStyleMedium9"}');
-    }
-  });
-
-  test('sends a renaming PATCH exactly once on a transient status', async () => {
-    fetchMock.mockResolvedValue(respond(503));
-    await expect(settle(updateTable.handle({ table: 'Sales', new_name: 'Revenue' }))).rejects.toMatchObject({
-      code: 'UPSTREAM_UNAVAILABLE',
+    const request = (ctx.bridge.mock.calls[0]?.[0] as { __bridge: { options: { request: Record<string, unknown> } } })
+      .__bridge.options.request;
+    expect(request).toMatchObject({
+      HttpMethod: 'Patch',
+      PathAndQuery: "tables('Sales')",
+      RequestBody: '{"style":"TableStyleMedium9"}',
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe('{"name":"Revenue"}');
   });
 
-  test('rejects an empty update without a request', async () => {
-    await expect(updateTable.handle({ table: 'Sales' })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
-    expect(fetchMock).not.toHaveBeenCalled();
+  test('refuses a call that would change nothing', async () => {
+    await expect(updateTable.handle({ table: 'Sales' }, context({ response: '{}' }))).rejects.toThrow(
+      /at least one property/,
+    );
   });
 });

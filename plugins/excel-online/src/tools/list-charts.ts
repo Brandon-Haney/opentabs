@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 import type { GraphListResponse, RawChart } from './schemas.js';
 import { chartSchema, mapChart } from './schemas.js';
 
@@ -15,8 +15,10 @@ export const listCharts = defineTool({
     worksheet: z.string().describe('Worksheet name (e.g., "Sheet1")'),
   }),
   output: z.object({ charts: z.array(chartSchema) }),
-  handle: async params => {
-    const data = await workbookApi<GraphListResponse<RawChart>>(
+  handle: async (params, context) => {
+    const data = await workbookCall<GraphListResponse<RawChart>>(
+      context,
+      'GET',
       `/worksheets('${encodeURIComponent(params.worksheet)}')/charts`,
     );
     return { charts: (data.value ?? []).map(mapChart) };

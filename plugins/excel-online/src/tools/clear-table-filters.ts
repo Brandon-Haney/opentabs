@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { workbookApi } from '../excel-api.js';
+import { workbookCall } from '../workbook-rest.js';
 
 export const clearTableFilters = defineTool({
   name: 'clear_table_filters',
@@ -20,17 +20,17 @@ export const clearTableFilters = defineTool({
   output: z.object({
     success: z.boolean().describe('Whether the filters were cleared'),
   }),
-  handle: async params => {
+  handle: async (params, context) => {
     const base = `/tables('${encodeURIComponent(params.table)}')`;
     if (params.column === undefined) {
-      await workbookApi(`${base}/clearFilters`, { method: 'POST', body: {}, retryNonIdempotent: true });
+      await workbookCall(context, 'POST', `${base}/clearFilters`, {});
       return { success: true };
     }
     const col =
       typeof params.column === 'number'
         ? `/columns/itemAt(index=${params.column})`
         : `/columns('${encodeURIComponent(params.column)}')`;
-    await workbookApi(`${base}${col}/filter/clear`, { method: 'POST', body: {}, retryNonIdempotent: true });
+    await workbookCall(context, 'POST', `${base}${col}/filter/clear`, {});
     return { success: true };
   },
 });

@@ -123,32 +123,40 @@ const getSkypeAccessToken = (): string | null => {
 /** Cached enterprise chat service URL. */
 let cachedEnterpriseChatServiceBase: string | null = null;
 
+/** Service URLs the Teams SPA stores for the signed-in user's region. */
+interface RegionGtms {
+  chatService?: string;
+  chatServiceAfd?: string;
+  middleTier?: string;
+}
+
 /**
- * Discover the enterprise chat service URL from the regionGtms data stored
- * in localStorage by the Teams SPA. Falls back to the AFD proxy URL.
+ * Read the regionGtms record the Teams SPA stores in localStorage alongside
+ * its Skype token discovery; null when absent or unparseable.
+ */
+const readRegionGtms = (): RegionGtms | null => {
+  const entry = findLocalStorageEntry(key => key.includes('Discover.SKYPE-TOKEN'));
+  if (!entry) return null;
+  try {
+    const data = JSON.parse(entry.value) as { item?: { regionGtms?: RegionGtms } };
+    return data.item?.regionGtms ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Discover the enterprise chat service URL from regionGtms. Falls back to the
+ * AMER AFD proxy URL.
  */
 const discoverEnterpriseChatServiceBase = (): string => {
   if (cachedEnterpriseChatServiceBase) return cachedEnterpriseChatServiceBase;
 
-  const entry = findLocalStorageEntry(key => key.includes('Discover.SKYPE-TOKEN'));
-  if (entry) {
-    try {
-      const data = JSON.parse(entry.value) as {
-        item?: { regionGtms?: { chatService?: string; chatServiceAfd?: string } };
-      };
-      const chatServiceAfd = data.item?.regionGtms?.chatServiceAfd;
-      if (chatServiceAfd) {
-        cachedEnterpriseChatServiceBase = chatServiceAfd;
-        return chatServiceAfd;
-      }
-      const chatService = data.item?.regionGtms?.chatService;
-      if (chatService) {
-        cachedEnterpriseChatServiceBase = chatService;
-        return chatService;
-      }
-    } catch {
-      // Fall through to default
-    }
+  const regionGtms = readRegionGtms();
+  const discovered = regionGtms?.chatServiceAfd ?? regionGtms?.chatService;
+  if (discovered) {
+    cachedEnterpriseChatServiceBase = discovered;
+    return discovered;
   }
 
   // Default fallback — AMER region AFD proxy
@@ -568,6 +576,50 @@ export const threadApi = async <T>(
     request,
   );
 
+  return handleApiResponse<T>(response, request.label);
+};
+
+// ---------------------------------------------------------------------------
+// Middle tier (calendar)
+// ---------------------------------------------------------------------------
+
+/**
+ * The middle-tier base for the signed-in user's region
+ * (`https://teams.microsoft.com/api/mt/part/<partition>`), read from
+ * regionGtms. The middle tier serves work and school accounts only.
+ */
+const getMiddleTierBase = (): string => {
+  if (detectEnvironment() === 'consumer') {
+    throw ToolError.validation('The Teams calendar is available on work or school Teams (teams.microsoft.com) only.');
+  }
+  const middleTier = readRegionGtms()?.middleTier;
+  if (!middleTier) {
+    throw ToolError.internal(
+      'Teams middle-tier URL not found in the region discovery data. Reload the Teams tab so the page stores it again.',
+    );
+  }
+  return middleTier;
+};
+
+const middleTierRequestInit = (accessToken: string): TeamsRequestInit => ({
+  method: 'GET',
+  headers: { Authorization: `Bearer ${accessToken}` },
+});
+
+/**
+ * GET from the Teams middle tier, authenticated with the MSAL Skype API
+ * access token as a `Bearer` — the middle tier rejects the Skype JWT that the
+ * chat service takes. Reads are replayed on transient failures.
+ */
+export const middleTierApi = async <T>(
+  endpoint: string,
+  query: Record<string, string | number | boolean | undefined> = {},
+): Promise<T> => {
+  const accessToken = getSkypeAccessToken();
+  if (!accessToken) throw noAccessTokenError();
+  const url = appendQuery(`${getMiddleTierBase()}${endpoint}`, query);
+  const request: TeamsRequestOptions = { label: 'Teams middle tier GET' };
+  const response = await teamsFetch(url, middleTierRequestInit(accessToken), request);
   return handleApiResponse<T>(response, request.label);
 };
 
@@ -1014,4 +1066,21 @@ export const probeSubstrate = (): Promise<ProbeResult> =>
     if (!token) throw noSubstrateTokenError();
     const body = buildMessageSearchBody({ query: '*', from: 0, size: 1 });
     return sendProbeRequest(SUBSTRATE_SEARCH_URL, substrateRequestInit(token, body), 'substrate probe');
+  });
+
+/** Endpoint label of the middle-tier probe; also the path it requests. */
+const CALENDAR_EVENTS_PATH = '/beta/me/calendarEvents';
+
+/** Single-attempt one-minute calendar read against the middle tier; reports a missing token or base as the probe error. */
+export const probeMiddleTier = (): Promise<ProbeResult> =>
+  runProbe('middletier', CALENDAR_EVENTS_PATH, async () => {
+    const accessToken = getSkypeAccessToken();
+    if (!accessToken) throw noAccessTokenError();
+    const start = new Date();
+    const end = new Date(start.getTime() + 60_000);
+    const url = appendQuery(`${getMiddleTierBase()}${CALENDAR_EVENTS_PATH}`, {
+      StartDate: start.toISOString(),
+      EndDate: end.toISOString(),
+    });
+    return sendProbeRequest(url, middleTierRequestInit(accessToken), 'middletier probe');
   });

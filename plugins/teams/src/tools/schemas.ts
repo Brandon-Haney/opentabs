@@ -212,3 +212,95 @@ export const mapSearchResult = (r: RawSearchResult): MessageSearchResult => {
     has_attachments: source.HasAttachments ?? false,
   };
 };
+
+// ---------------------------------------------------------------------------
+// Calendar event schema
+// ---------------------------------------------------------------------------
+
+export const calendarEventSchema = z.object({
+  id: z.string().describe('Exchange event ID (the same ID the Outlook plugin uses for this event)'),
+  subject: z.string().describe('Event subject'),
+  start: z.string().describe('Start time (ISO 8601, UTC)'),
+  end: z.string().describe('End time (ISO 8601, UTC)'),
+  is_all_day: z.boolean().describe('Whether the event is an all-day event'),
+  location: z.string().describe('Location display name (empty if none)'),
+  type: z
+    .string()
+    .describe('"SingleInstance", "Occurrence" (of a recurring series), or "Exception" (a modified occurrence)'),
+  is_online_meeting: z.boolean().describe('Whether the event is a Teams meeting'),
+  join_url: z.string().describe('Teams meeting join URL (empty if not a Teams meeting)'),
+  meeting_chat_id: z
+    .string()
+    .describe('Thread ID of the meeting chat, usable with read_messages and send_message (empty if none)'),
+  dial_in_conference_id: z.string().describe('Audio conference ID for dial-in (empty if none)'),
+  dial_in_toll_number: z.string().describe('Dial-in toll number (empty if none)'),
+  organizer_name: z.string().describe('Organizer display name'),
+  is_organizer: z.boolean().describe('Whether the signed-in user organizes the event'),
+  response: z.string().describe('The signed-in user\'s response, e.g. "Accepted", "Tentative", "Organizer", "None"'),
+  show_as: z.string().describe('Free/busy status, e.g. "Busy", "Tentative", "Free", "Oof"'),
+  is_private: z.boolean().describe('Whether the event is marked private'),
+});
+
+export type CalendarEvent = z.infer<typeof calendarEventSchema>;
+
+export interface RawCalendarEvent {
+  objectId?: string;
+  subject?: string;
+  startTime?: string;
+  endTime?: string;
+  isAllDayEvent?: boolean;
+  location?: string;
+  eventType?: string | null;
+  isOnlineMeeting?: boolean;
+  skypeTeamsMeetingUrl?: string;
+  skypeTeamsData?: string;
+  onlineMeetingConferenceId?: string;
+  onlineMeetingTollNumber?: string;
+  organizerName?: string;
+  isOrganizer?: boolean;
+  myResponseType?: string;
+  showAs?: string;
+  isPrivate?: boolean;
+}
+
+/**
+ * The meeting chat thread ID from `skypeTeamsData`, a JSON string whose `cid`
+ * names the chat; empty when absent or unparseable.
+ */
+const meetingChatIdOf = (skypeTeamsData: string | undefined): string => {
+  if (!skypeTeamsData) return '';
+  try {
+    const cid = (JSON.parse(skypeTeamsData) as { cid?: unknown }).cid;
+    return typeof cid === 'string' ? cid : '';
+  } catch {
+    return '';
+  }
+};
+
+/** Normalize a middle-tier timestamp (`2026-09-25T13:30:00+00:00`) to ISO 8601 UTC; empty when absent or invalid. */
+const toUtcIso = (timestamp: string | undefined): string => {
+  if (!timestamp) return '';
+  const ms = Date.parse(timestamp);
+  return Number.isNaN(ms) ? '' : new Date(ms).toISOString();
+};
+
+export const mapCalendarEvent = (e: RawCalendarEvent): CalendarEvent => ({
+  id: e.objectId ?? '',
+  subject: e.subject ?? '',
+  start: toUtcIso(e.startTime),
+  end: toUtcIso(e.endTime),
+  is_all_day: e.isAllDayEvent ?? false,
+  location: e.location ?? '',
+  // The middle tier leaves eventType null for a single, non-recurring event.
+  type: e.eventType ?? 'SingleInstance',
+  is_online_meeting: e.isOnlineMeeting ?? false,
+  join_url: e.skypeTeamsMeetingUrl ?? '',
+  meeting_chat_id: meetingChatIdOf(e.skypeTeamsData),
+  dial_in_conference_id: e.onlineMeetingConferenceId ?? '',
+  dial_in_toll_number: e.onlineMeetingTollNumber ?? '',
+  organizer_name: e.organizerName ?? '',
+  is_organizer: e.isOrganizer ?? false,
+  response: e.myResponseType ?? '',
+  show_as: e.showAs ?? '',
+  is_private: e.isPrivate ?? false,
+});

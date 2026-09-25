@@ -71,13 +71,15 @@ describe('diagnose', () => {
     expect(output.chatServiceOrigin).toBe('https://teams.microsoft.com');
     expect(output.cachedApiBase).toBeNull();
     expect(output.tokenSources.map(s => s.source)).toEqual([...TEAMS_TOKEN_SOURCES]);
-    expect(output.probes.map(p => p.name)).toEqual(['authsvc', 'chatsvc', 'substrate']);
+    expect(output.probes.map(p => p.name)).toEqual(['authsvc', 'chatsvc', 'substrate', 'middletier']);
 
     const byName = new Map(output.probes.map(p => [p.name, p]));
     expect(byName.get('authsvc')).toMatchObject({ status: null, ok: false });
     expect(byName.get('authsvc')?.error).toContain('no Skype API access token captured');
     expect(byName.get('chatsvc')).toMatchObject({ status: 200, ok: true, requestId: 'diag-rid', error: null });
     expect(byName.get('substrate')).toMatchObject({ status: 200, ok: true, requestId: 'diag-rid', error: null });
+    expect(byName.get('middletier')).toMatchObject({ status: null, ok: false });
+    expect(byName.get('middletier')?.error).toContain('no Skype API access token captured');
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -143,6 +145,32 @@ describe('diagnose', () => {
     expect(byName.get('chatsvc')).toMatchObject({ status: null, ok: false });
     expect(byName.get('chatsvc')?.error).toContain('Skype JWT unavailable');
     expect(byName.get('chatsvc')?.error).toContain('HTTP 503');
+  });
+
+  test('probes the middle tier discovered from regionGtms with the MSAL token as a Bearer', async () => {
+    vi.stubGlobal('__openTabs', { preScript: { teams: { enterpriseToken: capturedToken(MSAL_SKYPE_TOKEN) } } });
+    localStorage.setItem(
+      'tmp.Discover.SKYPE-TOKEN',
+      JSON.stringify({ item: { regionGtms: { middleTier: 'https://teams.microsoft.com/api/mt/part/amer-03' } } }),
+    );
+    fetchMock.mockImplementation(async () => json({ value: [] }));
+
+    try {
+      const output = await diagnose.handle({});
+
+      const calendarCall = fetchMock.mock.calls.find(([input]) =>
+        String(input).startsWith('https://teams.microsoft.com/api/mt/part/amer-03/beta/me/calendarEvents?'),
+      );
+      expect((calendarCall?.[1]?.headers as Record<string, string>).Authorization).toBe(`Bearer ${MSAL_SKYPE_TOKEN}`);
+      expect(output.probes.find(p => p.name === 'middletier')).toMatchObject({
+        path: '/beta/me/calendarEvents',
+        status: 200,
+        ok: true,
+        error: null,
+      });
+    } finally {
+      localStorage.clear();
+    }
   });
 
   test('marks every source absent and every probe skipped when nothing was captured', async () => {

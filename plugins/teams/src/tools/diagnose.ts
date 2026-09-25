@@ -8,6 +8,7 @@ import {
   getChatServiceBase,
   probeAuthz,
   probeChatService,
+  probeMiddleTier,
   probeSubstrate,
   TEAMS_TOKEN_SOURCES,
 } from '../teams-api.js';
@@ -34,7 +35,7 @@ export const diagnose = defineTool({
   name: 'diagnose',
   displayName: 'Diagnose Connectivity',
   description:
-    'Read-only connectivity check for the Teams plugin: reports the page origin, which auth tokens the pre-script has captured (presence, expiry and a fingerprint — never values), and a single un-retried probe each of the authsvc token exchange, the chat service and Substrate search with HTTP status, latency and upstream request-id. Use when Teams tools fail with UPSTREAM_UNAVAILABLE, NETWORK_ERROR or AUTH_ERROR to tell a Microsoft outage from a missing token.',
+    'Read-only connectivity check for the Teams plugin: reports the page origin, which auth tokens the pre-script has captured (presence, expiry and a fingerprint — never values), and a single un-retried probe each of the authsvc token exchange, the chat service, Substrate search and the middle tier (calendar) with HTTP status, latency and upstream request-id. Use when Teams tools fail with UPSTREAM_UNAVAILABLE, NETWORK_ERROR or AUTH_ERROR to tell a Microsoft outage from a missing token.',
   summary: 'Check Teams connectivity and auth state',
   icon: 'stethoscope',
   group: 'People',
@@ -57,7 +58,7 @@ export const diagnose = defineTool({
   handle: async () => {
     // The authsvc probe settles first: the chat-service probe reuses the JWT it
     // minted (or one already held) rather than exchanging a second time.
-    const [authsvc, substrate] = await Promise.all([probeAuthz(), probeSubstrate()]);
+    const [authsvc, substrate, middletier] = await Promise.all([probeAuthz(), probeSubstrate(), probeMiddleTier()]);
     const chatsvc = await probeChatService(authsvc);
     return {
       pageOrigin: new URL(getCurrentUrl()).origin,
@@ -65,7 +66,7 @@ export const diagnose = defineTool({
       chatServiceOrigin: new URL(getChatServiceBase()).origin,
       cachedApiBase: getCachedChatServiceBase(),
       tokenSources: describeTokenSources(),
-      probes: [authsvc, chatsvc, substrate],
+      probes: [authsvc, chatsvc, substrate, middletier],
     };
   },
 });

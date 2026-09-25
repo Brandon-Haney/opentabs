@@ -590,7 +590,7 @@ export const threadApi = async <T>(
  */
 const getMiddleTierBase = (): string => {
   if (detectEnvironment() === 'consumer') {
-    throw ToolError.validation('The Teams calendar is available on work or school Teams (teams.microsoft.com) only.');
+    throw ToolError.validation('The Teams calendar is available on work or school Teams (teams.microsoft.com or teams.cloud.microsoft) only.');
   }
   const middleTier = readRegionGtms()?.middleTier;
   if (!middleTier) {
@@ -699,7 +699,7 @@ const getSubstrateToken = (): string | null => {
 
 const noSubstrateTokenError = (): ToolError =>
   ToolError.auth(
-    'Not authenticated for search — no Substrate Search token captured. Reload the Teams tab so the pre-script can intercept it. Search requires enterprise Teams (teams.microsoft.com).',
+    'Not authenticated for search — no Substrate Search token captured. Reload the Teams tab so the pre-script can intercept it. Search requires work or school Teams (teams.microsoft.com or teams.cloud.microsoft).',
   );
 
 /**

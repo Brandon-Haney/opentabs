@@ -17,7 +17,7 @@ export const searchMessages = defineTool({
   name: 'search_messages',
   displayName: 'Search Messages',
   description:
-    "Search across all of the user's Teams chats and channels for messages matching a query, ranked by relevance. Each result is a single message — pass its conversation_id to read_messages to read the surrounding thread (results may include nearby messages from a strongly-matching conversation). This is keyword/KQL search like Outlook, NOT semantic: do not pass a natural-language question — pull out the distinctive terms instead. A few specific keywords (names, unique nouns, numbers, error codes) beat common words, which pull in large meeting/channel threads as noise. Narrow with the operators described on the query field. Enterprise Teams (teams.microsoft.com) only.",
+    "Search across all of the user's Teams chats and channels for messages matching a query, ranked by relevance. Each result is a single message — pass its conversation_id to read_messages to read the surrounding thread (results may include nearby messages from a strongly-matching conversation). This is keyword/KQL search like Outlook, NOT semantic: do not pass a natural-language question — pull out the distinctive terms instead. A few specific keywords (names, unique nouns, numbers, error codes) beat common words, which pull in large meeting/channel threads as noise. Narrow with the operators described on the query field. Enterprise Teams (teams.microsoft.com or teams.cloud.microsoft) only.",
   summary: 'Search Teams messages',
   icon: 'search',
   group: 'Messages',

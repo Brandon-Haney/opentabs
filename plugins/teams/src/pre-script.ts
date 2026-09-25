@@ -6,11 +6,15 @@ import { definePreScript } from '@opentabs-dev/plugin-sdk/pre-script';
  * Runs at document_start in MAIN world, strictly before any page script.
  * Three token capture paths run in parallel:
  *
- * 1. **MSAL localStorage observer** — scans existing localStorage entries and
- *    hooks `Storage.prototype.setItem` to catch future writes. Recognises MSAL
- *    credential entries by their *value* shape (`credentialType`, `target`,
- *    `secret`, `expiresOn`). Works for classic Teams (`teams.microsoft.com`
- *    without `/v2/`), where MSAL stores tokens in plaintext.
+ * 1. **MSAL localStorage observer** — scans existing localStorage entries,
+ *    hooks `Storage.prototype.setItem` to catch this document's future writes,
+ *    and listens for `storage` events to catch writes by other same-origin
+ *    documents (other Teams tabs, Teams frames embedded in other Microsoft 365
+ *    pages), which share this localStorage but never pass through this
+ *    document's `setItem`. Recognises MSAL credential entries by their *value*
+ *    shape (`credentialType`, `target`, `secret`, `expiresOn`). Works wherever
+ *    MSAL stores tokens in plaintext, which includes Teams v2 on
+ *    `teams.cloud.microsoft`.
  *
  * 2. **Loki token observer** — hooks `sessionStorage.setItem` to capture the
  *    raw `LokiAuthToken` JWT that Teams v2 (`teams.microsoft.com/v2/`) stores
@@ -22,8 +26,8 @@ import { definePreScript } from '@opentabs-dev/plugin-sdk/pre-script';
  *    Teams exchanges its MSAL Skype token for a Skype JWT during startup, we
  *    clone the response body and stash the resulting JWT under `skypeJwt`. The
  *    adapter reads this directly, bypassing the need for its own authsvc call.
- *    This is the primary auth path for Teams v2, where MSAL tokens are stored
- *    encrypted and cannot be read from localStorage directly.
+ *    This covers deployments where MSAL encrypts its localStorage cache (an
+ *    option since MSAL v4), where Path 1 finds no plaintext tokens.
  *
  * Adapter reads via `getPreScriptValue` keys:
  *   - `consumerToken`   → { secret, expiresOn } MSAL Skype token for teams.live.com
@@ -61,7 +65,7 @@ definePreScript(({ set, log }) => {
   };
 
   // ---------------------------------------------------------------------------
-  // Path 1: MSAL localStorage observer (classic Teams)
+  // Path 1: MSAL localStorage observer
   // ---------------------------------------------------------------------------
 
   /**
@@ -228,7 +232,7 @@ definePreScript(({ set, log }) => {
   // Initial scans
   // ---------------------------------------------------------------------------
 
-  // localStorage: MSAL credential entries (classic Teams, Path 1).
+  // localStorage: MSAL credential entries (Path 1).
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -274,6 +278,22 @@ definePreScript(({ set, log }) => {
     };
     proto[PATCH_MARKER] = true;
   }
+
+  // ---------------------------------------------------------------------------
+  // Cross-document writes (Path 1)
+  // ---------------------------------------------------------------------------
+
+  // Every same-origin document shares this localStorage, so a token refreshed
+  // in another Teams tab, or in a Teams frame inside another Microsoft 365
+  // page, replaces the entry without passing through this document's setItem.
+  // The browser reports such writes only as a `storage` event.
+  window.addEventListener('storage', event => {
+    try {
+      if (event.storageArea === localStorage && event.newValue) inspect(event.newValue);
+    } catch {
+      // Never break the page if our observer throws.
+    }
+  });
 
   log.info('[teams] MSAL cache observer + authsvc interceptor installed');
 });

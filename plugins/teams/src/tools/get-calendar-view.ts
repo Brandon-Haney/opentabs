@@ -23,7 +23,7 @@ export const getCalendarView = defineTool({
   name: 'get_calendar_view',
   displayName: 'Get Calendar View',
   description:
-    "Get the signed-in user's calendar events within a date/time range as Teams sees them, with recurring series expanded into individual occurrences. Each Teams meeting includes its join URL, dial-in details, and meeting_chat_id — the meeting chat's thread ID, usable directly with read_messages and send_message. Event IDs are Exchange IDs, shared with the Outlook plugin. Returned times are UTC. Available on work or school Teams (teams.microsoft.com) only.",
+    "Get the signed-in user's calendar events within a date/time range as Teams sees them, with recurring series expanded into individual occurrences. Each Teams meeting includes its join URL, dial-in details, and meeting_chat_id — the meeting chat's thread ID, usable directly with read_messages and send_message. Event IDs are Exchange IDs, shared with the Outlook plugin. Returned times are UTC. Available on work or school Teams (teams.microsoft.com or teams.cloud.microsoft) only.",
   summary: 'List calendar events and Teams meetings in a range',
   icon: 'calendar',
   group: 'Calendar',

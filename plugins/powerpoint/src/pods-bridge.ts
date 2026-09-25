@@ -597,15 +597,16 @@ export const podsSetSlideBackground = (
 export const podsSetHyperlinkOutputSchema = z.object({
   ...podsActionResultShape,
   text: z.string().describe('The paragraph that was rewritten.'),
-  linked: z.string().describe('The words that became the link; empty when removing.'),
+  linked: z.string().describe('The words that became the link, or the words whose link was removed.'),
   url: z.string().describe('The address they point at; empty when removing.'),
-  removed: z.boolean().optional().describe('True when the paragraph’s existing link was stripped.'),
+  removed: z.boolean().optional().describe('True when a link was taken off the paragraph.'),
   paragraphId: z.string().describe('The object id of the paragraph that was rewritten.'),
 });
 
 /**
  * Build the `set_hyperlink` action directive: turn `match` (or the whole
- * paragraph) into a link to `url`, live in the open deck.
+ * paragraph) into a link to `url`, or with `remove` take off the link `match`
+ * falls in, live in the open deck.
  */
 export const podsSetHyperlink = (
   text: string,
@@ -614,7 +615,11 @@ export const podsSetHyperlink = (
   dryRun = false,
   remove = false,
 ): z.infer<typeof podsSetHyperlinkOutputSchema> =>
-  podsAction('set_hyperlink', remove ? { text, remove: true } : { text, url, ...matchArgs(target) }, dryRun);
+  podsAction(
+    'set_hyperlink',
+    remove ? { text, remove: true, ...matchArgs(target) } : { text, url, ...matchArgs(target) },
+    dryRun,
+  );
 
 /** What the agent receives after the `read_outline` engine action runs. */
 export const podsReadOutlineOutputSchema = z.object({

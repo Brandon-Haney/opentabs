@@ -217,7 +217,29 @@ shape-resubmit shape the `Backspace` capture needed, and its absence is what
 previously left the editor client fighting our edits.
 
 Undecoded: `469769819`, which appeared once as `"100"` on the hyperlink write and is
-absent from every other capture. Do not write it.
+absent from every other capture. Do not write it. The editor maintains it itself: after
+`set_hyperlink` copied a paragraph's old value through a write that added two segments,
+the model read back a value one character per segment again (2026-09-25).
+
+**The editor cuts a paragraph at every line wrap.** Once the client lays a paragraph
+out, its run boundaries (`469769746`) include each wrap point, and both sides of a wrap
+point at the *same* run — a one-run paragraph over three lines reads back as
+`{r},{r},{r}` with boundaries at the cumulative `469780757` `Lines` totals (verified on
+the Douglasville deck, 2026-09-25: `Lines [102,101,46]`, boundaries `102,203`,
+`469769819` `"111"`). So a segment is not a formatting change: two adjacent segments on
+one run are the same formatting, and a word that falls on a wrap covers both. Our writes
+give new text a single-run layout; the wrap cuts appear when the editor re-saves it.
+Anything that reasons about formatting must merge same-run segments first
+(`mergeAdjacent`) — `set_hyperlink` refused a wrapped ticket number until it did.
+
+**A paragraph holds several links.** The editor writes each one as its own pair — a
+hidden code run and a display run — and leaves the text between them in the
+paragraph's ordinary run (three links in one paragraph on the Douglasville deck,
+2026-09-25). A link's extent is its code run plus the in-field display runs after it.
+`set_hyperlink` reads links that way: a new link may sit beside existing ones but not
+overlap them, and a removal takes off only the link its `match` falls in. The paragraph
+text includes every field code, so a `match` for a word that also appears in a link's
+address lands inside that code first.
 
 ## The client's own catalogs — names and property ids without a capture
 

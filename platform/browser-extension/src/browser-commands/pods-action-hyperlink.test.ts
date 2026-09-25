@@ -5,8 +5,15 @@ import { describe, expect, test } from 'vitest';
   tabs: { onRemoved: { addListener: () => {} } },
 };
 
-const { buildHyperlinkBody, buildRemoveHyperlinkBody, containsFieldCode, hyperlinkFieldCode, setHyperlinkAction } =
-  await import('./pods-action-hyperlink.js');
+const {
+  buildHyperlinkBody,
+  buildRemoveHyperlinkBody,
+  FIELD_CODE_PREFIX,
+  hyperlinkFieldCode,
+  linkSpansOf,
+  selectLinkToRemove,
+  setHyperlinkAction,
+} = await import('./pods-action-hyperlink.js');
 const { FrameBridgeValidationError } = await import('./frame-bridge-rpc.js');
 
 import type { ResolvedTarget } from './pods-action-run-format.js';
@@ -71,8 +78,6 @@ const rangeOfWord = (word: string) => ({ start: TITLE.indexOf(word), end: TITLE.
 describe('hyperlinkFieldCode', () => {
   test('is the Word field code the editor splices into the text', () => {
     expect(hyperlinkFieldCode(URL)).toBe(`﷟HYPERLINK "${URL}"`);
-    expect(containsFieldCode(`x${hyperlinkFieldCode(URL)}y`)).toBe(true);
-    expect(containsFieldCode(TITLE)).toBe(false);
   });
 });
 
@@ -137,10 +142,35 @@ describe('buildHyperlinkBody', () => {
     expect(propValue(paragraph?.Properties ?? [], 335562753)).toBe('58');
   });
 
-  test('refuses a paragraph that already carries a field code rather than nesting one', () => {
-    const linked = target();
-    linked.text = `${TITLE}${hyperlinkFieldCode(URL)}`;
-    expect(() => buildHyperlinkBody(linked, { start: 0, end: 5 }, URL, GUID, HEAD)).toThrow(FrameBridgeValidationError);
+  test('links a word the editor split at a line wrap, since both sides are the same run', () => {
+    // The editor cuts a paragraph at each line wrap and points both sides at the
+    // same run; "Milestones" (28-38) wraps at 33 here.
+    const wrapped = target();
+    wrapped.segments = [
+      { start: 0, end: 33, ref: RUN_REF },
+      { start: 33, end: TITLE.length, ref: RUN_REF },
+    ];
+    const [, paragraph, , displayRun] = objectsOf(
+      buildHyperlinkBody(wrapped, rangeOfWord('Milestones'), URL, GUID, HEAD),
+    );
+    expect(propValue(paragraph?.Properties ?? [], 603987475)).toBe(`${RUN_REF},{${GUID}}{4},{${GUID}}{5}`);
+    expect(propValue(displayRun?.Properties ?? [], 469780527)).toBe('Arial');
+  });
+
+  test('links across two runs whose formatting is identical', () => {
+    const twin = target();
+    const second = '{4efeeb47-de77-4081-a870-b0e9ad47aabf}{59}';
+    twin.segments = [
+      { start: 0, end: 33, ref: RUN_REF },
+      { start: 33, end: TITLE.length, ref: second },
+    ];
+    // The same formatting, listed in a different order.
+    twin.runsByRef.set(second, {
+      classId: 1179725,
+      objectId: 'x|59',
+      properties: [469780760, '@001489,,', 469780527, 'Arial', 268442635, '48', 134224900, 'true'],
+    });
+    expect(() => buildHyperlinkBody(twin, rangeOfWord('Milestones'), URL, GUID, HEAD)).not.toThrow();
   });
 
   test('refuses text that spans two formatting runs, which has no single formatting to copy', () => {
@@ -220,13 +250,17 @@ describe('buildRemoveHyperlinkBody', () => {
   };
 
   test('restores the original text exactly', () => {
-    const [, paragraph] = objectsOf(buildRemoveHyperlinkBody(linked(), GUID, HEAD));
+    const [, paragraph] = objectsOf(
+      buildRemoveHyperlinkBody(linked(), selectLinkToRemove(linked(), undefined), GUID, HEAD),
+    );
     expect(propValue(paragraph?.Properties ?? [], 469769250)).toBe(TITLE);
-    expect(containsFieldCode(String(propValue(paragraph?.Properties ?? [], 469769250)))).toBe(false);
+    expect(String(propValue(paragraph?.Properties ?? [], 469769250))).not.toContain(FIELD_CODE_PREFIX);
   });
 
   test('the words keep their formatting and the field flags are CLEARED, not dropped', () => {
-    const [, , plainRun] = objectsOf(buildRemoveHyperlinkBody(linked(), GUID, HEAD));
+    const [, , plainRun] = objectsOf(
+      buildRemoveHyperlinkBody(linked(), selectLinkToRemove(linked(), undefined), GUID, HEAD),
+    );
     const props = plainRun?.Properties ?? [];
     expect(propValue(props, 268442635)).toBe('48');
     expect(propValue(props, 469780527)).toBe('Arial');
@@ -240,19 +274,23 @@ describe('buildRemoveHyperlinkBody', () => {
   });
 
   test('drops the field-code stretch and leaves the words as one run', () => {
-    const [, paragraph] = objectsOf(buildRemoveHyperlinkBody(linked(), GUID, HEAD));
+    const [, paragraph] = objectsOf(
+      buildRemoveHyperlinkBody(linked(), selectLinkToRemove(linked(), undefined), GUID, HEAD),
+    );
     expect(propValue(paragraph?.Properties ?? [], 603987475)).toBe(`${RUN_REF},{${GUID}}{4}`);
     expect(propValue(paragraph?.Properties ?? [], 469769746)).toBe(String(TITLE.indexOf('Milestones')));
   });
 
   test('refuses a paragraph that carries no link', () => {
-    expect(() => buildRemoveHyperlinkBody(target(), GUID, HEAD)).toThrow(FrameBridgeValidationError);
+    expect(() => selectLinkToRemove(target(), undefined)).toThrow(FrameBridgeValidationError);
   });
 
   test('add then remove round-trips back to the original text', () => {
     const [, added] = objectsOf(buildHyperlinkBody(target(), rangeOfWord('Milestones'), URL, GUID, HEAD));
     const withLink = String(propValue(added?.Properties ?? [], 469769250));
-    const [, removed] = objectsOf(buildRemoveHyperlinkBody(linked(), GUID, HEAD));
+    const [, removed] = objectsOf(
+      buildRemoveHyperlinkBody(linked(), selectLinkToRemove(linked(), undefined), GUID, HEAD),
+    );
     expect(withLink).toBe(linked().text);
     expect(propValue(removed?.Properties ?? [], 469769250)).toBe(TITLE);
   });
@@ -263,10 +301,210 @@ describe('setHyperlinkAction.parseArgs with remove', () => {
     expect(setHyperlinkAction.parseArgs({ text: TITLE, remove: true })).toEqual({ text: TITLE, remove: true });
   });
 
-  test('remove ignores a match rather than implying a choice the paragraph does not offer', () => {
-    const parsed = setHyperlinkAction.parseArgs({ text: TITLE, remove: true, match: 'Key' }) as {
-      match?: unknown;
-    };
-    expect(parsed.match).toBeUndefined();
+  test('remove carries a match through, to pick which of several links to take off', () => {
+    expect(setHyperlinkAction.parseArgs({ text: TITLE, remove: true, match: 'Key', occurrence: 2 })).toEqual({
+      text: TITLE,
+      remove: true,
+      match: { value: 'Key', occurrence: 2 },
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Paragraphs that already carry links
+// ---------------------------------------------------------------------------
+
+type Piece = { plain: string } | { link: string; url: string };
+
+const CODE_FLAGS: (string | number)[] = [134225428, 'true', 134225430, 'true', 134225433, 'true'];
+const DISPLAY_FLAGS: (string | number)[] = [134225428, 'true', 134225433, 'true', 134236593, 'true'];
+
+/**
+ * A resolved paragraph built from plain text and links, in the shape the editor
+ * writes: each link is a hidden field-code stretch followed by its display words,
+ * each with a run of its own, while the plain text shares the original run.
+ */
+const paragraphOf = (pieces: Piece[]): ResolvedTarget => {
+  const t = target();
+  const segments: { start: number; end: number; ref: string }[] = [];
+  let text = '';
+  let slot = 100;
+  const push = (value: string, ref: string) => {
+    segments.push({ start: text.length, end: text.length + value.length, ref });
+    text += value;
+  };
+  for (const piece of pieces) {
+    if ('plain' in piece) {
+      push(piece.plain, RUN_REF);
+      continue;
+    }
+    const codeRef = `{existing}{${slot}}`;
+    const displayRef = `{existing}{${slot + 1}}`;
+    t.runsByRef.set(codeRef, { classId: 1179725, objectId: `existing|${slot}`, properties: CODE_FLAGS });
+    t.runsByRef.set(displayRef, {
+      classId: 1179725,
+      objectId: `existing|${slot + 1}`,
+      properties: [...RUN_PROPS, ...DISPLAY_FLAGS],
+    });
+    slot += 2;
+    push(hyperlinkFieldCode(piece.url), codeRef);
+    push(piece.link, displayRef);
+  }
+  t.text = text;
+  t.segments = segments;
+  t.paragraphProperties = [469769250, text, 603987475, segments.map(segment => segment.ref).join(',')];
+  return t;
+};
+
+/** The range of the first occurrence of `word` at or after `from` in the paragraph's raw text. */
+const rangeIn = (t: ResolvedTarget, word: string, from = 0) => {
+  const start = t.text.indexOf(word, from);
+  return { start, end: start + word.length };
+};
+
+/** The range of a link's visible words: the occurrence right after its field code's closing quote. */
+const visibleRangeIn = (t: ResolvedTarget, word: string) => rangeIn(t, word, t.text.indexOf(`"${word}`) + 1);
+
+const incidentUrl = (ticket: string) =>
+  `https://gpc.service-now.com/nav_to.do?uri=incident.do%3Fsysparm_query%3Dnumber%3D${ticket}`;
+
+/** Row 5 of the Douglasville deck as it stood when the second link was refused. */
+const rowFive = (): ResolvedTarget =>
+  paragraphOf([
+    { plain: 'Open incidents: ' },
+    { link: 'INC10095298', url: incidentUrl('INC10095298') },
+    { plain: ' (on hand landing on an old product line) and INC10095308 (open PO created on an old product line).' },
+  ]);
+
+describe('linkSpansOf', () => {
+  test('finds every link in a paragraph, with the words the reader sees', () => {
+    const t = paragraphOf([
+      { plain: 'Workaround only on ' },
+      { link: 'RQA-18302', url: 'https://gpcprod.atlassian.net/browse/RQA-18302' },
+      { plain: '. Two TAMS fixes: ' },
+      { link: 'PR-2312', url: 'https://gpcprod.atlassian.net/browse/PR-2312' },
+      { plain: ' and ' },
+      { link: 'PR-2319', url: 'https://gpcprod.atlassian.net/browse/PR-2319' },
+      { plain: '.' },
+    ]);
+    expect(linkSpansOf(t).map(span => span.display)).toEqual(['RQA-18302', 'PR-2312', 'PR-2319']);
+  });
+
+  test('a paragraph with no hidden field-code run carries no links', () => {
+    expect(linkSpansOf(target())).toEqual([]);
+  });
+});
+
+describe('buildHyperlinkBody beside an existing link', () => {
+  test('links plain words next to an existing link and leaves that link intact', () => {
+    const t = rowFive();
+    const [, paragraph] = objectsOf(
+      buildHyperlinkBody(t, rangeIn(t, 'INC10095308'), incidentUrl('INC10095308'), GUID, HEAD),
+    );
+
+    expect(propValue(paragraph?.Properties ?? [], 469769250)).toBe(
+      `Open incidents: ${hyperlinkFieldCode(incidentUrl('INC10095298'))}INC10095298 (on hand landing on an old product line) and ${hyperlinkFieldCode(incidentUrl('INC10095308'))}INC10095308 (open PO created on an old product line).`,
+    );
+    // The existing link keeps its own runs; the new one gets freshly minted runs.
+    expect(propValue(paragraph?.Properties ?? [], 603987475)).toBe(
+      `${RUN_REF},{existing}{100},{existing}{101},${RUN_REF},{${GUID}}{4},{${GUID}}{5},${RUN_REF}`,
+    );
+  });
+
+  test('refuses words that are already a link', () => {
+    const t = rowFive();
+    expect(() => buildHyperlinkBody(t, visibleRangeIn(t, 'INC10095298'), URL, GUID, HEAD)).toThrow(
+      /overlaps the existing link "INC10095298"/,
+    );
+  });
+
+  test("refuses a match that lands inside an existing link's hidden field code", () => {
+    // The raw text holds the ticket number in the link's URL before its visible
+    // words, so the first occurrence falls inside the field code itself.
+    const t = rowFive();
+    const inUrl = rangeIn(t, 'INC10095298');
+    expect(inUrl.start).toBeLessThan(t.text.indexOf('"INC10095298'));
+    expect(() => buildHyperlinkBody(t, inUrl, URL, GUID, HEAD)).toThrow(/overlaps the existing link/);
+  });
+});
+
+describe('removing one link of several', () => {
+  const twoLinks = (): ResolvedTarget =>
+    paragraphOf([
+      { plain: 'Fixes: ' },
+      { link: 'PR-2312', url: 'https://gpcprod.atlassian.net/browse/PR-2312' },
+      { plain: ' and ' },
+      { link: 'PR-2319', url: 'https://gpcprod.atlassian.net/browse/PR-2319' },
+      { plain: '.' },
+    ]);
+
+  test('removes the link the match falls in and keeps the other', () => {
+    const t = twoLinks();
+    const link = selectLinkToRemove(t, visibleRangeIn(t, 'PR-2319'));
+    const [, paragraph] = objectsOf(buildRemoveHyperlinkBody(t, link, GUID, HEAD));
+    expect(propValue(paragraph?.Properties ?? [], 469769250)).toBe(
+      `Fixes: ${hyperlinkFieldCode('https://gpcprod.atlassian.net/browse/PR-2312')}PR-2312 and PR-2319.`,
+    );
+    expect(propValue(paragraph?.Properties ?? [], 603987475)).toBe(
+      `${RUN_REF},{existing}{100},{existing}{101},${RUN_REF},{${GUID}}{4},${RUN_REF}`,
+    );
+  });
+
+  test('a link whose words wrap across two segments of one run comes back as one plain run', () => {
+    const t = paragraphOf([{ plain: 'See ' }, { link: 'the SOP', url: URL }, { plain: '.' }]);
+    // Split the display stretch at a line wrap, both halves on the same display run.
+    const displayIndex = t.segments.findIndex(segment => segment.ref === '{existing}{101}');
+    const display = t.segments[displayIndex] as { start: number; end: number; ref: string };
+    t.segments.splice(
+      displayIndex,
+      1,
+      { start: display.start, end: display.start + 3, ref: display.ref },
+      { start: display.start + 3, end: display.end, ref: display.ref },
+    );
+    const objects = objectsOf(buildRemoveHyperlinkBody(t, selectLinkToRemove(t, undefined), GUID, HEAD));
+    const [, paragraph, ...plainRuns] = objects;
+    expect(plainRuns).toHaveLength(1);
+    expect(propValue(paragraph?.Properties ?? [], 469769250)).toBe('See the SOP.');
+    expect(propValue(paragraph?.Properties ?? [], 603987475)).toBe(`${RUN_REF},{${GUID}}{4},${RUN_REF}`);
+  });
+
+  test('without a match, refuses rather than guessing which link to remove', () => {
+    expect(() => selectLinkToRemove(twoLinks(), undefined)).toThrow(/carries 2 links \("PR-2312", "PR-2319"\)/);
+  });
+
+  test('refuses a match that is not inside any link', () => {
+    const t = twoLinks();
+    expect(() => selectLinkToRemove(t, rangeIn(t, 'Fixes'))).toThrow(/does not fall inside a link/);
+  });
+});
+
+describe('setHyperlinkAction.isApplied', () => {
+  const modelWith = (paragraphId: string, text: string) => ({
+    objects: [{ classId: 393230, objectId: paragraphId, properties: [469769250, text] }],
+    totalObjects: 1,
+  });
+
+  test('is not fooled by another link to the same address already in the paragraph', () => {
+    const t = paragraphOf([{ plain: 'See ' }, { link: 'the SOP', url: URL }, { plain: ' and the appendix.' }]);
+    const args = { text: t.text, url: URL, match: { value: 'appendix', occurrence: 1 } };
+    // Before the write the paragraph already contains HYPERLINK "<URL>".
+    expect(setHyperlinkAction.isApplied(modelWith(t.paragraphId, t.text) as never, t, args)).toBe(false);
+    const start = t.text.indexOf('appendix');
+    const written = `${t.text.slice(0, start)}${hyperlinkFieldCode(URL)}${t.text.slice(start)}`;
+    expect(setHyperlinkAction.isApplied(modelWith(t.paragraphId, written) as never, t, args)).toBe(true);
+  });
+
+  test('a removal is applied only when that link, and no other, is gone', () => {
+    const t = paragraphOf([
+      { plain: 'A ' },
+      { link: 'one', url: 'https://example.com/1' },
+      { plain: ' B ' },
+      { link: 'two', url: 'https://example.com/2' },
+    ]);
+    const args = { text: t.text, remove: true, match: { value: 'two', occurrence: 1 } };
+    const bothGone = 'A one B two';
+    const secondGone = `A ${hyperlinkFieldCode('https://example.com/1')}one B two`;
+    expect(setHyperlinkAction.isApplied(modelWith(t.paragraphId, bothGone) as never, t, args)).toBe(false);
+    expect(setHyperlinkAction.isApplied(modelWith(t.paragraphId, secondGone) as never, t, args)).toBe(true);
   });
 });

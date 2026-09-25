@@ -28,19 +28,26 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * Create a fake npm global prefix directory containing a plugin under
- * `<prefix>/lib/node_modules/<packageName>/`. Returns the prefix path
- * and the plugin directory path.
+ * The directory `npm root -g` reports for a given NPM_CONFIG_PREFIX:
+ * `<prefix>/lib/node_modules` on POSIX, `<prefix>\node_modules` on Windows.
+ */
+const globalNodeModulesFor = (prefixDir: string): string =>
+  process.platform === 'win32' ? path.join(prefixDir, 'node_modules') : path.join(prefixDir, 'lib', 'node_modules');
+
+/**
+ * Create a fake npm global prefix directory containing a plugin under the
+ * prefix's global node_modules. Returns the prefix path and the plugin
+ * directory path.
  *
- * NPM_CONFIG_PREFIX causes `npm root -g` to return `<prefix>/lib/node_modules`,
- * which is then scanned by the auto-discovery pipeline.
+ * NPM_CONFIG_PREFIX redirects `npm root -g` to that directory, which is then
+ * scanned by the auto-discovery pipeline.
  */
 const createNpmPrefixWithPlugin = (
   pluginName: string,
   tools: Array<{ name: string; description: string }>,
 ): { prefixDir: string; pluginDir: string; globalNodeModules: string } => {
   const prefixDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-npm-prefix-'));
-  const globalNodeModules = path.join(prefixDir, 'lib', 'node_modules');
+  const globalNodeModules = globalNodeModulesFor(prefixDir);
   const npmPkgName = `opentabs-plugin-${pluginName}`;
   const pluginDir = path.join(globalNodeModules, npmPkgName);
   fs.mkdirSync(path.join(pluginDir, 'dist'), { recursive: true });
@@ -248,7 +255,7 @@ test.describe('npm auto-discovery pipeline', () => {
     // Create an npm plugin named "e2e-test" (same as the local e2e-test plugin)
     // using the scoped name format that matches the official scope
     const prefixDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-npm-disc-override-prefix-'));
-    const globalNodeModules = path.join(prefixDir, 'lib', 'node_modules');
+    const globalNodeModules = globalNodeModulesFor(prefixDir);
     const scopeDir = path.join(globalNodeModules, '@opentabs-dev');
     const pluginDir = path.join(scopeDir, 'opentabs-plugin-e2e-test');
     fs.mkdirSync(path.join(pluginDir, 'dist'), { recursive: true });
@@ -339,7 +346,7 @@ test.describe('npm auto-discovery pipeline', () => {
   test('empty npm discovery when no plugins are installed in global node_modules', async () => {
     // Create an empty npm prefix with no plugins
     const prefixDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-npm-disc-empty-prefix-'));
-    const globalNodeModules = path.join(prefixDir, 'lib', 'node_modules');
+    const globalNodeModules = globalNodeModulesFor(prefixDir);
     fs.mkdirSync(globalNodeModules, { recursive: true });
 
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-npm-disc-empty-cfg-'));

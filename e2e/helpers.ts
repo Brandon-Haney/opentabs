@@ -73,6 +73,17 @@ export const setupAdapterSymlink = (configDir: string, extensionDir: string): vo
   symlinkCrossPlatform(extensionAdaptersDir, serverAdaptersDir, 'dir');
 };
 
+/**
+ * How the server's config migration stores a local plugin path: a path under
+ * HOME becomes `~/` plus a forward-slash relative path; any other path is kept.
+ * On Windows `os.tmpdir()` lives under HOME, so temp plugins take the `~/` form.
+ */
+export const storedPluginPath = (absolutePath: string): string => {
+  const relative = path.relative(os.homedir(), absolutePath);
+  const underHome = relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+  return underHome ? `~/${relative.split(path.sep).join('/')}` : absolutePath;
+};
+
 // ---------------------------------------------------------------------------
 // Log and health polling
 // ---------------------------------------------------------------------------

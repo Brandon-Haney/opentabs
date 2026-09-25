@@ -13,6 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { McpServer } from './fixtures.js';
 import { cleanupTestConfigDir, createMinimalPlugin, expect, startMcpServer, test } from './fixtures.js';
+import { storedPluginPath } from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -51,7 +52,7 @@ test.describe('Portable paths — v2→v3 migration', () => {
       tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentabs-e2e-portable-migrate-'));
       const home = os.homedir();
 
-      // Create a minimal plugin under HOME so the path can be normalized
+      // Create a minimal plugin in the temp dir
       const pluginParent = path.join(tmpDir, 'plugins');
       fs.mkdirSync(pluginParent, { recursive: true });
       const pluginPath = createMinimalPlugin(pluginParent, 'migrated-plugin', [
@@ -60,9 +61,8 @@ test.describe('Portable paths — v2→v3 migration', () => {
 
       configDir = createConfigDir('migrate');
       // Write a v2 config with an absolute path under HOME
-      // Since the plugin is in /tmp (not under HOME), we also add a path that IS
-      // under HOME to test normalization. We use the actual homedir + a fake suffix
-      // to verify the migration logic without requiring real plugins under HOME.
+      // The actual homedir + a fake suffix verifies the migration logic without
+      // requiring a real plugin under HOME.
       writeRawConfig(configDir, {
         version: 2,
         localPlugins: [`${home}/fake-plugin-dir/my-plugin`, pluginPath, '/tmp/other-plugin'],
@@ -87,8 +87,9 @@ test.describe('Portable paths — v2→v3 migration', () => {
       // Path under HOME should be converted to ~/...
       expect(localPlugins[0]).toBe('~/fake-plugin-dir/my-plugin');
 
-      // Path in /tmp (not under HOME) should remain absolute
-      expect(localPlugins[1]).toBe(pluginPath);
+      // The temp-dir plugin stays absolute unless the temp dir is itself under
+      // HOME (as on Windows), in which case it takes the ~/ form too
+      expect(localPlugins[1]).toBe(storedPluginPath(pluginPath));
 
       // Path in /tmp/other-plugin should remain absolute
       expect(localPlugins[2]).toBe('/tmp/other-plugin');

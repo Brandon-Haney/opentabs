@@ -24,6 +24,7 @@ import {
   startMockPreScriptServer,
   waitForExtensionConnected,
   waitForLog,
+  waitForPluginTabs,
 } from './helpers.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -119,6 +120,9 @@ test.describe('Pre-script — document_start MAIN-world capture', () => {
       const mcpClient = createMcpClient(server.port, server.secret);
       await mcpClient.initialize();
       try {
+        // The adapter is injected after the page loads, so wait for the tab to
+        // report ready before dispatching to it.
+        await waitForPluginTabs(mcpClient, PLUGIN_NAME, tabs => tabs.some(t => t.ready), `${PLUGIN_NAME} tab ready`);
         const result = await callToolExpectSuccess(mcpClient, server, `${PLUGIN_NAME}__echo_auth`, {});
         expect(result).toMatchObject({ token: mock.expectedToken, source: 'pre-script' });
       } finally {

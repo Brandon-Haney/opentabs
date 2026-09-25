@@ -38,6 +38,7 @@ import {
   openSidePanel,
   selectPermission,
   setupAdapterSymlink,
+  storedPluginPath,
   waitForExtensionConnected,
   waitForLog,
 } from './helpers.js';
@@ -179,8 +180,8 @@ test.describe('Side panel error states', () => {
       // FailedPluginCard renders with "Failed to load" header
       await expect(sidePanel.getByText('Failed to load')).toBeVisible({ timeout: 15_000 });
 
-      // The plugin specifier (the local path) is displayed
-      await expect(sidePanel.getByText(brokenPath, { exact: true })).toBeVisible();
+      // The plugin specifier (the local path, as stored in config) is displayed
+      await expect(sidePanel.getByText(storedPluginPath(brokenPath), { exact: true })).toBeVisible();
 
       // The error card container is rendered with destructive styling
       const errorCard = sidePanel.locator('.bg-destructive\\/10');

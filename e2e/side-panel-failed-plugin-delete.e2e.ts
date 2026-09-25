@@ -18,7 +18,7 @@ import {
   test,
   writeTestConfig,
 } from './fixtures.js';
-import { openSidePanel, setupAdapterSymlink, waitForExtensionConnected } from './helpers.js';
+import { openSidePanel, setupAdapterSymlink, storedPluginPath, waitForExtensionConnected } from './helpers.js';
 
 test.describe('Side panel — delete failed plugin', () => {
   test('deleting a failed local plugin removes the card and updates config', async () => {
@@ -104,12 +104,12 @@ test.describe('Side panel — delete failed plugin', () => {
             message: 'config.json should no longer contain the broken plugin path',
           },
         )
-        .not.toContain(brokenPath);
+        .not.toContain(storedPluginPath(brokenPath));
 
       // Config.json still contains the working plugin path
       const finalRaw = fs.readFileSync(path.join(configDir, 'config.json'), 'utf-8');
       const finalConfig = JSON.parse(finalRaw) as { localPlugins?: string[] };
-      expect(finalConfig.localPlugins).toContain(workingPath);
+      expect(finalConfig.localPlugins).toContain(storedPluginPath(workingPath));
     } finally {
       await mcpClient.close().catch(() => {});
       await context.close().catch(() => {});

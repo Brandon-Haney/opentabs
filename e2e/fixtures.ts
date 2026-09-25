@@ -410,7 +410,9 @@ const copyE2eTestPlugin = (): { pluginDir: string; tmpDir: string } => {
  * resolving. This prevents orphaned processes from surviving kill attempts.
  */
 const killProcess = (proc: ChildProcess, graceMs = 5_000): Promise<void> => {
-  if (proc.exitCode !== null) return Promise.resolve();
+  // A process that exited normally has an exitCode; one ended by a signal
+  // (always the case after proc.kill() on Windows) has only a signalCode.
+  if (proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
 
   // On Windows, SIGTERM is unreliable — proc.kill() calls TerminateProcess
   // which is immediate (equivalent to SIGKILL). No grace period needed.

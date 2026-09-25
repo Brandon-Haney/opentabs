@@ -590,7 +590,9 @@ export const threadApi = async <T>(
  */
 const getMiddleTierBase = (): string => {
   if (detectEnvironment() === 'consumer') {
-    throw ToolError.validation('The Teams calendar is available on work or school Teams (teams.microsoft.com or teams.cloud.microsoft) only.');
+    throw ToolError.validation(
+      'The Teams calendar is available on work or school Teams (teams.microsoft.com or teams.cloud.microsoft) only.',
+    );
   }
   const middleTier = readRegionGtms()?.middleTier;
   if (!middleTier) {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { probeResultSchema, runProbe } from './diagnostics.js';
+import { describeMsalCache, msalCacheSchema, probeResultSchema, runProbe } from './diagnostics.js';
 
 const respond = (status: number, headers?: Record<string, string>): Response =>
   new Response(`body-${status}`, { status, headers });
@@ -118,5 +118,66 @@ describe('probeResultSchema', () => {
     expect(probeResultSchema.safeParse({ ...base, status: 200, latencyMs: 1.5 }).success).toBe(false);
     expect(probeResultSchema.safeParse({ ...base, status: 200.5, latencyMs: 1 }).success).toBe(false);
     expect(probeResultSchema.safeParse({ ...base, status: null, latencyMs: 0 }).success).toBe(true);
+  });
+});
+
+/** A Storage stand-in holding the given key/value pairs in insertion order. */
+const storageOf = (entries: Record<string, string>): Pick<Storage, 'length' | 'key' | 'getItem'> => {
+  const keys = Object.keys(entries);
+  return { length: keys.length, key: index => keys[index] ?? null, getItem: key => entries[key] ?? null };
+};
+
+const plaintextAccessToken = JSON.stringify({
+  credentialType: 'AccessToken',
+  secret: 'eyJ-plaintext-secret',
+  target: 'https://graph.microsoft.com/.default',
+  expiresOn: '1790310000',
+});
+const encryptedEntry = JSON.stringify({ id: 'cookie-key-id', nonce: 'bm9uY2U', data: 'Y2lwaGVy', lastUpdatedAt: '1' });
+
+describe('describeMsalCache', () => {
+  test('reports plaintext when readable access tokens are cached', () => {
+    const output = describeMsalCache(storageOf({ 'msal.2|at': plaintextAccessToken, unrelated: 'x' }));
+
+    expect(output).toEqual({ state: 'plaintext', plaintextAccessTokens: 1, encryptedEntries: 0 });
+    expect(msalCacheSchema.parse(output)).toEqual(output);
+  });
+
+  test('reports encrypted when entries are { id, nonce, data } and none are readable', () => {
+    expect(describeMsalCache(storageOf({ 'msal.2|at': encryptedEntry, 'msal.2|rt': encryptedEntry }))).toEqual({
+      state: 'encrypted',
+      plaintextAccessTokens: 0,
+      encryptedEntries: 2,
+    });
+  });
+
+  test('reports mixed when both kinds of entry are present', () => {
+    expect(describeMsalCache(storageOf({ a: plaintextAccessToken, b: encryptedEntry })).state).toBe('mixed');
+  });
+
+  test('reports empty and ignores non-MSAL and unparseable values', () => {
+    expect(
+      describeMsalCache(storageOf({ a: 'plain text', b: '{not json', c: '[1,2]', d: '{"credentialType":"IdToken"}' })),
+    ).toEqual({ state: 'empty', plaintextAccessTokens: 0, encryptedEntries: 0 });
+  });
+
+  test('never returns a key, value or secret', () => {
+    const serialized = JSON.stringify(describeMsalCache(storageOf({ 'msal.2|at': plaintextAccessToken })));
+
+    expect(serialized).not.toContain('eyJ-plaintext-secret');
+    expect(serialized).not.toContain('msal.2|at');
+  });
+
+  test('reports what it counted when storage access throws', () => {
+    const throwing = {
+      length: 2,
+      key: (index: number) => (index === 0 ? 'a' : 'b'),
+      getItem: (key: string) => {
+        if (key === 'b') throw new DOMException('denied', 'SecurityError');
+        return plaintextAccessToken;
+      },
+    };
+
+    expect(describeMsalCache(throwing)).toEqual({ state: 'plaintext', plaintextAccessTokens: 1, encryptedEntries: 0 });
   });
 });

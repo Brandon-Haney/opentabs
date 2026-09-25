@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { describeTokenSources } from '../auth-candidates.js';
-import { probeResultSchema } from '../diagnostics.js';
+import { describeMsalCache, msalCacheSchema, probeResultSchema } from '../diagnostics.js';
 import { AUTH_SLOTS, describeCachedAuth, describeRejectedAuth, PROBE_TARGETS, probeApiBase } from '../outlook-api.js';
 
 /**
@@ -13,7 +13,7 @@ export const diagnose = defineTool({
   name: 'diagnose',
   displayName: 'Diagnose Connection',
   description:
-    'Diagnose Microsoft 365 connectivity for the Outlook tab without changing anything. Reports the page origin, which MSAL token sources yield candidate tokens (audience, expiry, and a short fingerprint — never the token itself), the token each API slot currently trusts, the candidates rejected this page session, and one unretried GET probe per API base (Graph, Outlook REST, OWS) with HTTP status, latency, the upstream request-id, and any Microsoft front-door error label; each probe is bounded to 10 seconds, so a hung base appears as a TimeoutError probe. Use it when other outlook tools return UPSTREAM_UNAVAILABLE, NETWORK_ERROR, authentication errors, or time out.',
+    'Diagnose Microsoft 365 connectivity for the Outlook tab without changing anything. Reports the page origin, which MSAL token sources yield candidate tokens (audience, expiry, and a short fingerprint — never the token itself), the token each API slot currently trusts, the candidates rejected this page session, and one unretried GET probe per API base (Graph, Outlook REST, OWS) with HTTP status, latency, the upstream request-id, and any Microsoft front-door error label; it also reports whether MSAL stores its cache encrypted, which leaves no readable token and is not fixed by reloading; each probe is bounded to 10 seconds, so a hung base appears as a TimeoutError probe. Use it when other outlook tools return UPSTREAM_UNAVAILABLE, NETWORK_ERROR, authentication errors, or time out.',
   summary: 'Diagnose Microsoft API connectivity',
   icon: 'stethoscope',
   group: 'Account',
@@ -33,6 +33,9 @@ export const diagnose = defineTool({
         }),
       )
       .describe('Every MSAL lookup the request layer performs, in cascade order, and the token each yielded'),
+    msalCache: msalCacheSchema.describe(
+      'How MSAL stores the cache the token sources are read from; "encrypted" explains every source being absent',
+    ),
     cachedApiBase: z
       .string()
       .nullable()
@@ -78,6 +81,7 @@ export const diagnose = defineTool({
     return {
       pageOrigin: window.location.origin,
       tokenSources: describeTokenSources(),
+      msalCache: describeMsalCache(),
       cachedApiBase: cachedSlots.find(entry => entry.slot === 'mail')?.apiBase ?? null,
       cachedSlots,
       rejected: describeRejectedAuth(),

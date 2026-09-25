@@ -26,7 +26,7 @@ npm install -g @opentabs-dev/opentabs-plugin-outlook
 | Tool | Description | Type |
 |---|---|---|
 | `get_current_user` | Get the current user profile | Read |
-| `diagnose` | Read-only connectivity and auth check: page origin, MSAL token sources (fingerprints, never the token), the token each cache slot trusts, rejected candidates, and one un-retried GET probe each against Graph, Outlook REST and OWS, bounded to 10 s so a hung base shows as a TimeoutError probe | Read |
+| `diagnose` | Read-only connectivity and auth check: page origin, MSAL token sources (fingerprints, never the token), the token each cache slot trusts, rejected candidates, and one un-retried GET probe each against Graph, Outlook REST and OWS, bounded to 10 s so a hung base shows as a TimeoutError probe, plus whether MSAL stores its cache encrypted | Read |
 
 ### Messages (14)
 

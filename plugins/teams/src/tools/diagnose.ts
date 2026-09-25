@@ -1,6 +1,6 @@
 import { defineTool, getCurrentUrl } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { probeResultSchema } from '../diagnostics.js';
+import { describeMsalCache, msalCacheSchema, probeResultSchema } from '../diagnostics.js';
 import {
   describeTokenSources,
   detectEnvironment,
@@ -35,7 +35,7 @@ export const diagnose = defineTool({
   name: 'diagnose',
   displayName: 'Diagnose Connectivity',
   description:
-    'Read-only connectivity check for the Teams plugin: reports the page origin, which auth tokens the pre-script has captured (presence, expiry and a fingerprint — never values), and a single un-retried probe each of the authsvc token exchange, the chat service, Substrate search and the middle tier (calendar) with HTTP status, latency and upstream request-id. Use when Teams tools fail with UPSTREAM_UNAVAILABLE, NETWORK_ERROR or AUTH_ERROR to tell a Microsoft outage from a missing token.',
+    'Read-only connectivity check for the Teams plugin: reports the page origin, which auth tokens the pre-script has captured (presence, expiry and a fingerprint — never values), and a single un-retried probe each of the authsvc token exchange, the chat service, Substrate search and the middle tier (calendar) with HTTP status, latency and upstream request-id, plus whether MSAL stores its cache encrypted, which leaves no readable token and is not fixed by reloading. Use when Teams tools fail with UPSTREAM_UNAVAILABLE, NETWORK_ERROR or AUTH_ERROR to tell a Microsoft outage from a missing token.',
   summary: 'Check Teams connectivity and auth state',
   icon: 'stethoscope',
   group: 'People',
@@ -49,6 +49,9 @@ export const diagnose = defineTool({
       .nullable()
       .describe('Enterprise chat service base discovered from localStorage and held in memory; null when none'),
     tokenSources: z.array(tokenSourceSchema).describe('Every credential source, without secrets'),
+    msalCache: msalCacheSchema.describe(
+      'How MSAL stores the cache the pre-script reads tokens from; "encrypted" explains every MSAL token source being absent',
+    ),
     probes: z
       .array(probeResultSchema)
       .describe(
@@ -66,6 +69,7 @@ export const diagnose = defineTool({
       chatServiceOrigin: new URL(getChatServiceBase()).origin,
       cachedApiBase: getCachedChatServiceBase(),
       tokenSources: describeTokenSources(),
+      msalCache: describeMsalCache(),
       probes: [authsvc, chatsvc, substrate, middletier],
     };
   },

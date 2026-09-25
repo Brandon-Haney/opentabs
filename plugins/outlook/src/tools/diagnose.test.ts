@@ -27,11 +27,21 @@ const seedTokens = (): void => {
   );
   localStorage.setItem(
     'graph-entry',
-    JSON.stringify({ secret: GRAPH_TOKEN, target: 'https://graph.microsoft.com/Mail.Read', expiresOn }),
+    JSON.stringify({
+      credentialType: 'AccessToken',
+      secret: GRAPH_TOKEN,
+      target: 'https://graph.microsoft.com/Mail.Read',
+      expiresOn,
+    }),
   );
   localStorage.setItem(
     'rest-entry',
-    JSON.stringify({ secret: REST_TOKEN, target: 'https://outlook.office.com/Mail.ReadWrite', expiresOn }),
+    JSON.stringify({
+      credentialType: 'AccessToken',
+      secret: REST_TOKEN,
+      target: 'https://outlook.office.com/Mail.ReadWrite',
+      expiresOn,
+    }),
   );
 };
 
@@ -78,6 +88,7 @@ describe('diagnose', () => {
     expect(diagnose.output.parse(output)).toEqual(output);
 
     expect(output.pageOrigin).toBe('https://outlook.cloud.microsoft');
+    expect(output.msalCache.state).toBe('plaintext');
     expect(output.cachedApiBase).toBe(OUTLOOK_API_BASE);
     expect(output.cachedSlots).toEqual([
       { slot: 'mail', apiBase: OUTLOOK_API_BASE, fingerprint: tokenFingerprint(REST_TOKEN), expiresAt: null },
@@ -123,11 +134,25 @@ describe('diagnose', () => {
   test('still answers when no token exists at all', async () => {
     localStorage.clear();
     const output = await diagnose.handle({});
+    expect(output.msalCache).toEqual({ state: 'empty', plaintextAccessTokens: 0, encryptedEntries: 0 });
     expect(output.cachedApiBase).toBeNull();
     expect(output.tokenSources.every(source => !source.present)).toBe(true);
     expect(output.probes.every(probe => probe.status === null && probe.error?.includes('No candidate token'))).toBe(
       true,
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('reports an encrypted MSAL cache, which leaves every token source absent', async () => {
+    localStorage.clear();
+    localStorage.setItem(
+      'msal.2|encrypted-access-token',
+      JSON.stringify({ id: 'cookie-key-id', nonce: 'bm9uY2U', data: 'Y2lwaGVy', lastUpdatedAt: '1' }),
+    );
+
+    const output = await diagnose.handle({});
+
+    expect(output.msalCache).toEqual({ state: 'encrypted', plaintextAccessTokens: 0, encryptedEntries: 1 });
+    expect(output.tokenSources.every(source => !source.present)).toBe(true);
   });
 });

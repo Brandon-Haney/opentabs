@@ -58,7 +58,7 @@ npm install -g @opentabs-dev/opentabs-plugin-teams
 | Tool | Description | Type |
 |---|---|---|
 | `get_current_user` | Get current user info | Read |
-| `diagnose` | Read-only connectivity and auth check: page origin, captured auth token sources (presence, expiry, audience host and a 4-hex fingerprint — never the token), and one un-retried probe each of the authsvc token exchange, the chat service, Substrate search and the middle tier (calendar) | Read |
+| `diagnose` | Read-only connectivity and auth check: page origin, captured auth token sources (presence, expiry, audience host and a 4-hex fingerprint — never the token), and one un-retried probe each of the authsvc token exchange, the chat service, Substrate search and the middle tier (calendar), plus whether MSAL stores its cache encrypted | Read |
 
 ## How It Works
 

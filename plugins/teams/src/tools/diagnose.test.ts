@@ -173,6 +173,22 @@ describe('diagnose', () => {
     }
   });
 
+  test('reports an encrypted MSAL cache, which no reload makes readable', async () => {
+    vi.stubGlobal('__openTabs', { preScript: { teams: {} } });
+    localStorage.setItem(
+      'msal.2|encrypted-access-token',
+      JSON.stringify({ id: 'cookie-key-id', nonce: 'bm9uY2U', data: 'Y2lwaGVy', lastUpdatedAt: '1' }),
+    );
+
+    try {
+      const output = await diagnose.handle({});
+
+      expect(output.msalCache).toEqual({ state: 'encrypted', plaintextAccessTokens: 0, encryptedEntries: 1 });
+    } finally {
+      localStorage.clear();
+    }
+  });
+
   test('marks every source absent and every probe skipped when nothing was captured', async () => {
     vi.stubGlobal('__openTabs', { preScript: { teams: {} } });
 
@@ -180,6 +196,7 @@ describe('diagnose', () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     for (const source of output.tokenSources) expect(source.present).toBe(false);
+    expect(output.msalCache.state).toBe('empty');
     for (const probe of output.probes) {
       expect(probe.status).toBeNull();
       expect(probe.error).not.toBeNull();

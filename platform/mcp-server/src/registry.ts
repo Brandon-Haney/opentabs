@@ -66,7 +66,13 @@ const buildRegistry = (
   loadedPlugins: readonly RegisteredPlugin[],
   failures: readonly FailedPlugin[],
 ): PluginRegistry => {
-  const ajv = new AjvValidator({ allErrors: false });
+  // `format` is treated as an annotation. Zod pairs its regex-checked string
+  // formats (datetime, email, uuid, ...) with a `pattern` that encodes Zod's
+  // exact semantics (e.g. `.datetime({ local: true })` accepts offset-less
+  // timestamps, which the RFC 3339 `date-time` format rejects). Validating
+  // `format` would either throw at compile time (no format registered) or
+  // contradict the plugin's own schema.
+  const ajv = new AjvValidator({ allErrors: false, validateFormats: false });
   const plugins = new Map<string, RegisteredPlugin>();
   const toolLookup = new Map<string, ToolLookupEntry>();
 

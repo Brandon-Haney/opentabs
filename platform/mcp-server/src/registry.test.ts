@@ -164,6 +164,35 @@ describe('buildRegistry', () => {
     });
   });
 
+  test('compiles schemas with a string format and validates via the accompanying pattern', () => {
+    const offsetOptionalDateTime =
+      '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?(?:Z||([+-]\\d{2}:\\d{2}))$';
+    const plugin = makePlugin({
+      tools: [
+        {
+          name: 'dated_tool',
+          displayName: 'Dated',
+          description: 'Takes a datetime',
+          icon: 'calendar',
+          input_schema: {
+            type: 'object',
+            properties: { start: { type: 'string', format: 'date-time', pattern: offsetOptionalDateTime } },
+            required: ['start'],
+          },
+          output_schema: {},
+        },
+      ],
+    });
+    const registry = buildRegistry([plugin], []);
+
+    const validate = registry.toolLookup.get('test__dated_tool')?.validate;
+    expect(validate).toBeTypeOf('function');
+    expect(validate?.({ start: '2026-09-25T09:30:00' })).toBe(true);
+    expect(validate?.({ start: '2026-09-25T09:30:00-04:00' })).toBe(true);
+    expect(validate?.({ start: '2026-09-25T13:30:00Z' })).toBe(true);
+    expect(validate?.({ start: 'tomorrow' })).toBe(false);
+  });
+
   test('handles tool with invalid schema gracefully (validate is null)', () => {
     const plugin = makePlugin({
       tools: [

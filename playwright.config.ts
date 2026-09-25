@@ -1,3 +1,4 @@
+import { availableParallelism } from 'node:os';
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
@@ -12,7 +13,13 @@ export default defineConfig({
   },
   fullyParallel: true, // Each test gets its own dynamic ports — safe to parallelize
   retries: 2,
-  workers: process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : process.env.CI ? 2 : 4,
+  // Each worker runs its own Chrome, MCP server, and test server, so the local
+  // default uses half the logical cores to leave headroom for them.
+  workers: process.env.PW_WORKERS
+    ? Number(process.env.PW_WORKERS)
+    : process.env.CI
+      ? 2
+      : Math.max(2, Math.floor(availableParallelism() / 2)),
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     browserName: 'chromium',

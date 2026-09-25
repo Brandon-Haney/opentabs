@@ -304,6 +304,20 @@ describe('v2→v3 migration — absolute paths normalized to ~/', () => {
     expect(result.version).toBe(3);
   });
 
+  test('writes the home-relative remainder of a Windows path with forward slashes', async () => {
+    const raw = {
+      version: 2,
+      localPlugins: [`${home}\\AppData\\Local\\Temp\\my-plugin`],
+      permissions: {},
+      settings: {},
+    };
+    const configPath = await writeConfig('v2v3-backslash.json', raw);
+
+    const result = await migrateConfig(configPath, raw);
+
+    expect(result.localPlugins).toEqual(['~/AppData/Local/Temp/my-plugin']);
+  });
+
   test('does not convert paths not under HOME', async () => {
     const raw = {
       version: 2,

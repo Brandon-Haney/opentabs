@@ -50,7 +50,7 @@ migrations.set(3, config => {
     config.localPlugins = localPlugins.map(p => {
       if (typeof p !== 'string') return p;
       if (p.startsWith(`${home}/`) || p.startsWith(`${home}\\`)) {
-        return `~/${p.slice(home.length + 1)}`;
+        return `~/${p.slice(home.length + 1).replaceAll('\\', '/')}`;
       }
       return p;
     });

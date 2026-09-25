@@ -20,7 +20,7 @@ import type { ChildProcess } from 'node:child_process';
 import { fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { watch } from 'node:fs';
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http';
 import { createServer, request as httpRequest } from 'node:http';
 import { resolve } from 'node:path';
 import type { Duplex } from 'node:stream';
@@ -335,6 +335,38 @@ const whenReady = (fn: () => void, onTimeout: () => void): void => {
   pending.push(entry);
 };
 
+/**
+ * Relay a worker response to the client. If the worker dies mid-response
+ * (restart, crash), the upstream closes before completing; the client response
+ * is destroyed so the caller sees a terminated stream immediately instead of
+ * an open one that only ends at its own timeout.
+ */
+const relayWorkerResponse = (
+  proxyRes: IncomingMessage,
+  res: ServerResponse,
+  headers: OutgoingHttpHeaders = proxyRes.headers,
+): void => {
+  res.writeHead(proxyRes.statusCode ?? 200, headers);
+  proxyRes.pipe(res);
+  res.on('close', () => proxyRes.destroy());
+  proxyRes.on('close', () => {
+    if (!proxyRes.complete) res.destroy();
+  });
+};
+
+/**
+ * Fail the client response after the worker request errored: a 502 when
+ * nothing has been sent yet, otherwise terminate the partially sent response.
+ */
+const failClientResponse = (res: ServerResponse): void => {
+  if (!res.headersSent) {
+    res.writeHead(502);
+    res.end('Bad Gateway');
+  } else {
+    res.destroy();
+  }
+};
+
 /** Forward an HTTP request to the worker via node:http. */
 const proxyHttp = (req: IncomingMessage, res: ServerResponse, port: number): void => {
   const proxyReq = httpRequest(
@@ -345,18 +377,9 @@ const proxyHttp = (req: IncomingMessage, res: ServerResponse, port: number): voi
       method: req.method,
       headers: req.headers,
     },
-    proxyRes => {
-      res.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers);
-      proxyRes.pipe(res);
-      res.on('close', () => proxyRes.destroy());
-    },
+    proxyRes => relayWorkerResponse(proxyRes, res),
   );
-  proxyReq.on('error', () => {
-    if (!res.headersSent) {
-      res.writeHead(502);
-      res.end('Bad Gateway');
-    }
-  });
+  proxyReq.on('error', () => failClientResponse(res));
   req.pipe(proxyReq);
 };
 
@@ -576,17 +599,10 @@ const handleMcpPost = async (req: IncomingMessage, res: ServerResponse, port: nu
               outHeaders[key] = value;
             }
           }
-          res.writeHead(proxyRes.statusCode ?? 200, outHeaders);
-          proxyRes.pipe(res);
-          res.on('close', () => proxyRes.destroy());
+          relayWorkerResponse(proxyRes, res, outHeaders);
         },
       );
-      proxyReq.on('error', () => {
-        if (!res.headersSent) {
-          res.writeHead(502);
-          res.end('Bad Gateway');
-        }
-      });
+      proxyReq.on('error', () => failClientResponse(res));
       proxyReq.write(bodyStr);
       proxyReq.end();
       return;
@@ -602,18 +618,9 @@ const handleMcpPost = async (req: IncomingMessage, res: ServerResponse, port: nu
       method: 'POST',
       headers: req.headers,
     },
-    proxyRes => {
-      res.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers);
-      proxyRes.pipe(res);
-      res.on('close', () => proxyRes.destroy());
-    },
+    proxyRes => relayWorkerResponse(proxyRes, res),
   );
-  proxyReq.on('error', () => {
-    if (!res.headersSent) {
-      res.writeHead(502);
-      res.end('Bad Gateway');
-    }
-  });
+  proxyReq.on('error', () => failClientResponse(res));
   proxyReq.write(bodyStr);
   proxyReq.end();
 };
@@ -703,18 +710,9 @@ const handleMcpDelete = (req: IncomingMessage, res: ServerResponse, port: number
       method: 'DELETE',
       headers: forwardHeaders,
     },
-    proxyRes => {
-      res.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers);
-      proxyRes.pipe(res);
-      res.on('close', () => proxyRes.destroy());
-    },
+    proxyRes => relayWorkerResponse(proxyRes, res),
   );
-  proxyReq.on('error', () => {
-    if (!res.headersSent) {
-      res.writeHead(502);
-      res.end('Bad Gateway');
-    }
-  });
+  proxyReq.on('error', () => failClientResponse(res));
   proxyReq.end();
 
   // Clean up the session

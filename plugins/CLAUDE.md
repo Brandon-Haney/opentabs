@@ -14,7 +14,7 @@ Each plugin:
 - Is **excluded** from root `biome`, `knip`, and `tsc --build`
 - Must build and type-check independently: `cd plugins/<name> && npm run build`
 
-The root tooling (`npm run build`, `npm run lint`, etc.) does NOT cover plugins. Inside this repository, the scripted plugin build links each plugin to the working-tree `plugin-sdk` (see [Building Plugins](#building-plugins)), so SDK changes reach plugins immediately. External plugin developers only receive those changes once a new `@opentabs-dev/plugin-sdk` is published and their dependency range picks it up, so publish platform packages (`shared`, `plugin-sdk`, `plugin-tools`) after changing them.
+The root tooling (`npm run build`, `npm run lint`, etc.) does NOT cover plugins. Inside this repository, the scripted plugin build links each plugin to the working-tree `plugin-sdk` and `plugin-tools` (see [Building Plugins](#building-plugins)), so SDK and build-tool changes reach plugins immediately. External plugin developers only receive those changes once a new `@opentabs-dev/plugin-sdk` is published and their dependency range picks it up, so publish platform packages (`shared`, `plugin-sdk`, `plugin-tools`) after changing them.
 
 **All plugins must use `^x.y.z` semver ranges for `@opentabs-dev/*` dependencies — never `file:` or `workspace:` links.** During version bumps, verify that no plugin `package.json` contains `file:` references. Plugins depend on published npm packages, not local filesystem paths.
 
@@ -25,7 +25,7 @@ Each plugin follows the same pattern:
 1. **Create the plugin** (`plugins/<name>/`): Extend `OpenTabsPlugin` from `@opentabs-dev/plugin-sdk`
 2. **Configure `package.json`**: Add an `opentabs` field with `displayName`, `description`, and `urlPatterns`; set `main` to `dist/adapter.iife.js`
 3. **Define tools** (`plugins/<name>/src/tools/`): One file per tool using `defineTool()` with Zod schemas. The `handle(params, context?)` function receives an optional `ToolHandlerContext` as its second argument for reporting progress during long-running operations
-4. **Build**: `npm run build:plugins -- --filter=<name>` from the repo root (installs dependencies, links the working-tree SDK, then runs the plugin's `npm run build`: `tsc` followed by `opentabs-plugin build`, which produces `dist/adapter.iife.js` and `dist/tools.json`, auto-registers the plugin in `localPlugins`, and calls `POST /reload` to notify the MCP server)
+4. **Build**: `npm run build:plugins -- --filter=<name>` from the repo root (installs dependencies, links the working-tree SDK and plugin-tools, then runs the plugin's `npm run build`: `tsc` followed by `opentabs-plugin build`, which produces `dist/adapter.iife.js` and `dist/tools.json`, auto-registers the plugin in `localPlugins`, and calls `POST /reload` to notify the MCP server)
 
 ## Plugin Icons
 
@@ -55,9 +55,9 @@ npm run build:plugins -- --filter=<name>,<other>  # several
 npm run build:plugins                             # all plugins
 ```
 
-For each plugin the script runs `npm install`, then replaces `node_modules/@opentabs-dev/plugin-sdk` with a link (a junction on Windows, a symlink elsewhere) to the working-tree SDK at `platform/plugin-sdk`, then runs the plugin's `npm run build`. Plugins therefore build and type-check against the SDK in this checkout and may import every export the local SDK provides, while `package.json` and `package-lock.json` keep the published `^x.y.z` range. The SDK must already be built (`npm run build` or `npm run type-check` at the root) for the link to resolve.
+For each plugin the script runs `npm install`, then replaces `node_modules/@opentabs-dev/plugin-sdk` and `node_modules/@opentabs-dev/plugin-tools` with links (a junction on Windows, a symlink elsewhere) to the working-tree packages at `platform/plugin-sdk` and `platform/plugin-tools`, then runs the plugin's `npm run build`. Plugins therefore build and type-check against the SDK in this checkout and may import every export the local SDK provides, and `opentabs-plugin build` is the checkout's build tool, so a change to how the adapter is assembled reaches every plugin on its next scripted build. `package.json` and `package-lock.json` keep the published `^x.y.z` range. Both packages must already be built (`npm run build` at the root) for the links to resolve.
 
-A manual `npm install` inside a plugin reverts the link to the registry copy of the SDK until the next scripted build. If a plugin suddenly fails to type-check against an SDK export that exists in `platform/plugin-sdk/src`, that is the cause — rebuild it through the script.
+A manual `npm install` inside a plugin reverts the links to the registry copies until the next scripted build. If a plugin suddenly fails to type-check against an SDK export that exists in `platform/plugin-sdk/src`, that is the cause — rebuild it through the script.
 
 `opentabs-plugin build` auto-registers the plugin in `localPlugins` (first build only) and calls `POST /reload` to trigger server rediscovery. In dev mode, the file watcher also detects changes to `dist/tools.json` and `dist/adapter.iife.js`.
 
@@ -135,6 +135,6 @@ npm run check   # build + type-check + lint + format:check
 From the repo root, you can build or check all plugins at once:
 
 ```bash
-npm run build:plugins   # Build all plugins (install + link working-tree SDK + build each)
+npm run build:plugins   # Build all plugins (install + link working-tree SDK and plugin-tools + build each)
 npm run check:plugins   # Type-check + lint + format:check + test all plugins, then the tool-description and shared-module checks
 ```

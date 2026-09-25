@@ -8,10 +8,11 @@
  *   tsx scripts/plugins.ts --check --changed=origin/main   # Check only plugins changed vs a git ref
  *
  * `--build` installs each plugin's registry dependencies and then links the
- * plugin's `@opentabs-dev/plugin-sdk` to the working-tree SDK in
- * platform/plugin-sdk, so every plugin builds and type-checks against the SDK
- * in this checkout rather than the last published version. The plugin's
- * package.json and lockfile are untouched; only node_modules differs.
+ * plugin's `@opentabs-dev/plugin-sdk` and `@opentabs-dev/plugin-tools` to the
+ * working-tree packages in platform/, so every plugin builds, type-checks and
+ * is bundled with the packages in this checkout rather than the last published
+ * versions. The plugin's package.json and lockfile are untouched; only
+ * node_modules differs.
  *
  * `--changed[=<ref>]` restricts the set to plugins with files modified relative
  * to <ref> (default: origin/main). This is how CI scopes a contributor's PR to
@@ -160,26 +161,39 @@ const notifyServerOnce = async (): Promise<void> => {
   }
 };
 
-const localSdkDir = join(repoRoot, 'platform/plugin-sdk');
+/**
+ * Working-tree packages a plugin build links in place of the published ones.
+ * The SDK is what plugin code compiles and bundles against; plugin-tools is the
+ * `opentabs-plugin build` that turns it into the adapter, so a fix to how the
+ * adapter is assembled reaches plugins only through this link. `builtFile` is
+ * the file whose absence means the package has not been built.
+ */
+const LINKED_PACKAGES = [
+  { name: 'plugin-sdk', builtFile: 'dist/index.js' },
+  { name: 'plugin-tools', builtFile: 'dist/cli.js' },
+] as const;
+
+type LinkedPackage = (typeof LINKED_PACKAGES)[number];
 
 /**
- * Replace a plugin's installed `@opentabs-dev/plugin-sdk` with a link to the
- * working-tree SDK. Plugins declare the published SDK in package.json (they
- * are standalone packages), but inside this repository they must build against
- * the SDK as it exists in the checkout: an SDK change is otherwise invisible
- * to plugins until a publish, and a breaking one would only surface after
- * release. The link lives in node_modules only — package.json and
+ * Replace a plugin's installed `@opentabs-dev/<package>` with a link to the
+ * working-tree package. Plugins declare the published packages in package.json
+ * (they are standalone packages), but inside this repository they must build
+ * with the packages as they exist in the checkout: a change is otherwise
+ * invisible to plugins until a publish, and a breaking one would only surface
+ * after release. The link lives in node_modules only — package.json and
  * package-lock.json keep the published range. A junction is used on Windows
  * because creating one needs no elevated privileges.
  */
-const linkLocalSdk = (pluginName: string): boolean => {
-  if (!existsSync(join(localSdkDir, 'dist/index.js'))) {
+const linkLocalPackage = (pluginName: string, pkg: LinkedPackage): boolean => {
+  const localDir = join(repoRoot, 'platform', pkg.name);
+  if (!existsSync(join(localDir, pkg.builtFile))) {
     console.error(
-      `${RED}platform/plugin-sdk is not built — run "npm run build" (or "npm run type-check") at the repo root first.${RESET}`,
+      `${RED}platform/${pkg.name} is not built — run "npm run build" (or "npm run type-check") at the repo root first.${RESET}`,
     );
     return false;
   }
-  const target = join(pluginsDir, pluginName, 'node_modules/@opentabs-dev/plugin-sdk');
+  const target = join(pluginsDir, pluginName, 'node_modules/@opentabs-dev', pkg.name);
   if (existsSync(target) || isLink(target)) {
     if (isLink(target)) {
       // A junction on Windows must be removed with rmdir semantics; a POSIX
@@ -190,9 +204,13 @@ const linkLocalSdk = (pluginName: string): boolean => {
     }
   }
   mkdirSync(dirname(target), { recursive: true });
-  symlinkSync(localSdkDir, target, isWindows() ? 'junction' : 'dir');
+  symlinkSync(localDir, target, isWindows() ? 'junction' : 'dir');
   return true;
 };
+
+/** Link every working-tree package a plugin build uses; false when one is not built. */
+const linkLocalPackages = (pluginName: string): boolean =>
+  LINKED_PACKAGES.every(pkg => linkLocalPackage(pluginName, pkg));
 
 const isLink = (path: string): boolean => {
   try {
@@ -248,7 +266,7 @@ for (const pluginName of pluginDirs) {
     const skipNotify = { OPENTABS_SKIP_NOTIFY: '1', OPENTABS_SKIP_REGISTER: '1' };
     success =
       (await runInPlugin(pluginName, ['npm', 'install'])) &&
-      linkLocalSdk(pluginName) &&
+      linkLocalPackages(pluginName) &&
       (await runInPlugin(pluginName, ['npm', 'run', 'build'], skipNotify));
   } else {
     success =

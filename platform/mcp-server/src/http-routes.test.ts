@@ -1,5 +1,5 @@
 import type { AuditEntry, WsHandle } from '@opentabs-dev/shared';
-import { beforeAll, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { z } from 'zod';
 import type { HotHandlers } from './http-routes.js';
 import {
@@ -10,6 +10,7 @@ import {
   sweepStaleSessions,
 } from './http-routes.js';
 import type { McpServerInstance } from './mcp-setup.js';
+import { PROXY_RESTORE_HEADER, PROXY_RESTORE_TOKEN_ENV } from './proxy-restore.js';
 import { buildRegistry } from './registry.js';
 import type { CachedBrowserTool, ExtensionConnection, PendingDispatch } from './state.js';
 import { createState, getAnyConnection, getMergedTabMapping, STATE_SCHEMA_VERSION } from './state.js';
@@ -1117,76 +1118,104 @@ describe('WebSocket upgrade origin check', () => {
 });
 
 describe('/mcp session creation rate limiting', () => {
-  test('returns 429 after 5 new session attempts per minute', async () => {
-    const { handlers, state } = createTestHandlers();
-    state.wsSecret = null; // Disable auth for simpler test
+  const INITIALIZE = {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1.0.0' } },
+  };
 
-    // Send 5 POST requests without session ID — each passes rate limit and gets 400 (not initialize)
-    for (let i = 0; i < 5; i++) {
-      const req = new Request('http://localhost:9876/mcp', {
-        method: 'POST',
-        headers: { Host: 'localhost:9876', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ not: 'an initialize request' }),
-      });
-      const res = (await handlers.fetch(req, mockServer)) as Response;
-      expect(res.status).toBe(400);
-    }
+  /** Spend the whole per-minute budget for new sessions on `endpoint`. */
+  const exhaustSessionBudget = (state: ReturnType<typeof createState>, endpoint = '/mcp-session-create') => {
+    state.endpointCallTimestamps.set(
+      endpoint,
+      Array.from({ length: 5 }, () => Date.now()),
+    );
+  };
 
-    // 6th request should be rate-limited
-    const req = new Request('http://localhost:9876/mcp', {
-      method: 'POST',
-      headers: { Host: 'localhost:9876', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ not: 'an initialize request' }),
-    });
-    const res = (await handlers.fetch(req, mockServer)) as Response;
-    expect(res.status).toBe(429);
-    expect(res.headers.get('Retry-After')).toBe('60');
-  });
-
-  test('unknown session IDs fall through to rate-limited new session path', async () => {
-    const { handlers, state } = createTestHandlers();
-    state.wsSecret = null;
-
-    // Exhaust the rate limit with new session attempts
-    for (let i = 0; i < 5; i++) {
-      const req = new Request('http://localhost:9876/mcp', {
-        method: 'POST',
-        headers: { Host: 'localhost:9876', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ not: 'an initialize request' }),
-      });
-      await handlers.fetch(req, mockServer);
-    }
-
-    // A request with an unknown session ID falls through to the new session path
-    // and is subject to the same rate limit
-    const req = new Request('http://localhost:9876/mcp', {
+  const post = (body: unknown, headers: Record<string, string> = {}) =>
+    new Request('http://localhost:9876/mcp', {
       method: 'POST',
       headers: {
         Host: 'localhost:9876',
         'Content-Type': 'application/json',
-        'mcp-session-id': 'non-existent-session',
+        Accept: 'application/json, text/event-stream',
+        ...headers,
       },
-      body: JSON.stringify({ method: 'tools/list' }),
+      body: JSON.stringify(body),
     });
-    const res = (await handlers.fetch(req, mockServer)) as Response;
+
+  afterEach(() => {
+    delete process.env[PROXY_RESTORE_TOKEN_ENV];
+  });
+
+  test('returns 429 for an initialize once 5 sessions were created in the minute', async () => {
+    const { handlers, state } = createTestHandlers();
+    state.wsSecret = null;
+    exhaustSessionBudget(state);
+
+    const res = (await handlers.fetch(post(INITIALIZE), mockServer)) as Response;
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('60');
+  });
+
+  test('a request that is not an initialize never spends the budget', async () => {
+    const { handlers, state } = createTestHandlers();
+    state.wsSecret = null;
+
+    for (let i = 0; i < 8; i++) {
+      const res = (await handlers.fetch(post({ not: 'an initialize request' }), mockServer)) as Response;
+      expect(res.status).toBe(400);
+    }
+    expect(state.endpointCallTimestamps.get('/mcp-session-create')).toBeUndefined();
+  });
+
+  test('an unknown session ID gets 404, not 429, even with the budget spent', async () => {
+    // 404 tells an MCP client to start a new session; 429 would have it retry the dead one.
+    const { handlers, state } = createTestHandlers();
+    state.wsSecret = null;
+    exhaustSessionBudget(state);
+
+    const res = (await handlers.fetch(
+      post({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, { 'mcp-session-id': 'non-existent-session' }),
+      mockServer,
+    )) as Response;
+    expect(res.status).toBe(404);
+  });
+
+  test("the dev proxy's session restoration is exempt when it carries this run's token", async () => {
+    const { handlers, state } = createTestHandlers();
+    state.wsSecret = null;
+    exhaustSessionBudget(state);
+    process.env[PROXY_RESTORE_TOKEN_ENV] = 'run-token';
+
+    const restored = (await handlers.fetch(
+      post(INITIALIZE, { [PROXY_RESTORE_HEADER]: 'run-token' }),
+      mockServer,
+    )) as Response;
+    expect(restored.status).toBe(200);
+
+    const forged = (await handlers.fetch(
+      post(INITIALIZE, { [PROXY_RESTORE_HEADER]: 'guessed-token' }),
+      mockServer,
+    )) as Response;
+    expect(forged.status).toBe(429);
+  });
+
+  test('no request is exempt when no proxy token is configured', async () => {
+    const { handlers, state } = createTestHandlers();
+    state.wsSecret = null;
+    exhaustSessionBudget(state);
+
+    const res = (await handlers.fetch(post(INITIALIZE, { [PROXY_RESTORE_HEADER]: '' }), mockServer)) as Response;
     expect(res.status).toBe(429);
   });
 
   test('does not rate-limit GET requests to /mcp', async () => {
     const { handlers, state } = createTestHandlers();
     state.wsSecret = null;
+    exhaustSessionBudget(state);
 
-    // Exhaust the rate limit with new session attempts
-    for (let i = 0; i < 5; i++) {
-      const req = new Request('http://localhost:9876/mcp', {
-        method: 'POST',
-        headers: { Host: 'localhost:9876', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ not: 'an initialize request' }),
-      });
-      await handlers.fetch(req, mockServer);
-    }
-
-    // GET requests should not be rate-limited
     const req = new Request('http://localhost:9876/mcp', {
       method: 'GET',
       headers: { Host: 'localhost:9876' },

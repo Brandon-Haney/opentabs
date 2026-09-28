@@ -9,16 +9,18 @@
  * drained once the new worker is ready (up to 5 seconds, then 503).
  *
  * MCP session bridging: The proxy assigns its own stable session ID to each
- * MCP client. When a worker restarts, the proxy re-initializes the MCP session
- * with the new worker on behalf of connected clients, mapping the stable proxy
- * session ID to the new worker session ID. SSE GET streams are held open across
- * worker restarts — the proxy reconnects the upstream SSE stream to the new
- * worker and resumes forwarding events to the client.
+ * MCP client. When a worker restarts, the proxy restores each session in the new
+ * worker by replaying the client's initialize, mapping the stable proxy session
+ * ID to the new worker session ID. Sessions whose client holds an SSE stream are
+ * restored at once, and the proxy reconnects the upstream stream so events keep
+ * flowing; every other session is restored on its client's next request, so
+ * sessions left behind by clients that exited without DELETE are never replayed.
+ * Restorations are exempt from the worker's new-session rate limit.
  */
 
 import type { ChildProcess } from 'node:child_process';
 import { fork } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { watch } from 'node:fs';
 import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http';
 import { createServer, request as httpRequest } from 'node:http';
@@ -26,6 +28,7 @@ import { resolve } from 'node:path';
 import type { Duplex } from 'node:stream';
 import { DEFAULT_HOST, DEFAULT_PORT, sanitizeEnv } from '@opentabs-dev/shared';
 import { WebSocket, WebSocketServer } from 'ws';
+import { PROXY_RESTORE_HEADER, PROXY_RESTORE_TOKEN_ENV } from './proxy-restore.js';
 
 const WORKER_JS = resolve(import.meta.dirname, 'index.js');
 const DIST_DIR = resolve(import.meta.dirname);
@@ -46,6 +49,9 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 const pending: Array<() => void> = [];
 let workerStartCount = 0;
 
+/** This run's proof that a session restoration comes from the proxy (see proxy-restore.ts). */
+const RESTORE_TOKEN = randomBytes(32).toString('hex');
+
 /** Set true when the proxy deliberately tears down the worker (reload or proxy
  *  shutdown), so the 'exit' handler can distinguish an intentional kill from a
  *  crash and only auto-respawn on the latter. */
@@ -65,8 +71,14 @@ let skipPermissionsOverride: boolean | null = null;
 interface ProxySession {
   /** Stable session ID exposed to the client (never changes). */
   proxySessionId: string;
-  /** Current worker's session ID (changes on each worker restart). */
-  workerSessionId: string;
+  /**
+   * The session's ID in the current worker, or null until it is restored there.
+   * A worker restart clears every session's ID; it is restored on the client's
+   * next request, or at once if the client holds an SSE stream open.
+   */
+  workerSessionId: string | null;
+  /** The restoration in flight for this session, so concurrent requests share one. */
+  restoring: Promise<boolean> | null;
   /** The JSON body of the client's initialize request (replayed to new workers). */
   initializeBody: unknown;
   /** Active SSE response streams for this session. */
@@ -102,108 +114,134 @@ const drainPending = (): void => {
 };
 
 /**
- * Re-initialize all tracked MCP sessions with the new worker.
- * Sends the original initialize request + notifications/initialized to the
- * new worker for each session, capturing the new worker session IDs.
- * Then reconnects SSE streams.
+ * Replay a session's original initialize against the worker on `port`, then
+ * reopen its upstream SSE stream if the client holds one. The replay carries the
+ * restore token so it does not spend the worker's new-session rate limit.
+ * Resolves true once the session has an ID in that worker. A worker that refuses
+ * the session drops it, and its client is told the session is gone on its next
+ * request. A restart during the replay (`generation` no longer current) abandons
+ * it without touching the session, which the next worker restores afresh.
  */
-const reinitializeSessions = async (port: number): Promise<void> => {
-  const sessionsToReinit = [...sessions.values()];
-  if (sessionsToReinit.length === 0) return;
+const replayInitialize = async (session: ProxySession, port: number, generation: number): Promise<boolean> => {
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      [PROXY_RESTORE_HEADER]: RESTORE_TOKEN,
+    };
+    if (session.authHeader) headers.Authorization = session.authHeader;
 
-  console.log(`[proxy] Re-initializing ${sessionsToReinit.length} MCP session(s) with new worker`);
-
-  for (const session of sessionsToReinit) {
-    try {
-      // Remove old worker session mapping
-      workerToProxySession.delete(session.workerSessionId);
-
-      // Send the original initialize request to the new worker
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/event-stream',
-      };
-      if (session.authHeader) {
-        headers.Authorization = session.authHeader;
-      }
-
-      const initRes = await fetch(`http://127.0.0.1:${port}${session.path}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(session.initializeBody),
-        signal: AbortSignal.timeout(READY_TIMEOUT_MS),
-      });
-
-      if (!initRes.ok) {
-        const text = await initRes.text().catch(() => '');
-        console.error(`[proxy] Failed to re-initialize session ${session.proxySessionId}: ${initRes.status} ${text}`);
-        cleanupSession(session.proxySessionId);
-        continue;
-      }
-
-      const newWorkerSessionId = initRes.headers.get('mcp-session-id');
-      if (!newWorkerSessionId) {
-        console.error(`[proxy] Re-initialize did not return session ID for ${session.proxySessionId}`);
-        cleanupSession(session.proxySessionId);
-        continue;
-      }
-
-      // Update session mapping
-      session.workerSessionId = newWorkerSessionId;
-      workerToProxySession.set(newWorkerSessionId, session.proxySessionId);
-
-      // Consume the initialize response body
-      await initRes.text().catch(() => {});
-
-      // Send notifications/initialized
-      const notifHeaders: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/event-stream',
-        'mcp-session-id': newWorkerSessionId,
-      };
-      if (session.authHeader) {
-        notifHeaders.Authorization = session.authHeader;
-      }
-
-      await fetch(`http://127.0.0.1:${port}${session.path}`, {
-        method: 'POST',
-        headers: notifHeaders,
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'notifications/initialized',
-        }),
-        signal: AbortSignal.timeout(READY_TIMEOUT_MS),
-      }).catch(() => {});
-
-      console.log(`[proxy] Session ${session.proxySessionId} re-initialized (worker session: ${newWorkerSessionId})`);
-
-      // Prune dead client responses, then reconnect the single upstream SSE.
-      // The previous upstream died with the old worker — disconnect clears the
-      // reference so connectUpstreamSse opens a fresh one to the new worker.
-      for (const clientRes of session.sseStreams) {
-        if (clientRes.destroyed || clientRes.writableEnded) {
-          session.sseStreams.delete(clientRes);
-        }
-      }
-      if (session.sseStreams.size > 0) {
-        disconnectUpstreamSse(session);
-        connectUpstreamSse(session, port);
-      }
-    } catch (err) {
+    const initRes = await fetch(`http://127.0.0.1:${port}${session.path}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(session.initializeBody),
+      signal: AbortSignal.timeout(READY_TIMEOUT_MS),
+    });
+    const workerSessionId = initRes.headers.get('mcp-session-id');
+    const responseText = await initRes.text().catch(() => '');
+    if (workerStartCount !== generation) return false;
+    if (!initRes.ok || !workerSessionId) {
       console.error(
-        `[proxy] Error re-initializing session ${session.proxySessionId}:`,
-        err instanceof Error ? err.message : err,
+        `[proxy] Failed to restore session ${session.proxySessionId}: ${initRes.status} ${initRes.ok ? 'no session ID' : responseText}`,
       );
       cleanupSession(session.proxySessionId);
+      return false;
     }
+
+    session.workerSessionId = workerSessionId;
+    workerToProxySession.set(workerSessionId, session.proxySessionId);
+
+    const notifHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      'mcp-session-id': workerSessionId,
+    };
+    if (session.authHeader) notifHeaders.Authorization = session.authHeader;
+    await fetch(`http://127.0.0.1:${port}${session.path}`, {
+      method: 'POST',
+      headers: notifHeaders,
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+      signal: AbortSignal.timeout(READY_TIMEOUT_MS),
+    }).catch(() => {});
+
+    pruneClosedStreams(session);
+    if (session.sseStreams.size > 0) {
+      disconnectUpstreamSse(session);
+      connectUpstreamSse(session, port);
+    }
+    console.log(`[proxy] Session ${session.proxySessionId} restored (worker session: ${workerSessionId})`);
+    return true;
+  } catch (err) {
+    if (workerStartCount !== generation) return false;
+    console.error(
+      `[proxy] Error restoring session ${session.proxySessionId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    cleanupSession(session.proxySessionId);
+    return false;
   }
+};
+
+/** Restore one session in the worker on `port`; concurrent callers share one replay. */
+const restoreSession = (session: ProxySession, port: number): Promise<boolean> => {
+  if (session.restoring) return session.restoring;
+  const restoring: Promise<boolean> = replayInitialize(session, port, workerStartCount).finally(() => {
+    if (session.restoring === restoring) session.restoring = null;
+  });
+  session.restoring = restoring;
+  return restoring;
+};
+
+/**
+ * Ensure a session has an ID in the current worker, restoring it if needed.
+ * False when the session is gone — the worker refused it, or no worker is up —
+ * which the caller reports to the client as an unknown session.
+ */
+const ensureRestored = async (session: ProxySession): Promise<boolean> => {
+  while (session.workerSessionId === null) {
+    if (!sessions.has(session.proxySessionId) || workerPort === null) return false;
+    await restoreSession(session, workerPort);
+  }
+  return true;
+};
+
+/** Drop client SSE responses that have already closed. */
+const pruneClosedStreams = (session: ProxySession): void => {
+  for (const clientRes of session.sseStreams) {
+    if (clientRes.destroyed || clientRes.writableEnded) session.sseStreams.delete(clientRes);
+  }
+};
+
+/**
+ * After a worker restart every session's worker ID is gone. Sessions whose
+ * client holds an SSE stream open are live and waiting for notifications, so they
+ * are restored at once; every other session is restored on its client's next
+ * request. A session whose client has gone away — a finished headless run never
+ * sends DELETE — is never restored, so it costs the new worker nothing.
+ */
+const restoreSessionsAfterRestart = async (port: number): Promise<void> => {
+  workerToProxySession.clear();
+  const live: ProxySession[] = [];
+  for (const session of sessions.values()) {
+    session.workerSessionId = null;
+    session.restoring = null;
+    session.upstreamSse = null;
+    pruneClosedStreams(session);
+    if (session.sseStreams.size > 0) live.push(session);
+  }
+  if (sessions.size > 0) {
+    console.log(
+      `[proxy] Restoring ${live.length} MCP session(s) with an open stream now; ${sessions.size - live.length} other session(s) restore on their next request`,
+    );
+  }
+  await Promise.all(live.map(session => restoreSession(session, port)));
 };
 
 /** Remove a session and clean up its resources. */
 const cleanupSession = (proxySessionId: string): void => {
   const session = sessions.get(proxySessionId);
   if (!session) return;
-  workerToProxySession.delete(session.workerSessionId);
+  if (session.workerSessionId !== null) workerToProxySession.delete(session.workerSessionId);
   disconnectUpstreamSse(session);
   for (const res of session.sseStreams) {
     if (!res.destroyed && !res.writableEnded) {
@@ -233,6 +271,7 @@ const startWorker = (): void => {
   const envOverrides: Record<string, string> = {
     PORT: '0',
     OPENTABS_PROXY: '1',
+    [PROXY_RESTORE_TOKEN_ENV]: RESTORE_TOKEN,
   };
   if (skipPermissionsOverride !== null) {
     envOverrides.OPENTABS_DANGEROUSLY_SKIP_PERMISSIONS = skipPermissionsOverride ? '1' : '';
@@ -254,9 +293,9 @@ const startWorker = (): void => {
       console.log(`[proxy] Worker ready on port ${workerPort} (pid ${child.pid})`);
 
       if (isRestart) {
-        // Re-initialize existing MCP sessions with the new worker before
-        // draining pending requests, so session mappings are ready.
-        void reinitializeSessions(workerPort).then(() => {
+        // Restore the sessions that are listening before draining pending
+        // requests; every other session restores on its own next request.
+        void restoreSessionsAfterRestart(workerPort).then(() => {
           console.log('Hot reload complete');
           drainPending();
         });
@@ -416,8 +455,9 @@ const disconnectUpstreamSse = (session: ProxySession): void => {
  */
 const connectUpstreamSse = (session: ProxySession, port: number): void => {
   // Already connected or connection in flight — nothing to do. Data is
-  // fanned out to all client responses in the 'data' handler below.
-  if (session.upstreamSse) return;
+  // fanned out to all client responses in the 'data' handler below. A session
+  // not yet restored in this worker connects once its restoration completes.
+  if (session.upstreamSse || session.workerSessionId === null) return;
 
   const headers: Record<string, string> = {
     Accept: 'text/event-stream',
@@ -460,8 +500,8 @@ const connectUpstreamSse = (session: ProxySession, port: number): void => {
         }
       });
 
-      // When upstream closes (worker restart), clear the reference so
-      // reinitializeSessions() can open a fresh connection.
+      // When upstream closes (worker restart), clear the reference so the
+      // session's restoration can open a fresh connection.
       upstreamRes.on('end', () => {
         session.upstreamSse = null;
       });
@@ -482,6 +522,15 @@ const connectUpstreamSse = (session: ProxySession, port: number): void => {
   session.upstreamSse = { req: upstreamReq, res: null };
 
   upstreamReq.end();
+};
+
+/**
+ * Tell a client its session no longer exists. MCP (2025-03-26 §3) has a client
+ * that receives 404 start a new session, which is the recovery it needs here.
+ */
+const respondSessionNotFound = (res: ServerResponse): void => {
+  res.writeHead(404, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32600, message: 'Session not found' }, id: null }));
 };
 
 /**
@@ -540,6 +589,7 @@ const handleMcpPost = async (req: IncomingMessage, res: ServerResponse, port: nu
       const session: ProxySession = {
         proxySessionId,
         workerSessionId,
+        restoring: null,
         initializeBody: body,
         sseStreams: new Set(),
         authHeader: authHeader ?? null,
@@ -571,11 +621,15 @@ const handleMcpPost = async (req: IncomingMessage, res: ServerResponse, port: nu
   if (clientSessionId) {
     const session = sessions.get(clientSessionId);
     if (session) {
+      if (!(await ensureRestored(session))) {
+        respondSessionNotFound(res);
+        return;
+      }
       // Rewrite the session ID header to the current worker session ID
       const forwardHeaders: Record<string, string | string[] | undefined> = {};
       for (const [key, value] of Object.entries(req.headers)) {
         if (key === 'mcp-session-id') {
-          forwardHeaders[key] = session.workerSessionId;
+          forwardHeaders[key] = session.workerSessionId ?? undefined;
         } else {
           forwardHeaders[key] = value;
         }
@@ -672,8 +726,15 @@ const handleMcpGet = (req: IncomingMessage, res: ServerResponse, port: number): 
 
   // Connect the upstream SSE stream if not already active. The MCP SDK
   // allows exactly one GET SSE stream per session — the proxy maintains one
-  // upstream and fans out data to all client responses in sseStreams.
-  connectUpstreamSse(session, port);
+  // upstream and fans out data to all client responses in sseStreams. A session
+  // not yet restored in this worker opens its upstream when restoration completes.
+  if (session.workerSessionId === null) {
+    void ensureRestored(session).then(restored => {
+      if (!restored) res.end();
+    });
+  } else {
+    connectUpstreamSse(session, port);
+  }
 };
 
 /**
@@ -689,6 +750,14 @@ const handleMcpDelete = (req: IncomingMessage, res: ServerResponse, port: number
   const session = sessions.get(clientSessionId);
   if (!session) {
     proxyHttp(req, res, port);
+    return;
+  }
+
+  // Not restored in this worker: nothing exists there to close.
+  if (session.workerSessionId === null) {
+    cleanupSession(session.proxySessionId);
+    res.writeHead(200);
+    res.end();
     return;
   }
 
@@ -766,6 +835,9 @@ wss.on('headers', (headers: string[]) => {
 export const RESTART_WORKER_PATH = '/__dev/restart-worker';
 
 const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+  // Only the proxy itself may present the restore token; never forward a client's.
+  delete req.headers[PROXY_RESTORE_HEADER];
+
   if (req.method === 'POST' && (req.url ?? '') === RESTART_WORKER_PATH) {
     console.log('[proxy] Hot reload triggered, restarting worker...');
     startWorker();

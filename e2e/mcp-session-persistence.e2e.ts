@@ -290,19 +290,20 @@ test.describe('MCP session persistence — SSE stream lifecycle', () => {
       await openAndCloseSseStream(server.port, sid as string, server.secret);
 
       // Now trigger a hot reload — the proxy must still know about the session
-      // to re-initialize it with the new worker.
+      // to restore it in the new worker.
       server.logs.length = 0;
       server.triggerHotReload();
       await waitForLog(server, 'Hot reload complete', 15_000);
 
-      // Verify the proxy re-initialized the session
-      expect(server.logs.join('\n')).toContain('Re-initializing');
+      // The closed stream leaves no listener, so the session waits for its next request
+      expect(server.logs.join('\n')).toContain('1 other session(s) restore on their next request');
 
-      // Tools must still work
+      // Tools must still work, and the proxy restores the session to serve them
       const tools = await client.listTools();
       for (const name of expectedToolNames) {
         expect(tools.some(t => t.name === name)).toBe(true);
       }
+      expect(server.logs.join('\n')).toContain('restored (worker session:');
 
       await client.close();
     } finally {
@@ -339,8 +340,8 @@ test.describe('MCP session persistence across hot reload', () => {
       // Wait for the reload to complete
       await waitForLog(server, 'Hot reload complete', 15_000);
 
-      // Verify the proxy re-initialized the session with the new worker
-      expect(server.logs.join('\n')).toContain('Re-initializing');
+      // The proxy holds the session for restoration on its next request
+      expect(server.logs.join('\n')).toContain('1 other session(s) restore on their next request');
 
       // List tools again — should succeed without client-side re-initialization.
       // The proxy mapped the stable session ID to the new worker's session ID.
@@ -472,10 +473,8 @@ test.describe('MCP session persistence across hot reload', () => {
       server.triggerHotReload();
       await waitForLog(server, 'Hot reload complete', 15_000);
 
-      // Verify the proxy re-initialized both sessions
-      const reinitLog = server.logs.find(l => l.includes('Re-initializing'));
-      expect(reinitLog).toBeDefined();
-      expect(reinitLog).toContain('2 MCP session');
+      // The proxy holds both sessions for restoration on their next request
+      expect(server.logs.join('\n')).toContain('2 other session(s) restore on their next request');
 
       // Both clients should retain tool access
       const tools1After = await client1.listTools();

@@ -46,6 +46,7 @@ import {
   handlePluginMarkReviewed,
   handlePluginToolCall,
 } from './mcp-tool-dispatch.js';
+import { isProxyRestoreRequest } from './proxy-restore.js';
 import { performConfigReload } from './reload.js';
 import { sanitizeErrorMessage } from './sanitize-error.js';
 import { sdkVersion } from './sdk-version.js';
@@ -181,6 +182,19 @@ const checkEndpointRateLimit = (state: ServerState, endpoint: string, maxPerMinu
   state.endpointCallTimestamps.set(endpoint, timestamps);
   return true;
 };
+
+/**
+ * Rate-limit the creation of a new MCP session on `endpoint`: null when the
+ * session may be created, otherwise the 429 to return. Callers invoke it only for
+ * a real `initialize`, so a request carrying an expired session id never spends
+ * the budget and is answered 404, which tells its client to start a new session.
+ * The dev proxy's restoration of an existing session after a worker restart is
+ * not a new client and is exempt (see proxy-restore.ts).
+ */
+const rejectSessionCreation = (req: Request, state: ServerState, endpoint: string): Response | null =>
+  isProxyRestoreRequest(req.headers) || checkEndpointRateLimit(state, endpoint, 5)
+    ? null
+    : new Response('Too Many Requests', { status: 429, headers: { 'Retry-After': '60' } });
 
 /** Compute aggregate audit statistics from the audit log buffer */
 const computeAuditSummary = (auditLog: AuditEntry[]) => {
@@ -725,14 +739,12 @@ const handleMcp = async (
       }
     }
 
-    // New session — rate-limit session creation to prevent resource exhaustion
-    if (!checkEndpointRateLimit(state, '/mcp-session-create', 5)) {
-      return new Response('Too Many Requests', { status: 429, headers: { 'Retry-After': '60' } });
-    }
-
-    // Check if it's an initialize request
+    // New session — only an initialize creates one, and creation is rate-limited
     const body: unknown = await req.json().catch(() => null);
     if (body && isInitializeRequest(body)) {
+      const rejected = rejectSessionCreation(req, state, '/mcp-session-create');
+      if (rejected) return rejected;
+
       let sessionServer: McpServerInstance | null = null;
 
       const removeSession = (): void => {
@@ -851,12 +863,11 @@ const handleGatewayMcp = async (
       }
     }
 
-    if (!checkEndpointRateLimit(state, '/mcp/gateway-session-create', 5)) {
-      return new Response('Too Many Requests', { status: 429, headers: { 'Retry-After': '60' } });
-    }
-
     const body: unknown = await req.json().catch(() => null);
     if (body && isInitializeRequest(body)) {
+      const rejected = rejectSessionCreation(req, state, '/mcp/gateway-session-create');
+      if (rejected) return rejected;
+
       let sessionServer: McpServerInstance | null = null;
 
       const removeSession = (): void => {

@@ -594,7 +594,7 @@ The server rejects all HTTP requests with a browser `Origin` header, except thos
 
 ## Rate Limiting
 
-Admin endpoints (`/reload`, `/extension/reload`) are rate-limited to 10 requests/minute. MCP session creation (`/mcp` initialize requests) is rate-limited to 5 per minute. Exceeding the limit returns HTTP 429 with `Retry-After: 60`.
+Admin endpoints (`/reload`, `/extension/reload`) are rate-limited to 10 requests/minute. MCP session creation (`initialize` requests) is rate-limited to 5 per minute, separately for `/mcp` and `/mcp/gateway`. Exceeding the limit returns HTTP 429 with `Retry-After: 60`. A request carrying an unknown or expired session ID does not count toward the limit; it receives HTTP 404, which tells the client to start a new session.
 
 ---
 

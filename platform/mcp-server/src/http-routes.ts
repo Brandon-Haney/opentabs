@@ -184,17 +184,31 @@ const checkEndpointRateLimit = (state: ServerState, endpoint: string, maxPerMinu
 };
 
 /**
+ * New MCP sessions allowed per minute on each session endpoint, shared by every
+ * client. Sized for many MCP clients starting at once (each opens one session),
+ * while still bounding a client stuck in a reconnect loop to one session a second.
+ */
+const MAX_NEW_SESSIONS_PER_MINUTE = 60;
+
+/**
  * Rate-limit the creation of a new MCP session on `endpoint`: null when the
  * session may be created, otherwise the 429 to return. Callers invoke it only for
  * a real `initialize`, so a request carrying an expired session id never spends
  * the budget and is answered 404, which tells its client to start a new session.
  * The dev proxy's restoration of an existing session after a worker restart is
- * not a new client and is exempt (see proxy-restore.ts).
+ * not a new client and is exempt (see proxy-restore.ts). Every rejection is
+ * logged, since an MCP client that receives it marks the server failed until a
+ * manual reconnect.
  */
-const rejectSessionCreation = (req: Request, state: ServerState, endpoint: string): Response | null =>
-  isProxyRestoreRequest(req.headers) || checkEndpointRateLimit(state, endpoint, 5)
-    ? null
-    : new Response('Too Many Requests', { status: 429, headers: { 'Retry-After': '60' } });
+const rejectSessionCreation = (req: Request, state: ServerState, endpoint: string): Response | null => {
+  if (isProxyRestoreRequest(req.headers) || checkEndpointRateLimit(state, endpoint, MAX_NEW_SESSIONS_PER_MINUTE)) {
+    return null;
+  }
+  log.warn(
+    `Rejected new MCP session on ${endpoint}: ${MAX_NEW_SESSIONS_PER_MINUTE} sessions already created this minute`,
+  );
+  return new Response('Too Many Requests', { status: 429, headers: { 'Retry-After': '60' } });
+};
 
 /** Compute aggregate audit statistics from the audit log buffer */
 const computeAuditSummary = (auditLog: AuditEntry[]) => {
@@ -1312,5 +1326,6 @@ export {
   constantTimeEqual,
   createHandlers,
   isLocalhostHost,
+  MAX_NEW_SESSIONS_PER_MINUTE,
   sweepStaleSessions,
 };

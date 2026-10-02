@@ -7,6 +7,7 @@ import {
   checkEndpointRateLimit,
   createHandlers,
   isLocalhostHost,
+  MAX_NEW_SESSIONS_PER_MINUTE,
   sweepStaleSessions,
 } from './http-routes.js';
 import type { McpServerInstance } from './mcp-setup.js';
@@ -1129,7 +1130,7 @@ describe('/mcp session creation rate limiting', () => {
   const exhaustSessionBudget = (state: ReturnType<typeof createState>, endpoint = '/mcp-session-create') => {
     state.endpointCallTimestamps.set(
       endpoint,
-      Array.from({ length: 5 }, () => Date.now()),
+      Array.from({ length: MAX_NEW_SESSIONS_PER_MINUTE }, () => Date.now()),
     );
   };
 
@@ -1149,7 +1150,7 @@ describe('/mcp session creation rate limiting', () => {
     delete process.env[PROXY_RESTORE_TOKEN_ENV];
   });
 
-  test('returns 429 for an initialize once 5 sessions were created in the minute', async () => {
+  test('returns 429 for an initialize once the per-minute session budget is spent', async () => {
     const { handlers, state } = createTestHandlers();
     state.wsSecret = null;
     exhaustSessionBudget(state);

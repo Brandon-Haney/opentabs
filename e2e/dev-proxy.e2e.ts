@@ -907,11 +907,10 @@ test.describe
   });
 
 test.describe('Dev proxy session restoration after hot reload', () => {
-  test('restores more sessions than one minute of session creation allows', async ({ mcpServer }) => {
-    // Sessions accumulate across workers: each worker allows 5 new sessions a
-    // minute, and the proxy keeps every session a client ever opened. A reload
-    // with more sessions than that budget used to replay them all through it,
-    // dropping the excess and answering those clients 429 from then on.
+  test('restores every accumulated session without dropping any', async ({ mcpServer }) => {
+    // Sessions accumulate across workers: the proxy keeps every session a client
+    // ever opened, and each reload restores all of them in the new worker.
+    // Restorations are exempt from the new-session limit, so none is refused.
     const openClients = async (count: number) => {
       const opened = Array.from({ length: count }, () => createMcpClient(mcpServer.port, mcpServer.secret));
       for (const client of opened) await client.initialize();
@@ -925,13 +924,12 @@ test.describe('Dev proxy session restoration after hot reload', () => {
 
     const clients = await openClients(5);
     await reload();
-    // Restoring the first five spends none of the new worker's budget, so five
-    // more clients can still start sessions within the same minute.
+    // Five more clients start sessions in the worker that restored the first five.
     clients.push(...(await openClients(5)));
     await reload();
 
-    // Ten sessions now outnumber the budget. None holds an SSE stream, so each is
-    // restored on its first request after the reload rather than all at once.
+    // None of the ten sessions holds an SSE stream, so each is restored on its
+    // first request after the reload rather than all at once.
     await waitForLog(mcpServer, '10 other session(s) restore on their next request', 5_000);
     for (const client of clients) {
       const tools = await client.listTools();

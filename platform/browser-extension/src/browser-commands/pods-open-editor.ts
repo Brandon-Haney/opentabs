@@ -126,7 +126,7 @@ export const reloadEditorSession = async (
     if (Date.now() >= deadline) {
       throw new FrameBridgeValidationError(
         `The editor session did not come back within ${Math.round(waitMs / 1000)}s of reloading tab ${tabId}. ` +
-          'Open and activate the deck, then retry.',
+          'Open and activate the document, then retry.',
       );
     }
   }

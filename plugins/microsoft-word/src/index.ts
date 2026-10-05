@@ -8,6 +8,7 @@ import { createDocument } from './tools/create-document.js';
 import { createFolder } from './tools/create-folder.js';
 import { createSharingLink } from './tools/create-sharing-link.js';
 import { deleteItem } from './tools/delete-item.js';
+import { deleteParagraphLive } from './tools/delete-paragraph-live.js';
 import { deletePermission } from './tools/delete-permission.js';
 import { diagnose } from './tools/diagnose.js';
 import { getActiveDocument } from './tools/get-active-document.js';
@@ -16,7 +17,9 @@ import { getDocumentText } from './tools/get-document-text.js';
 import { getDrive } from './tools/get-drive.js';
 import { getFileContent } from './tools/get-file-content.js';
 import { getItem } from './tools/get-item.js';
+import { getLiveDocument } from './tools/get-live-document.js';
 import { getPreviewUrl } from './tools/get-preview-url.js';
+import { insertParagraphsLive } from './tools/insert-paragraphs-live.js';
 import { listChildren } from './tools/list-children.js';
 import { listPermissions } from './tools/list-permissions.js';
 import { listRecentDocuments } from './tools/list-recent-documents.js';
@@ -26,6 +29,7 @@ import { moveItem } from './tools/move-item.js';
 import { reauthenticate } from './tools/reauthenticate.js';
 import { renameItem } from './tools/rename-item.js';
 import { replaceTextInDocument } from './tools/replace-text-in-document.js';
+import { replaceTextLive } from './tools/replace-text-live.js';
 import { restoreVersion } from './tools/restore-version.js';
 import { searchFiles } from './tools/search-files.js';
 import { updateDocument } from './tools/update-document.js';
@@ -53,6 +57,11 @@ class MicrosoftWordPlugin extends OpenTabsPlugin {
     appendToDocument,
     replaceTextInDocument,
     getFileContent,
+    // Live editing: the open document, through its co-authoring session
+    getLiveDocument,
+    replaceTextLive,
+    insertParagraphsLive,
+    deleteParagraphLive,
     // Files
     listRecentDocuments,
     listChildren,

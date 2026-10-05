@@ -276,7 +276,7 @@ const readHead = async (params: PodsBridgeParams): Promise<string> => {
   const head = (parsed as { head?: unknown } | null)?.head;
   if (typeof head !== 'string' || head.length === 0) {
     throw new FrameBridgeValidationError(
-      'No co-authoring head is available yet — the editor has not polled since the deck opened. Open and activate the deck, then retry.',
+      'No co-authoring head is available yet — the editor has not polled since the document opened. Open and activate the document, then retry.',
     );
   }
   return head;

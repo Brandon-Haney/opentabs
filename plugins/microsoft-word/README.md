@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-microsoft-word
 1. Open [word.cloud.microsoft](https://word.cloud.microsoft) in Chrome and log in
 2. Open the OpenTabs side panel — the Microsoft Word plugin should appear as **ready**
 
-## Tools (29)
+## Tools (33)
 
 ### Account (3)
 
@@ -64,6 +64,15 @@ npm install -g @opentabs-dev/opentabs-plugin-microsoft-word
 | `delete_item` | Delete a file or folder | Write |
 | `list_shared_with_me` | List files shared with me | Read |
 | `get_preview_url` | Get a document preview URL | Read |
+
+### Live editing (4)
+
+| Tool | Description | Type |
+|---|---|---|
+| `get_live_document` | Read the open document as it is in the editor now | Read |
+| `replace_text_live` | Replace text in the open document, live | Write |
+| `insert_paragraphs_live` | Insert paragraphs into the open document, live | Write |
+| `delete_paragraph_live` | Delete a paragraph from the open document, live | Write |
 
 ### Sharing (3)
 

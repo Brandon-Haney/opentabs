@@ -51,12 +51,11 @@ DevTools HAR exports work but need a person at the keyboard.
 | --- | --- | --- | --- |
 | PowerPoint | `/pods/PowerPoint.ashx` revisions (JSON objects and properties) | `__otb_pods_writelog__` in the pre-script: a ring buffer of the last 60 writes, 24 MB; manifest, then `?entry=N` | **In use.** The loop runs end to end with no manual steps. |
 | Excel | `EwaInternalWebService` RPC via the frame bridge | `__otb_ewa_writelog__` in the pre-script: the last 200 requests with a body, path only; manifest, then `?entry=N`, against the `xlviewerinternal.aspx` frame | **In use.** Wait for the "Loading…" bar to clear before judging a reload: the grid first renders a cached view. |
-| Word | unproven; WOPI reports `IsPragueDocument` (Fluid, likely socket ops) | none | **Capture first.** Confirm whether the channel is replayable before building anything live. |
+| Word | `/we/OneNote.ashx` revisions (the PowerPoint protocol) | `__otb_word_writelog__` in the pre-script: the last 200 channel requests with a body; manifest, then `?entry=N`, against the `wordeditorframe` frame. Bodies carry a WOPI token. | **In use.** An idle editor shows another session's write on its next poll, up to ~30 s; a reload shows it at once. |
 | OneNote | WAC `ObjectModel` command bus | none | Different mechanism; the same loop applies once commands can be observed. |
 
-Porting the write log is the highest-leverage piece of work for Word: it is what
-made the PowerPoint and Excel loops fast. Read it through `browser_fetch_in_frame`
-against the editor frame, as both do.
+Read every write log through `browser_fetch_in_frame` against the app's editor
+frame.
 
 ## Look for the app's own API inside the channel
 
@@ -167,10 +166,11 @@ wrapper now sends each workbook path down whichever path is available.
   text.
 - **Excel:** move the rest of the Graph-backed tools onto the session wrapper, and
   capture the gaps listed in `excel-online/docs/frame-bridge-gaps.md`.
-- **Word and OneNote:** look for a tunnelled object model first — it may beat
-  decoding the channel, as it did for Excel. For Word, capture the co-authoring
-  channel and decide whether it is replayable; the staged Graph path stays until a
-  live path is proven.
+- **Word:** run formatting (bold, italic, styles), list membership, and tables,
+  each captured from the editor; the staged Graph writes retire as live
+  counterparts cover them.
+- **OneNote:** look for a tunnelled object model first — it may beat decoding the
+  channel, as it did for Excel.
 - **PowerPoint:** shape outline, text box insert and delete, table columns and
   cell shading, paragraph formatting, then images and charts (multi-request
   captures; the write log holds them).

@@ -71,7 +71,7 @@ every content write goes live — and only the distance to it differs:
 | --- | --- | --- |
 | PowerPoint | `/pods/PowerPoint.ashx` revisions | **Proven.** Live tools shipped; the staged tools are retiring as their live counterparts land. |
 | Excel | EWA RPC in the editor frame | **Proven.** Stays deliberately hybrid: Graph's Workbook API is a real, supported, closed-file API, so the rule here is that anything touching an OPEN workbook, or anything Graph cannot express, goes through the bridge. |
-| Word | unproven | **Research first.** Its WOPI context reports `IsPragueDocument`, which points at Fluid — binary ops over a socket rather than replayable JSON posts. Until someone captures that channel and confirms it can be replayed, the staged path is all Word has, and removing it would leave nothing. Do not retire it on principle. |
+| Word | `/we/OneNote.ashx` revisions | **Proven.** The same Cobalt revision protocol as PowerPoint, run by the same pods engine; the live tools replace text, insert and delete paragraphs. Requests need the frame's WOPI `FileId` and session identifiers, which the pre-script fills in (see `plugins/microsoft-word/docs/live-document-model.md`). The staged Graph writes stay until live tools cover what they do. |
 | OneNote | WAC `ObjectModel` command bus | **Different mechanism again.** Graph is unusable (the SharePoint token carries no `Notes.*` scope), reads come from the page cache, and the editor frame exposes a command bus rather than a revision wire. |
 
 Two rules follow, and they are what keep this from being a slogan:
@@ -91,7 +91,7 @@ Build every live write from the editor's own captured write, not from a guess:
 reproduce on a test document, capture the gesture from an in-frame write log,
 diff against the builder, build the smallest faithful write, test it live with a
 screenshot and a reload, and record the decode. The method, the per-app capture
-infrastructure (PowerPoint and Excel have a write log; Word needs one ported) and
+infrastructure (PowerPoint, Excel and Word each have a write log) and
 the lessons that hold across apps are in [[office-coauthoring-capture-method.md]].
 
 **Check first whether the editor tunnels its own API.** Excel's co-authoring

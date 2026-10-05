@@ -90,14 +90,60 @@ Character formatting (`1179649`) is where bold and italic actually live:
 So bolding a word means splitting the boundary array and pointing that run at a
 format object with `134224900` set — the text string itself never changes.
 
+## Reading the whole document
+
+The editor's own poll (`[[2, …]]`), asked from the zero base
+(`ExpectedLatestRevisionId: "00000000-0000-0000-0000-000000000000|0"`), is
+answered with every revision since the document loaded — the whole current
+document, `LatestRevisionId` included. The live tools read it this way through
+the platform's pods engine, which rebuilds the model latest-wins per object id.
+
+The body is reached from the root: `393271` `603986975` → story `393227`
+`603986976` → section `1073872968` `603986976` → body containers `393241`. A
+block a write has unlisted keeps its object in the latest-wins model, so only a
+walk from the root says what is in the document now.
+
 ## Writing
 
-A write posts `{Mode, srs:[[3, {Revision:{…}}]]}` to `/we/OneNote.ashx`, where
-`Revision.BaseId` and `ExpectedLatestId` are the head the `__otb_word_head__`
-sentinel reports. Adding a paragraph means sending the new `393229`/`393230` pair
-**and** re-sending the enclosing `393241` with the new wrapper appended to its
-`603986976` list.
+A write posts `{Mode: 2, srs:[[3, {…, Revision:{Id, CellId, BaseId,
+ExpectedLatestId, ObjectGroups}}]]}` to `/we/OneNote.ashx`, with `BaseId` and
+both `ExpectedLatestId`s set to the current head. Each object in it replaces the
+object of that id whole, so it carries the full property list.
+
+Every request also carries the open file's WOPI `FileId` (an access token) and
+the editor's Cobalt session identifiers (`LocalCobaltSessionId`, `LineageId`, …).
+Those exist only in the editor frame, so a request built outside it carries
+`__otbWordEnvelope: true` instead, and the pre-script fills them in from the
+editor's latest poll before it is sent.
+
+Three gestures, each decoded from the editor's own write and reduced to the
+objects that carry the change:
+
+| Gesture | Objects |
+| --- | --- |
+| Typing | The paragraph, with its whole new text and its run arrays kept consistent |
+| Enter | The container with a new block in its `603986976` list, the new `393229` block (`201333763: "1"`, `603986975` → the paragraph) and the new `393230` paragraph |
+| Removing a paragraph | The container with the block left out of its list |
 
 The editor also sends one `131162` object per keystroke (`469777754` the
-character, `335560025` its offset) and a `1179729` author record beside each.
-These are undo history; whether a synthetic write may omit them is not yet tested.
+character, `335560025` its offset), a `1179729` author record beside each, and
+the `4325465` history object pointing at the newest. These are undo history: a
+write without them applies, renders in every open editor and persists (verified
+live 2026-10-01). An idle editor polls about every 30 seconds, so another
+editor shows a write after up to that long; a reload shows it at once.
+
+### Keeping runs consistent with text
+
+A paragraph with `469769746 = "42,46"` has three runs, and every per-run
+property holds three entries: the comma lists `603987475`, `469777884`,
+`469777513` and `469777415`, and the one-character-per-run strings `469769819`
+and `469777855`. When a write changes the text it moves the boundaries with it:
+offsets before an edit stay, offsets after it shift by the change in length, and
+offsets inside it move to the end of the replacement, so the new text takes the
+formatting of the run where the replaced text began. A run left empty is
+dropped from every one of those properties.
+
+A new paragraph copies everything its neighbour carries for the paragraph as a
+whole (style, list membership, indents, spacing, the paragraph-mark format in
+`536886591`), reduces the run properties to the neighbour's longest run, and
+gets its own `335559695`/`335559959` identifiers — what the editor's Enter does.

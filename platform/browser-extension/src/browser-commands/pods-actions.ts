@@ -40,6 +40,12 @@ import { addTableRowAction, deleteTableRowAction } from './pods-action-table-row
 import { freshAfterFirst, type PodsBridgeResult, runPodsWriteConfirmed } from './pods-bridge.js';
 import { type PodsModel, PodsStreamCompactedError, readPodsModel } from './pods-model.js';
 import { reloadEditorSession } from './pods-open-editor.js';
+import {
+  wordDeleteParagraphAction,
+  wordInsertParagraphsAction,
+  wordReadAction,
+  wordReplaceTextAction,
+} from './word-actions.js';
 
 /**
  * The highest `__podsAction` directive version this engine understands. A plugin
@@ -138,6 +144,10 @@ const PODS_ACTIONS: Record<string, PodsWriteActionSpec<unknown, unknown> | PodsR
   duplicate_shape: duplicateShapeAction,
   set_table_height: setTableHeightAction,
   set_shape_fill: setShapeFillAction,
+  word_read: wordReadAction,
+  word_replace_text: wordReplaceTextAction,
+  word_insert_paragraphs: wordInsertParagraphsAction,
+  word_delete_paragraph: wordDeleteParagraphAction,
 };
 
 /** The `__podsAction` directive, validated by `tool-dispatch`. */

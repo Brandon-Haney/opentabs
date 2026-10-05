@@ -302,13 +302,14 @@ const authError = (msg: string, details?: ToolErrorDetails): never => {
 /**
  * Guidance for HTTP 423 from Graph `/content`. The file is held by a WOPI
  * co-authoring lock — almost always because it is open in the Word web editor
- * in this very browser. Graph cannot overwrite a locked file, so the only path
- * is to close the editor (or wait for the lock to lapse) and retry.
+ * in this very browser. Graph cannot overwrite a locked file; the live tools
+ * edit it through the open editor's co-authoring session instead.
  */
 export const FILE_LOCKED_MESSAGE =
   'The document is locked because it is open in the Word web editor (or another co-authoring session), ' +
-  'so Microsoft Graph cannot save changes to it. Close the editor tab — or wait ~30–60 seconds after closing ' +
-  'for the lock to release — then retry.';
+  'so Microsoft Graph cannot save changes to it. Edit it in place with the live tools instead ' +
+  '(get_live_document, replace_text_live, insert_paragraphs_live, delete_paragraph_live), which write through ' +
+  'the open editor. To use this tool, close the editor tab and wait ~30–60 seconds for the lock to release.';
 
 interface DocumentContext {
   driveId: string;

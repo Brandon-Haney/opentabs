@@ -1,5 +1,6 @@
 import { definePreScript } from '@opentabs-dev/plugin-sdk/pre-script';
 import { parseReloadMarker } from './reload-marker-parse.js';
+import { completeWordEnvelope, isFlaggedWordRequest } from './word-envelope.js';
 
 /**
  * Pre-script for the Microsoft Word plugin.
@@ -106,6 +107,13 @@ const WORD_CHANNEL_PATH = '/we/OneNote.ashx';
 const WORD_WRITE_LOG_CAP = 200;
 /** Ceiling on the bytes the ring buffer holds, evicting oldest-first. */
 const WORD_WRITE_LOG_MAX_BYTES = 24_000_000;
+/**
+ * Frame global the platform's frame bridge raises around its own replays (see
+ * `BRIDGE_REPLAY_DEPTH_GLOBAL` in the extension's `frame-fetch.ts`). While it is
+ * non-zero the request in flight is ours, not the editor's, so it must not become
+ * the donor, the head, or the session a later request is completed from.
+ */
+const BRIDGE_REPLAY_DEPTH_GLOBAL = '__otbBridgeReplayDepth';
 /** Markers making the editor-frame interceptor idempotent under re-injection. */
 const EDITOR_FETCH_MARKER = Symbol.for('opentabs.microsoft-word.editor.fetch.patched');
 const EDITOR_XHR_MARKER = Symbol.for('opentabs.microsoft-word.editor.xhr.patched');
@@ -190,19 +198,33 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
   // The latest co-authoring head, read from the editor's own polls. Closure
   // scoped, surfaced only through the read sentinel below.
   let latestHead: { head: string; ts: number } | null = null;
+  // The editor's most recent poll entry (`srs[0][1]` of a type-2 request): the
+  // live session a flagged request is completed from (see `word-envelope.ts`).
+  // Closure scoped, so it never leaves this frame.
+  let latestPoll: Record<string, unknown> | null = null;
+
+  /** Whether the request in flight is the platform's own replay rather than the editor's. */
+  const isReplay = (): boolean => {
+    const depth = (globalThis as Record<string, unknown>)[BRIDGE_REPLAY_DEPTH_GLOBAL];
+    return typeof depth === 'number' && depth > 0;
+  };
 
   /**
    * A poll (`srs[0][0] === 2`) carries the client's current head as
    * `ExpectedLatestRevisionId`. That is the only place it appears: a poll
-   * response omits it when the client is already up to date.
+   * response omits it when the client is already up to date. The poll is also
+   * the freshest statement of the session — its `FileId` carries the WOPI token
+   * the editor is using now — so it is kept whole to complete flagged requests from.
    */
-  const captureHead = (body: string): void => {
+  const capturePoll = (body: string): void => {
     try {
       const parsed = JSON.parse(body) as {
-        srs?: [number, { ExpectedLatestRevisionId?: unknown }][];
+        srs?: [number, Record<string, unknown> & { ExpectedLatestRevisionId?: unknown }][];
       };
       const sr = parsed.srs?.[0];
-      if (sr && sr[0] === 2 && typeof sr[1]?.ExpectedLatestRevisionId === 'string') {
+      if (!sr || sr[0] !== 2 || !sr[1]) return;
+      latestPoll = sr[1];
+      if (typeof sr[1].ExpectedLatestRevisionId === 'string') {
         latestHead = { head: sr[1].ExpectedLatestRevisionId, ts: Date.now() };
       }
     } catch {
@@ -223,7 +245,7 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
       absolute = url;
     }
     if (!absolute.includes(WORD_CHANNEL_PATH)) return;
-    captureHead(body);
+    if (!isReplay()) capturePoll(body);
     // The query string carries session context, so only the path is kept.
     writeLog.push({ url: absolute.split('?')[0] ?? absolute, method, body, ts: Date.now() });
     writeLogBytes += body.length;
@@ -268,6 +290,7 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
         absolute = url;
       }
       if (!absolute.includes(WORD_CHANNEL_PATH) || method.toUpperCase() !== 'POST' || body.length === 0) return;
+      if (isReplay()) return;
       g[WORD_DONOR_GLOBAL] = { url: absolute, method, headers, body, ts: Date.now() };
     } catch {
       /* observation only */
@@ -394,7 +417,14 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
       } catch {
         /* observation only: never disturb the editor's own request */
       }
-      const response = await origFetch(input, init);
+      // Outside the observation guard on purpose: a flagged request that cannot be
+      // completed must fail with its reason rather than go out without a session.
+      // An unflagged request — every one the editor makes — passes through as is.
+      const outgoing =
+        typeof init?.body === 'string' && isFlaggedWordRequest(init.body)
+          ? { ...init, body: completeWordEnvelope(init.body, latestPoll) }
+          : init;
+      const response = await origFetch(input, outgoing);
       try {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
         const absolute = new URL(url, location.href).href;

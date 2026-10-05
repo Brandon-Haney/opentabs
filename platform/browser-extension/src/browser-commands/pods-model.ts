@@ -197,7 +197,7 @@ export const actionDescIdOf = (root: PodsObject): string => {
 /** The parameters every live-model read needs. */
 export interface ReadPodsModelParams {
   tabId: number;
-  /** Substring selecting the PowerPoint editor OOPIF (e.g. `powerpoint.officeapps.live.com`). */
+  /** Substring selecting the editor OOPIF (e.g. `powerpoint.officeapps.live.com`, `wordeditorframe`). */
   frameUrlIncludes: string;
   /** Frame global the pre-script stashes the freshest `/pods` request into. */
   donorGlobal: string;
@@ -251,7 +251,7 @@ const findEditorFrame = async (
     if (urlMatches.length === 0) {
       throw new FrameBridgeValidationError(
         `No editor frame in tab ${tabId} with a URL containing "${frameUrlIncludes}". ` +
-          'Open the deck in the PowerPoint web editor (or use open_in_editor), then retry.',
+          'Open the document in its Office web editor (or with the plugin’s open_in_editor tool, where it has one), then retry.',
       );
     }
     if (Date.now() >= deadline) {
@@ -297,7 +297,7 @@ export const readPodsModel = async (params: ReadPodsModelParams): Promise<PodsMo
         | undefined;
       if (!donor || typeof donor.url !== 'string') {
         return {
-          error: `No donor request is stashed under "${donorName}". Open and activate the deck so the editor polls, then retry.`,
+          error: `No donor request is stashed under "${donorName}". Open and activate the document so the editor polls, then retry.`,
         };
       }
 
@@ -418,7 +418,7 @@ export const readPodsModel = async (params: ReadPodsModelParams): Promise<PodsMo
     if (result.compactedStream) {
       throw new PodsStreamCompactedError(
         'The live revision stream was compacted server-side, so this session can no longer serve full-state ' +
-          `reads (${result.error}). Reload the deck tab to start a fresh session, then retry.`,
+          `reads (${result.error}). Reload the document's tab to start a fresh session, then retry.`,
       );
     }
     throw new FrameBridgeValidationError(result.error);

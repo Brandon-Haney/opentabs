@@ -1,0 +1,93 @@
+{
+  "name": "@opentabs-dev/opentabs-plugin-oracle-fusion",
+  "description": "OpenTabs plugin for Oracle Fusion Cloud Applications",
+  "version": "0.0.114",
+  "type": "module",
+  "main": "dist/adapter.iife.js",
+  "keywords": [
+    "opentabs-plugin",
+    "opentabs",
+    "mcp",
+    "modelcontextprotocol",
+    "chrome-extension",
+    "ai-agent",
+    "browser-automation"
+  ],
+  "opentabs": {
+    "displayName": "Oracle Fusion",
+    "description": "OpenTabs plugin for Oracle Fusion Cloud Applications",
+    "urlPatterns": [
+      "*://*.oraclecloud.com/fscmUI/*"
+    ],
+    "configSchema": {
+      "instanceUrl": {
+        "type": "url",
+        "label": "Instance URL",
+        "description": "The URL of your Oracle Fusion instance if it uses a custom domain (e.g., https://erp.example.com). Leave empty for standard *.oraclecloud.com instances.",
+        "required": false,
+        "placeholder": "https://erp.example.com"
+      },
+      "inventoryWorkArea": {
+        "type": "string",
+        "label": "Inventory work area",
+        "description": "Label of the home page tile that opens the Inventory Management work area. Set this when your organization has renamed the tile. Defaults to Inventory Management.",
+        "required": false,
+        "placeholder": "Inventory Management"
+      },
+      "purchaseOrdersWorkArea": {
+        "type": "string",
+        "label": "Purchase Orders work area",
+        "description": "Label of the home page tile that opens the Purchase Orders work area. Set this when your organization has renamed the tile. Defaults to Purchase Orders.",
+        "required": false,
+        "placeholder": "Purchase Orders"
+      }
+    },
+    "iconSvg": "<svg viewBox=\"0 0 64 64\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M20.2 52.2C8.93 52.2 0 43.056 0 32c0-11.27 9.143-20.2 20.2-20.2h23.6C55.07 11.8 64 20.944 64 32c0 11.27-9.143 20.2-20.2 20.2zm23.176-7.23c7.23 0 13.183-5.953 13.183-13.183s-5.953-13.183-13.183-13.183H20.837c-7.23 0-13.183 5.953-13.183 13.183S13.608 44.97 20.837 44.97z\" fill=\"#C74634\"/></svg>",
+    "iconDarkSvg": "<svg viewBox=\"0 0 64 64\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M20.2 52.2C8.93 52.2 0 43.056 0 32c0-11.27 9.143-20.2 20.2-20.2h23.6C55.07 11.8 64 20.944 64 32c0 11.27-9.143 20.2-20.2 20.2zm23.176-7.23c7.23 0 13.183-5.953 13.183-13.183s-5.953-13.183-13.183-13.183H20.837c-7.23 0-13.183 5.953-13.183 13.183S13.608 44.97 20.837 44.97z\" fill=\"#C74634\"/></svg>"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && opentabs-plugin build",
+    "dev": "tsc --watch --preserveWatchOutput & opentabs-plugin build --watch",
+    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "lint": "biome lint src/",
+    "lint:fix": "biome lint --fix src/",
+    "format:check": "biome format src/",
+    "format": "biome format --write src/",
+    "check": "npm run build && npm run type-check && npm run lint && npm run format:check && npm run test",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  },
+  "dependencies": {
+    "@opentabs-dev/plugin-sdk": "^0.0.114"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.6",
+    "@opentabs-dev/plugin-tools": "^0.0.114",
+    "jiti": "^2.6.1",
+    "jsdom": "^29.1.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10",
+    "zod": "*"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opentabs-dev/opentabs.git",
+    "directory": "plugins/oracle-fusion"
+  }
+}

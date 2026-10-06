@@ -14,6 +14,7 @@
 //   # heading     -> <h1>…<h3>           > quote             -> <blockquote>
 //   | a | b |     -> <table>             ---                 -> <hr>
 //   paragraph     -> <p>…</p>            soft line break     -> <br>
+//   blank line between paragraphs/headings/tables -> <p>&nbsp;</p> spacer, as the composer emits
 //
 // Inline HTML passthrough (sanitised — every other tag/attribute is escaped):
 //   <u>…</u>                                  underline
@@ -39,7 +40,8 @@ export const MARKDOWN_FORMATTING_HELP =
   'Markdown cannot express, inline HTML is allowed: underline (<u>text</u>), text colour ' +
   '(<span style="color:NAME">text</span>), highlight (<span style="background-color:NAME">text</span>), and font ' +
   'size (<span style="font-size:large|medium|small">text</span>). Colour NAME is one of the Teams swatches: red, ' +
-  'orange, gold, lime, green, teal, blue, magenta. Blank lines separate paragraphs; single newlines become line breaks.';
+  'orange, gold, lime, green, teal, blue, magenta. A blank line separates paragraphs and shows as a visible gap; a ' +
+  'single newline is a line break. HTML entities such as &nbsp; pass through.';
 
 /** Text-colour swatch name -> exact hex Teams stores. */
 const TEXT_COLORS: Record<string, string> = {
@@ -88,6 +90,17 @@ const SIMPLE_TAGS: Record<string, string> = {
 
 /** HTML-escape text content (element context). */
 const escapeHtml = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/**
+ * HTML-escape prose, passing character references (`&nbsp;`, `&#8212;`, `&#x2014;`)
+ * through verbatim as CommonMark does. Code spans and fences use `escapeHtml`,
+ * where a reference stays literal text.
+ */
+const escapeProse = (text: string): string =>
+  text
+    .replace(/&(?!(?:[a-z][a-z0-9]*|#\d+|#x[0-9a-f]+);)/gi, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 
 /** HTML-escape a value for a double-quoted attribute. */
 const escapeAttribute = (value: string): string => escapeHtml(value).replace(/"/g, '&quot;');
@@ -301,8 +314,9 @@ const parseInline = (line: string): Segment[] => {
 /** Render one segment to HTML: raw passthrough verbatim, else escaped text wrapped in its marks and link. */
 const renderSegment = (segment: Segment): string => {
   if (segment.raw !== undefined) return segment.raw;
-  let html = escapeHtml(segment.text);
-  if (segment.marks.has('code')) html = `<code>${html}</code>`;
+  const isCode = segment.marks.has('code');
+  let html = isCode ? escapeHtml(segment.text) : escapeProse(segment.text);
+  if (isCode) html = `<code>${html}</code>`;
   if (segment.marks.has('strike')) html = `<s>${html}</s>`;
   if (segment.marks.has('italic')) html = `<i>${html}</i>`;
   if (segment.marks.has('bold')) html = `<strong>${html}</strong>`;
@@ -327,6 +341,17 @@ const TABLE_SEPARATOR = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
 /** Whether a line begins an ordered list item (and not a bullet). */
 const isOrdered = (line: string): boolean => ORDERED.test(line) && !BULLET.test(line);
+
+/** Whether `line` is an item of the given list kind (numbered when `ordered`, else bulleted). */
+const isListItem = (line: string, ordered: boolean): boolean =>
+  (ordered ? ORDERED : BULLET).test(line) && isOrdered(line) === ordered;
+
+/**
+ * The empty paragraph the Teams composer inserts for a blank line. Teams gives
+ * `<p>`, headings and tables no vertical margin, so without it consecutive
+ * blocks of those kinds render with no gap between them.
+ */
+const PARAGRAPH_SPACER = '<p>&nbsp;</p>';
 
 /** Whether `line` opens a GFM table: a pipe row immediately followed by a separator row. */
 const isTableStart = (line: string, next: string): boolean =>
@@ -356,11 +381,26 @@ const renderTableRow = (line: string): string =>
  * native tags — headings to `<h1>`–`<h3>`, `>` quotes to `<blockquote>`, pipe
  * tables to `<table>`, `---` to `<hr>`, list items to `<ul>`/`<ol>`, and fences
  * to `<pre><code>`. Inline colour/size/underline HTML passes through sanitised.
+ *
+ * A blank line between two flush blocks (paragraphs, headings and tables, which
+ * Teams renders with no vertical margin) emits `PARAGRAPH_SPACER`, as the
+ * composer does; lists, quotes, rules and code blocks carry their own margin.
+ * Blank lines between items of one list keep the items in a single list.
  */
 export const markdownToTeamsHtml = (markdown: string): string => {
   const lines = markdown.replace(/\r\n?/g, '\n').split('\n');
   const blocks: string[] = [];
+  let previousIsFlush = false;
+  let blankLineSincePrevious = false;
   let i = 0;
+
+  /** Append a block, preceded by a spacer when a blank line separates it from a previous flush block. */
+  const emit = (html: string, isFlush: boolean): void => {
+    if (isFlush && previousIsFlush && blankLineSincePrevious) blocks.push(PARAGRAPH_SPACER);
+    blocks.push(html);
+    previousIsFlush = isFlush;
+    blankLineSincePrevious = false;
+  };
 
   while (i < lines.length) {
     const line = lines[i] ?? '';
@@ -374,7 +414,7 @@ export const markdownToTeamsHtml = (markdown: string): string => {
         i++;
       }
       if (i < lines.length) i++; // consume the closing fence
-      blocks.push(`<pre class="language-plaintext"><code>${escapeHtml(body.join('\n'))}</code></pre>`);
+      emit(`<pre class="language-plaintext"><code>${escapeHtml(body.join('\n'))}</code></pre>`, false);
       continue;
     }
 
@@ -382,14 +422,14 @@ export const markdownToTeamsHtml = (markdown: string): string => {
     const heading = line.match(HEADING);
     if (heading) {
       const level = Math.min((heading[1] ?? '').length, 3);
-      blocks.push(`<h${level}>${renderInline(heading[2] ?? '')}</h${level}>`);
+      emit(`<h${level}>${renderInline(heading[2] ?? '')}</h${level}>`, true);
       i++;
       continue;
     }
 
     // Horizontal rule (three or more -, *, or _ on their own line)
     if (HORIZONTAL_RULE.test(line)) {
-      blocks.push('<hr>');
+      emit('<hr>', false);
       i++;
       continue;
     }
@@ -401,7 +441,7 @@ export const markdownToTeamsHtml = (markdown: string): string => {
         quoted.push(renderInline((lines[i] ?? '').match(BLOCKQUOTE)?.[1] ?? ''));
         i++;
       }
-      blocks.push(`<blockquote><p>${quoted.join('<br>')}</p></blockquote>`);
+      emit(`<blockquote><p>${quoted.join('<br>')}</p></blockquote>`, false);
       continue;
     }
 
@@ -413,7 +453,7 @@ export const markdownToTeamsHtml = (markdown: string): string => {
         rows.push(renderTableRow(lines[i] ?? ''));
         i++;
       }
-      blocks.push(`<table><tbody>${rows.join('')}</tbody></table>`);
+      emit(`<table><tbody>${rows.join('')}</tbody></table>`, true);
       continue;
     }
 
@@ -423,17 +463,24 @@ export const markdownToTeamsHtml = (markdown: string): string => {
       const items: string[] = [];
       while (i < lines.length) {
         const current = lines[i] ?? '';
-        const match = current.match(ordered ? ORDERED : BULLET);
-        if (!match || isOrdered(current) !== ordered) break;
-        items.push(`<li>${renderInline(match[1] ?? '')}</li>`);
+        if (current.trim() === '') {
+          let next = i + 1;
+          while (next < lines.length && (lines[next] ?? '').trim() === '') next++;
+          if (!isListItem(lines[next] ?? '', ordered)) break;
+          i = next;
+          continue;
+        }
+        if (!isListItem(current, ordered)) break;
+        items.push(`<li>${renderInline(current.match(ordered ? ORDERED : BULLET)?.[1] ?? '')}</li>`);
         i++;
       }
-      blocks.push(`<${ordered ? 'ol' : 'ul'}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`);
+      emit(`<${ordered ? 'ol' : 'ul'}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`, false);
       continue;
     }
 
     // Blank line — a block separator
     if (line.trim() === '') {
+      blankLineSincePrevious = true;
       i++;
       continue;
     }
@@ -457,7 +504,7 @@ export const markdownToTeamsHtml = (markdown: string): string => {
       paragraph.push(renderInline(current));
       i++;
     }
-    blocks.push(`<p>${paragraph.join('<br>')}</p>`);
+    emit(`<p>${paragraph.join('<br>')}</p>`, true);
   }
 
   return blocks.join('\n');

@@ -23,6 +23,19 @@ describe('markdownToTeamsHtml paragraph spacing', () => {
     expect(markdownToTeamsHtml('One\n\n\n\nTwo')).toBe('<p>One</p>\n<p>&nbsp;</p>\n<p>Two</p>');
   });
 
+  test('breaks closing a paragraph are dropped so the gap is not doubled', () => {
+    expect(markdownToTeamsHtml('One<br><br>\n\nTwo')).toBe('<p>One</p>\n<p>&nbsp;</p>\n<p>Two</p>');
+    expect(markdownToTeamsHtml('One\n<br>\n\nTwo<br/> ')).toBe('<p>One</p>\n<p>&nbsp;</p>\n<p>Two</p>');
+  });
+
+  test('a paragraph of only breaks counts as a blank line', () => {
+    expect(markdownToTeamsHtml('One\n\n<br><br>\n\nTwo')).toBe('<p>One</p>\n<p>&nbsp;</p>\n<p>Two</p>');
+  });
+
+  test('breaks inside a paragraph are kept', () => {
+    expect(markdownToTeamsHtml('One<br><br>Two')).toBe('<p>One<br><br>Two</p>');
+  });
+
   test('soft line breaks stay inside one paragraph', () => {
     expect(markdownToTeamsHtml('One\nTwo')).toBe('<p>One<br>Two</p>');
   });

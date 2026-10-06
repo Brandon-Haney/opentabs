@@ -667,8 +667,16 @@ export const markdownToTeamsHtml = (markdown: string): string => {
       paragraph.push(renderInline(current.trimStart()));
       i++;
     }
+    // Breaks closing a paragraph only add vertical space, which PARAGRAPH_SPACER
+    // already supplies, so they are dropped; a paragraph of nothing but breaks
+    // counts as a blank line.
+    const content = paragraph.join('<br>').replace(/(?:\s*<br>)+\s*$/, '');
+    if (content === '') {
+      blankLineSincePrevious = true;
+      continue;
+    }
     const open = indentLevel > 0 ? `<p style="margin-left:${indentLevel * INDENT_STEP_PX}px;">` : '<p>';
-    emit(`${open}${paragraph.join('<br>')}</p>`, true);
+    emit(`${open}${content}</p>`, true);
   }
 
   return blocks.join('\n');

@@ -89,3 +89,77 @@ describe('markdownToTeamsHtml character references', () => {
     );
   });
 });
+
+describe('markdownToTeamsHtml nested lists', () => {
+  test('an indented bullet nests inside the item above it', () => {
+    expect(markdownToTeamsHtml('- Parent\n  - Child\n- Sibling')).toBe(
+      '<ul><li>Parent<ul><li>Child</li></ul></li><li>Sibling</li></ul>',
+    );
+  });
+
+  test('an indented numbered item nests inside a numbered item', () => {
+    expect(markdownToTeamsHtml('1. Parent\n   1. Child')).toBe('<ol><li>Parent<ol><li>Child</li></ol></li></ol>');
+  });
+
+  test('a nested list may be of the other kind', () => {
+    expect(markdownToTeamsHtml('1. Step\n   - Detail\n2. Next')).toBe(
+      '<ol><li>Step<ul><li>Detail</li></ul></li><li>Next</li></ol>',
+    );
+  });
+
+  test('lists nest several levels and return to the outer level', () => {
+    expect(markdownToTeamsHtml('- a\n  - b\n    - c\n- d')).toBe(
+      '<ul><li>a<ul><li>b<ul><li>c</li></ul></li></ul></li><li>d</li></ul>',
+    );
+  });
+
+  test('a tab nests like spaces', () => {
+    expect(markdownToTeamsHtml('- a\n\t- b')).toBe('<ul><li>a<ul><li>b</li></ul></li></ul>');
+  });
+
+  test('blank lines inside a nested list keep it whole', () => {
+    expect(markdownToTeamsHtml('- a\n\n  - b\n\n- c')).toBe('<ul><li>a<ul><li>b</li></ul></li><li>c</li></ul>');
+  });
+});
+
+describe('markdownToTeamsHtml paragraph indent', () => {
+  test('four leading spaces or a tab indent a paragraph one level', () => {
+    expect(markdownToTeamsHtml('    Indented')).toBe('<p style="margin-left:40px;">Indented</p>');
+    expect(markdownToTeamsHtml('\tIndented')).toBe('<p style="margin-left:40px;">Indented</p>');
+  });
+
+  test('each further four columns adds a level', () => {
+    expect(markdownToTeamsHtml('        Twice')).toBe('<p style="margin-left:80px;">Twice</p>');
+  });
+
+  test('fewer than four leading spaces do not indent', () => {
+    expect(markdownToTeamsHtml('  Not indented')).toBe('<p>Not indented</p>');
+  });
+
+  test('an indented paragraph still gets a spacer after a blank line', () => {
+    expect(markdownToTeamsHtml('One\n\n    Two')).toBe(
+      '<p>One</p>\n<p>&nbsp;</p>\n<p style="margin-left:40px;">Two</p>',
+    );
+  });
+});
+
+describe('markdownToTeamsHtml code block languages', () => {
+  test('a picker language is stored as the composer stores it', () => {
+    expect(markdownToTeamsHtml('```sql\nselect 1\n```')).toBe(
+      '<pre class="language-sql language-was-manually-selected"><code>select 1</code></pre>',
+    );
+  });
+
+  test('aliases map to the picker id', () => {
+    expect(markdownToTeamsHtml('```c#\nx\n```')).toContain('class="language-csharp ');
+    expect(markdownToTeamsHtml('```C++\nx\n```')).toContain('class="language-cpp ');
+    expect(markdownToTeamsHtml('```sh\nx\n```')).toContain('class="language-bash ');
+    expect(markdownToTeamsHtml('```Dockerfile\nx\n```')).toContain('class="language-dockerFile ');
+  });
+
+  test('a missing or unknown language is plain text', () => {
+    expect(markdownToTeamsHtml('```\nx\n```')).toBe('<pre class="language-plaintext"><code>x</code></pre>');
+    expect(markdownToTeamsHtml('```cobol\nx\n```')).toBe('<pre class="language-plaintext"><code>x</code></pre>');
+    expect(markdownToTeamsHtml('```constructor\nx\n```')).toBe('<pre class="language-plaintext"><code>x</code></pre>');
+  });
+});

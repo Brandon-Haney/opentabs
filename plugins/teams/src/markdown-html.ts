@@ -11,6 +11,8 @@
 //   ~~strike~~    -> <s>                 `code`              -> <code>
 //   [text](url)   -> <a href title>      ```fence```         -> <pre><code>
 //   - item        -> <ul><li>            1. item             -> <ol><li>
+//   indented item -> nested list         indented paragraph  -> <p style="margin-left:40px;">
+//   ```sql fence -> <pre class="language-sql language-was-manually-selected">
 //   # heading     -> <h1>…<h3>           > quote             -> <blockquote>
 //   | a | b |     -> <table>             ---                 -> <hr>
 //   paragraph     -> <p>…</p>            soft line break     -> <br>
@@ -34,14 +36,13 @@
  * and edit_message stay in sync with each other and with the converter.
  */
 export const MARKDOWN_FORMATTING_HELP =
-  'The text is written in Markdown and rendered natively in Teams: **bold**, *italic*, ~~strikethrough~~, `code`, ' +
-  '```fenced code blocks```, [links](https://example.com), bulleted lists ("- item"), numbered lists ("1. item"), ' +
-  'headings ("# Title"), block quotes ("> quote"), horizontal rules ("---"), and GFM pipe tables. For formatting ' +
-  'Markdown cannot express, inline HTML is allowed: underline (<u>text</u>), text colour ' +
-  '(<span style="color:NAME">text</span>), highlight (<span style="background-color:NAME">text</span>), and font ' +
-  'size (<span style="font-size:large|medium|small">text</span>). Colour NAME is one of the Teams swatches: red, ' +
-  'orange, gold, lime, green, teal, blue, magenta. A blank line separates paragraphs and shows as a visible gap; a ' +
-  'single newline is a line break. HTML entities such as &nbsp; pass through.';
+  'Text is Markdown, rendered natively: **bold**, *italic*, ~~strike~~, `code`, ```code blocks``` (a language such ' +
+  'as ```sql sets the block language), [links](url), "- " and "1. " lists (indent an item to nest it), "# " headings, ' +
+  '"> " quotes, "---" rules and pipe tables. Inline HTML adds underline (<u>text</u>), colour ' +
+  '(<span style="color:NAME">), highlight (<span style="background-color:NAME">) and size ' +
+  '(<span style="font-size:large|medium|small">); NAME is red, orange, gold, lime, green, teal, blue or magenta. A ' +
+  'blank line separates paragraphs with a visible gap, a single newline is a line break, and a leading tab or four ' +
+  'spaces indents a paragraph one level. Entities such as &nbsp; pass through.';
 
 /** Text-colour swatch name -> exact hex Teams stores. */
 const TEXT_COLORS: Record<string, string> = {
@@ -342,9 +343,164 @@ const TABLE_SEPARATOR = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 /** Whether a line begins an ordered list item (and not a bullet). */
 const isOrdered = (line: string): boolean => ORDERED.test(line) && !BULLET.test(line);
 
-/** Whether `line` is an item of the given list kind (numbered when `ordered`, else bulleted). */
-const isListItem = (line: string, ordered: boolean): boolean =>
-  (ordered ? ORDERED : BULLET).test(line) && isOrdered(line) === ordered;
+/** Whether a line begins a list item of either kind. */
+const isListLine = (line: string): boolean => BULLET.test(line) || ORDERED.test(line);
+
+/** Width of a line's leading whitespace in columns, counting a tab as four. */
+const indentWidth = (line: string): number => {
+  let width = 0;
+  for (const char of line) {
+    if (char === ' ') width += 1;
+    else if (char === '\t') width += 4;
+    else break;
+  }
+  return width;
+};
+
+/** A list item line: its indentation, its kind, and its rendered content. */
+interface ListLine {
+  indent: number;
+  ordered: boolean;
+  html: string;
+}
+
+const parseListLine = (line: string): ListLine => {
+  const ordered = isOrdered(line);
+  return {
+    indent: indentWidth(line),
+    ordered,
+    html: renderInline(line.match(ordered ? ORDERED : BULLET)?.[1] ?? ''),
+  };
+};
+
+/**
+ * Render the list that opens at `items[start]`: its siblings share that item's
+ * indent and kind, and each run of more-indented items that follows an item
+ * becomes a list nested inside its `<li>`, as the composer's Increase indent
+ * produces. Returns the HTML and the index of the first item not consumed.
+ */
+const renderList = (items: readonly ListLine[], start: number): { html: string; next: number } => {
+  const first = items[start];
+  if (!first) return { html: '', next: start };
+  const tag = first.ordered ? 'ol' : 'ul';
+  let html = '';
+  let i = start;
+  while (i < items.length) {
+    const item = items[i];
+    if (!item || item.indent !== first.indent || item.ordered !== first.ordered) break;
+    i++;
+    let nested = '';
+    while ((items[i]?.indent ?? -1) > first.indent) {
+      const child = renderList(items, i);
+      nested += child.html;
+      i = child.next;
+    }
+    html += `<li>${item.html}${nested}</li>`;
+  }
+  return { html: `<${tag}>${html}</${tag}>`, next: i };
+};
+
+/** Left margin Teams adds per Increase indent step on a paragraph. */
+const INDENT_STEP_PX = 40;
+
+/** Leading-whitespace columns per paragraph indent level (a tab, or four spaces). */
+const COLUMNS_PER_INDENT_LEVEL = 4;
+
+/**
+ * Fence info string -> the language id the Teams code-block picker stores as
+ * `language-<id>`. Holds every picker language plus common aliases; any other
+ * tag renders as plain text.
+ */
+const CODE_LANGUAGES: Record<string, string> = {
+  bash: 'bash',
+  sh: 'bash',
+  shell: 'bash',
+  zsh: 'bash',
+  c: 'c',
+  cpp: 'cpp',
+  'c++': 'cpp',
+  cc: 'cpp',
+  csharp: 'csharp',
+  'c#': 'csharp',
+  cs: 'csharp',
+  css: 'css',
+  dart: 'dart',
+  dockerfile: 'dockerFile',
+  docker: 'dockerFile',
+  dos: 'dos',
+  bat: 'dos',
+  batch: 'dos',
+  cmd: 'dos',
+  go: 'go',
+  golang: 'go',
+  graphql: 'graphql',
+  gql: 'graphql',
+  html: 'html',
+  htm: 'html',
+  http: 'http',
+  java: 'java',
+  javascript: 'javascript',
+  js: 'javascript',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  json: 'json',
+  jsp: 'jsp',
+  jsx: 'jsx',
+  kotlin: 'kotlin',
+  kt: 'kotlin',
+  kql: 'kql',
+  latex: 'latex',
+  tex: 'latex',
+  lisp: 'lisp',
+  markdown: 'markdown',
+  md: 'markdown',
+  objectivec: 'objectivec',
+  'objective-c': 'objectivec',
+  objc: 'objectivec',
+  octave: 'octave',
+  perl: 'perl',
+  pl: 'perl',
+  php: 'php',
+  powershell: 'powershell',
+  ps1: 'powershell',
+  pwsh: 'powershell',
+  python: 'python',
+  py: 'python',
+  r: 'r',
+  ruby: 'ruby',
+  rb: 'ruby',
+  rust: 'rust',
+  rs: 'rust',
+  scala: 'scala',
+  scss: 'scss',
+  sql: 'sql',
+  swift: 'swift',
+  typescript: 'typescript',
+  ts: 'typescript',
+  tsx: 'typescript',
+  vbnet: 'vbnet',
+  'vb.net': 'vbnet',
+  vb: 'vbnet',
+  vbscript: 'vbscript',
+  vbs: 'vbscript',
+  verilog: 'verilog',
+  vhdl: 'vhdl',
+  xml: 'xml',
+  svg: 'xml',
+  yaml: 'yaml',
+  yml: 'yaml',
+};
+
+/**
+ * The `<pre>` class for a fence's info string. A recognised language carries
+ * the composer's `language-was-manually-selected` marker, as when a language
+ * is picked by hand; anything else is plain text.
+ */
+const codeBlockClass = (fenceLine: string): string => {
+  const tag = (fenceLine.trim().slice(3).trim().split(/\s+/)[0] ?? '').toLowerCase();
+  const language = Object.hasOwn(CODE_LANGUAGES, tag) ? CODE_LANGUAGES[tag] : undefined;
+  return language ? `language-${language} language-was-manually-selected` : 'language-plaintext';
+};
 
 /**
  * The empty paragraph the Teams composer inserts for a blank line. Teams gives
@@ -385,7 +541,8 @@ const renderTableRow = (line: string): string =>
  * A blank line between two flush blocks (paragraphs, headings and tables, which
  * Teams renders with no vertical margin) emits `PARAGRAPH_SPACER`, as the
  * composer does; lists, quotes, rules and code blocks carry their own margin.
- * Blank lines between items of one list keep the items in a single list.
+ * Blank lines between list items keep them in one list, and indented items
+ * nest. A fence's language tag selects the Teams code-block language.
  */
 export const markdownToTeamsHtml = (markdown: string): string => {
   const lines = markdown.replace(/\r\n?/g, '\n').split('\n');
@@ -407,6 +564,7 @@ export const markdownToTeamsHtml = (markdown: string): string => {
 
     // Fenced code block
     if (FENCE.test(line)) {
+      const className = codeBlockClass(line);
       const body: string[] = [];
       i++;
       while (i < lines.length && !FENCE.test(lines[i] ?? '')) {
@@ -414,7 +572,7 @@ export const markdownToTeamsHtml = (markdown: string): string => {
         i++;
       }
       if (i < lines.length) i++; // consume the closing fence
-      emit(`<pre class="language-plaintext"><code>${escapeHtml(body.join('\n'))}</code></pre>`, false);
+      emit(`<pre class="${className}"><code>${escapeHtml(body.join('\n'))}</code></pre>`, false);
       continue;
     }
 
@@ -458,23 +616,26 @@ export const markdownToTeamsHtml = (markdown: string): string => {
     }
 
     // Bulleted / numbered list
-    if (BULLET.test(line) || ORDERED.test(line)) {
-      const ordered = isOrdered(line);
-      const items: string[] = [];
+    if (isListLine(line)) {
+      const items: ListLine[] = [];
       while (i < lines.length) {
         const current = lines[i] ?? '';
         if (current.trim() === '') {
           let next = i + 1;
           while (next < lines.length && (lines[next] ?? '').trim() === '') next++;
-          if (!isListItem(lines[next] ?? '', ordered)) break;
+          if (!isListLine(lines[next] ?? '')) break;
           i = next;
           continue;
         }
-        if (!isListItem(current, ordered)) break;
-        items.push(`<li>${renderInline(current.match(ordered ? ORDERED : BULLET)?.[1] ?? '')}</li>`);
+        if (!isListLine(current)) break;
+        items.push(parseListLine(current));
         i++;
       }
-      emit(`<${ordered ? 'ol' : 'ul'}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`, false);
+      for (let start = 0; start < items.length; ) {
+        const list = renderList(items, start);
+        emit(list.html, false);
+        start = list.next;
+      }
       continue;
     }
 
@@ -485,7 +646,9 @@ export const markdownToTeamsHtml = (markdown: string): string => {
       continue;
     }
 
-    // Paragraph — consecutive text lines, soft breaks become <br>
+    // Paragraph — consecutive text lines, soft breaks become <br>; leading
+    // whitespace on the first line indents it like the composer's Increase indent
+    const indentLevel = Math.floor(indentWidth(line) / COLUMNS_PER_INDENT_LEVEL);
     const paragraph: string[] = [];
     while (i < lines.length) {
       const current = lines[i] ?? '';
@@ -501,10 +664,11 @@ export const markdownToTeamsHtml = (markdown: string): string => {
       ) {
         break;
       }
-      paragraph.push(renderInline(current));
+      paragraph.push(renderInline(current.trimStart()));
       i++;
     }
-    emit(`<p>${paragraph.join('<br>')}</p>`, true);
+    const open = indentLevel > 0 ? `<p style="margin-left:${indentLevel * INDENT_STEP_PX}px;">` : '<p>';
+    emit(`${open}${paragraph.join('<br>')}</p>`, true);
   }
 
   return blocks.join('\n');

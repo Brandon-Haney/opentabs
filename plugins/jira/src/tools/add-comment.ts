@@ -10,11 +10,19 @@ const isAdfDoc = (value: unknown): value is AdfDoc => {
   return v.type === 'doc' && Array.isArray(v.content);
 };
 
+/** Jira threads are one level deep: a reply to a reply is posted under the thread's top-level comment. */
+const resolveThreadRootId = async (commentsPath: string, commentId: string): Promise<number> => {
+  const parent = await api<{ id?: string; parentId?: number | string }>(
+    `${commentsPath}/${encodeURIComponent(commentId)}`,
+  );
+  return Number(parent.parentId ?? parent.id ?? commentId);
+};
+
 export const addComment = defineTool({
   name: 'add_comment',
   displayName: 'Add Comment',
   description:
-    'Add a comment to a Jira issue. The body accepts a markdown subset: headings (# … ######), bullet/ordered lists, fenced code blocks, blockquotes, **bold**, *italic*, `code`, ~~strike~~, and [links](url). Pass `body_adf` instead for full Atlassian Document Format control (mentions, panels, tables, media). Note: Jira Cloud does not currently expose threaded-comment replies via its REST API — replies appear as flat comments.',
+    'Add a comment to a Jira issue. The body accepts a markdown subset: headings (# … ######), bullet/ordered lists, fenced code blocks, blockquotes, **bold**, *italic*, `code`, ~~strike~~, and [links](url). Pass `body_adf` instead for full Atlassian Document Format control (mentions, panels, tables, media). Pass `parent_comment_id` to post a threaded reply. Jira threads are one level deep, so replying to a reply threads under the top-level comment of that reply. Unlike the Jira UI, a reply does not @mention the replied-to author automatically.',
   summary: 'Add a comment to an issue',
   icon: 'message-square',
   group: 'Comments',
@@ -33,6 +41,12 @@ export const addComment = defineTool({
         .describe(
           'Raw Atlassian Document Format JSON document ({ type: "doc", version: 1, content: [...] }). When provided, supersedes `body`. Use this for content the markdown converter does not cover (mentions, panels, tables, media).',
         ),
+      parent_comment_id: z
+        .string()
+        .optional()
+        .describe(
+          'ID of the comment to reply to. The reply is threaded under that comment, or under its top-level comment when it is itself a reply. Omit for a top-level comment.',
+        ),
     })
     .refine(d => (d.body !== undefined && d.body !== '') || d.body_adf !== undefined, {
       message: 'Provide either `body` (markdown) or `body_adf` (raw ADF JSON).',
@@ -50,9 +64,14 @@ export const addComment = defineTool({
     } else {
       adf = markdownToAdf(params.body ?? '');
     }
-    const data = await api<Record<string, unknown>>(`/issue/${encodeURIComponent(params.issue_key)}/comment`, {
+    const commentsPath = `/issue/${encodeURIComponent(params.issue_key)}/comment`;
+    const parentId =
+      params.parent_comment_id === undefined
+        ? undefined
+        : await resolveThreadRootId(commentsPath, params.parent_comment_id);
+    const data = await api<Record<string, unknown>>(commentsPath, {
       method: 'POST',
-      body: { body: adf },
+      body: parentId === undefined ? { body: adf } : { body: adf, parentId },
     });
     return { comment: mapComment(data) };
   },

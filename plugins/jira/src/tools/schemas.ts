@@ -100,10 +100,15 @@ export const commentSchema = z.object({
     .describe('Markdown rendering of the comment body (headings, lists, code, bold/italic, links preserved)'),
   created: z.string().describe('Creation timestamp'),
   updated: z.string().describe('Last updated timestamp'),
+  parent_id: z
+    .string()
+    .nullable()
+    .describe('ID of the top-level comment this reply is threaded under, or null for a top-level comment'),
 });
 
 interface JiraComment {
   id?: string;
+  parentId?: number | string;
   author?: { accountId?: string; displayName?: string };
   body?: unknown;
   created?: string;
@@ -119,6 +124,7 @@ export const mapComment = (c: Record<string, unknown>): z.infer<typeof commentSc
     body_text: adfToMarkdown(comment.body),
     created: comment.created ?? '',
     updated: comment.updated ?? '',
+    parent_id: comment.parentId === undefined ? null : String(comment.parentId),
   };
 };
 

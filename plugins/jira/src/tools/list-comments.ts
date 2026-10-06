@@ -6,7 +6,8 @@ import { commentSchema, mapComment } from './schemas.js';
 export const listComments = defineTool({
   name: 'list_comments',
   displayName: 'List Comments',
-  description: 'List comments on a Jira issue with pagination support.',
+  description:
+    'List comments on a Jira issue with pagination support. Threaded replies are returned alongside top-level comments; each reply carries the ID of its top-level comment in `parent_id`.',
   summary: 'List comments on an issue',
   icon: 'message-circle',
   group: 'Comments',

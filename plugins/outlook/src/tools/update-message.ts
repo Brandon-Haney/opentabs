@@ -5,7 +5,8 @@ import { api } from '../outlook-api.js';
 export const updateMessage = defineTool({
   name: 'update_message',
   displayName: 'Update Message',
-  description: 'Update message properties like read status, importance, categories, or flag status.',
+  description:
+    'Update message properties like read status, importance, categories, or flag status. To change the subject, body, or recipients of a draft, use update_draft.',
   summary: 'Update email properties',
   icon: 'pencil',
   group: 'Messages',

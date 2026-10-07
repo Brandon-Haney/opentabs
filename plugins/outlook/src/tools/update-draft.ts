@@ -1,0 +1,71 @@
+import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
+import { z } from 'zod';
+import { composeToolBody } from '../compose-defaults.js';
+import { extractQuotedThread, requireDraft } from '../drafts.js';
+import { api } from '../outlook-api.js';
+import { emailAddressSchema, mapEmailAddress, type RawEmailAddress } from './schemas.js';
+
+const toRecipients = (addresses: string[]) => addresses.map(address => ({ emailAddress: { address } }));
+
+export const updateDraft = defineTool({
+  name: 'update_draft',
+  displayName: 'Update Draft',
+  description:
+    'Edit an unsent draft in place: its subject, body, To/CC/BCC recipients, or importance. Only the fields you pass ' +
+    'change, and a recipient list you pass replaces that whole list. A new body replaces the text you wrote, with ' +
+    "the user's default font and signature applied as create_draft does; on a reply or forward draft the quoted " +
+    'thread below it is kept. The call is refused unless the message is still a draft. Attachments are unchanged ' +
+    '(use add_attachment).',
+  summary: 'Edit an unsent draft',
+  icon: 'file-pen',
+  group: 'Messages',
+  input: z.object({
+    draft_id: z.string().min(1).describe('ID of the draft to edit (draft_id from the tool that created it)'),
+    subject: z.string().optional().describe('New subject'),
+    body: z.string().optional().describe('New body, replacing the text written above any quoted thread'),
+    body_type: z.enum(['text', 'html']).optional().describe('Body content type (default: text)'),
+    include_signature: z.boolean().optional().describe("Append the user's signature to the new body (default: true)"),
+    to: z.array(z.string()).optional().describe('Replacement To recipient email addresses'),
+    cc: z.array(z.string()).optional().describe('Replacement CC recipient email addresses'),
+    bcc: z.array(z.string()).optional().describe('Replacement BCC recipient email addresses'),
+    importance: z.enum(['low', 'normal', 'high']).optional().describe('Importance level'),
+  }),
+  output: z.object({
+    subject: z.string().describe('Subject of the draft after the edit'),
+    to: z.array(emailAddressSchema).describe('To recipients after the edit'),
+    web_link: z.string().describe('Link to open the draft in Outlook'),
+  }),
+  handle: async params => {
+    const { draft_id, subject, body, to, cc, bcc, importance } = params;
+    if ([subject, body, to, cc, bcc, importance].every(field => field === undefined)) {
+      throw ToolError.validation('Pass at least one field to change: subject, body, to, cc, bcc, or importance.');
+    }
+
+    const draft = await requireDraft(draft_id, 'edited', body === undefined ? [] : ['body']);
+
+    const changes: Record<string, unknown> = {};
+    if (subject !== undefined) changes.subject = subject;
+    if (importance !== undefined) changes.importance = importance;
+    if (to !== undefined) changes.toRecipients = toRecipients(to);
+    if (cc !== undefined) changes.ccRecipients = toRecipients(cc);
+    if (bcc !== undefined) changes.bccRecipients = toRecipients(bcc);
+    if (body !== undefined) {
+      const quotedThread = extractQuotedThread(draft.body?.content ?? '');
+      const composed = await composeToolBody(
+        { body, body_type: params.body_type, include_signature: params.include_signature },
+        quotedThread ? 'reply' : 'new',
+      );
+      changes.body = { contentType: 'HTML', content: `${composed.content}${quotedThread ?? ''}` };
+    }
+
+    const updated = await api<{ subject?: string; toRecipients?: RawEmailAddress[]; webLink?: string }>(
+      `/me/messages/${draft_id}`,
+      { method: 'PATCH', body: changes },
+    );
+    return {
+      subject: updated.subject ?? '',
+      to: (updated.toRecipients ?? []).map(mapEmailAddress),
+      web_link: updated.webLink ?? '',
+    };
+  },
+});

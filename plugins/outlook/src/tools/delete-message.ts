@@ -5,7 +5,8 @@ import { api } from '../outlook-api.js';
 export const deleteMessage = defineTool({
   name: 'delete_message',
   displayName: 'Delete Message',
-  description: 'Delete an email message. This moves it to Deleted Items (not permanent deletion).',
+  description:
+    'Delete an email message. This moves it to Deleted Items (not permanent deletion). To delete an unsent draft, use delete_draft, which confirms the message is a draft first.',
   summary: 'Delete an email',
   icon: 'trash-2',
   group: 'Messages',

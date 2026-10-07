@@ -4,6 +4,7 @@ import { isAuthenticated, waitForAuth } from './outlook-api.js';
 import { addAttachment } from './tools/add-attachment.js';
 import { createDraft } from './tools/create-draft.js';
 import { createEvent } from './tools/create-event.js';
+import { deleteDraft } from './tools/delete-draft.js';
 import { deleteEvent } from './tools/delete-event.js';
 import { deleteMessage } from './tools/delete-message.js';
 import { diagnose } from './tools/diagnose.js';
@@ -25,6 +26,7 @@ import { replyToMessage } from './tools/reply-to-message.js';
 import { respondToEvent } from './tools/respond-to-event.js';
 import { searchMessages } from './tools/search-messages.js';
 import { sendMessage } from './tools/send-message.js';
+import { updateDraft } from './tools/update-draft.js';
 import { updateEvent } from './tools/update-event.js';
 import { updateMessage } from './tools/update-message.js';
 
@@ -55,6 +57,8 @@ class OutlookPlugin extends OpenTabsPlugin {
     updateMessage,
     moveMessage,
     deleteMessage,
+    updateDraft,
+    deleteDraft,
     listAttachments,
     getAttachmentContent,
     downloadAttachment,

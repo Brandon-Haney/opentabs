@@ -16,6 +16,7 @@ platform/mcp-server/src/
 ├── resolver.ts           # Plugin specifier resolution (npm + local paths)
 ├── loader.ts             # Plugin artifact loading (package.json, IIFE, tools.json)
 ├── registry.ts           # Immutable PluginRegistry with O(1) tool lookup
+├── local-files.ts        # Reads the local files a tool call names in file-path fields
 ├── extension-protocol.ts # JSON-RPC protocol with Chrome extension
 ├── mcp-setup.ts          # MCP tool registration from discovered plugins
 ├── state.ts              # In-memory server state (PluginRegistry)
@@ -35,6 +36,8 @@ The MCP server discovers plugins from two sources: (1) **npm auto-discovery** sc
 **Tab targeting**: `getAllToolsList` (in `mcp-setup.ts`) injects an optional `tabId` integer property into every plugin tool's input schema via `structuredClone` — the original `ManifestTool.input_schema` is never mutated. `handlePluginToolCall` (in `mcp-tool-dispatch.ts`) extracts `tabId` from args before Ajv validation and threads it as a top-level field in `ToolDispatchParams` sent to the extension. Plugin tool handlers never see `tabId` in their input — it is a platform concern. Use `plugin_list_tabs` to discover valid tab IDs.
 
 Tool dispatch uses a 30s timeout (`DISPATCH_TIMEOUT_MS`) by default. When a tool reports progress, the timeout resets to 30s from the last progress notification — so a tool that reports progress at least once every 30s will never time out. An absolute ceiling of 5 minutes (`MAX_DISPATCH_TIMEOUT_MS = 300_000`) applies regardless of progress, preventing indefinitely running tools. The extension has a matching `MAX_SCRIPT_TIMEOUT_MS` (295s, 5s less than the server max) to ensure the extension always responds before the server times out.
+
+**Local files**: after Ajv validation, `handlePluginToolCall` collects the string args sitting at schema nodes with `format: 'local-file-path'` (`collectLocalFilePaths` in `local-files.ts`, walking properties, items and `anyOf`/`oneOf`/`allOf`), reads them with `readLocalFiles` (absolute paths only, real path outside the config dir, 25 MB total per call), and threads them as `localFiles` (keyed by the caller's path) in `ToolDispatchParams`. A read failure returns an error before dispatch. The extension passes them into the page, where handlers read them via `ToolHandlerContext.localFile(path)`.
 
 ### Progress Reporting
 

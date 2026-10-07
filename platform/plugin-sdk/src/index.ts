@@ -1,4 +1,4 @@
-import type { ConfigSchema } from '@opentabs-dev/shared';
+import type { ConfigSchema, LocalFile } from '@opentabs-dev/shared';
 import type { z } from 'zod';
 import type { LucideIconName } from './lucide-icon-names.js';
 
@@ -10,11 +10,19 @@ export type {
   ConfigSchema,
   ConfigSettingDefinition,
   ConfigSettingType,
+  LocalFile,
   ManifestTool,
   PluginManifest as Manifest,
   ToolErrorDetails,
 } from '@opentabs-dev/shared';
-export { NAME_REGEX, RESERVED_NAMES, validatePluginName, validateUrlPattern } from '@opentabs-dev/shared';
+export {
+  LOCAL_FILE_PATH_FORMAT,
+  MAX_LOCAL_FILE_BYTES,
+  NAME_REGEX,
+  RESERVED_NAMES,
+  validatePluginName,
+  validateUrlPattern,
+} from '@opentabs-dev/shared';
 export type { LucideIconName } from './lucide-icon-names.js';
 export { LUCIDE_ICON_NAMES } from './lucide-icon-names.js';
 
@@ -48,6 +56,14 @@ export interface ToolHandlerContext {
    * the tool supports it.
    */
   bridge?(directive: unknown): Promise<unknown>;
+  /**
+   * The local file the MCP server read for this call from `path` — the exact
+   * value the caller passed in an input field declared with
+   * `format: LOCAL_FILE_PATH_FORMAT`. Throws when no file was read for that
+   * path. Present only when the platform running the tool supports it; call it
+   * through `readLocalFile`, which reports a missing platform as a tool error.
+   */
+  localFile?(path: string): LocalFile;
 }
 
 // ---------------------------------------------------------------------------
@@ -278,6 +294,12 @@ export { getConfig } from './config.js';
 // ---------------------------------------------------------------------------
 
 export { getCurrentUrl, getPageGlobal, getPageTitle } from './page-state.js';
+
+// ---------------------------------------------------------------------------
+// SDK utilities — Local Files
+// ---------------------------------------------------------------------------
+
+export { readLocalFile } from './local-files.js';
 
 // ---------------------------------------------------------------------------
 // SDK utilities — Pre-Script

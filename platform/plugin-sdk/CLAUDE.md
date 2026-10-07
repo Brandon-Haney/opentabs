@@ -14,6 +14,7 @@ platform/plugin-sdk/src/
 ├── dom.ts          # DOM utilities
 ├── fetch.ts        # Fetch utilities, httpStatusToToolError, TRANSIENT_HTTP_STATUSES
 ├── fetch-retry.ts  # fetchWithRetry — transient-failure retry wrapper with the fetch contract
+├── local-files.ts  # readLocalFile — files the server read for a tool call
 ├── storage.ts      # Storage utilities
 ├── page-state.ts   # Page state utilities
 └── timing.ts       # Timing utilities
@@ -126,6 +127,12 @@ async function handle(params: Input, context?: ToolHandlerContext): Promise<Outp
   return { processed: pages.length };
 }
 ```
+
+## Local Files
+
+Adapters run in the page and cannot read the user's disk. A tool takes a file from the user's computer by declaring a string input field with `format: LOCAL_FILE_PATH_FORMAT` (`'local-file-path'`), e.g. `z.string().min(1).meta({ format: LOCAL_FILE_PATH_FORMAT }).describe('Absolute path of the file')`. When the tool is called, the MCP server reads every file the call names in such fields and sends the bytes to the extension with that dispatch; the handler reads them with `readLocalFile(context, params.path)` → `LocalFile { name, size, contentType, contentBase64 }` (content type inferred from the extension). `readLocalFile` throws a validation `ToolError` when no file arrived for that path or the platform predates local-file delivery.
+
+The read is driven by the tool call alone — the page cannot request a file — so only paths an MCP client passed in declared fields leave the disk. The server requires absolute paths (a Git Bash `/c/...` path names drive C: on Windows), refuses anything inside the OpenTabs config directory, and caps one call's files at `MAX_LOCAL_FILE_BYTES` (25 MB) in total. Bytes never pass through the model, so prefer a file-path field over a base64 field for any tool that uploads files.
 
 ## Structured Errors
 

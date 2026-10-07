@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { LOCAL_FILE_PATH_FORMAT } from '@opentabs-dev/shared';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { z } from 'zod';
 import { savePluginPermissions } from './config.js';
@@ -506,6 +510,7 @@ const createMockCallbacks = (): DispatchCallbacks => ({
 const createMockLookup = (overrides: Partial<ToolLookupEntry> = {}): ToolLookupEntry => ({
   pluginName: 'testplugin',
   toolName: 'test_action',
+  inputSchema: { type: 'object' },
   validate: vi.fn().mockReturnValue(true),
   validationErrors: vi.fn().mockReturnValue(''),
   ...overrides,
@@ -2035,6 +2040,72 @@ describe('handlePluginToolCall', () => {
         onProgress: undefined,
       }) as Record<string, unknown>,
     );
+  });
+
+  test('dispatch carries the local files the call names in file-path fields', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    vi.mocked(dispatchToExtension).mockResolvedValue({ output: {} });
+    const dir = mkdtempSync(join(tmpdir(), 'opentabs-dispatch-files-'));
+    const path = join(dir, 'report.pdf');
+    writeFileSync(path, 'pdf');
+    const state = createMockState();
+    const lookup = createMockLookup({
+      inputSchema: { type: 'object', properties: { file: { type: 'string', format: LOCAL_FILE_PATH_FORMAT } } },
+    });
+
+    try {
+      await handlePluginToolCall(
+        state,
+        'testplugin_test_action',
+        { file: path },
+        'testplugin',
+        'test_action',
+        lookup,
+        createMockExtra(),
+        createMockCallbacks(),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    expect(dispatchToExtension).toHaveBeenCalledWith(
+      state,
+      'tool.dispatch',
+      {
+        plugin: 'testplugin',
+        tool: 'test_action',
+        input: { file: path },
+        localFiles: {
+          [path]: { name: 'report.pdf', size: 3, contentType: 'application/pdf', contentBase64: 'cGRm' },
+        },
+      },
+      expect.any(Object),
+    );
+  });
+
+  test('a local file that cannot be read fails the call before dispatch', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    const state = createMockState();
+    const lookup = createMockLookup({
+      inputSchema: { type: 'object', properties: { file: { type: 'string', format: LOCAL_FILE_PATH_FORMAT } } },
+    });
+
+    const result = await handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      { file: 'relative.pdf' },
+      'testplugin',
+      'test_action',
+      lookup,
+      createMockExtra(),
+      createMockCallbacks(),
+    );
+
+    expect(result).toEqual({
+      content: [{ type: 'text', text: 'File path "relative.pdf" must be absolute.' }],
+      isError: true,
+    });
+    expect(dispatchToExtension).not.toHaveBeenCalled();
   });
 
   test('extension not connected sets success=false in audit and invocationEnd', async () => {

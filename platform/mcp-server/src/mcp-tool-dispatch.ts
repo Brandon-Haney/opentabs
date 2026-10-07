@@ -14,7 +14,7 @@ import type {
   ToolErrorDetails,
   ToolPermission,
 } from '@opentabs-dev/shared';
-import { toErrorMessage } from '@opentabs-dev/shared';
+import { type LocalFile, toErrorMessage } from '@opentabs-dev/shared';
 import type { ZodError } from 'zod';
 import { savePluginPermissions } from './config.js';
 import { buildConfigStatePayload, sendToExtension } from './extension-handlers.js';
@@ -26,6 +26,7 @@ import {
   sendInvocationEnd,
   sendInvocationStart,
 } from './extension-protocol.js';
+import { collectLocalFilePaths, readLocalFiles } from './local-files.js';
 import { log } from './logger.js';
 import { sanitizeErrorMessage } from './sanitize-error.js';
 import type { CachedBrowserTool, ServerState, ToolLookupEntry } from './state.js';
@@ -592,6 +593,18 @@ const handlePluginToolCall = async (
 
   log.debug('tool.call: input validated for', toolName);
 
+  // Read the local files the call names in fields the tool declares as file
+  // paths. They travel with this dispatch only; the page cannot ask for more.
+  const localFilePaths = collectLocalFilePaths(lookup.inputSchema, pluginArgs);
+  let localFiles: Record<string, LocalFile> | undefined;
+  if (localFilePaths.length > 0) {
+    const read = await readLocalFiles(localFilePaths);
+    if (!read.ok) {
+      return { content: [{ type: 'text' as const, text: read.error }], isError: true };
+    }
+    localFiles = read.files;
+  }
+
   // Concurrency limit: prevent a runaway MCP client from flooding a single
   // plugin's tab with simultaneous executeScript calls. Each dispatch runs
   // in the page's MAIN world, so too many concurrent dispatches can degrade
@@ -705,6 +718,7 @@ const handlePluginToolCall = async (
         plugin: pluginName,
         tool: toolBaseName,
         input: pluginArgs,
+        ...(localFiles !== undefined && { localFiles }),
         ...(resolvedTabId !== undefined && { tabId: resolvedTabId }),
       },
       { label: `${pluginName}/${toolBaseName}`, pluginName, progressToken, onProgress },

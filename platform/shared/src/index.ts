@@ -70,6 +70,12 @@ export {
 } from './constants.js';
 
 // ---------------------------------------------------------------------------
+// Local files — disk reads the server performs for a tool call
+// ---------------------------------------------------------------------------
+
+export { LOCAL_FILE_PATH_FORMAT, type LocalFile, MAX_LOCAL_FILE_BYTES } from './local-files.js';
+
+// ---------------------------------------------------------------------------
 // Result type — structured error handling
 // ---------------------------------------------------------------------------
 

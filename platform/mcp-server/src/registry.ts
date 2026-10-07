@@ -81,7 +81,13 @@ const buildRegistry = (
     for (const toolDef of plugin.tools) {
       const prefixed = prefixedToolName(plugin.name, toolDef.name);
       const { validate, validationErrors } = compileToolValidator(ajv, plugin.name, toolDef.name, toolDef.input_schema);
-      toolLookup.set(prefixed, { pluginName: plugin.name, toolName: toolDef.name, validate, validationErrors });
+      toolLookup.set(prefixed, {
+        pluginName: plugin.name,
+        toolName: toolDef.name,
+        inputSchema: toolDef.input_schema,
+        validate,
+        validationErrors,
+      });
     }
   }
 

@@ -1,4 +1,4 @@
-import { toErrorMessage } from '@opentabs-dev/shared';
+import { type LocalFile, MAX_LOCAL_FILE_BYTES, toErrorMessage } from '@opentabs-dev/shared';
 import {
   asStringMap,
   type BridgePrepSelection,
@@ -180,6 +180,7 @@ const executeToolOnTab = async (
   toolName: string,
   input: Record<string, unknown>,
   dispatchId: string,
+  localFiles: Record<string, LocalFile>,
 ): Promise<DispatchResult> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const startTs = Date.now();
@@ -187,7 +188,13 @@ const executeToolOnTab = async (
   const scriptPromise = chrome.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
-    func: async (pName: string, tName: string, tInput: Record<string, unknown>, dId: string) => {
+    func: async (
+      pName: string,
+      tName: string,
+      tInput: Record<string, unknown>,
+      dId: string,
+      tLocalFiles: Record<string, LocalFile>,
+    ) => {
       const ot = (globalThis as Record<string, unknown>).__openTabs as
         | {
             adapters?: Record<
@@ -290,6 +297,12 @@ const executeToolOnTab = async (
             // Fire-and-forget — progress reporting errors must not affect tool execution
           }
         },
+        /** The local file the MCP server read for this dispatch from `path`. */
+        localFile(path: string): LocalFile {
+          const file = Object.hasOwn(tLocalFiles, path) ? tLocalFiles[path] : undefined;
+          if (!file) throw new Error(`No local file was read for "${path}"`);
+          return file;
+        },
       };
 
       try {
@@ -341,7 +354,7 @@ const executeToolOnTab = async (
         };
       }
     },
-    args: [pluginName, toolName, input, dispatchId],
+    args: [pluginName, toolName, input, dispatchId, localFiles],
   });
 
   let timeoutReject: ((err: Error) => void) | undefined;
@@ -916,6 +929,36 @@ const resolvePodsOpenEditorDirective = async (result: DispatchResult, plugin: Pl
   }
 };
 
+/** Whether `value` is a LocalFile the MCP server read for a dispatch. */
+const isLocalFile = (value: unknown): value is LocalFile => {
+  if (typeof value !== 'object' || value === null) return false;
+  const file = value as Record<string, unknown>;
+  return (
+    typeof file.name === 'string' &&
+    typeof file.size === 'number' &&
+    typeof file.contentType === 'string' &&
+    typeof file.contentBase64 === 'string'
+  );
+};
+
+/**
+ * The local files a tool.dispatch carries, keyed by the path the caller passed —
+ * empty when the call names none — or null when the param is malformed or larger
+ * than the server ever sends.
+ */
+const parseLocalFiles = (raw: unknown): Record<string, LocalFile> | null => {
+  if (raw === undefined) return {};
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const files: Record<string, LocalFile> = {};
+  let totalBytes = 0;
+  for (const [path, file] of Object.entries(raw)) {
+    if (!isLocalFile(file)) return null;
+    totalBytes += file.size;
+    files[path] = file;
+  }
+  return totalBytes <= MAX_LOCAL_FILE_BYTES ? files : null;
+};
+
 /**
  * Handle tool.dispatch request from MCP server.
  * Finds matching tabs, checks adapter readiness (with fallback to other
@@ -970,6 +1013,16 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
     return;
   }
 
+  const localFiles = parseLocalFiles(params.localFiles);
+  if (!localFiles) {
+    sendToServer({
+      jsonrpc: '2.0',
+      error: { code: JSONRPC_INVALID_PARAMS, message: 'Invalid "localFiles" param' },
+      id,
+    });
+    return;
+  }
+
   const rawTabId = params.tabId;
   const targetTabId = typeof rawTabId === 'number' && Number.isInteger(rawTabId) && rawTabId > 0 ? rawTabId : undefined;
 
@@ -982,7 +1035,7 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
     await injectToolInvocationLog(tid, pluginName, toolName, link);
     await injectProgressListener(tid, dispatchId);
     try {
-      const result = await executeToolOnTab(tid, pluginName, toolName, input, dispatchId);
+      const result = await executeToolOnTab(tid, pluginName, toolName, input, dispatchId, localFiles);
       // A tool may return a directive to drive an in-frame operation on this same
       // tab; resolve it here where the tab id is known. The two resolvers are
       // mutually exclusive — each is a no-op unless its own marker is present — so

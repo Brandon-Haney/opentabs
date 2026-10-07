@@ -178,6 +178,8 @@ export interface PendingDispatch {
 export interface ToolLookupEntry {
   pluginName: string;
   toolName: string;
+  /** The tool's input JSON Schema, read at dispatch to find the local file paths a call names */
+  inputSchema: Record<string, unknown>;
   /** Pre-compiled JSON Schema validator for input args. Null if schema compilation failed. */
   validate: ((data: unknown) => boolean) | null;
   /** Human-readable validation errors from the last validate() call */

@@ -5,6 +5,7 @@ import { addMember } from './tools/add-member.js';
 import { createChat } from './tools/create-chat.js';
 import { deleteMessage } from './tools/delete-message.js';
 import { diagnose } from './tools/diagnose.js';
+import { downloadImage } from './tools/download-image.js';
 import { editMessage } from './tools/edit-message.js';
 import { getCalendarView } from './tools/get-calendar-view.js';
 import { getConversationDetails } from './tools/get-conversation-details.js';
@@ -34,6 +35,7 @@ class TeamsPlugin extends OpenTabsPlugin {
     searchMessages,
     editMessage,
     deleteMessage,
+    downloadImage,
     // Members
     addMember,
     removeMember,

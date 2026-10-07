@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { extractMessageImages } from '../ams-image.js';
 
 // ---------------------------------------------------------------------------
 // Conversation (chat) schema
@@ -62,6 +63,15 @@ const fileSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Inline image schema
+// ---------------------------------------------------------------------------
+
+const imageSchema = z.object({
+  object_id: z.string().describe('Teams media object ID'),
+  url: z.string().describe('Full-resolution image URL — pass to download_image to save the original file'),
+});
+
+// ---------------------------------------------------------------------------
 // Message schema
 // ---------------------------------------------------------------------------
 
@@ -76,6 +86,9 @@ export const messageSchema = z.object({
   conversation_id: z.string().describe('ID of the conversation this message belongs to'),
   mentions: z.array(mentionSchema).describe('Users mentioned in this message'),
   files: z.array(fileSchema).describe('Files attached to this message'),
+  images: z
+    .array(imageSchema)
+    .describe('Images embedded in the message; the inline <img> in content is a downscaled preview'),
   reactions: z.array(z.string()).describe('Reaction emoji keys on this message (e.g., ["like", "heart"])'),
 });
 
@@ -160,6 +173,7 @@ export const mapMessage = (m: RawMessage): Message => ({
   conversation_id: m.conversationid ?? '',
   mentions: parseMentions(m.properties?.mentions),
   files: parseFiles(m.properties?.files),
+  images: extractMessageImages(m.content ?? '').map(image => ({ object_id: image.objectId, url: image.fullSizeUrl })),
   reactions: parseReactions(m),
 });
 

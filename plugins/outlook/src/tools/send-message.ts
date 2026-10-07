@@ -1,6 +1,6 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { attachmentInputSchema, attachToDraft } from '../attachments.js';
+import { attachmentInputSchema, attachToDraft, inlineImagesField, validateInlineImages } from '../attachments.js';
 import { composeToolBody } from '../compose-defaults.js';
 import { api } from '../outlook-api.js';
 
@@ -8,7 +8,7 @@ export const sendMessage = defineTool({
   name: 'send_message',
   displayName: 'Send Message',
   description:
-    "Send a new email message. The user's default compose font and signature are applied automatically — do not write a signature into the body yourself. Supports plain text or HTML body, CC/BCC, importance level, and file attachments. Note: when attachments are included the message is always filed in Sent Items (save_to_sent does not apply).",
+    "Send a new email message. The user's default compose font and signature are applied automatically — do not write a signature into the body yourself. Supports plain text or HTML body, CC/BCC, importance level, and file attachments. Note: when attachments or inline images are included the message is always filed in Sent Items (save_to_sent does not apply).",
   summary: 'Send an email',
   icon: 'send',
   group: 'Messages',
@@ -24,16 +24,18 @@ export const sendMessage = defineTool({
       .boolean()
       .optional()
       .describe(
-        'Save to Sent Items folder (default: true). Ignored when attachments are present — those are always saved.',
+        'Save to Sent Items folder (default: true). Ignored when attachments or inline images are present — those are always saved.',
       ),
     include_signature: z.boolean().optional().describe("Append the user's signature (default: true)"),
     attachments: z.array(attachmentInputSchema).optional().describe('Files to attach to the message'),
+    inline_images: inlineImagesField,
   }),
   output: z.object({
     success: z.boolean().describe('Whether the message was sent'),
   }),
   handle: async (params, context) => {
     const toRecipients = (addrs: string[]) => addrs.map(addr => ({ emailAddress: { address: addr } }));
+    validateInlineImages(params.body, params.body_type, params.inline_images);
 
     const body = await composeToolBody(params, 'new');
     const message = {
@@ -49,15 +51,15 @@ export const sendMessage = defineTool({
     };
 
     // sendMail takes a message payload with no server-side id, so there is nothing to
-    // attach files to. When attachments are present, create a draft, attach the files,
-    // then send it — which always files the sent copy in Sent Items.
-    if (params.attachments && params.attachments.length > 0) {
+    // attach files to. When attachments or inline images are present, create a draft,
+    // attach the files, then send it — which always files the sent copy in Sent Items.
+    if (params.attachments?.length || params.inline_images?.length) {
       const draft = await api<{ id?: string }>('/me/messages', { method: 'POST', body: message });
       const draftId = draft.id;
       if (!draftId) throw ToolError.internal('Draft was created without a message id.');
 
       try {
-        await attachToDraft(draftId, params.attachments, context);
+        await attachToDraft(draftId, params, context);
       } catch (err) {
         // Nothing was sent, so delete the partially-built draft rather than orphan it.
         await api(`/me/messages/${draftId}`, { method: 'DELETE' }).catch(() => {});

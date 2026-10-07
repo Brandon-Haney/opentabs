@@ -1,6 +1,6 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { attachmentInputSchema, attachToDraft } from '../attachments.js';
+import { attachmentInputSchema, attachToDraft, inlineImagesField, validateInlineImages } from '../attachments.js';
 import { composeToolBody } from '../compose-defaults.js';
 import { api } from '../outlook-api.js';
 
@@ -25,6 +25,7 @@ export const createDraft = defineTool({
       .optional()
       .describe("Append the user's Outlook signature to the draft (default: true)"),
     attachments: z.array(attachmentInputSchema).optional().describe('Files to attach to the draft'),
+    inline_images: inlineImagesField,
   }),
   output: z.object({
     draft_id: z.string().describe('The created draft message ID'),
@@ -32,6 +33,7 @@ export const createDraft = defineTool({
   }),
   handle: async (params, context) => {
     const toRecipients = (addrs: string[]) => addrs.map(addr => ({ emailAddress: { address: addr } }));
+    validateInlineImages(params.body, params.body_type, params.inline_images);
 
     const body = await composeToolBody(params, 'new');
 
@@ -50,11 +52,11 @@ export const createDraft = defineTool({
       },
     });
 
-    if (params.attachments?.length) {
+    if (params.attachments?.length || params.inline_images?.length) {
       const draftId = data.id;
       if (!draftId) throw ToolError.internal('Draft was created without a message id.');
       try {
-        await attachToDraft(draftId, params.attachments, context);
+        await attachToDraft(draftId, params, context);
       } catch (err) {
         // Keep create_draft atomic: a partial attach failure deletes the draft rather
         // than leave an orphan the caller never gets an id for.

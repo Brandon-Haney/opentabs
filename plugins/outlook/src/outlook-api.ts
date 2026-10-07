@@ -618,7 +618,12 @@ export interface FileAttachmentInput {
   contentType?: string;
   /** Base64-encoded file content, with no data: URI prefix. */
   contentBase64: string;
+  /** Set for an image shown inside the HTML body: the id its `cid:` URL references. */
+  contentId?: string;
 }
+
+/** The fields that mark an attachment as an inline image the body shows by content id. */
+const inlineFields = (contentId: string | undefined) => (contentId === undefined ? {} : { isInline: true, contentId });
 
 /**
  * Embed a file in an existing draft as a `fileAttachment`. Reuses the `mail` cache
@@ -637,6 +642,7 @@ export const attachFileToMessage = async (messageId: string, attachment: FileAtt
       name: attachment.name,
       contentType: attachment.contentType ?? 'application/octet-stream',
       contentBytes: attachment.contentBase64,
+      ...inlineFields(attachment.contentId),
     };
     const r = await sendRequest<unknown>(auth, `/me/messages/${messageId}/attachments`, { method: 'POST', body });
     return r === null ? { kind: 'rejected' } : { kind: 'accepted', value: undefined };
@@ -787,6 +793,8 @@ export interface LargeFileAttachmentInput {
   contentType?: string;
   /** Raw file bytes. */
   bytes: Uint8Array<ArrayBuffer>;
+  /** Set for an image shown inside the HTML body: the id its `cid:` URL references. */
+  contentId?: string;
 }
 
 /**
@@ -813,7 +821,15 @@ export const attachLargeFileToMessage = async (
     // so an Outlook REST candidate is skipped — not rejected — rather than let it
     // throw and abort the cascade or be remembered as a bad mail token.
     if (auth.apiBase !== GRAPH_API_BASE) return { kind: 'skipped' };
-    const body = { AttachmentItem: { attachmentType: 'file', name: file.name, size: total, contentType } };
+    const body = {
+      AttachmentItem: {
+        attachmentType: 'file',
+        name: file.name,
+        size: total,
+        contentType,
+        ...inlineFields(file.contentId),
+      },
+    };
     const r = await sendRequest<{ uploadUrl?: string }>(
       auth,
       `/me/messages/${messageId}/attachments/createUploadSession`,

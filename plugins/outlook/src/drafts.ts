@@ -62,3 +62,37 @@ export const extractQuotedThread = (html: string): string | null => {
   const hoistedStyles = (html.slice(0, start).match(INVISIBLE_ELEMENTS) ?? []).join('');
   return `${hoistedStyles}${html.slice(start)}`;
 };
+
+/** An inline image already attached to a draft. */
+export interface DraftInlineImage {
+  id: string;
+  contentId: string;
+}
+
+/** The inline images on a draft — attachments marked inline that carry a content id. */
+export const listInlineImages = async (draftId: string): Promise<DraftInlineImage[]> => {
+  const data = await api<{ value?: { id?: string; isInline?: boolean; contentId?: string }[] }>(
+    `/me/messages/${draftId}/attachments`,
+    { query: { $select: 'id,isInline,contentId' } },
+  );
+  return (data.value ?? []).flatMap(attachment =>
+    attachment.isInline === true && attachment.id && attachment.contentId
+      ? [{ id: attachment.id, contentId: attachment.contentId }]
+      : [],
+  );
+};
+
+/**
+ * Delete inline images from a draft, one at a time — concurrent writes race on the
+ * message's change key. Exchange itself drops an inline image once a saved body stops
+ * referencing it, so an image already gone counts as deleted.
+ */
+export const deleteInlineImages = async (draftId: string, images: readonly DraftInlineImage[]): Promise<void> => {
+  for (const image of images) {
+    try {
+      await api(`/me/messages/${draftId}/attachments/${image.id}`, { method: 'DELETE' });
+    } catch (err) {
+      if (!(err instanceof ToolError && err.category === 'not_found')) throw err;
+    }
+  }
+};

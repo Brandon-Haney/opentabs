@@ -1,6 +1,6 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { attachmentInputSchema, attachToDraft } from '../attachments.js';
+import { attachmentInputSchema, attachToDraft, inlineImagesField, validateInlineImages } from '../attachments.js';
 import { composeToolBody } from '../compose-defaults.js';
 import { api } from '../outlook-api.js';
 
@@ -23,6 +23,7 @@ export const replyToMessage = defineTool({
     draft: z.boolean().optional().describe('Save as a threaded draft instead of sending immediately (default: false)'),
     include_signature: z.boolean().optional().describe("Append the user's reply signature (default: true)"),
     attachments: z.array(attachmentInputSchema).optional().describe('Files to attach to the reply'),
+    inline_images: inlineImagesField,
   }),
   output: z.object({
     success: z.boolean().describe('Whether the operation completed'),
@@ -30,6 +31,8 @@ export const replyToMessage = defineTool({
     web_link: z.string().optional().describe('Link to open the draft in Outlook (only when draft is true)'),
   }),
   handle: async (params, context) => {
+    validateInlineImages(params.body, params.body_type, params.inline_images);
+
     // createReply/createReplyAll have the server build a draft with the original
     // conversation quoted, recipients pre-filled, and reply headers set. The action
     // takes no body, so the user's text — styled with the default font and reply
@@ -52,7 +55,7 @@ export const replyToMessage = defineTool({
         method: 'PATCH',
         body: { body: { contentType: 'HTML', content: `${composed.content}${quoted}` } },
       });
-      await attachToDraft(draftId, params.attachments, context);
+      await attachToDraft(draftId, params, context);
     };
 
     // Compose the reply onto the created draft. Any failure here means nothing was

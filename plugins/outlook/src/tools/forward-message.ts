@@ -50,7 +50,7 @@ export const forwardMessage = defineTool({
         method: 'PATCH',
         body: { body: { contentType: 'HTML', content: `${composed.content}${quoted}` } },
       });
-      await attachToDraft(draftId, params.attachments, context);
+      await attachToDraft(draftId, params, context);
     };
 
     // Compose the comment onto the created draft. Any failure here means nothing was

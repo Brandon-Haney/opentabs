@@ -795,7 +795,12 @@ const handleMcpRequest = (req: IncomingMessage, res: ServerResponse, port: numbe
   if (req.method === 'GET') {
     handleMcpGet(req, res, port);
   } else if (req.method === 'POST') {
-    void handleMcpPost(req, res, port);
+    // A failed POST — the client dropping mid-body, or the worker not answering
+    // an initialize in time — fails that one request, not the proxy.
+    handleMcpPost(req, res, port).catch((err: unknown) => {
+      console.error('[proxy] MCP POST failed:', err instanceof Error ? err.message : err);
+      failClientResponse(res);
+    });
   } else if (req.method === 'DELETE') {
     handleMcpDelete(req, res, port);
   } else {

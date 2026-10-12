@@ -10,6 +10,7 @@
  */
 
 import fs, { readFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import {
   cleanupTestConfigDir,
   createMcpClient,
@@ -380,6 +381,38 @@ test.describe('Dev proxy crash-loop circuit breaker', () => {
       // Allow margin for scheduling variance: at least 4s, at most 8s.
       expect(elapsed).toBeGreaterThanOrEqual(4_000);
       expect(elapsed).toBeLessThan(8_000);
+    } finally {
+      await server.kill();
+      cleanupTestConfigDir(configDir);
+    }
+  });
+});
+
+test.describe('Dev proxy MCP POST failure', () => {
+  test('a client that disconnects mid-body fails only its own request', async () => {
+    const configDir = createTestConfigDir();
+    const server = await startMcpServer(configDir, true);
+
+    try {
+      // Promise a larger body than is sent, then drop the connection, so the
+      // proxy's read of the request body fails.
+      await new Promise<void>(resolve => {
+        const req = httpRequest({
+          hostname: '127.0.0.1',
+          port: server.port,
+          path: '/mcp',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': '1000' },
+        });
+        req.on('error', () => resolve());
+        req.on('close', () => resolve());
+        req.write('{"jsonrpc":"2.0",', () => setTimeout(() => req.destroy(), 200));
+      });
+
+      // The proxy logs the failed request and is still serving.
+      await waitForLog(server, '[proxy] MCP POST failed', 5_000);
+      const health = await server.health();
+      expect(health?.status).toBe('ok');
     } finally {
       await server.kill();
       cleanupTestConfigDir(configDir);

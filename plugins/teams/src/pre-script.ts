@@ -35,16 +35,24 @@ import { definePreScript } from '@opentabs-dev/plugin-sdk/pre-script';
  *   - `lokiToken`       → { secret, expiresOn } LokiAuthToken (readiness signal only)
  *   - `skypeJwt`        → { secret, expiresOn } Skype JWT captured from authsvc response
  *   - `substrateToken`  → { secret, expiresOn } raw token for the Substrate Search API
+ *   - `graphToken`      → { secret, expiresOn } Microsoft Graph token carrying `Files.ReadWrite.All`
  *   - `signInName`      → preferred_username / upn / email from the ID token
  *
  * The Substrate token (`aud=https://substrate.office.com`) powers the
  * universal search bar. It is a raw access token used directly as a
  * `Bearer` against `substrate.office.com/searchservice` — no authz
  * exchange — so the adapter only needs the captured secret.
+ *
+ * Teams caches several Microsoft Graph tokens with different scope sets. The
+ * one captured is the token granting `Files.ReadWrite.All`, which Teams uses
+ * for files shared in chat; the adapter uses it the same way, to upload a
+ * chat attachment to OneDrive and share it with the chat's members, and to
+ * look people up (the same token carries `User.ReadBasic.All`).
  */
 definePreScript(({ set, log }) => {
   const SKYPE_HOST_PATTERN = /spaces\.skype\.com/i;
   const SUBSTRATE_HOST_PATTERN = /substrate\.office\.com/i;
+  const GRAPH_FILES_SCOPE_PATTERN = /graph\.microsoft\.com\/Files\.ReadWrite\.All/i;
   const AUTHSVC_PATTERN = /\/authsvc\/v1\.0\/authz|\/auth\/v1\.0\/authz/;
 
   type CapturedToken = { secret: string; expiresOn: number };
@@ -94,12 +102,19 @@ definePreScript(({ set, log }) => {
       const target = String(entry.target ?? '');
       const isSkype = SKYPE_HOST_PATTERN.test(target);
       const isSubstrate = SUBSTRATE_HOST_PATTERN.test(target);
-      if (!isSkype && !isSubstrate) return;
+      const isGraphFiles = GRAPH_FILES_SCOPE_PATTERN.test(target);
+      if (!isSkype && !isSubstrate && !isGraphFiles) return;
 
       const expiresOn = Number.parseInt(String(entry.expiresOn ?? '0'), 10);
       if (!Number.isFinite(expiresOn) || expiresOn <= Date.now() / 1000) return;
 
       const captured: CapturedToken = { secret, expiresOn };
+
+      if (isGraphFiles) {
+        set('graphToken', captured);
+        log.debug('[teams] captured graphToken');
+        return;
+      }
 
       if (isSubstrate) {
         // The Substrate Search token serves both consumer and enterprise via

@@ -90,7 +90,8 @@ const SIMPLE_TAGS: Record<string, string> = {
 };
 
 /** HTML-escape text content (element context). */
-const escapeHtml = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+export const escapeHtml = (text: string): string =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /**
  * HTML-escape prose, passing character references (`&nbsp;`, `&#8212;`, `&#x2014;`)

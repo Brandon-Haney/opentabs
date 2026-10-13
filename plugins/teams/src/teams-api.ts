@@ -202,6 +202,12 @@ interface TeamsRequestOptions {
   retryNonIdempotent?: boolean;
   /** Attempts fetchWithRetry may make (default: MAX_ATTEMPTS); probes pass 1. */
   maxAttempts?: number;
+  /**
+   * Whether the page's cookies go with the request (default: `include`). The
+   * Teams endpoints are same-site and take them; Microsoft Graph authenticates
+   * by bearer token alone, so its requests send none.
+   */
+  credentials?: RequestCredentials;
 }
 
 type TeamsRequestInit = Omit<RequestInit, 'credentials' | 'signal'> & { method: string };
@@ -219,8 +225,9 @@ interface SentTeamsRequest {
  * Response for the caller to classify, plus the attempt count observed
  * through fetchWithRetry's `onRetry` callback. Throws ToolError.timeout when
  * the timeout fires, NETWORK_ERROR when every attempt failed at the network
- * layer and ABORTED when the request was aborted. Cookies are sent because
- * the authsvc and chat service endpoints are same-site with the Teams page.
+ * layer and ABORTED when the request was aborted. Cookies are sent unless the
+ * request opts out, because the authsvc and chat service endpoints are
+ * same-site with the Teams page.
  */
 const sendTeamsRequest = async (
   url: string,
@@ -232,7 +239,11 @@ const sendTeamsRequest = async (
   try {
     const response = await fetchWithRetry(
       url,
-      { ...init, credentials: 'include', signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS) },
+      {
+        ...init,
+        credentials: options.credentials ?? 'include',
+        signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      },
       {
         maxAttempts: options.maxAttempts ?? MAX_ATTEMPTS,
         retryNonIdempotent: options.retryNonIdempotent ?? false,
@@ -749,6 +760,190 @@ export const substrateSearch = async <T>(body: Record<string, unknown>): Promise
 };
 
 // ---------------------------------------------------------------------------
+// Microsoft Graph (files and people)
+// ---------------------------------------------------------------------------
+
+const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
+
+/** Wall-clock timeout for one file upload, which can carry up to the platform's local-file cap. */
+const GRAPH_UPLOAD_TIMEOUT_MS = 120_000;
+
+/**
+ * Read the Microsoft Graph token captured by the pre-script: Teams' own token
+ * for files shared in chat, carrying `Files.ReadWrite.All` and
+ * `User.ReadBasic.All`. Used directly as a `Bearer`.
+ */
+const getGraphToken = (): string | null => {
+  const captured = readPreScriptValue<CapturedToken>('graphToken');
+  if (!captured || typeof captured.secret !== 'string' || captured.secret.length === 0) {
+    return null;
+  }
+  if (typeof captured.expiresOn !== 'number' || captured.expiresOn <= Date.now() / 1000) {
+    return null;
+  }
+  return captured.secret;
+};
+
+const noGraphTokenError = (): ToolError =>
+  ToolError.auth(
+    'No Microsoft Graph token captured, which file attachments and @mentions need. Reload the Teams tab so the ' +
+      'pre-script can capture it (Teams refreshes it on load). Requires work or school Teams.',
+  );
+
+/** The signed-in user's directory object id, read from the Graph token's `oid` claim. */
+export const getGraphUserId = (): string => {
+  const token = getGraphToken();
+  if (!token) throw noGraphTokenError();
+  const oid = decodeJwtPayload(token).oid;
+  if (typeof oid !== 'string' || oid === '') throw ToolError.internal('The Graph token carries no user id.');
+  return oid;
+};
+
+/**
+ * Make an authenticated Microsoft Graph request with the captured Graph token.
+ * A JSON `body` is sent as JSON; a `Uint8Array` body is sent as raw bytes with
+ * the caller's `contentType`. Reads are replayed on transient failures; writes
+ * only with `retryNonIdempotent`.
+ */
+export const graphApi = async <T>(
+  path: string,
+  options: {
+    method?: string;
+    body?: Record<string, unknown> | Uint8Array;
+    contentType?: string;
+    label: string;
+    retryNonIdempotent?: boolean;
+    timeoutMs?: number;
+  },
+): Promise<T> => {
+  const token = getGraphToken();
+  if (!token) throw noGraphTokenError();
+  const { method = 'GET', body, contentType, label, retryNonIdempotent, timeoutMs } = options;
+  const isBytes = body instanceof Uint8Array;
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  if (body !== undefined)
+    headers['Content-Type'] = isBytes ? (contentType ?? 'application/octet-stream') : 'application/json';
+
+  const request: TeamsRequestOptions = { label, retryNonIdempotent, credentials: 'omit', timeoutMs };
+  const response = await teamsFetch(
+    `${GRAPH_BASE}${path}`,
+    {
+      method,
+      headers,
+      body: body === undefined ? undefined : isBytes ? (body as BodyInit) : JSON.stringify(body),
+    },
+    request,
+  );
+  return handleApiResponse<T>(response, label);
+};
+
+/** The OneDrive folder Teams keeps files shared in chat in. */
+export const CHAT_FILES_FOLDER = 'Microsoft Teams Chat Files';
+
+/** The fields of an uploaded file a chat message's file entry is built from. */
+export interface UploadedDriveItem {
+  id: string;
+  name: string;
+  sharepointIds: {
+    listId?: string;
+    listItemUniqueId?: string;
+    siteId?: string;
+    siteUrl?: string;
+    webId?: string;
+  };
+  parentReference?: { driveId?: string };
+}
+
+/**
+ * Upload a file into the chat-files folder of the user's OneDrive, as Teams
+ * does for a file shared in chat. A name already taken gets a numbered copy
+ * rather than replacing the earlier file — which is also why the upload is
+ * never replayed: a replay after a hidden success would leave a second copy.
+ */
+export const uploadChatFile = async (
+  name: string,
+  bytes: Uint8Array,
+  contentType: string,
+): Promise<UploadedDriveItem> => {
+  const path = `/me/drive/root:/${encodeURIComponent(CHAT_FILES_FOLDER)}/${encodeURIComponent(name)}:/content`;
+  const uploaded = await graphApi<{ id: string }>(`${path}?@microsoft.graph.conflictBehavior=rename`, {
+    method: 'PUT',
+    body: bytes,
+    contentType,
+    label: 'OneDrive chat file upload',
+    timeoutMs: GRAPH_UPLOAD_TIMEOUT_MS,
+  });
+  return graphApi<UploadedDriveItem>(
+    `/me/drive/items/${encodeURIComponent(uploaded.id)}?$select=id,name,sharepointIds,parentReference`,
+    { label: 'OneDrive chat file details' },
+  );
+};
+
+/** The web address of the user's OneDrive document library, e.g. `https://<tenant>-my.sharepoint.com/personal/<user>/Documents`. */
+export const getDriveWebUrl = async (): Promise<string> =>
+  (await graphApi<{ webUrl: string }>('/me/drive?$select=webUrl', { label: 'OneDrive details' })).webUrl;
+
+/**
+ * Give people access to a file without notifying them by email — Teams' own
+ * "people in this chat" sharing. Granting the same access twice changes
+ * nothing, so the request is replayed on transient failures.
+ */
+export const shareFileWith = async (itemId: string, emails: string[], role: 'read' | 'write'): Promise<void> => {
+  await graphApi(`/me/drive/items/${encodeURIComponent(itemId)}/invite`, {
+    method: 'POST',
+    body: {
+      requireSignIn: true,
+      sendInvitation: false,
+      roles: [role],
+      recipients: emails.map(email => ({ email })),
+    },
+    label: 'OneDrive share with chat members',
+    retryNonIdempotent: true,
+  });
+};
+
+/** A directory user as people lookups return them. */
+export interface DirectoryUser {
+  id: string;
+  displayName: string;
+  mail: string | null;
+  userPrincipalName: string;
+}
+
+/** Graph `$batch` accepts at most this many requests per call. */
+const GRAPH_BATCH_LIMIT = 20;
+
+const USER_FIELDS = 'id,displayName,mail,userPrincipalName';
+
+/**
+ * Look up directory users by object id or sign-in name, in batches. Ids that
+ * resolve to no user are left out. A batch is a read, so it is replayed on
+ * transient failures.
+ */
+export const getDirectoryUsers = async (idsOrUpns: string[]): Promise<DirectoryUser[]> => {
+  const users: DirectoryUser[] = [];
+  for (let start = 0; start < idsOrUpns.length; start += GRAPH_BATCH_LIMIT) {
+    const chunk = idsOrUpns.slice(start, start + GRAPH_BATCH_LIMIT);
+    const result = await graphApi<{ responses?: { status: number; body?: DirectoryUser }[] }>('/$batch', {
+      method: 'POST',
+      body: {
+        requests: chunk.map((id, i) => ({
+          id: String(i),
+          method: 'GET',
+          url: `/users/${encodeURIComponent(id)}?$select=${USER_FIELDS}`,
+        })),
+      },
+      label: 'Graph people lookup',
+      retryNonIdempotent: true,
+    });
+    for (const response of result.responses ?? []) {
+      if (response.status === 200 && response.body) users.push(response.body);
+    }
+  }
+  return users;
+};
+
+// ---------------------------------------------------------------------------
 // Shared response handling
 // ---------------------------------------------------------------------------
 
@@ -898,6 +1093,7 @@ export const TEAMS_TOKEN_SOURCES = [
   'skypeJwtPreScript',
   'skypeJwtCache',
   'substrateToken',
+  'graphToken',
   'signInName',
 ] as const;
 
@@ -970,6 +1166,7 @@ export const describeTokenSources = (): TeamsTokenSource[] => [
     ? describeSecret('skypeJwtCache', cachedSkypeJwt.token, cachedSkypeJwt.expiresAt)
     : absentTokenSource('skypeJwtCache'),
   describeCapturedToken('substrateToken', 'substrateToken'),
+  describeCapturedToken('graphToken', 'graphToken'),
   { ...absentTokenSource('signInName'), present: findSignInName() !== '' },
 ];
 

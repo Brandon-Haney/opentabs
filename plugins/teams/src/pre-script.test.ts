@@ -13,6 +13,9 @@ const accessTokenEntry = (target: string, secret: string): string =>
 const SUBSTRATE_TARGET =
   'https://substrate.office.com/ActivityFeed-Internal.Read https://substrate.office.com/.default';
 const SKYPE_TARGET = 'https://api.spaces.skype.com/Authorization.ReadWrite https://api.spaces.skype.com/.default';
+const GRAPH_FILES_TARGET =
+  'email openid profile https://graph.microsoft.com/ChatMember.Read https://graph.microsoft.com/Files.ReadWrite.All https://graph.microsoft.com/User.ReadBasic.All';
+const GRAPH_OTHER_TARGET = 'https://graph.microsoft.com/User.Read https://graph.microsoft.com/.default';
 
 let set: ReturnType<typeof vi.fn>;
 
@@ -78,6 +81,16 @@ describe('teams pre-script', () => {
     );
 
     expect(lastSet('substrateToken')).toMatchObject({ secret: 'substrate-from-other-tab' });
+  });
+
+  test('captures the Graph token that can write files, and no other Graph token', async () => {
+    localStorage.setItem('msal.2|graph-other', accessTokenEntry(GRAPH_OTHER_TARGET, 'graph-user-read'));
+    localStorage.setItem('msal.2|graph-files', accessTokenEntry(GRAPH_FILES_TARGET, 'graph-files'));
+
+    await runPreScript();
+
+    expect(set.mock.calls.filter(([k]) => k === 'graphToken')).toHaveLength(1);
+    expect(lastSet('graphToken')).toMatchObject({ secret: 'graph-files' });
   });
 
   test('ignores storage events for sessionStorage and for removed entries', async () => {

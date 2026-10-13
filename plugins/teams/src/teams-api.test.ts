@@ -7,13 +7,18 @@ import {
   clearCaches,
   createThread,
   describeTokenSources,
+  getDirectoryUsers,
+  getGraphUserId,
   getSkypeIdentity,
+  graphApi,
   probeAuthz,
   probeChatService,
   probeSubstrate,
+  shareFileWith,
   substrateSearch,
   TEAMS_TOKEN_SOURCES,
   threadApi,
+  uploadChatFile,
 } from './teams-api.js';
 
 // Without a `window`, teams-api detects enterprise Teams and falls back to the fixed AMER endpoints.
@@ -40,6 +45,7 @@ const SUBSTRATE_TOKEN = jwt(
   { aud: 'https://substrate.office.com', tid: 'tenant-1', puid: 'puid-1', oid: 'oid-1' },
   'substrate-secret',
 );
+const GRAPH_TOKEN = jwt({ aud: 'https://graph.microsoft.com', oid: 'user-oid-1' }, 'graph-secret');
 const SIGN_IN_NAME = 'someone@contoso.com';
 
 type PreScriptSlots = Record<string, unknown>;
@@ -567,6 +573,99 @@ describe('substrateSearch', () => {
   });
 });
 
+describe('Microsoft Graph', () => {
+  test('sends the captured Graph token as a bearer, without the page cookies', async () => {
+    stubPreScript({ graphToken: capturedToken(GRAPH_TOKEN) });
+    fetchMock.mockResolvedValueOnce(json({ webUrl: 'https://contoso-my.sharepoint.com/personal/u/Documents' }));
+
+    await settle(graphApi('/me/drive?$select=webUrl', { label: 'OneDrive details' }));
+
+    expect(requestUrl(0)).toBe('https://graph.microsoft.com/v1.0/me/drive?$select=webUrl');
+    expect(requestHeaders(0).Authorization).toBe(`Bearer ${GRAPH_TOKEN}`);
+    expect(requestInit(0).credentials).toBe('omit');
+  });
+
+  test('fails with AUTH_ERROR and no request when no Graph token is captured', async () => {
+    stubPreScript({});
+
+    const error = await settleError(graphApi('/me', { label: 'Graph probe' }));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(error.code).toBe('AUTH_ERROR');
+  });
+
+  test('reads the signed-in user id from the token', () => {
+    stubPreScript({ graphToken: capturedToken(GRAPH_TOKEN) });
+
+    expect(getGraphUserId()).toBe('user-oid-1');
+  });
+
+  test('uploads into the chat-files folder as raw bytes, renaming on conflict, and never replays the PUT', async () => {
+    stubPreScript({ graphToken: capturedToken(GRAPH_TOKEN) });
+    fetchMock.mockResolvedValueOnce(respond(503));
+
+    const error = await settleError(uploadChatFile('Q3 report.csv', new Uint8Array([1, 2, 3]), 'text/csv'));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(error.code).toBe('UPSTREAM_UNAVAILABLE');
+    expect(requestUrl(0)).toBe(
+      'https://graph.microsoft.com/v1.0/me/drive/root:/Microsoft%20Teams%20Chat%20Files/Q3%20report.csv:/content' +
+        '?@microsoft.graph.conflictBehavior=rename',
+    );
+    expect(requestInit(0).method).toBe('PUT');
+    expect(requestHeaders(0)['Content-Type']).toBe('text/csv');
+    expect(requestInit(0).body).toBeInstanceOf(Uint8Array);
+  });
+
+  test('reads back the uploaded item’s SharePoint ids', async () => {
+    stubPreScript({ graphToken: capturedToken(GRAPH_TOKEN) });
+    const item = { id: 'item-1', name: 'a.csv', sharepointIds: { listItemUniqueId: 'u-1' } };
+    fetchMock.mockResolvedValueOnce(json({ id: 'item-1' })).mockResolvedValueOnce(json(item));
+
+    await expect(settle(uploadChatFile('a.csv', new Uint8Array([1]), 'text/csv'))).resolves.toEqual(item);
+    expect(requestUrl(1)).toBe(
+      'https://graph.microsoft.com/v1.0/me/drive/items/item-1?$select=id,name,sharepointIds,parentReference',
+    );
+  });
+
+  test('shares a file with people by email without notifying them', async () => {
+    stubPreScript({ graphToken: capturedToken(GRAPH_TOKEN) });
+    fetchMock.mockResolvedValueOnce(json({ value: [] }));
+
+    await settle(shareFileWith('item-1', ['a@contoso.com', 'b@contoso.com'], 'read'));
+
+    expect(requestUrl(0)).toBe('https://graph.microsoft.com/v1.0/me/drive/items/item-1/invite');
+    expect(JSON.parse(String(requestInit(0).body))).toEqual({
+      requireSignIn: true,
+      sendInvitation: false,
+      roles: ['read'],
+      recipients: [{ email: 'a@contoso.com' }, { email: 'b@contoso.com' }],
+    });
+  });
+
+  test('looks people up in batches of twenty and drops ids that resolve to no one', async () => {
+    stubPreScript({ graphToken: capturedToken(GRAPH_TOKEN) });
+    const ids = Array.from({ length: 21 }, (_, i) => `oid-${i}`);
+    const user = (id: string) => ({ id, displayName: id, mail: null, userPrincipalName: `${id}@contoso.com` });
+    fetchMock
+      .mockResolvedValueOnce(
+        json({
+          responses: [
+            ...ids.slice(0, 19).map((id, i) => ({ id: String(i), status: 200, body: user(id) })),
+            { id: '19', status: 404 },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(json({ responses: [{ id: '0', status: 200, body: user('oid-20') }] }));
+
+    const users = await settle(getDirectoryUsers(ids));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(requestInit(0).body)).requests).toHaveLength(20);
+    expect(users.map(u => u.id)).toEqual([...ids.slice(0, 19), 'oid-20']);
+  });
+});
+
 describe('buildMessageSearchBody', () => {
   test('produces the Teams search bar wire shape for a message query', () => {
     const body = buildMessageSearchBody({ query: 'budget', from: 25, size: 10 });
@@ -597,6 +696,7 @@ describe('describeTokenSources', () => {
       lokiToken: capturedToken(LOKI_TOKEN),
       skypeJwt: capturedToken(SKYPE_JWT),
       substrateToken: capturedToken(SUBSTRATE_TOKEN),
+      graphToken: capturedToken(GRAPH_TOKEN),
       signInName: SIGN_IN_NAME,
     });
     fetchMock.mockResolvedValueOnce(json({}));
@@ -606,7 +706,7 @@ describe('describeTokenSources', () => {
     const serialized = JSON.stringify(sources);
 
     expect(sources.map(s => s.source)).toEqual([...TEAMS_TOKEN_SOURCES]);
-    for (const secret of [MSAL_SKYPE_TOKEN, LOKI_TOKEN, SKYPE_JWT, SUBSTRATE_TOKEN, SIGN_IN_NAME]) {
+    for (const secret of [MSAL_SKYPE_TOKEN, LOKI_TOKEN, SKYPE_JWT, SUBSTRATE_TOKEN, GRAPH_TOKEN, SIGN_IN_NAME]) {
       expect(serialized).not.toContain(secret);
     }
     expect(serialized).not.toContain('secret');

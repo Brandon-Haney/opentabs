@@ -20,6 +20,7 @@ import {
   type QueryPanel,
   refreshQueryPanel,
   searchEvent,
+  type UnappliedCriterion,
   unappliedCriteria,
 } from './search-page.js';
 import { openTask, parseHomeTiles } from './work-area.js';
@@ -32,6 +33,26 @@ const CONTAINS_OPERATOR = 'CONTAINS';
 
 /** A large search or export keeps the server busy for longer than a tool call may stay silent. */
 const HEARTBEAT_INTERVAL_MS = 10_000;
+
+/**
+ * Raised when the page ran a search but kept a previous value in place of a criterion it was
+ * sent. The window's page state is what holds the stale value, so a fresh window applies the
+ * same criteria cleanly.
+ */
+class CriteriaNotAppliedError extends Error {
+  constructor(readonly unapplied: UnappliedCriterion[]) {
+    super(
+      `Oracle Fusion ran the search without applying ${unapplied
+        .map(({ label, sent, shown }) => `${label} (sent "${sent}", the page kept "${shown}")`)
+        .join(', ')}, so its results do not match the criteria and were not read.`,
+    );
+    this.name = 'CriteriaNotAppliedError';
+  }
+}
+
+/** Failures that leave the window unusable but succeed when the operation reruns in a new one. */
+const isFixedByNewWindow = (error: unknown): boolean =>
+  error instanceof WindowClosedError || error instanceof CriteriaNotAppliedError;
 
 /** What a results reader works from once a search has been accepted. */
 export interface SearchResults {
@@ -260,13 +281,7 @@ export const createSearchScreen = <T, O = void>(target: SearchScreenTarget<T, O>
     if (rejected.length > 0) return { rejected };
 
     const unapplied = unappliedCriteria(query, open.panel, criteria);
-    if (unapplied.length > 0) {
-      throw ToolError.internal(
-        `Oracle Fusion ran the search without applying ${unapplied
-          .map(({ label, sent, shown }) => `${label} (sent "${sent}", the page kept "${shown}")`)
-          .join(', ')}, so its results do not match the criteria and were not read.`,
-      );
-    }
+    if (unapplied.length > 0) throw new CriteriaNotAppliedError(unapplied);
 
     return {
       results: await target.results.read({ adfWindow, taskPage, response, panel: open.panel, report }, options),
@@ -319,20 +334,24 @@ export const createSearchScreen = <T, O = void>(target: SearchScreenTarget<T, O>
     return { results: { headings: table.headings, rows: table.rows } };
   };
 
-  /** Runs one operation on the page, reopening the window once if the server has dropped it. */
+  /**
+   * Runs one operation on the page, rerunning it once in a new window when the server has
+   * dropped the window or the page kept stale criteria.
+   */
   const withWindow = async <R>(operation: () => Promise<Outcome<R>>): Promise<Outcome<R>> => {
     try {
       return await operation();
     } catch (error) {
       // After a failure the page state on the server is unknown, so the window is abandoned.
       screen = null;
-      if (!(error instanceof WindowClosedError)) throw error;
+      if (!isFixedByNewWindow(error)) throw error;
     }
 
     try {
       return await operation();
     } catch (error) {
       screen = null;
+      if (error instanceof CriteriaNotAppliedError) throw ToolError.internal(error.message);
       if (!(error instanceof WindowClosedError)) throw error;
       throw ToolError.internal('Oracle Fusion closed the background window twice in a row — reload the Fusion tab.');
     }

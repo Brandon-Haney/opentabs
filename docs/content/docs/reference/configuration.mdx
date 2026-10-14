@@ -74,6 +74,12 @@ Override the config directory with the `OPENTABS_CONFIG_DIR` environment variabl
       <Table.Cell className="*:text-xs">`30`</Table.Cell>
       <Table.Cell>Minutes between automatic npm plugin update checks. Set to `0` to disable update checks entirely.</Table.Cell>
     </Table.Row>
+    <Table.Row>
+      <Table.Cell className="font-medium">`sessionRecovery`</Table.Cell>
+      <Table.Cell className="*:text-xs">`boolean`</Table.Cell>
+      <Table.Cell className="*:text-xs">`false`</Table.Cell>
+      <Table.Cell>When a plugin tool call finds no tab for its site, no ready tab, or an expired session, open the site in a background tab, wait up to 60 seconds for single sign-on to restore the session, and run the call once more. A site that still needs an interactive sign-in answers with a `NEEDS_LOGIN` error naming the site and URL. Suited to unattended runs; leave it off to have such calls fail immediately.</Table.Cell>
+    </Table.Row>
   </Table.Body>
 </Table>
 

@@ -65,6 +65,7 @@ import { listTabsInGroup } from './list-tabs-in-group.js';
 import { listWindows } from './list-windows.js';
 import { navigateTab } from './navigate-tab.js';
 import { openTab } from './open-tab.js';
+import { pluginCheckSessions } from './plugin-check-sessions.js';
 import { pluginListTabs } from './plugin-list-tabs.js';
 import { pressKey } from './press-key.js';
 import { queryElements } from './query-elements.js';
@@ -166,6 +167,7 @@ const browserTools: BrowserToolDefinition[] = [
   extensionForceReconnect,
   analyzeSiteTool,
   pluginListTabs,
+  pluginCheckSessions,
 ];
 
 // Validate that every tool definition matches its entry in BROWSER_TOOLS_CATALOG.

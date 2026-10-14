@@ -127,12 +127,23 @@ describe('handleBrowserOpenTab', () => {
       windowId: 1,
     } as chrome.tabs.Tab);
     await handleBrowserOpenTab({ url: 'about:blank' }, 'req-blank');
-    expect(mockTabsCreate).toHaveBeenCalledWith({ url: 'about:blank' });
+    expect(mockTabsCreate).toHaveBeenCalledWith({ url: 'about:blank', active: true });
     expect(firstSentMessage()).toMatchObject({
       jsonrpc: '2.0',
       id: 'req-blank',
       result: { id: 99, url: 'about:blank' },
     });
+  });
+
+  test('opens the tab in the background when active is false', async () => {
+    mockTabsCreate.mockResolvedValueOnce({
+      id: 100,
+      title: '',
+      url: 'https://example.com/',
+      windowId: 1,
+    } as chrome.tabs.Tab);
+    await handleBrowserOpenTab({ url: 'https://example.com/', active: false }, 'req-bg');
+    expect(mockTabsCreate).toHaveBeenCalledWith({ url: 'https://example.com/', active: false });
   });
 
   test('rejects javascript: url', async () => {

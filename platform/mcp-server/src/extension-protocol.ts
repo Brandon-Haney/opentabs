@@ -636,7 +636,7 @@ const handleExtensionMessage = (
   }
 
   if (method === 'tab.syncAll') {
-    handleTabSyncAll(params, senderConn);
+    handleTabSyncAll(state, params, senderConn);
     return;
   }
 

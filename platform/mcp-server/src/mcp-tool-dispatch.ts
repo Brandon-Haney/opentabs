@@ -29,6 +29,13 @@ import {
 import { collectLocalFilePaths, readLocalFiles } from './local-files.js';
 import { log } from './logger.js';
 import { sanitizeErrorMessage } from './sanitize-error.js';
+import {
+  classifySessionFailure,
+  formatNeedsLogin,
+  markSessionWorking,
+  recordNeedsLogin,
+  recoverSession,
+} from './session-recovery.js';
 import type { CachedBrowserTool, ServerState, ToolLookupEntry } from './state.js';
 import {
   appendAuditEntry,
@@ -711,18 +718,63 @@ const handlePluginToolCall = async (
           }
         : undefined;
 
-    const result = await dispatchToExtension(
-      state,
-      'tool.dispatch',
-      {
-        plugin: pluginName,
-        tool: toolBaseName,
-        input: pluginArgs,
-        ...(localFiles !== undefined && { localFiles }),
-        ...(resolvedTabId !== undefined && { tabId: resolvedTabId }),
-      },
-      { label: `${pluginName}/${toolBaseName}`, pluginName, progressToken, onProgress },
-    );
+    const dispatchTool = (targetTabId: number | undefined): Promise<unknown> =>
+      dispatchToExtension(
+        state,
+        'tool.dispatch',
+        {
+          plugin: pluginName,
+          tool: toolBaseName,
+          input: pluginArgs,
+          ...(localFiles !== undefined && { localFiles }),
+          ...(targetTabId !== undefined && { tabId: targetTabId }),
+        },
+        { label: `${pluginName}/${toolBaseName}`, pluginName, progressToken, onProgress },
+      );
+
+    let result: unknown;
+    try {
+      result = await dispatchTool(resolvedTabId);
+    } catch (err) {
+      const plugin = state.registry.plugins.get(pluginName);
+      const failure = isDispatchError(err)
+        ? classifySessionFailure(state, err, resolvedTabId !== undefined)
+        : undefined;
+      if (failure === undefined || plugin === undefined || !isDispatchError(err)) throw err;
+
+      log.info(`Session recovery for ${pluginName} (${failure}): ${err.message}`);
+      const outcome = await recoverSession(state, plugin, message => onProgress?.(0, 1, message));
+      if (outcome.kind !== 'recovered') {
+        success = false;
+        errorInfo = { code: 'NEEDS_LOGIN', message: err.message, category: 'auth' };
+        return {
+          content: [{ type: 'text' as const, text: formatNeedsLogin(plugin, outcome, err.message) }],
+          isError: true,
+        };
+      }
+
+      // Run the call once more, in the tab recovery opened.
+      retargetAudit(outcome.tabId);
+      try {
+        result = await dispatchTool(outcome.tabId);
+      } catch (retryErr) {
+        if (!isDispatchError(retryErr) || retryErr.data?.category !== 'auth') throw retryErr;
+        const stillSignedOut = {
+          kind: 'needs_login' as const,
+          url: outcome.url,
+          tabId: outcome.tabId,
+          reason: 'the site still rejected the session after the page reopened',
+        };
+        recordNeedsLogin(state, pluginName, stillSignedOut);
+        success = false;
+        errorInfo = { code: 'NEEDS_LOGIN', message: retryErr.message, category: 'auth' };
+        return {
+          content: [{ type: 'text' as const, text: formatNeedsLogin(plugin, stillSignedOut, retryErr.message) }],
+          isError: true,
+        };
+      }
+    }
+    markSessionWorking(state, pluginName);
     const { output, echoedTabId } = unwrapDispatchResult(result);
     retargetAudit(echoedTabId);
     const cleaned = sanitizeOutput(output);

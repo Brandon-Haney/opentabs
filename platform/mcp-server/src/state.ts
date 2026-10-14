@@ -21,6 +21,7 @@ import type {
 import { prefixedToolName } from '@opentabs-dev/shared';
 import { appendAuditEntryToDisk } from './audit-disk.js';
 import type { BrowserToolDefinition } from './browser-tools/definition.js';
+import type { SessionRecoveryState } from './session-recovery.js';
 
 /**
  * Overrides the mutating methods of an existing Map to throw TypeError, preventing
@@ -304,6 +305,8 @@ export interface ServerState {
   configWriteMutex: Promise<void>;
   /** Per-plugin active dispatch count for concurrency limiting */
   activeDispatches: Map<string, number>;
+  /** Where each plugin's site was last signed in, and the recoveries running or recently failed */
+  sessionRecovery: SessionRecoveryState;
   /** Periodic timer for sweeping stale MCP sessions between hot reloads */
   sweepTimerId: ReturnType<typeof setInterval> | null;
   /** Periodic timer for npm version checks */
@@ -394,6 +397,14 @@ export const createState = (): ServerState => ({
   sessionTransportIds: new WeakMap(),
   configWriteMutex: Promise.resolve(),
   activeDispatches: new Map(),
+  sessionRecovery: {
+    enabled: false,
+    urls: new Map(),
+    loaded: null,
+    writeTimer: null,
+    inFlight: new Map(),
+    needsLogin: new Map(),
+  },
   sweepTimerId: null,
   versionCheckTimerId: null,
   updateCheckIntervalMinutes: 30,

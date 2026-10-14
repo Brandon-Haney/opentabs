@@ -36,6 +36,7 @@ import {
   searchNpmPlugins,
   updatePlugin,
 } from './plugin-management.js';
+import { rememberReadyTab } from './session-recovery.js';
 import { resolvePluginSettings } from './settings-resolver.js';
 import type { ExtensionConnection, RegisteredPlugin, ServerState, TabMapping } from './state.js';
 import {
@@ -257,7 +258,11 @@ const parseTabMapping = (wire: WireTabMapping): TabMapping => {
   return { state, tabs };
 };
 
-const handleTabSyncAll = (params: Record<string, unknown> | undefined, senderConn?: ExtensionConnection): void => {
+const handleTabSyncAll = (
+  state: ServerState,
+  params: Record<string, unknown> | undefined,
+  senderConn?: ExtensionConnection,
+): void => {
   if (!params || !senderConn) return;
   const tabSyncParams = params as Partial<TabSyncAllParams>;
   const tabs = tabSyncParams.tabs;
@@ -265,7 +270,9 @@ const handleTabSyncAll = (params: Record<string, unknown> | undefined, senderCon
 
   senderConn.tabMapping.clear();
   for (const [pluginName, mapping] of Object.entries(tabs)) {
-    senderConn.tabMapping.set(pluginName, parseTabMapping(mapping as WireTabMapping));
+    const parsed = parseTabMapping(mapping as WireTabMapping);
+    senderConn.tabMapping.set(pluginName, parsed);
+    rememberReadyTab(state, pluginName, parsed);
   }
 
   // Remove activeNetworkCaptures entries for tabs that are no longer present after the sync
@@ -337,6 +344,7 @@ const handleTabStateChanged = (
   const oldTabIds = new Set(oldMapping?.tabs.map((t: { tabId: number }) => t.tabId) ?? []);
   const newMapping = parseTabMapping(wire);
   senderConn.tabMapping.set(plugin, newMapping);
+  rememberReadyTab(state, plugin, newMapping);
   const newTabIdSet = new Set(newMapping.tabs.map(t => t.tabId));
 
   // Remove activeNetworkCaptures entries for tabs removed from this plugin's mapping

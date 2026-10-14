@@ -55,6 +55,8 @@ interface OpentabsConfig {
   version: number;
   /** Minutes between npm update checks (0 = disabled, default 30) */
   updateCheckIntervalMinutes: number;
+  /** Open a plugin's site and retry once when a call finds no tab or an expired session (default false) */
+  sessionRecovery: boolean;
 }
 
 /** Version marker file for the managed extension install */
@@ -168,6 +170,7 @@ const KNOWN_CONFIG_KEYS = new Set([
   'settings',
   'additionalAllowedDirectories',
   'updateCheckIntervalMinutes',
+  'sessionRecovery',
 ]);
 
 /** Compute Levenshtein edit distance between two strings */
@@ -248,6 +251,8 @@ const parseConfigRecord = (record: Record<string, unknown>): OpentabsConfig => {
       ? record.updateCheckIntervalMinutes
       : 30;
 
+  const sessionRecovery = record.sessionRecovery === true;
+
   return {
     localPlugins,
     localPluginDirs,
@@ -256,6 +261,7 @@ const parseConfigRecord = (record: Record<string, unknown>): OpentabsConfig => {
     additionalAllowedDirectories,
     version,
     updateCheckIntervalMinutes,
+    sessionRecovery,
   };
 };
 
@@ -288,6 +294,7 @@ const loadConfig = async (): Promise<OpentabsConfig> => {
       additionalAllowedDirectories: [],
       version: CURRENT_CONFIG_VERSION,
       updateCheckIntervalMinutes: 30,
+      sessionRecovery: false,
     };
     await atomicWriteConfig(configPath, `${JSON.stringify(config, null, 2)}\n`);
     log.info(`Created default config at ${configPath}`);
@@ -361,6 +368,7 @@ const savePluginPermissions = async (
       additionalAllowedDirectories: current.additionalAllowedDirectories,
       version: current.version,
       updateCheckIntervalMinutes: current.updateCheckIntervalMinutes,
+      sessionRecovery: current.sessionRecovery,
     };
     await atomicWriteConfig(configPath, `${JSON.stringify(updated, null, 2)}\n`);
   })();
@@ -404,6 +412,7 @@ const savePluginSettings = async (
       additionalAllowedDirectories: current.additionalAllowedDirectories,
       version: current.version,
       updateCheckIntervalMinutes: current.updateCheckIntervalMinutes,
+      sessionRecovery: current.sessionRecovery,
     };
     await atomicWriteConfig(configPath, `${JSON.stringify(updated, null, 2)}\n`);
   })();

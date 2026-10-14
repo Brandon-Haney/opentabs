@@ -32,6 +32,13 @@ import {
   unwrapDispatchResult,
 } from './mcp-tool-dispatch.js';
 import { sanitizeErrorMessage } from './sanitize-error.js';
+import {
+  classifySessionFailure,
+  formatNeedsLogin,
+  markSessionWorking,
+  recordNeedsLogin,
+  recoverSession,
+} from './session-recovery.js';
 import type { CachedBrowserTool, RegisteredPlugin, ServerState, ToolLookupEntry } from './state.js';
 import {
   appendAuditEntry,
@@ -432,6 +439,14 @@ vi.mock('./state.js', () => ({
 
 vi.mock('./config.js', () => ({
   savePluginPermissions: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('./session-recovery.js', () => ({
+  classifySessionFailure: vi.fn(),
+  formatNeedsLogin: vi.fn(),
+  markSessionWorking: vi.fn(),
+  recordNeedsLogin: vi.fn(),
+  recoverSession: vi.fn(),
 }));
 
 vi.mock('./sanitize-error.js', () => ({
@@ -3309,5 +3324,112 @@ describe('telemetry: plugin_reviewed', () => {
       expect(p).not.toHaveProperty('version');
       expect(p).not.toHaveProperty('review_token');
     }
+  });
+});
+
+describe('handlePluginToolCall — session recovery', () => {
+  const TEST_PLUGIN = { name: 'testplugin', displayName: 'Test Plugin' } as RegisteredPlugin;
+
+  const stateWithPlugin = (): ServerState =>
+    createMockState({
+      registry: { plugins: new Map([['testplugin', TEST_PLUGIN]]), toolLookup: new Map(), failures: [] },
+    } as unknown as Partial<ServerState>);
+
+  const dispatchError = (message: string, code: number, data?: Record<string, unknown>) =>
+    Object.assign(new Error(message), { name: 'DispatchError', code, ...(data && { data }) });
+
+  const call = (state: ServerState, args: Record<string, unknown> = {}) =>
+    handlePluginToolCall(
+      state,
+      'testplugin_test_action',
+      args,
+      'testplugin',
+      'test_action',
+      createMockLookup(),
+      createMockExtra(),
+      createMockCallbacks(),
+    );
+
+  beforeEach(() => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    vi.mocked(isDispatchError).mockImplementation(
+      (err: unknown) => err instanceof Error && err.name === 'DispatchError',
+    );
+    vi.mocked(dispatchToExtension).mockReset();
+    vi.mocked(classifySessionFailure).mockReset();
+    vi.mocked(recoverSession).mockReset();
+    vi.mocked(recordNeedsLogin).mockReset();
+    vi.mocked(markSessionWorking).mockReset();
+    vi.mocked(appendAuditEntry).mockClear();
+    vi.mocked(formatNeedsLogin).mockReset().mockReturnValue('NEEDS_LOGIN text');
+  });
+
+  test('opens the site and runs the call again in the recovered tab', async () => {
+    vi.mocked(dispatchToExtension)
+      .mockRejectedValueOnce(dispatchError('HTTP 401', -32603, { code: 'AUTH_ERROR', category: 'auth' }))
+      .mockResolvedValueOnce({ output: { ok: true }, tabId: 7 });
+    vi.mocked(classifySessionFailure).mockReturnValue('auth');
+    vi.mocked(recoverSession).mockResolvedValue({ kind: 'recovered', tabId: 7, url: 'https://x.test/' });
+
+    const result = await call(stateWithPlugin());
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toEqual({ ok: true });
+    expect(vi.mocked(dispatchToExtension).mock.calls[1]?.[2]).toMatchObject({ tabId: 7 });
+    expect(markSessionWorking).toHaveBeenCalledWith(expect.anything(), 'testplugin');
+  });
+
+  test('returns NEEDS_LOGIN when the site waits on an interactive sign-in', async () => {
+    vi.mocked(dispatchToExtension).mockRejectedValueOnce(
+      dispatchError('No matching tab for plugin "testplugin" (state: closed)', -32001),
+    );
+    vi.mocked(classifySessionFailure).mockReturnValue('no_tab');
+    const outcome = { kind: 'needs_login' as const, url: 'https://x.test/', tabId: 7, reason: 'timed out' };
+    vi.mocked(recoverSession).mockResolvedValue(outcome);
+
+    const result = await call(stateWithPlugin());
+
+    expect(result).toEqual({ content: [{ type: 'text', text: 'NEEDS_LOGIN text' }], isError: true });
+    expect(formatNeedsLogin).toHaveBeenCalledWith(
+      TEST_PLUGIN,
+      outcome,
+      'No matching tab for plugin "testplugin" (state: closed)',
+    );
+    expect(dispatchToExtension).toHaveBeenCalledTimes(1);
+    expect(auditedEntry().error).toMatchObject({ code: 'NEEDS_LOGIN', category: 'auth' });
+  });
+
+  test('returns NEEDS_LOGIN and starts the cooldown when the reopened page is still signed out', async () => {
+    const authError = dispatchError('HTTP 401', -32603, { code: 'AUTH_ERROR', category: 'auth' });
+    vi.mocked(dispatchToExtension).mockRejectedValueOnce(authError).mockRejectedValueOnce(authError);
+    vi.mocked(classifySessionFailure).mockReturnValue('auth');
+    vi.mocked(recoverSession).mockResolvedValue({ kind: 'recovered', tabId: 7, url: 'https://x.test/' });
+
+    const result = await call(stateWithPlugin());
+
+    expect(result.isError).toBe(true);
+    expect(recordNeedsLogin).toHaveBeenCalledWith(
+      expect.anything(),
+      'testplugin',
+      expect.objectContaining({ kind: 'needs_login', url: 'https://x.test/', tabId: 7 }),
+    );
+  });
+
+  test('passes through a failure that recovery does not handle', async () => {
+    vi.mocked(dispatchToExtension).mockRejectedValueOnce(dispatchError('Tab closed during tool dispatch', -32001));
+    vi.mocked(classifySessionFailure).mockReturnValue(undefined);
+
+    const result = await call(stateWithPlugin());
+
+    expect(result.content[0]?.text).toBe('Tab closed: Tab closed during tool dispatch');
+    expect(recoverSession).not.toHaveBeenCalled();
+  });
+
+  test('tells the classifier when the caller targeted a tab', async () => {
+    vi.mocked(dispatchToExtension).mockRejectedValueOnce(dispatchError('Adapter not ready', -32002));
+
+    await call(stateWithPlugin(), { tabId: 5 });
+
+    expect(classifySessionFailure).toHaveBeenCalledWith(expect.anything(), expect.anything(), true);
   });
 });

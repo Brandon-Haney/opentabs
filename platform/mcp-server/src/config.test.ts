@@ -81,6 +81,7 @@ describe('loadConfig / saveConfig round-trip', () => {
       },
       version: 3,
       updateCheckIntervalMinutes: 30,
+      sessionRecovery: false,
     };
     await saveConfigWrapped(custom);
 
@@ -215,6 +216,7 @@ describe('savePluginPermissions round-trip', () => {
       settings: {},
       version: 3,
       updateCheckIntervalMinutes: 30,
+      sessionRecovery: false,
     };
     await saveConfigWrapped(initial);
 
@@ -241,6 +243,7 @@ describe('savePluginPermissions round-trip', () => {
       settings: {},
       version: 3,
       updateCheckIntervalMinutes: 30,
+      sessionRecovery: false,
     };
     await saveConfigWrapped(initial);
 
@@ -265,6 +268,7 @@ describe('savePluginPermissions round-trip', () => {
       },
       version: 3,
       updateCheckIntervalMinutes: 30,
+      sessionRecovery: false,
     };
     await saveConfigWrapped(initial);
 
@@ -292,6 +296,7 @@ describe('savePluginSettings round-trip', () => {
       settings: {},
       version: 3,
       updateCheckIntervalMinutes: 30,
+      sessionRecovery: false,
     };
     await saveConfigWrapped(initial);
 
@@ -315,6 +320,7 @@ describe('savePluginSettings round-trip', () => {
       settings: { old_plugin: { key: 'old-value' } },
       version: 3,
       updateCheckIntervalMinutes: 30,
+      sessionRecovery: false,
     };
     await saveConfigWrapped(initial);
 
@@ -357,6 +363,7 @@ describe('saveConfig error propagation', () => {
       settings: {},
       version: 3,
       updateCheckIntervalMinutes: 30,
+      sessionRecovery: false,
     };
 
     await expect(saveConfig(state, config)).rejects.toThrow();
@@ -376,6 +383,7 @@ describe('saveConfig error propagation', () => {
       settings: {},
       version: 3,
       updateCheckIntervalMinutes: 30,
+      sessionRecovery: false,
     };
 
     // First write fails
@@ -573,6 +581,31 @@ describe('updateCheckIntervalMinutes', () => {
   });
 });
 
+describe('sessionRecovery', () => {
+  beforeEach(async () => {
+    process.env.OPENTABS_CONFIG_DIR = TEST_BASE_DIR;
+    await removeConfig();
+  });
+
+  test('is off unless set to true', async () => {
+    expect((await loadConfig()).sessionRecovery).toBe(false);
+
+    await writeFile(configPath, JSON.stringify({ localPlugins: [], permissions: {}, sessionRecovery: 'yes' }));
+    expect((await loadConfig()).sessionRecovery).toBe(false);
+
+    await writeFile(configPath, JSON.stringify({ localPlugins: [], permissions: {}, sessionRecovery: true }));
+    expect((await loadConfig()).sessionRecovery).toBe(true);
+  });
+
+  test('survives saving plugin permissions', async () => {
+    await writeFile(configPath, JSON.stringify({ localPlugins: [], permissions: {}, sessionRecovery: true }));
+
+    await savePluginPermissions({ configWriteMutex: Promise.resolve() }, { slack: { permission: 'auto' } });
+
+    expect((await loadConfig()).sessionRecovery).toBe(true);
+  });
+});
+
 describe('KNOWN_CONFIG_KEYS', () => {
   test('contains all OpentabsConfig fields', () => {
     expect(KNOWN_CONFIG_KEYS).toContain('version');
@@ -582,7 +615,8 @@ describe('KNOWN_CONFIG_KEYS', () => {
     expect(KNOWN_CONFIG_KEYS).toContain('settings');
     expect(KNOWN_CONFIG_KEYS).toContain('additionalAllowedDirectories');
     expect(KNOWN_CONFIG_KEYS).toContain('updateCheckIntervalMinutes');
-    expect(KNOWN_CONFIG_KEYS.size).toBe(7);
+    expect(KNOWN_CONFIG_KEYS).toContain('sessionRecovery');
+    expect(KNOWN_CONFIG_KEYS.size).toBe(8);
   });
 });
 

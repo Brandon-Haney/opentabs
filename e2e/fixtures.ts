@@ -216,6 +216,8 @@ interface OpentabsConfig {
   settings?: Record<string, Record<string, unknown>>;
   /** Extra directories allowed for local plugin resolution (beyond ~/). */
   additionalAllowedDirectories?: string[];
+  /** Open a plugin's site and retry once when a call finds no tab or an expired session. */
+  sessionRecovery?: boolean;
 }
 
 /**

@@ -35,6 +35,10 @@ vi.mock('./plugin-management.js', () => ({
   checkPluginUpdates: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock('./session-recovery.js', () => ({
+  rememberReadyTab: vi.fn(),
+}));
+
 const { mockTrackEvent } = vi.hoisted(() => ({ mockTrackEvent: vi.fn() }));
 vi.mock('./telemetry.js', () => ({
   trackEvent: mockTrackEvent,
@@ -1384,7 +1388,7 @@ describe('handleTabSyncAll — activeNetworkCaptures cleanup', () => {
   };
 
   test('removes stale activeNetworkCaptures entries for tabs absent from sync', () => {
-    const { conn } = createConnState();
+    const { state, conn } = createConnState();
     // Tab 1 and 2 had active captures before the sync
     conn.activeNetworkCaptures.add(1);
     conn.activeNetworkCaptures.add(2);
@@ -1392,6 +1396,7 @@ describe('handleTabSyncAll — activeNetworkCaptures cleanup', () => {
 
     // Sync arrives: only tab 2 is still present
     handleTabSyncAll(
+      state,
       {
         tabs: {
           slack: { state: 'ready', tabs: [{ tabId: 2, url: 'https://app.slack.com', ready: true }] },
@@ -1406,20 +1411,21 @@ describe('handleTabSyncAll — activeNetworkCaptures cleanup', () => {
   });
 
   test('clears all activeNetworkCaptures when sync has no tabs', () => {
-    const { conn } = createConnState();
+    const { state, conn } = createConnState();
     conn.activeNetworkCaptures.add(10);
     conn.activeNetworkCaptures.add(20);
 
-    handleTabSyncAll({ tabs: {} }, conn);
+    handleTabSyncAll(state, { tabs: {} }, conn);
 
     expect(conn.activeNetworkCaptures.size).toBe(0);
   });
 
   test('retains activeNetworkCaptures entries for tabs still present after sync', () => {
-    const { conn } = createConnState();
+    const { state, conn } = createConnState();
     conn.activeNetworkCaptures.add(5);
 
     handleTabSyncAll(
+      state,
       {
         tabs: {
           slack: { state: 'ready', tabs: [{ tabId: 5, url: 'https://app.slack.com', ready: true }] },
@@ -1679,6 +1685,7 @@ describe('multi-connection — handleTabSyncAll scopes per-connection', () => {
 
     // Sync from connection A: only slack tabs
     handleTabSyncAll(
+      state,
       {
         tabs: {
           slack: { state: 'ready', tabs: [{ tabId: 1, url: 'https://app.slack.com', ready: true }] },
@@ -1721,7 +1728,7 @@ describe('multi-connection — handleTabSyncAll scopes per-connection', () => {
     state.extensionConnections.set('conn-b', connB);
 
     // Sync from connection A: now has no tabs
-    handleTabSyncAll({ tabs: {} }, connA);
+    handleTabSyncAll(state, { tabs: {} }, connA);
 
     // Connection A's tabs are cleared
     expect(connA.tabMapping.size).toBe(0);

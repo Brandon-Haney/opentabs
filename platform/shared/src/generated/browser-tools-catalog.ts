@@ -629,6 +629,14 @@ export const BROWSER_TOOLS_CATALOG: readonly BrowserToolMeta[] = [
     group: 'Plugins',
   },
   {
+    name: 'plugin_check_sessions',
+    description:
+      'Check which plugins have a signed-in browser tab. Each plugin reports a status: ready (a tab with a ready adapter), not_ready (tabs open but none ready, often a sign-in page), no_tab, needs_login (a recent call found the site signed out and an interactive sign-in is needed; includes the url), or recovered. "ready" reflects the adapter\'s own check and does not prove the server session is still valid; with the sessionRecovery setting on, a plugin tool call that meets an expired session opens the site and retries once. With recover: true, each plugin named in plugins that is not ready is opened in a background tab at its last signed-in page and given up to 60 seconds to sign in through single sign-on. openedTabId appears only on tabs session recovery opened; close those (never a plain tabId, which may be the user\'s own tab) to clean up. Use it at the start of an unattended run to learn which plugins are usable.',
+    summary: 'Check which plugins are signed in',
+    icon: 'shield-check',
+    group: 'Plugins',
+  },
+  {
     name: 'plugin_list_tabs',
     description:
       "List open browser tabs that match a plugin's URL patterns. Returns tab IDs, URLs, titles, readiness status, and connectionId (identifying the browser profile) for each matching tab. Use this to discover which tabs are available before targeting a specific one with the tabId parameter on plugin tools. When called without a plugin argument, returns tabs for all plugins.",

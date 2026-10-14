@@ -29,9 +29,10 @@ export const handleBrowserListTabs = async (id: string | number): Promise<void> 
 
 /**
  * Opens a new Chrome tab with the specified URL.
- * @param params - Expects `{ url: string }`. Rejects blocked URL schemes (javascript:, data:, etc.)
- *   but allows `about:blank` for internal callers (e.g., analyze-site) that need a blank tab
- *   for network capture setup before navigating to the real URL.
+ * @param params - Expects `{ url: string, active?: boolean }`. Rejects blocked URL schemes (javascript:,
+ *   data:, etc.) but allows `about:blank` for internal callers (e.g., analyze-site) that need a blank tab
+ *   for network capture setup before navigating to the real URL. `active: false` opens the tab in the
+ *   background, which session recovery uses so an unattended run never takes focus.
  * @returns The new tab's ID, title, URL, and window ID.
  */
 export const handleBrowserOpenTab = async (params: Record<string, unknown>, id: string | number): Promise<void> => {
@@ -45,7 +46,7 @@ export const handleBrowserOpenTab = async (params: Record<string, unknown>, id: 
       if (validated === null) return;
       url = validated;
     }
-    const tab = await chrome.tabs.create({ url });
+    const tab = await chrome.tabs.create({ url, active: params.active !== false });
     sendSuccessResult(id, { id: tab.id, title: tab.title ?? '', url: tab.url ?? url, windowId: tab.windowId });
   } catch (err) {
     sendErrorResult(id, err);

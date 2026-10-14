@@ -29,7 +29,18 @@ Configure settings via `opentabs plugin configure oracle-fusion` or the side pan
 | `inventoryWorkArea` | string | No | Label of the home page tile that opens the Inventory Management work area. Set this when your organization has renamed the tile. Defaults to Inventory Management. |
 | `purchaseOrdersWorkArea` | string | No | Label of the home page tile that opens the Purchase Orders work area. Set this when your organization has renamed the tile. Defaults to Purchase Orders. |
 
-## Tools (6)
+## Tools (12)
+
+### Returns (6)
+
+| Tool | Description | Type |
+|---|---|---|
+| `find_rgns_for_return` | Match a supplier return to the RGNs that carry it | Read |
+| `get_rgn` | Read an RGN’s parts, requested and credited | Read |
+| `get_rgn_dashboard` | Count RGNs and credits at each reconciliation stage | Read |
+| `search_return_bank` | List parts waiting to go out on an RGN | Read |
+| `search_rgns` | Search RGNs and their DC credit status | Read |
+| `search_unidentified_credits` | Search DC credits not yet matched to an RGN | Read |
 
 ### Inventory (4)
 
@@ -79,3 +90,4 @@ MIT
 - **Searches without an export.** Receive Expected Shipments and Manage Movement Requests have no Export button, so their rows are read from the page, and Fusion renders at most 500 rows at once. A search matching more is refused with the count, so it can be narrowed.
 - **Purchase orders.** `search_purchase_orders` works in the Purchase Orders work area (set `purchaseOrdersWorkArea` if your tile is renamed). The page fills Buyer with your own name; the plugin clears it so every buyer's orders are searched, and it includes closed orders unless told not to. With `include_lines`, each order opens in its own tab as in the UI and is closed again afterwards, answering the "changes will be lost" warning with Yes — the plugin never changes an order, so nothing is lost.
 - **Working on this plugin.** [docs/adf-field-guide.md](docs/adf-field-guide.md) explains how the plugin drives Fusion and every trap found so far; [docs/adding-a-screen.md](docs/adding-a-screen.md) is the recipe for adding a screen.
+- **RGNs and DC credits.** The RGN tools run the custom BI Publisher reports behind the RGN Reconciliation Dashboard (R-077) and the RGN print report (R-442) through your session. Each report run takes a few seconds, and `search_rgns` runs one per stage, so naming a stage is faster. An RGN shares no number with the inventory return transaction; `find_rgns_for_return` matches them by item and date and returns every candidate.

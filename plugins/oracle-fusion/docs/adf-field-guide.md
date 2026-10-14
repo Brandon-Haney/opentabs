@@ -11,7 +11,8 @@ shaped the code. Read this before changing the plugin or adding a screen; the co
   401. A REST call made with `credentials: 'include'` also makes Chrome pop a native Basic
   sign-in dialog on the user's screen — never fetch REST paths with cookies. Any REST probe
   must use `credentials: 'omit'`.
-- **OTBI / BI Publisher were ruled out** by the user.
+- **OTBI was ruled out** as the basis for the screens the UI already shows. Custom BI Publisher
+  reports are used where they hold data no UI page does (the RGN reports; see below).
 - So the plugin replays the classic UI's own requests: Oracle ADF Faces ("ADF rich client")
   partial page requests, the same ones the browser sends when a person clicks.
 
@@ -39,6 +40,36 @@ window. Messages arrive as
 
 `adf-protocol.ts` builds events (`richEvent`, `richEventBatch`) and parses responses
 (`parseRichResponse`, `parseMessages`).
+
+## BI Publisher reports (the second transport)
+
+Some data exists only in custom BI Publisher reports (Oracle Analytics Publisher), such as
+the RGN reports (`R-077`, `R-442`). They run through the same signed-in session, with no
+REST call and no extra sign-in; `bi-publisher.ts` replays the report viewer:
+
+1. GET the report page `/xmlpserver/<catalog path>.xdo`. Its `xdoRptForm` carries a session
+   token (`_sTkn`), the default layout (`_xt`) and the parameter fields; each date parameter
+   has `data-datepattern`, and each list parameter's choices are in
+   `new MultiChoiceList('…', '_paramsP_X', [['value', 'label'], …])`.
+2. POST that form to `/xmlpserver/servlet/xdo` with `_xf=<format>`, `_xpt=0`,
+   `_xautorun=true` and `_paramsP_<NAME>=<value>` (repeat a name for several values; omit it
+   for All). The answer is a loading page whose `runStatusCheck` names a status URL.
+3. POST the status URL with an empty body until it answers with anything, then POST it once
+   more with `fromLoadingPage=true&finalRequest=true` for the output.
+
+Traps:
+
+- **Formats are per layout.** The RGN reports allow HTML, PDF, RTF and Excel but not CSV or
+  XML; Pending Store Manager Review allows no HTML at all. An unsupported format answers with
+  an error page (`#errordetailtable`: "Invalid format requested: csv"). HTML is parsed.
+- **The report body is not in the page** you open — the viewer loads it into a frame — so
+  reading the outer page finds nothing.
+- **List parameters reject unknown values** with "Invalid parameters requested", raised as
+  `ReportParametersRejectedError`; for a lookup by number that means not found.
+- **Report tables** are found by their first heading ("Return Type", "Line Abbrv") and run to
+  a row labelled Total. Row links carry ids, e.g. a debit memo's `InvoiceId=`.
+- **Report names** come from the dashboard's drill links (`saw.dll?bipublisherEntry…bipPath=`),
+  which also show each drill report's parameter names and `*` for All.
 
 ## Background windows
 
@@ -146,6 +177,8 @@ Each of these cost a debugging session. The fix is in the code; this is why it i
 | `detail-page.ts` | Row links, label/value fields, sections, Done, close-tab warning |
 | `row-actions.ts` | Row selection, menu commands, dialogs (About This Record, availability, picks) |
 | `lookup.ts` | A field's "Search and Select" dialog, for partial-number matches |
+| `bi-publisher.ts` | BI Publisher reports: run with parameters, poll, parse HTML output |
+| `rgn.ts` | The RGN reports (R-077 stages, return bank, unmatched credits, dashboard; R-442 print) |
 | `inventory.ts`, `procurement.ts` | Work-area tile settings and task categories |
 | `tools/schemas.ts` | Output schemas and row mappers for every tool |
 

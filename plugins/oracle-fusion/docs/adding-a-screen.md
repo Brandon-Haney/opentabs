@@ -3,6 +3,14 @@
 The recipe that built every tool in this plugin. Read [adf-field-guide.md](adf-field-guide.md)
 first for how the protocol works and which traps already have fixes.
 
+## 0. Is it a report?
+
+If the data comes from a dashboard or opens under `/xmlpserver/…` (Oracle Analytics
+Publisher), it is a BI Publisher report: no ADF capture is needed. Read the report page's
+form for parameter names, date patterns and choices, try `_xf=html` (formats are per
+layout), and parse the output table with `parseReportTable`. See the BI Publisher section of
+the field guide; `rgn.ts` is the worked example.
+
 ## 1. Inspect the page before capturing
 
 With the screen open in the user's tab, read its DOM (`browser_execute_script`, read-only):

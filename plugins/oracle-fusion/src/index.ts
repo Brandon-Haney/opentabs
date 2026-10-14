@@ -2,12 +2,18 @@ import type { ConfigSchema, ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import { getPageGlobal, OpenTabsPlugin, waitUntil } from '@opentabs-dev/plugin-sdk';
 import { INVENTORY_WORK_AREA_SETTING, INVENTORY_WORK_AREA_SETTING_LABEL } from './inventory.js';
 import { PURCHASE_ORDERS_WORK_AREA_SETTING, PURCHASE_ORDERS_WORK_AREA_SETTING_LABEL } from './procurement.js';
+import { findRgnsForReturn } from './tools/find-rgns-for-return.js';
 import { getItemQuantities } from './tools/get-item-quantities.js';
+import { getRgn } from './tools/get-rgn.js';
+import { getRgnDashboard } from './tools/get-rgn-dashboard.js';
 import { searchCompletedTransactions } from './tools/search-completed-transactions.js';
 import { searchExpectedShipments } from './tools/search-expected-shipments.js';
 import { searchMovementRequests } from './tools/search-movement-requests.js';
 import { searchPendingTransactions } from './tools/search-pending-transactions.js';
 import { searchPurchaseOrders } from './tools/search-purchase-orders.js';
+import { searchReturnBank } from './tools/search-return-bank.js';
+import { searchRgns } from './tools/search-rgns.js';
+import { searchUnidentifiedCredits } from './tools/search-unidentified-credits.js';
 
 /**
  * A classic Fusion page boots the ADF client only for a signed-in session — the sign-in
@@ -50,12 +56,18 @@ class OracleFusionPlugin extends OpenTabsPlugin {
     },
   };
   readonly tools: ToolDefinition[] = [
+    findRgnsForReturn,
     getItemQuantities,
+    getRgn,
+    getRgnDashboard,
     searchCompletedTransactions,
     searchExpectedShipments,
     searchMovementRequests,
     searchPendingTransactions,
     searchPurchaseOrders,
+    searchReturnBank,
+    searchRgns,
+    searchUnidentifiedCredits,
   ];
 
   async isReady(): Promise<boolean> {

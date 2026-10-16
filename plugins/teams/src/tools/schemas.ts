@@ -105,7 +105,7 @@ interface RawFile {
   objectUrl?: string;
 }
 
-interface RawMessage {
+export interface RawMessage {
   id?: string;
   clientmessageid?: string;
   content?: string;
@@ -117,6 +117,7 @@ interface RawMessage {
   properties?: {
     mentions?: string;
     files?: string;
+    deletetime?: number;
     emotions?: Array<{ key?: string }>;
   };
   annotationsSummary?: {
@@ -125,7 +126,7 @@ interface RawMessage {
 }
 
 /** Extract the MRI (e.g., "8:live:username") from a full contact URL. */
-const extractMri = (from: string): string => {
+export const extractMri = (from: string): string => {
   const match = /\/contacts\/(.+)$/.exec(from);
   return match?.[1] ?? from;
 };

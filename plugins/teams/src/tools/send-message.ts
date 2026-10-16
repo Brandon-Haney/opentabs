@@ -2,6 +2,7 @@ import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { attachedFilePathSchema, composeMessage, fileAccessSchema } from '../compose-message.js';
 import { MARKDOWN_FORMATTING_HELP } from '../markdown-html.js';
+import { getReplyTarget, quotedMessagesProperty, replyQuoteHtml } from '../reply-quote.js';
 import { chatApi } from '../teams-api.js';
 
 export const sendMessage = defineTool({
@@ -10,7 +11,8 @@ export const sendMessage = defineTool({
   description:
     'Send a message to a Teams chat conversation. Use the conversation ID from list_conversations or create_chat. ' +
     MARKDOWN_FORMATTING_HELP +
-    ' Write @[Name] to @mention someone so they are notified; pass `files` to attach files from this computer.',
+    ' Write @[Name] to @mention someone so they are notified; pass `files` to attach files from this computer; ' +
+    'pass `reply_to_message_id` to quote-reply to a message.',
   summary: 'Send a message to a chat',
   icon: 'send',
   group: 'Messages',
@@ -33,6 +35,14 @@ export const sendMessage = defineTool({
           'with the people in the chat, as Teams does. Chats only — a channel keeps its files in SharePoint.',
       ),
     file_access: fileAccessSchema.optional(),
+    reply_to_message_id: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'ID of a message in this conversation to reply to (the `id` from read_messages). The message opens with a ' +
+          'quote of it, linked to the original.',
+      ),
   }),
   output: z.object({
     message_id: z.string().describe('Server-assigned message ID (arrival timestamp)'),
@@ -62,10 +72,21 @@ export const sendMessage = defineTool({
     if (text.trim().length === 0 && files.length === 0) {
       throw ToolError.validation('Pass `text`, `files`, or both.');
     }
+    // The original is fetched first, so a bad id fails the send before any file is uploaded.
+    const replyTarget =
+      params.reply_to_message_id === undefined
+        ? undefined
+        : await getReplyTarget(params.conversation_id, params.reply_to_message_id);
     const composed = await composeMessage(
       { conversationId: params.conversation_id, text, files, fileAccess: params.file_access ?? 'view' },
       context,
     );
+
+    const content = replyTarget === undefined ? composed.content : replyQuoteHtml(replyTarget) + composed.content;
+    const properties =
+      replyTarget === undefined
+        ? composed.properties
+        : { ...composed.properties, qtdMsgs: quotedMessagesProperty(replyTarget) };
 
     const clientMsgId = Date.now().toString();
     const data = await chatApi<{ OriginalArrivalTime?: number }>(
@@ -73,11 +94,11 @@ export const sendMessage = defineTool({
       {
         method: 'POST',
         body: {
-          content: composed.content,
+          content,
           messagetype: 'RichText/Html',
           contenttype: 'text',
           clientmessageid: clientMsgId,
-          ...(Object.keys(composed.properties).length > 0 ? { properties: composed.properties } : {}),
+          ...(Object.keys(properties).length > 0 ? { properties } : {}),
         },
       },
     );

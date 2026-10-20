@@ -51,7 +51,7 @@ DevTools HAR exports work but need a person at the keyboard.
 | --- | --- | --- | --- |
 | PowerPoint | `/pods/PowerPoint.ashx` revisions (JSON objects and properties) | `__otb_pods_writelog__` in the pre-script: a ring buffer of the last 60 writes, 24 MB; manifest, then `?entry=N` | **In use.** The loop runs end to end with no manual steps. |
 | Excel | `EwaInternalWebService` RPC via the frame bridge | `__otb_ewa_writelog__` in the pre-script: the last 200 requests with a body, path only; manifest, then `?entry=N`, against the `xlviewerinternal.aspx` frame | **In use.** Wait for the "Loading…" bar to clear before judging a reload: the grid first renders a cached view. |
-| Word | `/we/OneNote.ashx` revisions (the PowerPoint protocol) | `__otb_word_writelog__` in the pre-script: the last 200 channel requests with a body; manifest, then `?entry=N`, against the `wordeditorframe` frame. Bodies carry a WOPI token. | **In use.** An idle editor shows another session's write on its next poll, up to ~30 s; a reload shows it at once. |
+| Word | `/we/OneNote.ashx` revisions (the PowerPoint protocol) | `__otb_word_writelog__` in the pre-script: the last 200 channel requests with a body; manifest, then `?entry=N`, against the `wordeditorframe` frame. Bodies carry a WOPI token; `?write=N` returns the N-th newest write reduced to its objects, without the envelope. | **In use.** An idle editor shows another session's write on its next poll, up to ~30 s; a reload shows it at once. |
 | OneNote | WAC `ObjectModel` command bus | none | Different mechanism; the same loop applies once commands can be observed. |
 
 Read every write log through `browser_fetch_in_frame` against the app's editor

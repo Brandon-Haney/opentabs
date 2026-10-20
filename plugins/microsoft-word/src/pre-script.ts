@@ -257,10 +257,72 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
     }
   };
 
-  /** The manifest, or one full entry when the URL names `?entry=<index>`. */
+  /**
+   * Every object in a channel message reduced to its class, id and properties,
+   * each value truncated. `Objects` arrays sit several envelopes deep and in more
+   * than one place (one per cell), so they are collected wherever they appear.
+   */
+  const digestObjects = (
+    message: unknown,
+  ): { classId: unknown; objectId: unknown; props: Record<string, string> }[] => {
+    const objects: { ClassId?: unknown; ObjectId?: unknown; Properties?: unknown }[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item);
+        return;
+      }
+      if (node === null || typeof node !== 'object') return;
+      for (const [key, value] of Object.entries(node)) {
+        if (key === 'Objects' && Array.isArray(value)) objects.push(...value);
+        else walk(value);
+      }
+    };
+    walk(message);
+
+    const shorten = (value: unknown): string => {
+      const text = typeof value === 'string' ? value : JSON.stringify(value);
+      if (typeof text !== 'string') return String(value);
+      return text.length > DIGEST_VALUE_MAX ? `${text.slice(0, DIGEST_VALUE_MAX)}…+${text.length}` : text;
+    };
+
+    return objects.map(object => {
+      const props: Record<string, string> = {};
+      // Properties travel as a flat [id, value, id, value, …] pair list.
+      if (Array.isArray(object.Properties)) {
+        for (let i = 0; i + 1 < object.Properties.length; i += 2) {
+          props[String(object.Properties[i])] = shorten(object.Properties[i + 1]);
+        }
+      }
+      return { classId: object.ClassId, objectId: object.ObjectId, props };
+    });
+  };
+
+  /**
+   * The `?write=<n>`-th newest write — a request carrying a revision, as opposed
+   * to a poll — reduced to its objects, without the envelope and its WOPI token.
+   * Reading a gesture's write by recency rather than by log index keeps the read
+   * stable while the editor's polls keep arriving.
+   */
+  const digestWrite = (nth: number): unknown => {
+    const writes = writeLog.filter(entry => entry.body.includes('"Revision":{')).reverse();
+    const entry = writes[nth];
+    if (!entry) return null;
+    try {
+      return { ts: entry.ts, bytes: entry.body.length, objects: digestObjects(JSON.parse(entry.body)) };
+    } catch {
+      return { ts: entry.ts, bytes: entry.body.length, error: 'request did not parse as JSON' };
+    }
+  };
+
+  /**
+   * The manifest; one full entry when the URL names `?entry=<index>`; or, with
+   * `?write=<n>`, the n-th newest write as a digest.
+   */
   const readWriteLog = (url: string): unknown => {
     const requested = /[?&]entry=(\d+)/.exec(url);
     if (requested) return writeLog[writeLog.length - 1 - Number(requested[1])] ?? null;
+    const write = /[?&]write=(\d+)/.exec(url);
+    if (write) return digestWrite(Number(write[1]));
     return {
       cap: WORD_WRITE_LOG_CAP,
       count: writeLog.length,
@@ -337,42 +399,9 @@ const installWordEditorLog = (log: { info(message: string, ...args: unknown[]): 
       return { ts: latestModel.ts, bytes: latestModel.bytes, error: 'response did not parse as JSON' };
     }
 
-    // `Objects` arrays sit several envelopes deep and in more than one place
-    // (one per cell), so collect them wherever they appear.
-    const objects: { ClassId?: unknown; ObjectId?: unknown; Properties?: unknown }[] = [];
-    const walk = (node: unknown): void => {
-      if (Array.isArray(node)) {
-        for (const item of node) walk(item);
-        return;
-      }
-      if (node === null || typeof node !== 'object') return;
-      for (const [key, value] of Object.entries(node)) {
-        if (key === 'Objects' && Array.isArray(value)) objects.push(...value);
-        else walk(value);
-      }
-    };
-    walk(parsed);
-
-    const shorten = (value: unknown): string => {
-      const text = typeof value === 'string' ? value : JSON.stringify(value);
-      if (typeof text !== 'string') return String(value);
-      return text.length > DIGEST_VALUE_MAX ? `${text.slice(0, DIGEST_VALUE_MAX)}…+${text.length}` : text;
-    };
-
+    const rows = digestObjects(parsed);
     const classCounts: Record<string, number> = {};
-    const rows = objects.map(object => {
-      const classId = String(object.ClassId);
-      classCounts[classId] = (classCounts[classId] ?? 0) + 1;
-      const props: Record<string, string> = {};
-      // Properties travel as a flat [id, value, id, value, …] pair list.
-      if (Array.isArray(object.Properties)) {
-        for (let i = 0; i + 1 < object.Properties.length; i += 2) {
-          props[String(object.Properties[i])] = shorten(object.Properties[i + 1]);
-        }
-      }
-      return { classId: object.ClassId, objectId: object.ObjectId, props };
-    });
-
+    for (const row of rows) classCounts[String(row.classId)] = (classCounts[String(row.classId)] ?? 0) + 1;
     return { ts: latestModel.ts, bytes: latestModel.bytes, objectCount: rows.length, classCounts, objects: rows };
   };
 

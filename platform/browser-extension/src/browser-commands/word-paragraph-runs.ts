@@ -12,10 +12,13 @@ import { PROP_TEXT, readProp } from './pods-model.js';
 import {
   PROP_MODIFIED_TIME,
   PROP_PARA_ID,
+  PROP_PARAGRAPH_MARK_FORMAT,
   PROP_RUN_BOUNDARIES,
+  PROP_RUN_FORMATS,
   PROP_TEXT_ID,
   RUN_FLAG_PROPS,
   RUN_LIST_PROPS,
+  ZERO_REF,
 } from './word-live-model.js';
 
 /** A paragraph's runs as character spans, each with its index into the per-run arrays. */
@@ -138,20 +141,34 @@ export const replaceInParagraph = (
  * Everything the source carries for the paragraph as a whole — its style, list
  * membership, indents, spacing — is copied, the way the editor's own Enter
  * copies it. What describes the source's text is not: the new paragraph is one
- * run carrying the formatting of the source's longest run, it gets its own
+ * run carrying the formatting of the source's longest plain run, it gets its own
  * identifiers, and no modification stamp is carried over.
+ *
+ * `isPlainFormat` says whether a run's format reference is ordinary text
+ * formatting. A run that is a link — its format names the Hyperlink character
+ * style, or it is a field character — is never copied: Enter after a link starts
+ * plain text, and copying it would make the new text look like a link that goes
+ * nowhere. When no run is plain, the new run takes the paragraph mark's format.
  */
 export const newParagraphProperties = (
   source: (string | number)[],
   text: string,
   paraId: number,
   textId: number,
+  isPlainFormat: (ref: string) => boolean = () => true,
 ): (string | number)[] => {
   const original = readProp(source, PROP_TEXT) ?? '';
   const boundaries = parseBoundaries(readProp(source, PROP_RUN_BOUNDARIES));
   const runCount = boundaries.length + 1;
   const spans = spansOf(boundaries, original.length);
-  const dominant = spans.reduce((best, span) => (span.end - span.start > best.end - best.start ? span : best)).run;
+  const formats = (readProp(source, PROP_RUN_FORMATS) ?? '').split(',');
+  const plainSpans = formats.length === runCount ? spans.filter(span => isPlainFormat(formats[span.run] ?? '')) : spans;
+  const longest = (candidates: RunSpan[]) =>
+    candidates.reduce((best, span) => (span.end - span.start > best.end - best.start ? span : best)).run;
+  const dominant = longest(plainSpans.length > 0 ? plainSpans : spans);
+  const markFormat = readProp(source, PROP_PARAGRAPH_MARK_FORMAT);
+  const fallbackFormat =
+    plainSpans.length > 0 ? undefined : markFormat !== undefined && isPlainFormat(markFormat) ? markFormat : ZERO_REF;
 
   const properties: (string | number)[] = [];
   for (let i = 0; i + 1 < source.length; i += 2) {
@@ -167,6 +184,8 @@ export const newParagraphProperties = (
       properties.push(key, String(textId));
     } else if (typeof key === 'number' && RUN_FLAG_PROPS.includes(key)) {
       if (typeof value === 'string' && value.length === runCount) properties.push(key, value[dominant] as string);
+    } else if (key === PROP_RUN_FORMATS && fallbackFormat !== undefined) {
+      properties.push(key, fallbackFormat);
     } else if (typeof key === 'number' && RUN_LIST_PROPS.includes(key) && typeof value === 'string') {
       const entries = value.length === 0 ? [] : value.split(',');
       properties.push(key, entries.length === runCount ? (entries[dominant] as string) : value);

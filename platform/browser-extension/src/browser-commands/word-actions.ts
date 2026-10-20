@@ -24,6 +24,7 @@ import {
   readProp,
   refToObjectId,
 } from './pods-model.js';
+import { namesCharacterStyle } from './word-formatting.js';
 import {
   buildWordRevisionBody,
   findContainerOf,
@@ -32,10 +33,13 @@ import {
   PROP_BLOCK_CREATED,
   PROP_LIST_ID,
   PROP_LIST_LEVEL,
+  PROP_PARAGRAPH_MARK_FORMAT,
   PROP_PARAGRAPH_STYLE,
+  PROP_RUN_FORMATS,
   PROP_STYLE_NAME,
   paragraphAtIndex,
   WORD_CLASS_BLOCK,
+  WORD_CLASS_CHAR_FORMAT,
   WORD_CLASS_PARAGRAPH,
   WORD_CLASS_STYLE,
   WORD_STRUCTURE_CLASSES,
@@ -206,6 +210,7 @@ export const wordReplaceTextAction: PodsWriteActionSpec<WordReplaceTextArgs, Wor
   isApplied: (model, first) => first.targets.every(t => wordParagraphText(model, t.paragraphId) === t.newText),
   // After it applies the old text is gone, so a blind re-issue would fail to resolve.
   idempotent: false,
+  compactDryRun: true,
   summarize: (ctx, args) => ({
     find: args.find,
     replace: args.replace,
@@ -226,11 +231,17 @@ export interface WordInsertParagraphsArgs {
   index?: number;
   position: 'before' | 'after';
   paragraphs: string[];
+  /** The 1-based index of a paragraph to copy formatting from, in place of the anchor. */
+  formatLike?: number;
 }
 
 export interface WordInsertParagraphsContext {
   anchor: WordParagraph;
   cellId: string;
+  /** The paragraph the new ones copy their formatting from: the anchor, or the one `formatLike` named. */
+  model: WordParagraph;
+  /** The model's run and mark format references that are plain text formatting, not a link. */
+  plainFormats: string[];
 }
 
 const resolveAnchor = (model: PodsModel, args: { anchor?: string; index?: number }, role: string): WordParagraph => {
@@ -239,6 +250,26 @@ const resolveAnchor = (model: PodsModel, args: { anchor?: string; index?: number
     ? paragraphAtIndex(paragraphs, args.index)
     : findUniqueParagraph(paragraphs, args.anchor as string, role);
 };
+
+/** A paragraph's format references a new paragraph may copy: those that are not a link's. */
+const plainFormatsOf = (model: PodsModel, source: WordParagraph): string[] => {
+  const refs = [
+    ...(readProp(source.paragraph.properties, PROP_RUN_FORMATS) ?? '').split(','),
+    readProp(source.paragraph.properties, PROP_PARAGRAPH_MARK_FORMAT) ?? '',
+  ];
+  return [...new Set(refs)].filter(ref => ref.length > 0 && !namesCharacterStyle(model, ref));
+};
+
+const insertionContext = (
+  model: PodsModel,
+  anchor: WordParagraph,
+  formatSource: WordParagraph = anchor,
+): WordInsertParagraphsContext => ({
+  anchor,
+  cellId: wordCellIdOf(model, anchor.container),
+  model: formatSource,
+  plainFormats: plainFormatsOf(model, formatSource),
+});
 
 /** Re-find a paragraph by its block, the identity that survives edits to its text and position. */
 const rebindByBlock = (model: PodsModel, blockRef: string): WordParagraph => {
@@ -281,10 +312,11 @@ export const buildWordInsertParagraphsBody = (
         ObjectId: `${guidToken}|${paragraphSlot}`,
         ClassId: WORD_CLASS_PARAGRAPH,
         Properties: newParagraphProperties(
-          ctx.anchor.paragraph.properties,
+          ctx.model.paragraph.properties,
           text,
           paragraphIdFrom(seed, paragraphSlot),
           paragraphIdFrom(seed, -paragraphSlot),
+          ref => ctx.plainFormats.includes(ref),
         ),
       },
     );
@@ -304,7 +336,7 @@ export const buildWordInsertParagraphsBody = (
 /** The `word_insert_paragraphs` action: add paragraphs before or after an anchor paragraph. */
 export const wordInsertParagraphsAction: PodsWriteActionSpec<WordInsertParagraphsArgs, WordInsertParagraphsContext> = {
   kind: 'write',
-  classFilter: WORD_STRUCTURE_CLASSES,
+  classFilter: [...WORD_STRUCTURE_CLASSES, WORD_CLASS_CHAR_FORMAT],
   parseArgs: raw => {
     const anchor = parseAnchorArgs(raw, 'word_insert_paragraphs');
     const position = raw.position ?? 'after';
@@ -321,16 +353,23 @@ export const wordInsertParagraphsAction: PodsWriteActionSpec<WordInsertParagraph
       );
     }
     for (const text of paragraphs as string[]) rejectLineBreaks(text, 'word_insert_paragraphs');
-    return { ...anchor, position, paragraphs: paragraphs as string[] };
+    const formatLike = raw.format_like;
+    if (
+      formatLike !== undefined &&
+      (typeof formatLike !== 'number' || !Number.isInteger(formatLike) || formatLike < 1)
+    ) {
+      throw new FrameBridgeValidationError('word_insert_paragraphs `format_like` must be a positive paragraph index.');
+    }
+    return { ...anchor, position, paragraphs: paragraphs as string[], formatLike };
   },
-  resolve: (model, args) => {
-    const anchor = resolveAnchor(model, args, 'insert anchor');
-    return { anchor, cellId: wordCellIdOf(model, anchor.container) };
-  },
-  rebind: (model, first) => {
-    const anchor = rebindByBlock(model, first.anchor.blockRef);
-    return { anchor, cellId: wordCellIdOf(model, anchor.container) };
-  },
+  resolve: (model, args) =>
+    insertionContext(
+      model,
+      resolveAnchor(model, args, 'insert anchor'),
+      args.formatLike === undefined ? undefined : paragraphAtIndex(listWordParagraphs(model), args.formatLike),
+    ),
+  rebind: (model, first) =>
+    insertionContext(model, rebindByBlock(model, first.anchor.blockRef), rebindByBlock(model, first.model.blockRef)),
   build: buildWordInsertParagraphsBody,
   /**
    * Applied when the anchor's container lists blocks it did not list before, on
@@ -357,6 +396,7 @@ export const wordInsertParagraphsAction: PodsWriteActionSpec<WordInsertParagraph
   },
   // Re-issuing an insert that already landed would add the paragraphs twice.
   idempotent: false,
+  compactDryRun: true,
   summarize: (ctx, args) => ({
     anchorIndex: ctx.anchor.index,
     anchorText: ctx.anchor.text,
@@ -421,6 +461,7 @@ export const wordDeleteParagraphAction: PodsWriteActionSpec<WordDeleteParagraphA
   // A re-issue rebinds by the block, which fails cleanly once it is gone — but an
   // unconfirmed delete is still reported rather than retried, like every structural write.
   idempotent: false,
+  compactDryRun: true,
   summarize: ctx => ({ deletedIndex: ctx.target.index, deletedText: ctx.target.text }),
   dryRunExtras: ctx => ({ deletedIndex: ctx.target.index, deletedText: ctx.target.text }),
 };

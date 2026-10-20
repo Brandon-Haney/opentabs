@@ -9,6 +9,8 @@ import { createFolder } from './tools/create-folder.js';
 import { createSharingLink } from './tools/create-sharing-link.js';
 import { deleteItem } from './tools/delete-item.js';
 import { deleteParagraphLive } from './tools/delete-paragraph-live.js';
+import { formatParagraphLive } from './tools/format-paragraph-live.js';
+import { formatTextLive } from './tools/format-text-live.js';
 import { deletePermission } from './tools/delete-permission.js';
 import { diagnose } from './tools/diagnose.js';
 import { getActiveDocument } from './tools/get-active-document.js';
@@ -18,6 +20,7 @@ import { getDrive } from './tools/get-drive.js';
 import { getFileContent } from './tools/get-file-content.js';
 import { getItem } from './tools/get-item.js';
 import { getLiveDocument } from './tools/get-live-document.js';
+import { getLiveFormatting } from './tools/get-live-formatting.js';
 import { getPreviewUrl } from './tools/get-preview-url.js';
 import { insertParagraphsLive } from './tools/insert-paragraphs-live.js';
 import { listChildren } from './tools/list-children.js';
@@ -29,6 +32,7 @@ import { moveItem } from './tools/move-item.js';
 import { reauthenticate } from './tools/reauthenticate.js';
 import { renameItem } from './tools/rename-item.js';
 import { replaceTextInDocument } from './tools/replace-text-in-document.js';
+import { removeLinkLive } from './tools/remove-link-live.js';
 import { replaceTextLive } from './tools/replace-text-live.js';
 import { restoreVersion } from './tools/restore-version.js';
 import { searchFiles } from './tools/search-files.js';
@@ -59,9 +63,13 @@ class MicrosoftWordPlugin extends OpenTabsPlugin {
     getFileContent,
     // Live editing: the open document, through its co-authoring session
     getLiveDocument,
+    getLiveFormatting,
     replaceTextLive,
     insertParagraphsLive,
     deleteParagraphLive,
+    formatTextLive,
+    formatParagraphLive,
+    removeLinkLive,
     // Files
     listRecentDocuments,
     listChildren,

@@ -156,9 +156,14 @@ export const liveInsertParagraphs = (
   target: ParagraphTarget,
   position: 'before' | 'after',
   paragraphs: string[],
+  formatLike: number | undefined,
   dryRun: boolean,
 ): z.infer<typeof liveInsertParagraphsOutputSchema> =>
-  liveAction('word_insert_paragraphs', { ...targetArgs(target), position, paragraphs }, dryRun);
+  liveAction(
+    'word_insert_paragraphs',
+    { ...targetArgs(target), position, paragraphs, format_like: formatLike },
+    dryRun,
+  );
 
 export const liveDeleteParagraphOutputSchema = z.object({
   ...liveWriteResultShape,
@@ -171,3 +176,135 @@ export const liveDeleteParagraph = (
   target: ParagraphTarget,
   dryRun: boolean,
 ): z.infer<typeof liveDeleteParagraphOutputSchema> => liveAction('word_delete_paragraph', targetArgs(target), dryRun);
+
+/** Character formatting a live format sets; a field left out is left as it is. */
+export interface LiveCharacterFormat {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+  superscript?: boolean;
+  subscript?: boolean;
+  /** `#RRGGBB`. */
+  color?: string;
+  /** `#RRGGBB`. */
+  highlight?: string;
+  /** Points. */
+  size?: number;
+  font?: string;
+  /** Clear all character formatting instead of setting any. */
+  clear?: boolean;
+}
+
+export const liveFormatTextOutputSchema = z.object({
+  ...liveWriteResultShape,
+  formatted: z.number().int().optional().describe('How many stretches of text were formatted.'),
+  cleared: z.boolean().optional().describe('Whether the formatting was cleared rather than set.'),
+  paragraphs: z
+    .array(z.object({ index: z.number().int(), text: z.string() }))
+    .optional()
+    .describe('Each paragraph that was formatted.'),
+});
+
+/** Set or clear character formatting on matched text, or on a whole paragraph, in the open document. */
+export const liveFormatText = (
+  target: { find?: string; all: boolean } & ParagraphTarget,
+  format: LiveCharacterFormat,
+  dryRun: boolean,
+): z.infer<typeof liveFormatTextOutputSchema> => liveAction('word_format_text', { ...target, ...format }, dryRun);
+
+/** Paragraph formatting a live format sets; a field left out is left as it is. */
+export interface LiveParagraphFormat {
+  alignment?: 'left' | 'center' | 'right' | 'justify';
+  /** Points. */
+  indentLeft?: number;
+  /** Points. */
+  spaceBefore?: number;
+  /** Points. */
+  spaceAfter?: number;
+  /** A multiple of single spacing. */
+  lineSpacing?: number;
+  /** `#RRGGBB`, or `none`. */
+  shading?: string;
+  style?: string;
+  keepWithNext?: boolean;
+  keepLinesTogether?: boolean;
+  pageBreakBefore?: boolean;
+}
+
+export const liveFormatParagraphOutputSchema = z.object({
+  ...liveWriteResultShape,
+  index: z.number().int().optional().describe('The index of the paragraph that was formatted.'),
+  text: z.string().optional().describe('Its text.'),
+});
+
+/** Set the alignment, indent, spacing, shading or style of one paragraph of the open document. */
+export const liveFormatParagraph = (
+  target: ParagraphTarget,
+  format: LiveParagraphFormat,
+  dryRun: boolean,
+): z.infer<typeof liveFormatParagraphOutputSchema> =>
+  liveAction('word_format_paragraph', { ...targetArgs(target), ...format }, dryRun);
+
+const liveRunSchema = z.object({
+  text: z.string().describe('The run text.'),
+  bold: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  underline: z.boolean().optional(),
+  strikethrough: z.boolean().optional(),
+  superscript: z.boolean().optional(),
+  subscript: z.boolean().optional(),
+  color: z.string().optional().describe('Font colour as #RRGGBB, or auto for the automatic colour.'),
+  highlight: z.string().optional().describe('Highlight colour as #RRGGBB.'),
+  size: z.number().optional().describe('Font size in points.'),
+  font: z.string().optional().describe('Font name.'),
+  characterStyle: z.string().optional().describe('The character style the run names, e.g. "Hyperlink".'),
+  link: z.string().optional().describe('The address, when the run is the text of a link.'),
+});
+
+const liveParagraphFormattingSchema = z.object({
+  index: z.number().int().describe('1-based position in reading order, as get_live_document reports it.'),
+  text: z.string().describe('The paragraph text.'),
+  style: z.string().nullable().describe('The paragraph style name, or null when it names none.'),
+  alignment: z.string().optional().describe('center, right or justify; absent means it follows its style.'),
+  indentLeft: z.number().optional().describe('Left indent in points.'),
+  spaceBefore: z.number().optional().describe('Space before, in points.'),
+  spaceAfter: z.number().optional().describe('Space after, in points.'),
+  lineSpacing: z.number().optional().describe('Line spacing as a multiple.'),
+  shading: z.string().optional().describe('Background shading as #RRGGBB.'),
+  listLevel: z.number().int().optional().describe('List level (0 = top) when the paragraph is a Word list item.'),
+  keepWithNext: z.boolean().optional().describe('Kept on the same page as the next paragraph.'),
+  keepLinesTogether: z.boolean().optional().describe('Its lines kept on one page.'),
+  pageBreakBefore: z.boolean().optional().describe('Starts on a new page.'),
+  runs: z.array(liveRunSchema).describe('The text in runs of identical formatting, links marked with their address.'),
+});
+
+export const liveFormattingOutputSchema = z.object({
+  paragraphs: z.array(liveParagraphFormattingSchema).describe('The requested paragraphs, in reading order.'),
+  totalParagraphs: z.number().int().describe('Paragraphs in the document body.'),
+  truncated: z.boolean().describe('Whether the paragraph list was capped (at most 200 per read).'),
+});
+
+export const liveRemoveLinkOutputSchema = z.object({
+  ...liveWriteResultShape,
+  removed: z
+    .array(
+      z.object({
+        index: z.number().int().describe('The paragraph the link was in.'),
+        address: z.string().describe('The address it pointed at.'),
+        text: z.string().describe('The text it displayed, which stays.'),
+      }),
+    )
+    .optional()
+    .describe('Each link removed.'),
+});
+
+/** Remove hyperlinks from the open document, keeping their text. */
+export const liveRemoveLink = (
+  target: { find?: string } & ParagraphTarget,
+  dryRun: boolean,
+): z.infer<typeof liveRemoveLinkOutputSchema> => liveAction('word_remove_link', { ...target }, dryRun);
+
+/** Read the formatting of the open document's paragraphs, `from` through `to`. */
+export const readLiveFormatting = (range: { from?: number; to?: number }): z.infer<typeof liveFormattingOutputSchema> =>
+  liveAction('word_read_formatting', range);

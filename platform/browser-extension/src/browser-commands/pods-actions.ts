@@ -46,6 +46,9 @@ import {
   wordReadAction,
   wordReplaceTextAction,
 } from './word-actions.js';
+import { wordFormatParagraphAction, wordFormatTextAction } from './word-formatting.js';
+import { wordRemoveLinkAction } from './word-links.js';
+import { wordReadFormattingAction } from './word-read-formatting.js';
 
 /**
  * The highest `__podsAction` directive version this engine understands. A plugin
@@ -105,6 +108,12 @@ export interface PodsWriteActionSpec<TArgs, TContext> {
   summarize(ctx: TContext, args: TArgs): Record<string, unknown>;
   /** Extra fields for a dry-run result, alongside the constructed body. */
   dryRunExtras?(ctx: TContext, args: TArgs): Record<string, unknown>;
+  /**
+   * Return a dry run's revision as the list of objects it writes rather than the
+   * whole body, for an action whose `dryRunExtras` already say what would change
+   * and whose objects carry bulk (tokens, palettes, run lists) no caller reads.
+   */
+  compactDryRun?: boolean;
 }
 
 /** A read action: reduce the live model to a compact, agent-facing result. No write. */
@@ -148,6 +157,10 @@ const PODS_ACTIONS: Record<string, PodsWriteActionSpec<unknown, unknown> | PodsR
   word_replace_text: wordReplaceTextAction,
   word_insert_paragraphs: wordInsertParagraphsAction,
   word_delete_paragraph: wordDeleteParagraphAction,
+  word_format_text: wordFormatTextAction,
+  word_format_paragraph: wordFormatParagraphAction,
+  word_read_formatting: wordReadFormattingAction,
+  word_remove_link: wordRemoveLinkAction,
 };
 
 /** The `__podsAction` directive, validated by `tool-dispatch`. */
@@ -189,6 +202,33 @@ export interface PodsActionDryRun {
   body: Record<string, unknown>;
   [key: string]: unknown;
 }
+
+/** A revision body reduced to the objects it writes: each object's id, class and how many properties it sets. */
+export const revisionObjects = (body: Record<string, unknown>): Record<string, unknown> => {
+  const objects: { objectId: unknown; classId: unknown; properties: number }[] = [];
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    if (node === null || typeof node !== 'object') return;
+    for (const [key, value] of Object.entries(node)) {
+      if (key !== 'Objects' || !Array.isArray(value)) {
+        walk(value);
+        continue;
+      }
+      for (const object of value as { ObjectId?: unknown; ClassId?: unknown; Properties?: unknown[] }[]) {
+        objects.push({
+          objectId: object.ObjectId,
+          classId: object.ClassId,
+          properties: Array.isArray(object.Properties) ? object.Properties.length / 2 : 0,
+        });
+      }
+    }
+  };
+  walk(body);
+  return { objects };
+};
 
 /** Look up the plugin-supplied hint for a failed write, most-specific key first. */
 export const findErrorHint = (
@@ -279,7 +319,7 @@ export const runPodsAction = async (
       action: params.action,
       dryRun: true,
       ...(spec.dryRunExtras ? spec.dryRunExtras(ctx, args) : {}),
-      body: spec.build(ctx, args, mint),
+      body: spec.compactDryRun ? revisionObjects(spec.build(ctx, args, mint)) : spec.build(ctx, args, mint),
     };
   }
 

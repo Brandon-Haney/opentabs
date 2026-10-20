@@ -62,6 +62,17 @@ export const WORD_STRUCTURE_CLASSES = [
   WORD_CLASS_TABLE_CELL,
 ];
 
+/** A character format: the formatting one or more runs point at. */
+export const WORD_CLASS_CHAR_FORMAT = 1179649;
+/** The run list naming each run's character format. */
+export const PROP_RUN_FORMATS = 603987475;
+/** The character format of a paragraph's mark, its formatting with no text attached. */
+export const PROP_PARAGRAPH_MARK_FORMAT = 536886591;
+/** A character format's reference to a character style (the Hyperlink style, for one). */
+export const PROP_CHARACTER_STYLE = 536884443;
+/** Reference meaning "no object". */
+export const ZERO_REF = '{00000000-0000-0000-0000-000000000000}{0}';
+
 /** Run-boundary character offsets: `"42,46"` splits a paragraph into three runs. */
 export const PROP_RUN_BOUNDARIES = 469769746;
 /** Strings holding one character per run (`"111"` for three runs). */

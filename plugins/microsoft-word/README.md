@@ -72,6 +72,10 @@ npm install -g @opentabs-dev/opentabs-plugin-microsoft-word
 | `get_live_document` | Read the open document as it is in the editor now | Read |
 | `replace_text_live` | Replace text in the open document, live | Write |
 | `insert_paragraphs_live` | Insert paragraphs into the open document, live | Write |
+| `get_live_formatting` | Read the formatting of the open document | Read |
+| `format_text_live` | Format text in the open document, live | Write |
+| `format_paragraph_live` | Format a paragraph of the open document, live | Write |
+| `remove_link_live` | Remove links from the open document, live | Write |
 | `delete_paragraph_live` | Delete a paragraph from the open document, live | Write |
 
 ### Sharing (3)

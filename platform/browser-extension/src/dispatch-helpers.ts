@@ -36,7 +36,12 @@ type DispatchResult =
       message: string;
       data?: DispatchErrorData;
     }
-  | { type: 'success'; output: unknown };
+  | {
+      type: 'success';
+      output: unknown;
+      /** Base64 file content the handler saved, keyed by the caller's save path, for the server to write */
+      savedFiles?: Record<string, string>;
+    };
 
 /** DispatchErrorData whose `details` have passed through sanitizeErrorDetails. */
 type SanitizedDispatchErrorData = Omit<DispatchErrorData, 'details'> & { details?: SanitizedDetails };
@@ -77,11 +82,13 @@ const toWireErrorData = (data: DispatchErrorData | undefined, tabId: number): Wi
 
 /**
  * Send the JSON-RPC response for a DispatchResult produced in `tabId`. Success
- * echoes `tabId` beside `output`; an error carries it in `error.data.tabId`.
+ * echoes `tabId` beside `output` (and `savedFiles`, when the handler saved any);
+ * an error carries it in `error.data.tabId`.
  */
 const sendTabResult = (id: string | number, result: DispatchResult, tabId: number): void => {
   if (result.type === 'success') {
-    sendToServer({ jsonrpc: '2.0', result: { output: result.output, tabId }, id });
+    const { output, savedFiles } = result;
+    sendToServer({ jsonrpc: '2.0', result: { output, ...(savedFiles !== undefined && { savedFiles }), tabId }, id });
     return;
   }
   sendToServer({

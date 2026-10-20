@@ -20,6 +20,7 @@ export {
   MAX_LOCAL_FILE_BYTES,
   NAME_REGEX,
   RESERVED_NAMES,
+  SAVE_FILE_PATH_FORMAT,
   validatePluginName,
   validateUrlPattern,
 } from '@opentabs-dev/shared';
@@ -64,6 +65,16 @@ export interface ToolHandlerContext {
    * through `readLocalFile`, which reports a missing platform as a tool error.
    */
   localFile?(path: string): LocalFile;
+  /**
+   * Hand file bytes back for the MCP server to write to `path` — the exact
+   * value the caller passed in an input field declared with
+   * `format: SAVE_FILE_PATH_FORMAT`. The bytes travel beside the tool's output
+   * and the server writes them once the handler returns; a failed write turns
+   * the whole call into an error. Present only when the platform running the
+   * tool supports it; call it through `saveLocalFile`, which reports a missing
+   * platform as a tool error.
+   */
+  saveFile?(path: string, contentBase64: string): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -299,7 +310,7 @@ export { getCurrentUrl, getPageGlobal, getPageTitle } from './page-state.js';
 // SDK utilities — Local Files
 // ---------------------------------------------------------------------------
 
-export { readLocalFile } from './local-files.js';
+export { readLocalFile, saveLocalFile } from './local-files.js';
 
 // ---------------------------------------------------------------------------
 // SDK utilities — Pre-Script

@@ -6,7 +6,7 @@
  */
 
 import type { JsonRpcNotification, JsonRpcRequest, WsHandle } from '@opentabs-dev/shared';
-import { toErrorMessage } from '@opentabs-dev/shared';
+import { MAX_LOCAL_FILE_BYTES, toErrorMessage } from '@opentabs-dev/shared';
 import {
   ADAPTER_WRITE_TIMEOUT_MS,
   cleanupStaleAdapterFiles,
@@ -56,8 +56,12 @@ import {
 } from './state.js';
 import { getSessionId, trackEvent } from './telemetry.js';
 
-/** Maximum incoming WebSocket message size (10MB) handled at the application layer */
-export const MAX_MESSAGE_SIZE = 10 * 1024 * 1024;
+/**
+ * Maximum incoming WebSocket message size handled at the application layer:
+ * room for a tool result carrying MAX_LOCAL_FILE_BYTES of saved files as
+ * base64, plus 2MB for the output and envelope.
+ */
+export const MAX_MESSAGE_SIZE = Math.ceil((MAX_LOCAL_FILE_BYTES * 4) / 3) + 2 * 1024 * 1024;
 
 /**
  * Write adapter IIFE files for all plugins in the registry.

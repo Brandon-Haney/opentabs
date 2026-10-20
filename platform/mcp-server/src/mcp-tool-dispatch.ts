@@ -14,7 +14,7 @@ import type {
   ToolErrorDetails,
   ToolPermission,
 } from '@opentabs-dev/shared';
-import { type LocalFile, toErrorMessage } from '@opentabs-dev/shared';
+import { LOCAL_FILE_PATH_FORMAT, type LocalFile, SAVE_FILE_PATH_FORMAT, toErrorMessage } from '@opentabs-dev/shared';
 import type { ZodError } from 'zod';
 import { savePluginPermissions } from './config.js';
 import { buildConfigStatePayload, sendToExtension } from './extension-handlers.js';
@@ -26,7 +26,7 @@ import {
   sendInvocationEnd,
   sendInvocationStart,
 } from './extension-protocol.js';
-import { collectLocalFilePaths, readLocalFiles } from './local-files.js';
+import { collectFilePaths, readLocalFiles, writeSavedFiles } from './local-files.js';
 import { log } from './logger.js';
 import { sanitizeErrorMessage } from './sanitize-error.js';
 import {
@@ -282,10 +282,12 @@ const toAuditErrorDetails = (data: Record<string, unknown> | undefined): ToolErr
  * including when the tool returned nothing and the envelope itself would
  * otherwise be returned. A non-object result is treated as the output itself.
  */
-const unwrapDispatchResult = (result: unknown): { output: unknown; echoedTabId: number | undefined } => {
-  if (!isRecord(result)) return { output: result, echoedTabId: undefined };
-  const { tabId, ...payload } = result;
-  return { output: payload.output ?? payload, echoedTabId: parseTabIdArg(tabId) };
+const unwrapDispatchResult = (
+  result: unknown,
+): { output: unknown; echoedTabId: number | undefined; savedFiles: unknown } => {
+  if (!isRecord(result)) return { output: result, echoedTabId: undefined, savedFiles: undefined };
+  const { tabId, savedFiles, ...payload } = result;
+  return { output: payload.output ?? payload, echoedTabId: parseTabIdArg(tabId), savedFiles };
 };
 
 /** Format a ZodError into a readable validation message listing each failing field */
@@ -602,7 +604,7 @@ const handlePluginToolCall = async (
 
   // Read the local files the call names in fields the tool declares as file
   // paths. They travel with this dispatch only; the page cannot ask for more.
-  const localFilePaths = collectLocalFilePaths(lookup.inputSchema, pluginArgs);
+  const localFilePaths = collectFilePaths(lookup.inputSchema, pluginArgs, LOCAL_FILE_PATH_FORMAT);
   let localFiles: Record<string, LocalFile> | undefined;
   if (localFilePaths.length > 0) {
     const read = await readLocalFiles(localFilePaths);
@@ -775,8 +777,19 @@ const handlePluginToolCall = async (
       }
     }
     markSessionWorking(state, pluginName);
-    const { output, echoedTabId } = unwrapDispatchResult(result);
+    const { output, echoedTabId, savedFiles } = unwrapDispatchResult(result);
     retargetAudit(echoedTabId);
+    if (savedFiles !== undefined) {
+      const saved = await writeSavedFiles(
+        collectFilePaths(lookup.inputSchema, pluginArgs, SAVE_FILE_PATH_FORMAT),
+        savedFiles,
+      );
+      if (!saved.ok) {
+        success = false;
+        errorInfo = { code: 'SAVE_FAILED', message: saved.error };
+        return { content: [{ type: 'text' as const, text: saved.error }], isError: true };
+      }
+    }
     const cleaned = sanitizeOutput(output);
     return {
       content: [{ type: 'text' as const, text: serializeToolOutput(cleaned) }],

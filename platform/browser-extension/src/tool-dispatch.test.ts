@@ -1,3 +1,4 @@
+import { MAX_LOCAL_FILE_BYTES } from '@opentabs-dev/shared';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { PluginMeta } from './extension-messages.js';
 
@@ -712,13 +713,67 @@ describe('handleToolDispatch', () => {
 
     if (mockSendToServer.mock.calls.length === 0) return;
 
-    // Find the MAIN world executeScript call with 4 args — that is executeToolOnTab
-    // arg layout: [pluginName, toolName, input, dId]
+    // Find the MAIN world executeScript call with 5 args — that is executeToolOnTab
+    // arg layout: [pluginName, toolName, input, dId, localFiles]
     const calls = scriptingMock.scripting.executeScript.mock.calls as Array<[{ world?: string; args?: unknown[] }]>;
-    const mainToolCall = calls.find(c => c[0].world === 'MAIN' && c[0].args?.length === 4);
+    const mainToolCall = calls.find(c => c[0].world === 'MAIN' && c[0].args?.length === 5);
     if (!mainToolCall) return; // Real handleToolDispatch not available (mocked by another file)
 
     expect(mainToolCall[0].args?.[3]).toBe('corr-id-123');
+  });
+});
+
+describe('handleToolDispatch saved files', () => {
+  beforeEach(() => {
+    mockSendToServer.mockReset();
+  });
+
+  /** Dispatch to tab 1 with the MAIN-world tool call resolving to `toolResult`, and return what was sent. */
+  const dispatchReturning = async (toolResult: unknown): Promise<Record<string, unknown> | undefined> => {
+    invalidatePluginCache();
+    const plugin = makePlugin({ name: 'test-plugin', urlPatterns: ['*://example.com/*'] });
+    const chromeStub = (globalThis as Record<string, unknown>).chrome as {
+      storage: { local: { get: ReturnType<typeof vi.fn> } };
+      tabs: { get: ReturnType<typeof vi.fn> };
+      scripting: { executeScript: ReturnType<typeof vi.fn> };
+    };
+    chromeStub.storage.local.get.mockResolvedValue({ plugins_meta: { 'test-plugin': plugin } });
+    chromeStub.tabs.get.mockResolvedValue({ id: 1, url: 'https://example.com/', status: 'complete' });
+    chromeStub.scripting.executeScript.mockImplementation((options: { world?: string; args?: unknown[] }) =>
+      Promise.resolve([{ result: options.world === 'MAIN' && options.args?.length === 5 ? toolResult : undefined }]),
+    );
+    try {
+      await handleToolDispatch({ plugin: 'test-plugin', tool: 'do-thing', input: {}, tabId: 1 }, 'req-saved');
+    } finally {
+      chromeStub.scripting.executeScript.mockImplementation(() => Promise.resolve([{ result: undefined }]));
+    }
+    return mockSendToServer.mock.calls.length === 0 ? undefined : firstSentMessage();
+  };
+
+  test('sends the saved files beside the output', async () => {
+    const sent = await dispatchReturning({
+      type: 'success',
+      output: { ok: true },
+      savedFiles: { '/tmp/a.xlsx': 'YQ==' },
+    });
+    if (!sent) return;
+
+    expect(sent).toEqual({
+      jsonrpc: '2.0',
+      id: 'req-saved',
+      result: { output: { ok: true }, savedFiles: { '/tmp/a.xlsx': 'YQ==' }, tabId: 1 },
+    });
+  });
+
+  test('refuses saved files larger than the server accepts', async () => {
+    const oversized = 'A'.repeat(Math.ceil((MAX_LOCAL_FILE_BYTES * 4) / 3) + 4);
+    const sent = await dispatchReturning({ type: 'success', output: {}, savedFiles: { '/tmp/big.bin': oversized } });
+    if (!sent) return;
+
+    expect(sent).toMatchObject({
+      id: 'req-saved',
+      error: { code: -32603, message: expect.stringContaining('Files saved by one call may total at most 25.0 MB') },
+    });
   });
 });
 
@@ -731,7 +786,13 @@ describe('handleToolDispatch', () => {
 // ---------------------------------------------------------------------------
 
 describe('executeToolOnTab MAIN-world error serialization', () => {
-  type ToolFunc = (pName: string, tName: string, tInput: Record<string, unknown>, dId: string) => Promise<unknown>;
+  type ToolFunc = (
+    pName: string,
+    tName: string,
+    tInput: Record<string, unknown>,
+    dId: string,
+    tLocalFiles: Record<string, unknown>,
+  ) => Promise<unknown>;
 
   beforeEach(() => {
     mockSendToServer.mockReset();
@@ -756,28 +817,53 @@ describe('executeToolOnTab MAIN-world error serialization', () => {
     const calls = chromeStub.scripting.executeScript.mock.calls as Array<
       [{ world?: string; args?: unknown[]; func?: unknown }]
     >;
-    const mainToolCall = calls.find(c => c[0].world === 'MAIN' && c[0].args?.length === 4);
+    const mainToolCall = calls.find(c => c[0].world === 'MAIN' && c[0].args?.length === 5);
     return mainToolCall?.[0].func as ToolFunc | undefined;
   };
 
-  /** Run the captured func against a frozen adapter whose tool throws `thrown`. */
-  const runWithThrown = async (func: ToolFunc, thrown: unknown): Promise<Record<string, unknown>> => {
+  /** Run the captured func against a frozen adapter whose tool runs `handle`. */
+  const runWithHandler = async (
+    func: ToolFunc,
+    handle: (params: unknown, context: { saveFile(path: string, contentBase64: string): void }) => Promise<unknown>,
+  ): Promise<Record<string, unknown>> => {
     const adapter = Object.freeze({
       isReady: () => Promise.resolve(true),
-      tools: [
-        {
-          name: 'do-thing',
-          handle: () => Promise.reject(thrown),
-        },
-      ],
+      tools: [{ name: 'do-thing', handle }],
     });
     (globalThis as Record<string, unknown>).__openTabs = { adapters: { 'test-plugin': adapter } };
     try {
-      return (await func('test-plugin', 'do-thing', {}, 'dispatch-1')) as Record<string, unknown>;
+      return (await func('test-plugin', 'do-thing', {}, 'dispatch-1', {})) as Record<string, unknown>;
     } finally {
       delete (globalThis as Record<string, unknown>).__openTabs;
     }
   };
+
+  /** Run the captured func against a frozen adapter whose tool throws `thrown`. */
+  const runWithThrown = (func: ToolFunc, thrown: unknown): Promise<Record<string, unknown>> =>
+    runWithHandler(func, () => Promise.reject(thrown));
+
+  test('returns the files a handler saved beside its output', async () => {
+    const func = await captureToolFunc();
+    if (!func) return;
+
+    const result = await runWithHandler(func, (_params, context) => {
+      context.saveFile('/tmp/kpi.xlsx', 'YQ==');
+      return Promise.resolve({ saved_to: '/tmp/kpi.xlsx' });
+    });
+    expect(result).toEqual({
+      type: 'success',
+      output: { saved_to: '/tmp/kpi.xlsx' },
+      savedFiles: { '/tmp/kpi.xlsx': 'YQ==' },
+    });
+  });
+
+  test('a handler that saves nothing returns no savedFiles', async () => {
+    const func = await captureToolFunc();
+    if (!func) return;
+
+    const result = await runWithHandler(func, () => Promise.resolve({ ok: true }));
+    expect(result).toEqual({ type: 'success', output: { ok: true } });
+  });
 
   test('forwards a JSON-serializable details object alongside the structured fields', async () => {
     const func = await captureToolFunc();

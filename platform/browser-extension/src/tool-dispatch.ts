@@ -256,6 +256,9 @@ const executeToolOnTab = async (
         return { type: 'error' as const, code: -32603, message: `Tool "${tName}" not found in adapter "${pName}"` };
       }
 
+      // Files the handler hands back through saveFile, keyed by the caller's path.
+      const savedFiles: Record<string, string> = {};
+
       // Create ToolHandlerContext with reportProgress that fires a CustomEvent
       // on the document. The ISOLATED world content script listens for this event
       // and relays it to the background service worker. Missing progress/total
@@ -303,11 +306,20 @@ const executeToolOnTab = async (
           if (!file) throw new Error(`No local file was read for "${path}"`);
           return file;
         },
+        /** Queue bytes for the MCP server to write to `path` once the handler returns. */
+        saveFile(path: string, contentBase64: string): void {
+          if (typeof path !== 'string' || typeof contentBase64 !== 'string') {
+            throw new Error('saveFile takes a path and base64 content');
+          }
+          savedFiles[path] = contentBase64;
+        },
       };
 
       try {
         const output = await tool.handle(tInput, context);
-        return { type: 'success' as const, output };
+        return Object.keys(savedFiles).length > 0
+          ? { type: 'success' as const, output, savedFiles }
+          : { type: 'success' as const, output };
       } catch (err: unknown) {
         const caughtError = err as {
           message?: string;
@@ -959,6 +971,35 @@ const parseLocalFiles = (raw: unknown): Record<string, LocalFile> | null => {
   return totalBytes <= MAX_LOCAL_FILE_BYTES ? files : null;
 };
 
+/** Decoded size in bytes of a base64 string. */
+const base64ByteLength = (base64: string): number => {
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+  return Math.floor((base64.length * 3) / 4) - padding;
+};
+
+/**
+ * The resolved result carrying the files the handler saved in `executed`. The
+ * directive resolvers rebuild a success result, so the files are reattached
+ * here. A set larger than MAX_LOCAL_FILE_BYTES becomes an error: the server
+ * would drop a response that size at the WebSocket and the call would only
+ * time out.
+ */
+const withSavedFiles = (resolved: DispatchResult, executed: DispatchResult): DispatchResult => {
+  if (resolved.type !== 'success' || executed.type !== 'success' || executed.savedFiles === undefined) {
+    return resolved;
+  }
+  const totalBytes = Object.values(executed.savedFiles).reduce((sum, file) => sum + base64ByteLength(file), 0);
+  if (totalBytes > MAX_LOCAL_FILE_BYTES) {
+    const megabytes = (bytes: number): string => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    return {
+      type: 'error',
+      code: JSONRPC_INTERNAL_ERROR,
+      message: `Files saved by one call may total at most ${megabytes(MAX_LOCAL_FILE_BYTES)}; this call saved ${megabytes(totalBytes)}.`,
+    };
+  }
+  return { ...resolved, savedFiles: executed.savedFiles };
+};
+
 /**
  * Handle tool.dispatch request from MCP server.
  * Finds matching tabs, checks adapter readiness (with fallback to other
@@ -1045,7 +1086,7 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
       const bridged = await resolveBridgeDirective(legacyChecked, tid);
       const podsWritten = await resolvePodsBridgeDirective(bridged, tid);
       const actioned = await resolvePodsActionDirective(podsWritten, tid);
-      return await resolvePodsOpenEditorDirective(actioned, plugin);
+      return withSavedFiles(await resolvePodsOpenEditorDirective(actioned, plugin), result);
     } finally {
       removeProgressListener(tid, dispatchId);
     }

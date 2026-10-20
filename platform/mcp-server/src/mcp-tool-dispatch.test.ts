@@ -1,7 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LOCAL_FILE_PATH_FORMAT } from '@opentabs-dev/shared';
+import { LOCAL_FILE_PATH_FORMAT, SAVE_FILE_PATH_FORMAT } from '@opentabs-dev/shared';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { z } from 'zod';
 import { savePluginPermissions } from './config.js';
@@ -2121,6 +2121,79 @@ describe('handlePluginToolCall', () => {
       isError: true,
     });
     expect(dispatchToExtension).not.toHaveBeenCalled();
+  });
+
+  test('files the tool saved are written to the declared save path and kept out of the output', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    const dir = mkdtempSync(join(tmpdir(), 'opentabs-dispatch-saved-'));
+    const path = join(dir, 'kpi.xlsx');
+    vi.mocked(dispatchToExtension).mockResolvedValue({
+      output: { saved_to: path },
+      savedFiles: { [path]: Buffer.from('workbook').toString('base64') },
+      tabId: 7,
+    });
+    const lookup = createMockLookup({
+      inputSchema: { type: 'object', properties: { save_to: { type: 'string', format: SAVE_FILE_PATH_FORMAT } } },
+    });
+
+    try {
+      const result = await handlePluginToolCall(
+        createMockState(),
+        'testplugin_test_action',
+        { save_to: path },
+        'testplugin',
+        'test_action',
+        lookup,
+        createMockExtra(),
+        createMockCallbacks(),
+      );
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).not.toContain('savedFiles');
+      expect(JSON.parse(result.content[0]?.text ?? '')).toEqual({ saved_to: path });
+      expect(readFileSync(path, 'utf-8')).toBe('workbook');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a saved file aimed at a path the call did not declare fails the call unwritten', async () => {
+    vi.mocked(getToolPermission).mockReturnValue('auto');
+    const dir = mkdtempSync(join(tmpdir(), 'opentabs-dispatch-saved-'));
+    const declared = join(dir, 'declared.xlsx');
+    const chosenByPage = join(dir, 'elsewhere.xlsx');
+    vi.mocked(dispatchToExtension).mockResolvedValue({
+      output: {},
+      savedFiles: { [chosenByPage]: Buffer.from('x').toString('base64') },
+      tabId: 7,
+    });
+    const lookup = createMockLookup({
+      inputSchema: { type: 'object', properties: { save_to: { type: 'string', format: SAVE_FILE_PATH_FORMAT } } },
+    });
+
+    try {
+      const result = await handlePluginToolCall(
+        createMockState(),
+        'testplugin_test_action',
+        { save_to: declared },
+        'testplugin',
+        'test_action',
+        lookup,
+        createMockExtra(),
+        createMockCallbacks(),
+      );
+      expect(result).toEqual({
+        content: [
+          {
+            type: 'text',
+            text: `The tool tried to save a file to "${chosenByPage}", which this call did not name as a save path.`,
+          },
+        ],
+        isError: true,
+      });
+      expect(existsSync(chosenByPage)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test('extension not connected sets success=false in audit and invocationEnd', async () => {

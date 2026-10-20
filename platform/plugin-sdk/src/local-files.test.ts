@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { LocalFile, ToolHandlerContext } from './index.js';
-import { readLocalFile } from './local-files.js';
+import { readLocalFile, saveLocalFile } from './local-files.js';
 
 const FILE: LocalFile = { name: 'a.txt', size: 1, contentType: 'text/plain', contentBase64: 'YQ==' };
 
@@ -27,5 +27,22 @@ describe('readLocalFile', () => {
       expect.objectContaining({ category: 'validation', message: expect.stringContaining('cannot read local files') }),
     );
     expect(() => readLocalFile(undefined, '/docs/a.txt')).toThrow(expect.objectContaining({ category: 'validation' }));
+  });
+});
+
+describe('saveLocalFile', () => {
+  test('hands the bytes to the platform for the path', () => {
+    const saveFile = vi.fn();
+    saveLocalFile({ reportProgress: vi.fn(), saveFile }, '/tmp/a.xlsx', 'YQ==');
+    expect(saveFile).toHaveBeenCalledWith('/tmp/a.xlsx', 'YQ==');
+  });
+
+  test('reports a platform without file saving as a validation error', () => {
+    expect(() => saveLocalFile({ reportProgress: vi.fn() }, '/tmp/a.xlsx', 'YQ==')).toThrow(
+      expect.objectContaining({ category: 'validation', message: expect.stringContaining('cannot save files') }),
+    );
+    expect(() => saveLocalFile(undefined, '/tmp/a.xlsx', 'YQ==')).toThrow(
+      expect.objectContaining({ category: 'validation' }),
+    );
   });
 });

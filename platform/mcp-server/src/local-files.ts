@@ -1,5 +1,5 @@
 /**
- * Server-side reads of the local files a plugin tool call names.
+ * Server-side reads and writes of the local files a plugin tool call names.
  *
  * A plugin marks a string input field with `format: LOCAL_FILE_PATH_FORMAT`.
  * Before dispatch, the server collects the values the caller passed in those
@@ -7,11 +7,16 @@
  * dispatch. The read is driven by the tool call alone — the page has no way to
  * request a file — so only paths an MCP client passed to a tool that declares
  * them ever leave the disk.
+ *
+ * Writes mirror reads. A field marked `format: SAVE_FILE_PATH_FORMAT` names
+ * where the caller wants a file; the handler's bytes come back beside its
+ * output, and the server writes them only to paths the caller passed in such
+ * fields, so a page can never choose where a file lands.
  */
 
-import { readFile, realpath, stat } from 'node:fs/promises';
-import { basename, extname, isAbsolute, relative, resolve } from 'node:path';
-import { getConfigDir, LOCAL_FILE_PATH_FORMAT, type LocalFile, MAX_LOCAL_FILE_BYTES } from '@opentabs-dev/shared';
+import { lstat, readFile, realpath, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { getConfigDir, type LocalFile, MAX_LOCAL_FILE_BYTES } from '@opentabs-dev/shared';
 
 /** MIME types for common document, image and archive extensions. */
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -60,15 +65,16 @@ const isSchemaObject = (value: unknown): value is Record<string, unknown> =>
 
 /**
  * The string values in `value` that sit at a node of `schema` declared with
- * `format: LOCAL_FILE_PATH_FORMAT`, in order of first appearance. Walks object
- * properties, array items and every `anyOf`/`oneOf`/`allOf` branch, so optional,
- * nullable and nested fields are all found.
+ * `format` (`LOCAL_FILE_PATH_FORMAT` or `SAVE_FILE_PATH_FORMAT`), in order of
+ * first appearance. Walks object properties, array items and every
+ * `anyOf`/`oneOf`/`allOf` branch, so optional, nullable and nested fields are
+ * all found.
  */
-export const collectLocalFilePaths = (schema: unknown, value: unknown): string[] => {
+export const collectFilePaths = (schema: unknown, value: unknown, format: string): string[] => {
   const paths = new Set<string>();
   const walk = (node: unknown, data: unknown): void => {
     if (!isSchemaObject(node)) return;
-    if (node.format === LOCAL_FILE_PATH_FORMAT && typeof data === 'string') paths.add(data);
+    if (node.format === format && typeof data === 'string') paths.add(data);
     for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
       const branches = node[key];
       if (Array.isArray(branches)) for (const branch of branches) walk(branch, data);
@@ -165,4 +171,90 @@ export const readLocalFiles = async (paths: readonly string[]): Promise<LocalFil
   }
 
   return { ok: true, files };
+};
+
+/** Base64 alphabet characters followed by at most two `=` of padding. */
+const BASE64_CHARACTERS = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/**
+ * Whether `value` is standard padded base64. A single character class keeps the
+ * match linear on multi-megabyte content, where a grouped pattern overflows the
+ * regex engine's stack.
+ */
+const isBase64 = (value: string): boolean => value.length % 4 === 0 && BASE64_CHARACTERS.test(value);
+
+/** Outcome of writing the files a tool saved: success, or why the first one failed. */
+export type SavedFileWriteResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Write the files a tool handler saved, keyed by the caller's path, after
+ * checking every one before writing any. Each path must be one of
+ * `declaredPaths` — the values the caller passed in save-path fields — and
+ * absolute; its folder must exist and must not be the OpenTabs config
+ * directory or inside it; an existing entry at the path must be a regular file
+ * (it is overwritten); and the files together may total at most
+ * MAX_LOCAL_FILE_BYTES.
+ */
+export const writeSavedFiles = async (
+  declaredPaths: readonly string[],
+  savedFiles: unknown,
+): Promise<SavedFileWriteResult> => {
+  if (!isSchemaObject(savedFiles)) return { ok: false, error: 'The tool returned malformed saved files.' };
+
+  const declared = new Set(declaredPaths);
+  const configDir = await realpath(getConfigDir()).catch(() => resolve(getConfigDir()));
+  const writes: Array<{ path: string; target: string; bytes: Buffer }> = [];
+  let totalBytes = 0;
+
+  for (const [path, content] of Object.entries(savedFiles)) {
+    if (!declared.has(path)) {
+      return {
+        ok: false,
+        error: `The tool tried to save a file to "${path}", which this call did not name as a save path.`,
+      };
+    }
+    if (typeof content !== 'string' || !isBase64(content)) {
+      return { ok: false, error: `The tool returned malformed content for "${path}".` };
+    }
+    const trimmed = path.trim();
+    if (!isAbsolute(trimmed) && !MSYS_DRIVE_PATH.test(trimmed)) {
+      return { ok: false, error: `Save path "${path}" must be absolute.` };
+    }
+    const requested = resolveCallerPath(trimmed);
+    let folder: string;
+    try {
+      // The real folder, so a link cannot lead into the config directory unnoticed.
+      folder = await realpath(dirname(requested));
+      if (!(await stat(folder)).isDirectory()) throw new Error('not a directory');
+    } catch {
+      return { ok: false, error: `The folder for "${path}" does not exist.` };
+    }
+    const target = join(folder, basename(requested));
+    if (isWithin(target, configDir)) {
+      return { ok: false, error: `"${path}" is inside the OpenTabs config directory and cannot be written.` };
+    }
+    const existing = await lstat(target).catch(() => undefined);
+    if (existing !== undefined && !existing.isFile()) {
+      return { ok: false, error: `"${path}" already exists and is not a regular file.` };
+    }
+    const bytes = Buffer.from(content, 'base64');
+    totalBytes += bytes.length;
+    if (totalBytes > MAX_LOCAL_FILE_BYTES) {
+      return {
+        ok: false,
+        error: `Files saved by one call may total at most ${formatMegabytes(MAX_LOCAL_FILE_BYTES)}; "${path}" brings the total to ${formatMegabytes(totalBytes)}.`,
+      };
+    }
+    writes.push({ path, target, bytes });
+  }
+
+  for (const { path, target, bytes } of writes) {
+    try {
+      await writeFile(target, bytes);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      return { ok: false, error: `File "${path}" could not be written${code ? ` (${code})` : ''}.` };
+    }
+  }
+  return { ok: true };
 };

@@ -10,6 +10,7 @@ import {
   dispatchToExtension,
   handleExtensionMessage,
   isDispatchError,
+  MAX_MESSAGE_SIZE,
   queryExtension,
   rejectAllPendingConfirmations,
   sendConfirmationRequest,
@@ -664,7 +665,7 @@ describe('handleExtensionMessage — unrecognized method', () => {
 });
 
 describe('handleExtensionMessage — message size limit', () => {
-  test('message at exactly MAX_MESSAGE_SIZE (10MB) is processed normally', () => {
+  test('message at exactly MAX_MESSAGE_SIZE is processed normally', () => {
     const state = createState();
     const ws = createMockWs();
     state.extensionConnections.set('test-conn', {
@@ -675,12 +676,11 @@ describe('handleExtensionMessage — message size limit', () => {
       activeNetworkCaptures: new Set(),
     });
 
-    // Build a valid JSON-RPC ping message, then pad it to exactly 10MB
+    // Build a valid JSON-RPC ping message, then pad it with spaces (valid JSON
+    // whitespace) to exactly the limit
     const base = JSON.stringify({ jsonrpc: '2.0', method: 'ping' });
-    const maxSize = 10 * 1024 * 1024;
-    // Pad with spaces (valid JSON whitespace) to reach exactly the limit
-    const atLimit = base + ' '.repeat(maxSize - base.length);
-    expect(atLimit.length).toBe(maxSize);
+    const atLimit = base + ' '.repeat(MAX_MESSAGE_SIZE - base.length);
+    expect(atLimit.length).toBe(MAX_MESSAGE_SIZE);
 
     handleExtensionMessage(state, atLimit, noopCallbacks, ws);
 
@@ -690,7 +690,7 @@ describe('handleExtensionMessage — message size limit', () => {
     expect(response.method).toBe('pong');
   });
 
-  test('message exceeding MAX_MESSAGE_SIZE (10MB) is dropped without processing', () => {
+  test('message exceeding MAX_MESSAGE_SIZE is dropped without processing', () => {
     const state = createState();
     const ws = createMockWs();
     state.extensionConnections.set('test-conn', {
@@ -701,8 +701,8 @@ describe('handleExtensionMessage — message size limit', () => {
       activeNetworkCaptures: new Set(),
     });
 
-    // Create a message one byte over the 10MB limit
-    const oversized = 'x'.repeat(10 * 1024 * 1024 + 1);
+    // Create a message one byte over the limit
+    const oversized = 'x'.repeat(MAX_MESSAGE_SIZE + 1);
 
     handleExtensionMessage(state, oversized, noopCallbacks);
 

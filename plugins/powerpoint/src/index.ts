@@ -60,13 +60,14 @@ import { readSlideLayout } from './tools/read-slide-layout.js';
 import { reauthenticate } from './tools/reauthenticate.js';
 import { renameItem } from './tools/rename-item.js';
 import { resizeShape } from './tools/resize-shape.js';
+import { saveFile } from './tools/save-file.js';
 import { searchFiles } from './tools/search-files.js';
 import { setFontSize } from './tools/set-font-size.js';
 import { setHyperlink } from './tools/set-hyperlink.js';
 import { setPlaceholderText } from './tools/set-placeholder-text.js';
+import { setShapeFill } from './tools/set-shape-fill.js';
 import { setSlideBackground } from './tools/set-slide-background.js';
 import { setSlideHiddenTool } from './tools/set-slide-hidden.js';
-import { setShapeFill } from './tools/set-shape-fill.js';
 import { setTableHeight } from './tools/set-table-height.js';
 import { setText } from './tools/set-text.js';
 import { updateShape } from './tools/update-shape.js';
@@ -91,6 +92,7 @@ class PowerPointPlugin extends OpenTabsPlugin {
     listSharedWithMe,
     getItem,
     getDownloadUrl,
+    saveFile,
     getThumbnails,
     renameItem,
     deleteItem,

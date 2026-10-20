@@ -129,7 +129,7 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 | `list_charts` | List all charts in a worksheet | Read |
 | `create_chart` | Create a chart from data | Write |
 | `update_chart` | Change a chart title, position, or size | Write |
-| `get_chart_image` | Render a chart to a base64 PNG | Read |
+| `get_chart_image` | Render a chart to a PNG file | Read |
 | `delete_chart` | Delete a chart | Write |
 
 ### View (1)

@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-powerpoint
 1. Open [powerpoint.cloud.microsoft](https://powerpoint.cloud.microsoft) in Chrome and log in
 2. Open the OpenTabs side panel — the PowerPoint Online plugin should appear as **ready**
 
-## Tools (58)
+## Tools (59)
 
 ### Account (3)
 
@@ -35,7 +35,7 @@ npm install -g @opentabs-dev/opentabs-plugin-powerpoint
 |---|---|---|
 | `get_drive` | Get drive storage quota info | Read |
 
-### Files (13)
+### Files (14)
 
 | Tool | Description | Type |
 |---|---|---|
@@ -45,6 +45,7 @@ npm install -g @opentabs-dev/opentabs-plugin-powerpoint
 | `list_shared_with_me` | List files shared with you | Read |
 | `get_item` | Get details of a file or folder | Read |
 | `get_download_url` | Get a download URL for a file | Read |
+| `save_file` | Save a file to a path | Read |
 | `get_thumbnails` | Get thumbnail previews of a file | Read |
 | `rename_item` | Rename a file or folder | Write |
 | `delete_item` | Delete a file or folder | Write |

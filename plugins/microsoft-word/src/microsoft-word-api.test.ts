@@ -11,6 +11,7 @@ import {
   describeDocumentContextSource,
   describePageKind,
   describeTokenSources,
+  encodeBase64,
   FILE_LOCKED_MESSAGE,
   fetchDownloadUrl,
   graphFetch,
@@ -471,6 +472,20 @@ describe('fetchDownloadUrl', () => {
     fetchMock.mockRejectedValue(new DOMException('timed out', 'TimeoutError'));
     const error = await rejection(fetchDownloadUrl(DOWNLOAD_URL));
     expect(error.code).toBe('TIMEOUT');
+  });
+});
+
+describe('encodeBase64', () => {
+  test('encodes bytes the way btoa encodes their binary string', () => {
+    expect(encodeBase64(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]))).toBe(
+      btoa(String.fromCharCode(0x89, 0x50, 0x4e, 0x47, 0x00, 0xff)),
+    );
+  });
+
+  test('encodes an array larger than one slice without overflowing the stack', () => {
+    const bytes = new Uint8Array(200_000).map((_, index) => index % 256);
+    const decoded = Uint8Array.from(atob(encodeBase64(bytes)), c => c.charCodeAt(0));
+    expect(decoded).toEqual(bytes);
   });
 });
 

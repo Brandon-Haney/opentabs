@@ -1,7 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { apiV2 } from '../confluence-api.js';
-import { cursorSchema, extractCursor } from './schemas.js';
+import { cursorSchema, extractCursor, type RawAttachment } from './schemas.js';
 
 const attachmentSchema = z.object({
   id: z.string().describe('Attachment ID'),
@@ -10,17 +10,6 @@ const attachmentSchema = z.object({
   file_size: z.number().describe('File size in bytes'),
   download_url: z.string().describe('Relative download URL for the attachment'),
 });
-
-interface RawAttachment {
-  id?: string;
-  title?: string;
-  mediaType?: string;
-  fileSize?: number;
-  downloadLink?: string;
-  _links?: {
-    download?: string;
-  };
-}
 
 const mapAttachment = (a: RawAttachment) => ({
   id: a.id ?? '',

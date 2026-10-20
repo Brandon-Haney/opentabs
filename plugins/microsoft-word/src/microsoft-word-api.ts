@@ -635,6 +635,28 @@ export const fetchDownloadUrl = async (
 };
 
 /**
+ * Budget for downloading a whole file's bytes, including retries. It exceeds the
+ * extension's 25 s no-progress budget by design: the bytes move in a single
+ * fetch, which exposes no transfer progress, so a large file needs the longer
+ * clock to arrive at all.
+ */
+export const FILE_DOWNLOAD_TIMEOUT_MS = 120_000;
+
+/**
+ * Base64-encode bytes for a local-file save. The bytes are turned into a binary
+ * string in 32 KiB slices, since spreading a multi-megabyte array into one
+ * `String.fromCharCode` call overflows the call stack.
+ */
+export const encodeBase64 = (bytes: Uint8Array): string => {
+  const SLICE = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += SLICE) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + SLICE));
+  }
+  return btoa(binary);
+};
+
+/**
  * One un-retried, unclassified GET at a Graph endpoint for the diagnose tool.
  * `path` is the label recorded in the result — a template such as
  * `/shares/{shareId}/driveItem`, never an encoded id. Without a usable token

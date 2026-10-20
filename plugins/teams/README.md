@@ -36,7 +36,7 @@ npm install -g @opentabs-dev/opentabs-plugin-teams
 |---|---|---|
 | `send_message` | Send a message to a chat | Write |
 | `read_messages` | Read messages from a chat | Read |
-| `download_image` | Save a chat image at full resolution | Read |
+| `download_image` | Save a chat image at full resolution to a path | Read |
 | `search_messages` | Search all chats and channels for messages (enterprise only) | Read |
 | `edit_message` | Edit a chat message | Write |
 | `delete_message` | Delete a chat message | Write |

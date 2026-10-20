@@ -58,9 +58,9 @@ Configure settings via `opentabs plugin configure retool` or the side panel.
 | `list_page_saves` | List edit history for an app | Read |
 | `list_components` | List all components in an app | Read |
 | `create_app` | Create a new Retool web app | Write |
-| `export_toolscript_archive` | Export a Retool app as a Toolscript ZIP | Write |
-| `create_app_from_toolscript_archive` | Create a Retool app from a Toolscript ZIP | Write |
-| `update_app_from_toolscript_archive` | Update a Retool app from a Toolscript ZIP | Write |
+| `export_toolscript_archive` | Export a Retool app as a Toolscript ZIP to a path | Write |
+| `create_app_from_toolscript_archive` | Create a Retool app from a Toolscript ZIP on disk | Write |
+| `update_app_from_toolscript_archive` | Update a Retool app from a Toolscript ZIP on disk | Write |
 | `force_editor_save` | Force-save the open Retool editor state | Write |
 | `clone_app` | Clone an existing app | Write |
 | `save_page` | Save app state to a Retool page | Write |

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { base64ToBytes, buildFileEntry, chatFileUrl, fileExtension } from './chat-files.js';
+import { base64ToBytes, buildFileEntry, bytesToBase64, chatFileUrl, fileExtension } from './chat-files.js';
 
 const DRIVE = 'https://contoso-my.sharepoint.com/personal/someone_contoso_com/Documents';
 
@@ -62,5 +62,14 @@ describe('chat file entries', () => {
 
   test('decodes base64 into bytes', () => {
     expect([...base64ToBytes('AAEC/w==')]).toEqual([0, 1, 2, 255]);
+  });
+
+  test('encodes bytes as base64', () => {
+    expect(bytesToBase64(new Uint8Array([0, 1, 2, 255]))).toBe('AAEC/w==');
+  });
+
+  test('round-trips bytes larger than one encoding slice', () => {
+    const bytes = Uint8Array.from({ length: 0x8000 * 2 + 7 }, (_, i) => i % 256);
+    expect(base64ToBytes(bytesToBase64(bytes))).toEqual(bytes);
   });
 });

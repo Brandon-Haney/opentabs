@@ -257,3 +257,18 @@ export function extractCursor(nextUrl?: string): string | null {
     return null;
   }
 }
+
+// --- Attachments ---
+
+/** An attachment as returned by the v2 API. `downloadLink` is relative to the site base URL. */
+export interface RawAttachment {
+  id?: string;
+  title?: string;
+  mediaType?: string;
+  fileSize?: number;
+  pageId?: string;
+  downloadLink?: string;
+  _links?: {
+    download?: string;
+  };
+}

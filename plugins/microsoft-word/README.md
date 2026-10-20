@@ -50,7 +50,7 @@ npm install -g @opentabs-dev/opentabs-plugin-microsoft-word
 
 | Tool | Description | Type |
 |---|---|---|
-| `get_file_content` | Read text content of a file | Read |
+| `get_file_content` | Read a text file or save any file to a path | Read |
 | `list_recent_documents` | List recent documents | Read |
 | `list_children` | List files and folders | Read |
 | `get_item` | Get file or folder details | Read |

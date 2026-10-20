@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-confluence
 1. Open [atlassian.net](https://atlassian.net) in Chrome and log in
 2. Open the OpenTabs side panel — the Confluence plugin should appear as **ready**
 
-## Tools (18)
+## Tools (19)
 
 ### Spaces (2)
 
@@ -28,7 +28,7 @@ npm install -g @opentabs-dev/opentabs-plugin-confluence
 | `list_spaces` | List available spaces | Read |
 | `get_space` | Get a space by ID | Read |
 
-### Pages (8)
+### Pages (9)
 
 | Tool | Description | Type |
 |---|---|---|
@@ -39,6 +39,7 @@ npm install -g @opentabs-dev/opentabs-plugin-confluence
 | `delete_page` | Delete a page by ID | Write |
 | `get_page_children` | List child pages of a page | Read |
 | `list_page_attachments` | List attachments on a page | Read |
+| `get_attachment` | Save an attachment to a path | Read |
 | `list_page_versions` | List page version history | Read |
 
 ### Search (1)

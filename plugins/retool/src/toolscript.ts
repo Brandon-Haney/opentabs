@@ -453,25 +453,13 @@ export const importToolscriptArchiveThroughEditor = async (
   };
 };
 
-const normalizeBase64 = (base64: string): string => {
-  const commaIndex = base64.indexOf(',');
-  const rawBase64 = base64.startsWith('data:') && commaIndex >= 0 ? base64.slice(commaIndex + 1) : base64;
-  return rawBase64.replace(/\s/g, '');
-};
-
-export const ensureZipFileName = (fileName: string): string => {
+const ensureZipFileName = (fileName: string): string => {
   const sanitized = fileName.trim().replace(/[\\/]/g, '_') || 'retool-app';
   return sanitized.toLowerCase().endsWith('.zip') ? sanitized : `${sanitized}.zip`;
 };
 
-export const base64ToZipFile = (base64: string, fileName: string): File => {
-  let binary: string;
-  try {
-    binary = atob(normalizeBase64(base64));
-  } catch {
-    throw ToolError.validation('Invalid base64_zip value. Provide a raw base64-encoded ZIP archive or a data URL.');
-  }
-
+const base64ToZipFile = (base64: string, fileName: string): File => {
+  const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
     bytes[index] = binary.charCodeAt(index);
@@ -491,18 +479,6 @@ export const blobToBase64 = async (blob: Blob): Promise<string> => {
   }
 
   return btoa(binary);
-};
-
-export const downloadBlob = (blob: Blob, fileName: string): void => {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = ensureZipFileName(fileName);
-  anchor.style.display = 'none';
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
 };
 
 const formatToolscriptErrors = (ctx: ToolscriptContext): string => {

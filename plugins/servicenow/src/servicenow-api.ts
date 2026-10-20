@@ -10,6 +10,7 @@ import {
 
 const AUTH_NAMESPACE = 'servicenow';
 const REQUEST_TIMEOUT_MS = 30_000;
+const DOWNLOAD_TIMEOUT_MS = 120_000;
 const MAX_ERROR_BODY_LENGTH = 500;
 
 /** Session token ServiceNow exposes as the `g_ck` page global and accepts as the `X-UserToken` header. */
@@ -52,6 +53,14 @@ export const waitForAuth = async (): Promise<boolean> => {
   }
 };
 
+/** How one request is sent: the media type it accepts and how long it may take. */
+interface RequestOptions {
+  accept: string;
+  timeout: number;
+}
+
+const JSON_REQUEST: RequestOptions = { accept: 'application/json', timeout: REQUEST_TIMEOUT_MS };
+
 /**
  * Issues one request against the instance.
  *
@@ -61,11 +70,11 @@ export const waitForAuth = async (): Promise<boolean> => {
  * native sign-in dialog that blocks every subsequent interaction with the tab. Omitting the
  * header is therefore never an acceptable fallback.
  */
-const send = (path: string, token: string, timeout: number): Promise<Response> =>
+const send = (path: string, token: string, options: RequestOptions): Promise<Response> =>
   fetch(path, {
     credentials: 'include',
-    headers: { Accept: 'application/json', 'X-UserToken': token },
-    signal: AbortSignal.timeout(timeout),
+    headers: { Accept: options.accept, 'X-UserToken': token },
+    signal: AbortSignal.timeout(options.timeout),
   });
 
 /**
@@ -75,16 +84,16 @@ const send = (path: string, token: string, timeout: number): Promise<Response> =
  * retried once with it. `fetchFromPage` cannot serve this path because it discards the
  * response — and with it the replacement token — before the caller can read the headers.
  */
-const request = async (path: string, timeout = REQUEST_TIMEOUT_MS): Promise<Response> => {
+const request = async (path: string, options: RequestOptions = JSON_REQUEST): Promise<Response> => {
   const token = getToken();
   if (!token) throw ToolError.auth('Not signed in to ServiceNow — open the instance in a tab and sign in.');
 
   let response: Response;
   try {
-    response = await send(path, token, timeout);
+    response = await send(path, token, options);
   } catch (error) {
     if (error instanceof DOMException && error.name === 'TimeoutError') {
-      throw ToolError.timeout(`ServiceNow request timed out after ${timeout}ms — try narrowing the query.`);
+      throw ToolError.timeout(`ServiceNow request timed out after ${options.timeout}ms — try narrowing the query.`);
     }
     throw ToolError.internal(`ServiceNow request failed for ${path}: ${String(error)}`);
   }
@@ -93,7 +102,7 @@ const request = async (path: string, timeout = REQUEST_TIMEOUT_MS): Promise<Resp
     const replacement = response.headers.get('x-usertoken-response');
     if (replacement && replacement !== token) {
       cacheToken(replacement);
-      response = await send(path, replacement, timeout);
+      response = await send(path, replacement, options);
     }
   }
 
@@ -237,4 +246,47 @@ export const currentUserGroupIds = async (): Promise<string[]> => {
   });
 
   return page.records.map(record => record.group?.value ?? '').filter(id => id.length > 0);
+};
+
+/** Attachment metadata as returned by the Attachment API, which reports every field as a plain string. */
+export interface RawAttachmentMeta {
+  sys_id?: string;
+  file_name?: string;
+  content_type?: string;
+  size_bytes?: string;
+  table_name?: string;
+  table_sys_id?: string;
+}
+
+/** Reads one attachment's metadata. */
+export const attachmentMeta = async (sysId: string): Promise<RawAttachmentMeta> => {
+  const response = await request(`/api/now/attachment/${encodeURIComponent(sysId)}`);
+  const body = (await response.json()) as { result?: RawAttachmentMeta };
+  return body.result ?? {};
+};
+
+/** Base64-encodes bytes in slices, so a multi-megabyte file never spreads into one oversized call. */
+const encodeBase64 = (bytes: Uint8Array): string => {
+  const SLICE = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += SLICE) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + SLICE));
+  }
+  return btoa(binary);
+};
+
+/** A downloaded file: its length in bytes and its content, base64-encoded. */
+export interface DownloadedFile {
+  size: number;
+  contentBase64: string;
+}
+
+/** Downloads one attachment's bytes. */
+export const attachmentContent = async (sysId: string): Promise<DownloadedFile> => {
+  const response = await request(`/api/now/attachment/${encodeURIComponent(sysId)}/file`, {
+    accept: '*/*',
+    timeout: DOWNLOAD_TIMEOUT_MS,
+  });
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  return { size: bytes.length, contentBase64: encodeBase64(bytes) };
 };

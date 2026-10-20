@@ -70,6 +70,16 @@ export const buildFileEntry = (item: UploadedDriveItem, driveWebUrl: string): Re
   };
 };
 
+/** Encode bytes as base64, in slices so a large file does not overflow the call stack. */
+export const bytesToBase64 = (bytes: Uint8Array): string => {
+  const SLICE = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += SLICE) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + SLICE));
+  }
+  return btoa(binary);
+};
+
 /** Decode a base64 string into bytes. */
 export const base64ToBytes = (base64: string): Uint8Array => {
   const binary = atob(base64);

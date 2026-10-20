@@ -7,6 +7,7 @@ import { createInlineComment } from './tools/create-inline-comment.js';
 import { createPage } from './tools/create-page.js';
 import { deleteComment } from './tools/delete-comment.js';
 import { deletePage } from './tools/delete-page.js';
+import { getAttachment } from './tools/get-attachment.js';
 import { getPage } from './tools/get-page.js';
 import { getPageChildren } from './tools/get-page-children.js';
 import { getSpace } from './tools/get-space.js';
@@ -48,6 +49,7 @@ class ConfluencePlugin extends OpenTabsPlugin {
     deletePage,
     getPageChildren,
     listPageAttachments,
+    getAttachment,
     listPageVersions,
     search,
     listComments,

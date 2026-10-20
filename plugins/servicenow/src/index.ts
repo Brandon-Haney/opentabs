@@ -2,6 +2,7 @@ import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import type { ConfigSchema, ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import { isAuthenticated, waitForAuth } from './servicenow-api.js';
 import { describeTable } from './tools/describe-table.js';
+import { getAttachment } from './tools/get-attachment.js';
 import { getChange } from './tools/get-change.js';
 import { getConfigurationItem } from './tools/get-configuration-item.js';
 import { getCurrentUser } from './tools/get-current-user.js';
@@ -54,6 +55,7 @@ class ServiceNowPlugin extends OpenTabsPlugin {
     getIncidentStatus,
     listIncidentComments,
     listIncidentAttachments,
+    getAttachment,
     listIncidentActivity,
     summarizeIncidents,
     // Changes

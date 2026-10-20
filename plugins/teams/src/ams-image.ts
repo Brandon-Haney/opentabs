@@ -45,19 +45,6 @@ export const extractMessageImages = (html: string): AmsImage[] => {
   return [...images.values()];
 };
 
-/** File extension for an image MIME type. */
-const IMAGE_EXTENSIONS: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/gif': 'gif',
-  'image/webp': 'webp',
-  'image/bmp': 'bmp',
-  'image/svg+xml': 'svg',
-};
-
-export const imageExtension = (mimeType: string): string =>
-  (Object.hasOwn(IMAGE_EXTENSIONS, mimeType) ? IMAGE_EXTENSIONS[mimeType] : undefined) ?? 'img';
-
 /** Fetch the full-resolution rendition of an AMS image. */
 export const fetchFullSizeImage = async (image: AmsImage): Promise<Blob> => {
   let response: Response;

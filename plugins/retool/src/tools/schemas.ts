@@ -1,3 +1,4 @@
+import { LOCAL_FILE_PATH_FORMAT } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 
 // --- App (Page) ---
@@ -611,3 +612,14 @@ export const mapGrid = (g: RawGrid) => ({
   created_at: g.createdAt ?? '',
   updated_at: g.updatedAt ?? '',
 });
+
+// --- Toolscript archive ---
+
+export const toolscriptArchivePathSchema = z
+  .string()
+  .min(1)
+  .meta({ format: LOCAL_FILE_PATH_FORMAT })
+  .describe(
+    'Absolute path of the Toolscript ZIP archive on this computer, e.g. "C:\\Users\\me\\retool\\my-app.zip" — typically a ' +
+      'file written by export_toolscript_archive and edited locally. The file is read from disk; pass the path, never the contents.',
+  );

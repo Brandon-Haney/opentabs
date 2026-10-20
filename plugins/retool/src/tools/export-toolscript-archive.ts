@@ -1,33 +1,30 @@
-import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
+import { defineTool, SAVE_FILE_PATH_FORMAT, saveLocalFile, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../retool-api.js';
-import {
-  blobToBase64,
-  downloadBlob,
-  ensureZipFileName,
-  getCurrentSourceControlBranchName,
-  serializeToolscriptArchive,
-} from '../toolscript.js';
+import { blobToBase64, getCurrentSourceControlBranchName, serializeToolscriptArchive } from '../toolscript.js';
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
-
-const getExportPageName = (page: unknown): string | null => {
-  if (!isRecord(page)) return null;
-  const name = page.name;
-  return typeof name === 'string' && name.trim() ? name : null;
-};
+const fileNameOf = (path: string): string => path.split(/[\\/]/).pop() ?? path;
 
 export const exportToolscriptArchive = defineTool({
   name: 'export_toolscript_archive',
   displayName: 'Export Toolscript Archive',
   description:
-    "Export a Retool app as a Toolscript ZIP archive using Retool's own browser-side archive serializer. Returns the ZIP as base64 so callers can save, unzip, edit, and later pass it to create_app_from_toolscript_archive or update_app_from_toolscript_archive. Optionally also starts a normal browser download.",
-  summary: 'Export a Retool app as a Toolscript ZIP',
+    "Export a Retool app as a Toolscript ZIP archive using Retool's own browser-side archive serializer and write it to save_to on this computer. " +
+    'The ZIP never passes through the conversation: unzip and edit it locally, re-zip it, then pass its path as archive_path to ' +
+    'create_app_from_toolscript_archive or update_app_from_toolscript_archive.',
+  summary: 'Export a Retool app as a Toolscript ZIP to a path',
   icon: 'download',
   group: 'Apps',
   input: z.object({
     page_uuid: z.string().describe('App UUID to export'),
-    file_name: z.string().optional().describe('Optional ZIP file name. Defaults to the Retool app name.'),
+    save_to: z
+      .string()
+      .min(1)
+      .meta({ format: SAVE_FILE_PATH_FORMAT })
+      .describe(
+        'Absolute path to write the ZIP archive to, including the file name, e.g. "C:\\Users\\me\\retool\\my-app.zip". ' +
+          'The folder must exist; an existing file at the path is overwritten.',
+      ),
     branch_name: z
       .string()
       .optional()
@@ -38,17 +35,12 @@ export const exportToolscriptArchive = defineTool({
       .boolean()
       .optional()
       .describe('Whether to emit per-page position JSON files in the archive (default true).'),
-    download_to_browser: z
-      .boolean()
-      .optional()
-      .describe('Whether to also start a browser download of the ZIP archive (default false).'),
   }),
   output: z.object({
-    file_name: z.string().describe('ZIP file name for the exported archive'),
-    mime_type: z.string().describe('MIME type of the returned archive'),
+    saved_to: z.string().describe('Path the ZIP archive was written to'),
+    file_name: z.string().describe('File name of the written ZIP archive'),
+    mime_type: z.string().describe('MIME type of the archive'),
     size_bytes: z.number().int().describe('Size of the ZIP archive in bytes'),
-    base64_zip: z.string().describe('Base64-encoded ZIP archive'),
-    download_started: z.boolean().describe('Whether a browser download was started'),
   }),
   handle: async (params, context) => {
     context?.reportProgress({ progress: 1, total: 3, message: 'Fetching Retool export data...' });
@@ -67,7 +59,6 @@ export const exportToolscriptArchive = defineTool({
 
     context?.reportProgress({ progress: 2, total: 3, message: 'Serializing Toolscript ZIP...' });
 
-    const fileName = ensureZipFileName(params.file_name ?? getExportPageName(data.page) ?? params.page_uuid);
     const archive = await serializeToolscriptArchive({
       pageUuid: params.page_uuid,
       exportData: {
@@ -78,16 +69,15 @@ export const exportToolscriptArchive = defineTool({
       perPagePositionJsonFiles: params.per_page_position_json_files ?? true,
     });
 
-    if (params.download_to_browser) downloadBlob(archive, fileName);
+    context?.reportProgress({ progress: 3, total: 3, message: 'Saving ZIP...' });
 
-    context?.reportProgress({ progress: 3, total: 3, message: 'Encoding ZIP...' });
+    saveLocalFile(context, params.save_to, await blobToBase64(archive));
 
     return {
-      file_name: fileName,
+      saved_to: params.save_to,
+      file_name: fileNameOf(params.save_to),
       mime_type: 'application/zip',
       size_bytes: archive.size,
-      base64_zip: await blobToBase64(archive),
-      download_started: params.download_to_browser ?? false,
     };
   },
 });

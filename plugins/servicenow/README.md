@@ -27,9 +27,9 @@ Configure settings via `opentabs plugin configure servicenow` or the side panel.
 |---|---|---|---|
 | `instanceUrl` | url | No | The URL of your ServiceNow instance if it uses a custom domain (e.g., https://support.example.com). Leave empty for standard *.service-now.com instances. |
 
-## Tools (29)
+## Tools (30)
 
-### Incidents (7)
+### Incidents (8)
 
 | Tool | Description | Type |
 |---|---|---|
@@ -38,6 +38,7 @@ Configure settings via `opentabs plugin configure servicenow` or the side panel.
 | `get_incident_status` | Check the state of up to 50 incidents in one call | Read |
 | `list_incident_comments` | Read the comments and work notes on one incident | Read |
 | `list_incident_attachments` | Files attached to an incident, newest first | Read |
+| `get_attachment` | Save an attachment to a path | Read |
 | `list_incident_activity` | Read the field-change and email history of an incident | Read |
 | `summarize_incidents` | Count incidents grouped by state, priority, group, or assignee | Write |
 

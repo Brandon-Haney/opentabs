@@ -11,9 +11,11 @@ import {
   attachLargeFileToMessage,
   describeCachedAuth,
   describeRejectedAuth,
+  encodeSharingUrl,
   owsRequest,
   PROBE_TIMEOUT_MS,
   probeApiBase,
+  unwrapSafeLink,
   uploadAttachmentToOneDrive,
 } from './outlook-api.js';
 import { tokenFingerprint } from './token-fingerprint.js';
@@ -505,6 +507,31 @@ describe('uploadAttachmentToOneDrive', () => {
     expect(error.category).toBe('auth');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(describeRejectedAuth()).toEqual([expect.objectContaining({ slot: 'files', apiBase: GRAPH_API_BASE })]);
+  });
+});
+
+describe('sharing links', () => {
+  test('encodes a sharing URL as Graph expects', () => {
+    // The worked example from Graph's "Accessing shared DriveItems" documentation.
+    expect(encodeSharingUrl('https://onedrive.live.com/redir?resid=1231244193912!12&authKey=1201919!12921!1')).toBe(
+      'u!aHR0cHM6Ly9vbmVkcml2ZS5saXZlLmNvbS9yZWRpcj9yZXNpZD0xMjMxMjQ0MTkzOTEyITEyJmF1dGhLZXk9MTIwMTkxOSExMjkyMSEx',
+    );
+  });
+
+  test('encodes characters outside the base64url alphabet with - and _', () => {
+    const encoded = encodeSharingUrl('https://contoso.sharepoint.com/?a=>>>&b=???');
+    expect(encoded).not.toMatch(/[+/=]/);
+    expect(atob(encoded.slice(2).replace(/-/g, '+').replace(/_/g, '/'))).toBe(
+      'https://contoso.sharepoint.com/?a=>>>&b=???',
+    );
+  });
+
+  test('unwraps a Safe Links URL and leaves other URLs alone', () => {
+    const target = 'https://contoso.sharepoint.com/:x:/g/personal/a_b/Doc?e=1';
+    const wrapped = `https://nam04.safelinks.protection.outlook.com/?url=${encodeURIComponent(target)}&data=x`;
+    expect(unwrapSafeLink(wrapped)).toBe(target);
+    expect(unwrapSafeLink(target)).toBe(target);
+    expect(unwrapSafeLink('not a url')).toBe('not a url');
   });
 });
 

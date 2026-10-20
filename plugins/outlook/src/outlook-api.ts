@@ -4,6 +4,7 @@ import {
   fetchWithRetry,
   getAuthCache,
   log,
+  MAX_LOCAL_FILE_BYTES,
   parseRetryAfterMs,
   setAuthCache,
   ToolError,
@@ -86,15 +87,16 @@ export const waitForAuth = (): Promise<boolean> =>
  */
 const REQUEST_TIMEOUT_MS = 20_000;
 /**
- * Bound for one OneDrive or upload-session PUT, including its retries. This
- * exceeds the extension's 25 s no-progress budget by design: a request's bytes
- * move in a single fetch, which exposes no upload progress, so nothing can be
- * reported while one PUT is in flight. A chunked upload session reports progress
- * after every chunk (see attachLargeFileToMessage), which restarts the budget
- * between chunks up to the extension's 295 s absolute cap (MAX_SCRIPT_TIMEOUT_MS);
- * the single simple-upload PUT of a cloud attachment has no such checkpoint.
+ * Bound for one OneDrive transfer — an upload-session or simple-upload PUT, or a
+ * shared-file download — including its retries. This exceeds the extension's 25 s
+ * no-progress budget by design: a request's bytes move in a single fetch, which
+ * exposes no transfer progress, so nothing can be reported while one is in
+ * flight. A chunked upload session reports progress after every chunk (see
+ * attachLargeFileToMessage), which restarts the budget between chunks up to the
+ * extension's 295 s absolute cap (MAX_SCRIPT_TIMEOUT_MS); a simple-upload PUT or
+ * a shared-file download has no such checkpoint.
  */
-const UPLOAD_TIMEOUT_MS = 120_000;
+const TRANSFER_TIMEOUT_MS = 120_000;
 /** Attempts fetchWithRetry may make per exchange. */
 const RETRY_MAX_ATTEMPTS = 3;
 /**
@@ -731,7 +733,7 @@ export const uploadAttachmentToOneDrive = async (
         body: new Blob([bytes]),
         credentials: 'omit',
       },
-      { host: GRAPH_HOST, timeoutMs: UPLOAD_TIMEOUT_MS, timeoutMessage: 'OneDrive upload timed out.' },
+      { host: GRAPH_HOST, timeoutMs: TRANSFER_TIMEOUT_MS, timeoutMessage: 'OneDrive upload timed out.' },
     );
     if (uploadRes.status === 401 || uploadRes.status === 403) return { kind: 'rejected' };
     if (!uploadRes.ok) {
@@ -770,6 +772,136 @@ export const uploadAttachmentToOneDrive = async (
     if (!webUrl) throw ToolError.internal('OneDrive share-link response contained no URL.');
     return { kind: 'accepted', value: webUrl };
   });
+
+/** A file read through a OneDrive or SharePoint sharing link. */
+export interface SharedFile {
+  name: string;
+  size: number;
+  contentType: string;
+  /** File content, base64-encoded */
+  contentBase64: string;
+  /** The item's own web URL in OneDrive or SharePoint */
+  webUrl: string;
+}
+
+/**
+ * The URL a Microsoft Safe Links wrapper (`*.safelinks.protection.outlook.com`)
+ * points at, or `url` unchanged when it is not wrapped. Outlook rewrites links in
+ * received mail this way, so a URL copied from a message body is often wrapped.
+ */
+export const unwrapSafeLink = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname.endsWith('.safelinks.protection.outlook.com')) return url;
+    return parsed.searchParams.get('url') ?? url;
+  } catch {
+    return url;
+  }
+};
+
+/**
+ * Graph's share id for a sharing URL: `u!` followed by the URL as unpadded
+ * base64url, per the `/shares/{shareIdOrEncodedSharingUrl}` contract.
+ */
+export const encodeSharingUrl = (url: string): string => {
+  const binary = Array.from(new TextEncoder().encode(url), byte => String.fromCharCode(byte)).join('');
+  return `u!${btoa(binary).replace(/=+$/, '').replace(/\//g, '_').replace(/\+/g, '-')}`;
+};
+
+/** Base64-encode bytes in slices, so a multi-megabyte file never spreads into one oversized call. */
+const encodeBase64 = (bytes: Uint8Array): string => {
+  const SLICE = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += SLICE) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + SLICE));
+  }
+  return btoa(binary);
+};
+
+/** The driveItem fields read when resolving a sharing link. */
+interface SharedDriveItem {
+  name?: string;
+  size?: number;
+  webUrl?: string;
+  file?: { mimeType?: string };
+  folder?: unknown;
+  '@microsoft.graph.downloadUrl'?: string;
+}
+
+/**
+ * Read a OneDrive or SharePoint file through its URL — a sharing link or a
+ * document-library address pasted in a message body. Graph resolves the link to
+ * its driveItem (`Prefer: redeemSharingLinkIfNecessary` grants access through
+ * the link the first time it is used), and the bytes come from the item's
+ * pre-authenticated download URL. Drive access needs Files scope, so this runs in
+ * the `files` slot on Graph candidates only, like {@link uploadAttachmentToOneDrive}.
+ * A 404 means the link does not exist or is not shared with the user; a folder
+ * or a file over MAX_LOCAL_FILE_BYTES is refused before any bytes move.
+ */
+export const downloadSharedFile = async (sharingUrl: string): Promise<SharedFile> => {
+  const shareId = encodeSharingUrl(unwrapSafeLink(sharingUrl));
+  return cascadeAuth<SharedFile>(AUTH_CACHE_KEY.files, async auth => {
+    if (auth.apiBase !== GRAPH_API_BASE) return { kind: 'skipped' };
+
+    const itemRes = await fetchMicrosoft(
+      `${GRAPH_API_BASE}/shares/${shareId}/driveItem`,
+      {
+        headers: { Authorization: `Bearer ${auth.token}`, Prefer: 'redeemSharingLinkIfNecessary' },
+        credentials: 'omit',
+      },
+      { host: GRAPH_HOST, timeoutMs: REQUEST_TIMEOUT_MS, timeoutMessage: 'Resolving the sharing link timed out.' },
+    );
+    if (itemRes.status === 401 || itemRes.status === 403) return { kind: 'rejected' };
+    if (itemRes.status === 404) {
+      throw ToolError.notFound('The shared file was not found, or it is not shared with you.').withDetails(
+        responseErrorDetails(itemRes),
+      );
+    }
+    if (!itemRes.ok) {
+      throw ToolError.internal(`Resolving the sharing link failed (${itemRes.status}).`).withDetails(
+        responseErrorDetails(itemRes),
+      );
+    }
+    const item = (await itemRes.json()) as SharedDriveItem;
+    const name = item.name ?? 'shared-file';
+    if (item.folder !== undefined) throw ToolError.validation(`"${name}" is a folder, not a file.`);
+    const size = item.size ?? 0;
+    if (size > MAX_LOCAL_FILE_BYTES) {
+      throw ToolError.validation(
+        `"${name}" is ${(size / 1024 / 1024).toFixed(1)} MB; files read in one call may be at most ${MAX_LOCAL_FILE_BYTES / 1024 / 1024} MB.`,
+      );
+    }
+    const downloadUrl = item['@microsoft.graph.downloadUrl'];
+    if (!downloadUrl) throw ToolError.internal(`Graph returned no download URL for "${name}".`);
+
+    // The download URL is pre-authenticated, so it carries no bearer token.
+    const contentRes = await fetchMicrosoft(
+      downloadUrl,
+      { credentials: 'omit' },
+      {
+        host: new URL(downloadUrl).host,
+        timeoutMs: TRANSFER_TIMEOUT_MS,
+        timeoutMessage: `Downloading "${name}" timed out.`,
+      },
+    );
+    if (!contentRes.ok) {
+      throw ToolError.internal(`Downloading "${name}" failed (${contentRes.status}).`).withDetails(
+        responseErrorDetails(contentRes),
+      );
+    }
+    const bytes = new Uint8Array(await contentRes.arrayBuffer());
+    return {
+      kind: 'accepted',
+      value: {
+        name,
+        size: bytes.length,
+        contentType: item.file?.mimeType ?? 'application/octet-stream',
+        contentBase64: encodeBase64(bytes),
+        webUrl: item.webUrl ?? '',
+      },
+    };
+  });
+};
 
 /**
  * Upload-session chunk size. Microsoft requires every chunk but the last to be a
@@ -857,7 +989,7 @@ export const attachLargeFileToMessage = async (
         body: new Blob([chunk]),
         credentials: 'omit',
       },
-      { host: uploadHost, timeoutMs: UPLOAD_TIMEOUT_MS, timeoutMessage: 'Attachment chunk upload timed out.' },
+      { host: uploadHost, timeoutMs: TRANSFER_TIMEOUT_MS, timeoutMessage: 'Attachment chunk upload timed out.' },
     );
     // 200 accepts an intermediate chunk; 201 commits the attachment on the final chunk.
     if (res.status !== 200 && res.status !== 201) {

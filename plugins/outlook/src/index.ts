@@ -8,7 +8,6 @@ import { deleteDraft } from './tools/delete-draft.js';
 import { deleteEvent } from './tools/delete-event.js';
 import { deleteMessage } from './tools/delete-message.js';
 import { diagnose } from './tools/diagnose.js';
-import { downloadAttachment } from './tools/download-attachment.js';
 import { forwardMessage } from './tools/forward-message.js';
 import { getAttachmentContent } from './tools/get-attachment-content.js';
 import { getCalendarView } from './tools/get-calendar-view.js';
@@ -16,6 +15,7 @@ import { getCurrentUser } from './tools/get-current-user.js';
 import { getEvent } from './tools/get-event.js';
 import { getMessage } from './tools/get-message.js';
 import { getSchedule } from './tools/get-schedule.js';
+import { getSharedFile } from './tools/get-shared-file.js';
 import { listAttachments } from './tools/list-attachments.js';
 import { listCalendars } from './tools/list-calendars.js';
 import { listEvents } from './tools/list-events.js';
@@ -61,7 +61,7 @@ class OutlookPlugin extends OpenTabsPlugin {
     deleteDraft,
     listAttachments,
     getAttachmentContent,
-    downloadAttachment,
+    getSharedFile,
     addAttachment,
     // Folders
     listFolders,

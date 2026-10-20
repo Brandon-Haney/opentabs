@@ -45,8 +45,8 @@ npm install -g @opentabs-dev/opentabs-plugin-outlook
 | `update_draft` | Edit an unsent draft | Write |
 | `delete_draft` | Delete an unsent draft | Write |
 | `list_attachments` | List email attachments | Read |
-| `get_attachment_content` | Get attachment content | Read |
-| `download_attachment` | Save attachment to Downloads folder | Write |
+| `get_attachment_content` | Read an attachment or save it to a path | Read |
+| `get_shared_file` | Save a linked OneDrive or SharePoint file to a path | Read |
 | `add_attachment` | Attach files to a draft | Write |
 
 ### Folders (1)

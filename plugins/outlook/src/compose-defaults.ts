@@ -76,7 +76,7 @@ interface StartupData {
 let cachedDefaults: ComposeDefaults | null = null;
 const signatureHtmlCache = new Map<string, string | null>();
 
-const escapeHtml = (text: string): string =>
+export const escapeHtml = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 const textToHtml = (text: string): string => escapeHtml(text).replace(/\r\n|\r|\n/g, '<br>');

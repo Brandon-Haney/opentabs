@@ -1,7 +1,13 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { attachmentInputSchema, attachToDraft } from '../attachments.js';
-import { composeToolBody } from '../compose-defaults.js';
+import {
+  composeWithMentions,
+  MENTION_HELP,
+  resolvePeople,
+  threadRecipients,
+  unaddressedMentions,
+} from '../mentions.js';
 import { api } from '../outlook-api.js';
 
 export const forwardMessage = defineTool({
@@ -15,7 +21,7 @@ export const forwardMessage = defineTool({
   input: z.object({
     message_id: z.string().describe('The message ID to forward'),
     to: z.array(z.string()).describe('Recipient email addresses'),
-    comment: z.string().optional().describe('Optional comment to include above the forwarded message'),
+    comment: z.string().optional().describe(`Optional comment to include above the forwarded message. ${MENTION_HELP}`),
     draft: z.boolean().optional().describe('Save as a draft instead of sending immediately (default: false)'),
     include_signature: z.boolean().optional().describe("Append the user's signature (default: true)"),
     attachments: z.array(attachmentInputSchema).optional().describe('Additional files to attach to the forward'),
@@ -42,13 +48,20 @@ export const forwardMessage = defineTool({
 
     const quoted = draft.body?.content ?? '';
     const applyBody = async () => {
-      const composed = await composeToolBody(
+      const { body, mentioned } = await composeWithMentions(
         { body: params.comment ?? '', include_signature: params.include_signature },
         'reply',
+        async () => resolvePeople([...params.to, ...(await threadRecipients(params.message_id))]),
       );
+      const added = unaddressedMentions(mentioned, params.to);
       await api(`/me/messages/${draftId}`, {
         method: 'PATCH',
-        body: { body: { contentType: 'HTML', content: `${composed.content}${quoted}` } },
+        body: {
+          body: { contentType: 'HTML', content: `${body.content}${quoted}` },
+          ...(added.length > 0 && {
+            toRecipients: [...toRecipients, ...added.map(person => ({ emailAddress: { address: person.address } }))],
+          }),
+        },
       });
       await attachToDraft(draftId, params, context);
     };

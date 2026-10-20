@@ -22,8 +22,10 @@ export const sendMessage = defineTool({
       .string()
       .optional()
       .describe(
-        'Message text in Markdown. @[Name] mentions a person: their display name or enough of it to be unique in ' +
-          'the conversation (@[Sandip]), or their email (@[name@example.com]); the message shows the text written. ' +
+        'Message text in Markdown. @[Name] mentions a person by display name, enough of it to be unique in the ' +
+          'conversation, or email (@[name@example.com]). The message shows the text written, so mention people by ' +
+          'first name as a person would (@[Sandip]); when the first name is not unique, @[Sandip](Sandip Kumar) or ' +
+          '@[Sandip](name@example.com) shows the first name and mentions that person. ' +
           'May be omitted when sending files.',
       ),
     files: z
@@ -50,7 +52,7 @@ export const sendMessage = defineTool({
     mentions: z
       .array(
         z.object({
-          text: z.string().describe('The @[...] text as written'),
+          text: z.string().describe('The text the mention shows'),
           display_name: z.string().describe('Who it resolved to'),
           email: z.string().describe('Their email'),
         }),

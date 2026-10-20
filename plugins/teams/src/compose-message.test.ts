@@ -142,4 +142,17 @@ describe('composeMessage', () => {
     expect(api.getDirectoryUsers).toHaveBeenLastCalledWith(['sandip@contoso.com']);
     expect(composed.content).toContain('itemid="0">Sandip Kumar</span>');
   });
+
+  test('shows the first name for a person an @[Text](email) mention names by email', async () => {
+    api.threadApi.mockResolvedValue({ properties: { threadType: 'chat' }, members: [{ id: '8:orgid:me' }] });
+
+    const composed = await composeMessage(
+      { conversationId: '19:chat', text: 'fyi @[Sandip](sandip@contoso.com)', files: [], fileAccess: 'view' },
+      undefined,
+    );
+
+    expect(api.getDirectoryUsers).toHaveBeenLastCalledWith(['sandip@contoso.com']);
+    expect(composed.content).toContain('itemid="0">Sandip</span>');
+    expect(composed.mentions).toEqual([{ text: 'Sandip', display_name: 'Sandip Kumar', email: 'sandip@contoso.com' }]);
+  });
 });

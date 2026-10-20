@@ -1,8 +1,8 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { attachToDraft, inlineImagesField, referencedContentIds, validateInlineImages } from '../attachments.js';
-import { composeToolBody } from '../compose-defaults.js';
 import { deleteInlineImages, extractQuotedThread, listInlineImages, requireDraft } from '../drafts.js';
+import { composeWithMentions, MENTION_HELP, resolvePeople, unaddressedMentions } from '../mentions.js';
 import { api } from '../outlook-api.js';
 import { emailAddressSchema, mapEmailAddress, type RawEmailAddress } from './schemas.js';
 
@@ -24,7 +24,10 @@ export const updateDraft = defineTool({
   input: z.object({
     draft_id: z.string().min(1).describe('ID of the draft to edit (draft_id from the tool that created it)'),
     subject: z.string().optional().describe('New subject'),
-    body: z.string().optional().describe('New body, replacing the text written above any quoted thread'),
+    body: z
+      .string()
+      .optional()
+      .describe(`New body, replacing the text written above any quoted thread. ${MENTION_HELP}`),
     body_type: z.enum(['text', 'html']).optional().describe('Body content type (default: text)'),
     include_signature: z.boolean().optional().describe("Append the user's signature to the new body (default: true)"),
     to: z.array(z.string()).optional().describe('Replacement To recipient email addresses'),
@@ -47,7 +50,11 @@ export const updateDraft = defineTool({
       throw ToolError.validation('inline_images go with a new body: pass body (with body_type "html") as well.');
     }
 
-    const draft = await requireDraft(draft_id, 'edited', body === undefined ? [] : ['body']);
+    const draft = await requireDraft(
+      draft_id,
+      'edited',
+      body === undefined ? [] : ['body', 'toRecipients', 'ccRecipients', 'bccRecipients'],
+    );
     const existingImages = body === undefined ? [] : await listInlineImages(draft_id);
     if (body !== undefined) {
       validateInlineImages(
@@ -67,12 +74,23 @@ export const updateDraft = defineTool({
     let newContent: string | undefined;
     if (body !== undefined) {
       const quotedThread = extractQuotedThread(draft.body?.content ?? '');
-      const composed = await composeToolBody(
+      // Recipients as they will stand after this edit: a list passed here replaces the draft's.
+      const toAfter: (string | RawEmailAddress)[] = to ?? draft.toRecipients ?? [];
+      const recipients = [...toAfter, ...(cc ?? draft.ccRecipients ?? []), ...(bcc ?? draft.bccRecipients ?? [])];
+      const composed = await composeWithMentions(
         { body, body_type: params.body_type, include_signature: params.include_signature },
         quotedThread ? 'reply' : 'new',
+        () => resolvePeople(recipients),
       );
-      newContent = `${composed.content}${quotedThread ?? ''}`;
+      newContent = `${composed.body.content}${quotedThread ?? ''}`;
       changes.body = { contentType: 'HTML', content: newContent };
+      const added = unaddressedMentions(composed.mentioned, recipients);
+      if (added.length > 0) {
+        changes.toRecipients = [
+          ...toAfter.map(r => (typeof r === 'string' ? { emailAddress: { address: r } } : r)),
+          ...added.map(person => ({ emailAddress: { address: person.address, name: person.name } })),
+        ];
+      }
     }
 
     const updated = await api<{ subject?: string; toRecipients?: RawEmailAddress[]; webLink?: string }>(

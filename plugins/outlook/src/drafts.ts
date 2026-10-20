@@ -7,6 +7,8 @@ export interface RawDraft {
   isDraft?: boolean;
   subject?: string;
   toRecipients?: RawEmailAddress[];
+  ccRecipients?: RawEmailAddress[];
+  bccRecipients?: RawEmailAddress[];
   body?: { contentType?: string; content?: string };
 }
 

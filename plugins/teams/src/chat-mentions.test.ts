@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { findMentionNames, isEmailMention, matchPerson, renderMentions } from './chat-mentions.js';
+import { findMentions, isEmailMention, matchPerson, renderMentions } from './chat-mentions.js';
 import type { DirectoryUser } from './teams-api.js';
 
 const person = (id: string, displayName: string, mail: string | null = null): DirectoryUser => ({
@@ -14,17 +14,24 @@ const SANDRA = person('oid-sandra', 'Sandra Kim');
 const RATNAKAR = person('oid-ratnakar', 'Ratnakar Bhide [C]');
 const PEOPLE = [SANDIP, SANDRA, RATNAKAR];
 
-describe('findMentionNames', () => {
+describe('findMentions', () => {
   test('finds every @[Name] in order, repeats included', () => {
-    expect(findMentionNames('Hi @[Sandip] and @[Sandra Kim], thanks @[Sandip]')).toEqual([
-      'Sandip',
-      'Sandra Kim',
-      'Sandip',
+    expect(findMentions('Hi @[Sandip] and @[Sandra Kim], thanks @[Sandip]')).toEqual([
+      { text: 'Sandip', target: 'Sandip' },
+      { text: 'Sandra Kim', target: 'Sandra Kim' },
+      { text: 'Sandip', target: 'Sandip' },
+    ]);
+  });
+
+  test('separates the shown text from who an @[Text](who) mentions', () => {
+    expect(findMentions('Hi @[Sandip]( sandip_kumar@contoso.com ) and @[Sandra](Sandra Kim)')).toEqual([
+      { text: 'Sandip', target: 'sandip_kumar@contoso.com' },
+      { text: 'Sandra', target: 'Sandra Kim' },
     ]);
   });
 
   test('ignores an ordinary @ and a Markdown link', () => {
-    expect(findMentionNames('email me @ work, see [docs](https://x.test)')).toEqual([]);
+    expect(findMentions('email me @ work, see [docs](https://x.test)')).toEqual([]);
   });
 });
 
@@ -34,6 +41,12 @@ describe('matchPerson', () => {
     expect(matchPerson('sandip_kumar@contoso.com', PEOPLE)).toBe(SANDIP);
     expect(matchPerson('Sandip', PEOPLE)).toBe(SANDIP);
     expect(matchPerson('Sandra K', PEOPLE)).toBe(SANDRA);
+  });
+
+  test('prefers a whole-word match over a leading part', () => {
+    const sandipa = person('oid-sandipa', 'Sandipa Roy');
+    expect(matchPerson('Sandip', [...PEOPLE, sandipa])).toBe(SANDIP);
+    expect(matchPerson('Sandipa', [...PEOPLE, sandipa])).toBe(sandipa);
   });
 
   test('ignores a bracketed suffix on a display name', () => {
@@ -58,8 +71,8 @@ describe('matchPerson', () => {
 
 describe('renderMentions', () => {
   test('turns each mention into a numbered span and lists it in the mentions property', () => {
-    const { html, mentionsProperty } = renderMentions('**Hi** @[Sandip], see @[Sandra Kim]', name =>
-      matchPerson(name, PEOPLE),
+    const { html, mentionsProperty } = renderMentions('**Hi** @[Sandip], see @[Sandra Kim]', ({ target }) =>
+      matchPerson(target, PEOPLE),
     );
 
     expect(html).toBe(
@@ -85,9 +98,20 @@ describe('renderMentions', () => {
   });
 
   test('shows the display name for a mention written as an email', () => {
-    const { html } = renderMentions('cc @[sandip_kumar@contoso.com]', name => matchPerson(name, PEOPLE));
+    const { html } = renderMentions('cc @[sandip_kumar@contoso.com]', ({ target }) => matchPerson(target, PEOPLE));
 
     expect(html).toContain('itemid="0">Sandip Kumar</span>');
+  });
+
+  test('shows the written text for an @[Text](who) mention of the person who names', () => {
+    const { html, mentionsProperty } = renderMentions('Hi @[Sandip](sandip_kumar@contoso.com)', ({ target }) =>
+      matchPerson(target, PEOPLE),
+    );
+
+    expect(html).toBe(
+      '<p>Hi <span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="0">Sandip</span></p>',
+    );
+    expect(JSON.parse(mentionsProperty as string)[0].displayName).toBe('Sandip Kumar');
   });
 
   test('escapes the mention text', () => {

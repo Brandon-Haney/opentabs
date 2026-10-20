@@ -18,20 +18,34 @@ import type { DirectoryUser } from './teams-api.js';
  * Callers write a mention as `@[Name]` in the Markdown text. The name is
  * matched against the people in the conversation; `@[someone@example.com]`
  * names a person directly by email, for a conversation whose members are not
- * known (a channel) or a person outside it.
+ * known (a channel) or a person outside it. `@[Text](who)` shows Text and
+ * mentions the person `who` names (a name or email), which keeps a mention to a
+ * first name when the first name alone matches several people.
  */
 
 const MENTION_TYPE = 'http://schema.skype.com/Mention';
 
-/** `@[Name]` — no brackets or line breaks inside the name. */
-const MENTION_PATTERN = /@\[([^\][\r\n]+)\]/g;
+/** `@[Name]` or `@[Text](who)` — no brackets, parentheses or line breaks inside either part. */
+const MENTION_PATTERN = /@\[([^\][\r\n]+)\](?:\(([^()\r\n]+)\))?/g;
 
 /** Mentions one message may carry; Teams itself caps a message's mentions near this. */
 const MAX_MENTIONS = 20;
 
-/** The text of every `@[Name]` in a message, in order, repeats included. */
-export const findMentionNames = (markdown: string): string[] =>
-  [...markdown.matchAll(MENTION_PATTERN)].map(match => (match[1] ?? '').trim()).filter(name => name.length > 0);
+/** One `@[...]` in a message: the text it shows, and the name or email of who it mentions. */
+export interface WrittenMention {
+  text: string;
+  target: string;
+}
+
+const writtenMention = (rawText: string, rawTarget: string | undefined): WrittenMention | null => {
+  const text = rawText.trim();
+  const target = rawTarget?.trim() || text;
+  return text.length > 0 ? { text, target } : null;
+};
+
+/** Every `@[...]` in a message, in order, repeats included. */
+export const findMentions = (markdown: string): WrittenMention[] =>
+  [...markdown.matchAll(MENTION_PATTERN)].flatMap(match => writtenMention(match[1] ?? '', match[2]) ?? []);
 
 /** Whether a mention names its person by email address. */
 export const isEmailMention = (name: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(name);
@@ -49,9 +63,11 @@ const nameWords = (displayName: string): string[] =>
  * The one person a mention name identifies among `people`: an exact display
  * name or email match first, otherwise the person whose name contains every
  * word of the mention as the start of one of its words ("Sandip" or "Sandip K"
- * for "Sandip Kumar"). Throws a validation error naming the candidates when the
- * name matches several people, and the conversation's people when it matches
- * none, so the caller can correct it instead of sending a dead mention.
+ * for "Sandip Kumar"), preferring a person whose name contains every word whole
+ * ("Sandip" for "Sandip Kumar" even beside "Sandipa Roy"). Throws a validation
+ * error naming the candidates when the name matches several people, and the
+ * conversation's people when it matches none, so the caller can correct it
+ * instead of sending a dead mention.
  */
 export const matchPerson = (name: string, people: DirectoryUser[]): DirectoryUser => {
   const wanted = normalize(name);
@@ -64,13 +80,13 @@ export const matchPerson = (name: string, people: DirectoryUser[]): DirectoryUse
   if (exact.length === 1) return exact[0] as DirectoryUser;
 
   const queryWords = nameWords(name);
-  const partial =
-    exact.length > 1
-      ? exact
-      : people.filter(p => {
-          const words = nameWords(p.displayName);
-          return queryWords.length > 0 && queryWords.every(q => words.some(w => w.startsWith(q)));
-        });
+  const matchingEvery = (fits: (word: string, query: string) => boolean): DirectoryUser[] =>
+    people.filter(p => {
+      const words = nameWords(p.displayName);
+      return queryWords.length > 0 && queryWords.every(q => words.some(w => fits(w, q)));
+    });
+  const wholeWords = exact.length > 1 ? exact : matchingEvery((word, query) => word === query);
+  const partial = wholeWords.length > 0 ? wholeWords : matchingEvery((word, query) => word.startsWith(query));
   const [only, ...rest] = partial;
   if (only && rest.length === 0) return only;
 
@@ -104,22 +120,26 @@ export interface MentionedMessage {
 }
 
 /**
- * Render Markdown with its `@[Name]` mentions turned into mention spans.
+ * Render Markdown with its `@[...]` mentions turned into mention spans.
  *
- * `resolve` maps each mention's name to its person; occurrences are numbered
- * in order of appearance, which is the `itemid` that ties each span to its
- * entry in the returned property. A mention naming its person by email shows
- * their display name; any other shows the text the caller wrote.
+ * `resolve` maps each mention to its person; occurrences are numbered in order
+ * of appearance, which is the `itemid` that ties each span to its entry in the
+ * returned property. A bare `@[email]` shows the person's display name; any
+ * other mention shows the text the caller wrote.
  */
-export const renderMentions = (markdown: string, resolve: (name: string) => DirectoryUser): MentionedMessage => {
+export const renderMentions = (
+  markdown: string,
+  resolve: (mention: WrittenMention) => DirectoryUser,
+): MentionedMessage => {
   const mentions: ResolvedMention[] = [];
   // Letters and digits only, so the Markdown converter passes them through untouched.
   const placeholder = (index: number): string => `OTBMENTION${index}X`;
-  const withPlaceholders = markdown.replace(MENTION_PATTERN, (whole, rawName: string) => {
-    const name = rawName.trim();
-    if (name.length === 0) return whole;
-    const person = resolve(name);
-    mentions.push({ text: isEmailMention(name) ? person.displayName : name, person });
+  const withPlaceholders = markdown.replace(MENTION_PATTERN, (whole, rawText: string, rawTarget?: string) => {
+    const written = writtenMention(rawText, rawTarget);
+    if (!written) return whole;
+    const person = resolve(written);
+    const showsEmail = rawTarget === undefined && isEmailMention(written.text);
+    mentions.push({ text: showsEmail ? person.displayName : written.text, person });
     return placeholder(mentions.length - 1);
   });
   if (mentions.length > MAX_MENTIONS) {

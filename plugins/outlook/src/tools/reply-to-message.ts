@@ -1,8 +1,15 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { attachmentInputSchema, attachToDraft, inlineImagesField, validateInlineImages } from '../attachments.js';
-import { composeToolBody } from '../compose-defaults.js';
+import {
+  composeWithMentions,
+  MENTION_HELP,
+  resolvePeople,
+  threadRecipients,
+  unaddressedMentions,
+} from '../mentions.js';
 import { api } from '../outlook-api.js';
+import type { RawEmailAddress } from './schemas.js';
 
 export const replyToMessage = defineTool({
   name: 'reply_to_message',
@@ -14,7 +21,7 @@ export const replyToMessage = defineTool({
   group: 'Messages',
   input: z.object({
     message_id: z.string().describe('The message ID to reply to'),
-    body: z.string().describe('Reply body content'),
+    body: z.string().describe(`Reply body content. ${MENTION_HELP}`),
     body_type: z
       .enum(['text', 'html'])
       .optional()
@@ -41,19 +48,34 @@ export const replyToMessage = defineTool({
     // thread). For an immediate reply the same composed draft is then sent; this keeps
     // the font/signature identical whether replying live or saving a draft.
     const draftAction = params.reply_all ? 'createReplyAll' : 'createReply';
-    const draft = await api<{ id?: string; webLink?: string; body?: { content?: string } }>(
-      `/me/messages/${params.message_id}/${draftAction}`,
-      { method: 'POST' },
-    );
+    const draft = await api<{
+      id?: string;
+      webLink?: string;
+      body?: { content?: string };
+      toRecipients?: RawEmailAddress[];
+      ccRecipients?: RawEmailAddress[];
+    }>(`/me/messages/${params.message_id}/${draftAction}`, { method: 'POST' });
     const draftId = draft.id;
     if (!draftId) throw ToolError.internal('Reply draft was created without a message id.');
 
     const quoted = draft.body?.content ?? '';
     const applyBody = async () => {
-      const composed = await composeToolBody(params, 'reply');
+      const addressed = [...(draft.toRecipients ?? []), ...(draft.ccRecipients ?? [])];
+      const { body, mentioned } = await composeWithMentions(params, 'reply', async () =>
+        resolvePeople([...addressed, ...(await threadRecipients(params.message_id))]),
+      );
+      const added = unaddressedMentions(mentioned, addressed);
       await api(`/me/messages/${draftId}`, {
         method: 'PATCH',
-        body: { body: { contentType: 'HTML', content: `${composed.content}${quoted}` } },
+        body: {
+          body: { contentType: 'HTML', content: `${body.content}${quoted}` },
+          ...(added.length > 0 && {
+            toRecipients: [
+              ...(draft.toRecipients ?? []),
+              ...added.map(person => ({ emailAddress: { address: person.address, name: person.name } })),
+            ],
+          }),
+        },
       });
       await attachToDraft(draftId, params, context);
     };

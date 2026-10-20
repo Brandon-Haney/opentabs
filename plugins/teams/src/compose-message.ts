@@ -1,7 +1,7 @@
 import { LOCAL_FILE_PATH_FORMAT, readLocalFile, ToolError, type ToolHandlerContext } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { base64ToBytes, buildFileEntry, chatFileUrl } from './chat-files.js';
-import { findMentionNames, isEmailMention, matchPerson, renderMentions } from './chat-mentions.js';
+import { findMentions, isEmailMention, matchPerson, renderMentions } from './chat-mentions.js';
 import { markdownToTeamsHtml } from './markdown-html.js';
 import {
   type DirectoryUser,
@@ -14,7 +14,7 @@ import {
 } from './teams-api.js';
 
 /**
- * Turns a send request — Markdown text with `@[Name]` mentions, plus files on
+ * Turns a send request — Markdown text with `@[...]` mentions, plus files on
  * the user's computer — into the chat service message body: the HTML content
  * and the `properties` that make mentions notify and files appear.
  */
@@ -97,8 +97,8 @@ export const composeMessage = async (
   message: OutgoingMessage,
   context: ToolHandlerContext | undefined,
 ): Promise<ComposedMessage> => {
-  const mentionNames = findMentionNames(message.text);
-  if (mentionNames.length === 0 && message.files.length === 0) {
+  const mentionTargets = findMentions(message.text).map(mention => mention.target);
+  if (mentionTargets.length === 0 && message.files.length === 0) {
     return { content: markdownToTeamsHtml(message.text), properties: {}, mentions: [], files: [] };
   }
 
@@ -113,14 +113,14 @@ export const composeMessage = async (
   // A mention by email may name someone outside the conversation.
   const known = new Set(people.flatMap(p => [p.mail?.toLowerCase(), p.userPrincipalName.toLowerCase()]));
   const emailsToLookUp = [
-    ...new Set(mentionNames.filter(isEmailMention).filter(email => !known.has(email.toLowerCase()))),
+    ...new Set(mentionTargets.filter(isEmailMention).filter(email => !known.has(email.toLowerCase()))),
   ];
   const directory = emailsToLookUp.length > 0 ? [...people, ...(await getDirectoryUsers(emailsToLookUp))] : people;
 
   const mentions: SentMention[] = [];
-  const rendered = renderMentions(message.text, name => {
-    const person = matchPerson(name, isEmailMention(name) ? directory : people);
-    mentions.push({ text: name, display_name: person.displayName, email: emailOf(person) });
+  const rendered = renderMentions(message.text, ({ text, target }) => {
+    const person = matchPerson(target, isEmailMention(target) ? directory : people);
+    mentions.push({ text, display_name: person.displayName, email: emailOf(person) });
     return person;
   });
 

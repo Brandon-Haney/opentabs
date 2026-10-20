@@ -1,7 +1,7 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { attachmentInputSchema, attachToDraft, inlineImagesField, validateInlineImages } from '../attachments.js';
-import { composeToolBody } from '../compose-defaults.js';
+import { composeWithMentions, MENTION_HELP, resolvePeople, unaddressedMentions } from '../mentions.js';
 import { api } from '../outlook-api.js';
 
 export const sendMessage = defineTool({
@@ -15,7 +15,7 @@ export const sendMessage = defineTool({
   input: z.object({
     to: z.array(z.string()).describe('Recipient email addresses'),
     subject: z.string().describe('Email subject'),
-    body: z.string().describe('Email body content'),
+    body: z.string().describe(`Email body content. ${MENTION_HELP}`),
     body_type: z.enum(['text', 'html']).optional().describe('Body content type (default: text)'),
     cc: z.array(z.string()).optional().describe('CC recipient email addresses'),
     bcc: z.array(z.string()).optional().describe('BCC recipient email addresses'),
@@ -37,14 +37,16 @@ export const sendMessage = defineTool({
     const toRecipients = (addrs: string[]) => addrs.map(addr => ({ emailAddress: { address: addr } }));
     validateInlineImages(params.body, params.body_type, params.inline_images);
 
-    const body = await composeToolBody(params, 'new');
+    const recipients = [...params.to, ...(params.cc ?? []), ...(params.bcc ?? [])];
+    const { body, mentioned } = await composeWithMentions(params, 'new', () => resolvePeople(recipients));
+    const to = [...params.to, ...unaddressedMentions(mentioned, recipients).map(person => person.address)];
     const message = {
       subject: params.subject,
       body: {
         contentType: body.contentType,
         content: body.content,
       },
-      toRecipients: toRecipients(params.to),
+      toRecipients: toRecipients(to),
       ccRecipients: params.cc ? toRecipients(params.cc) : undefined,
       bccRecipients: params.bcc ? toRecipients(params.bcc) : undefined,
       importance: params.importance,

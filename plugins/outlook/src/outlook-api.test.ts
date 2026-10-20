@@ -11,6 +11,7 @@ import {
   attachLargeFileToMessage,
   describeCachedAuth,
   describeRejectedAuth,
+  downloadSharedFile,
   encodeSharingUrl,
   owsRequest,
   PROBE_TIMEOUT_MS,
@@ -507,6 +508,73 @@ describe('uploadAttachmentToOneDrive', () => {
     expect(error.category).toBe('auth');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(describeRejectedAuth()).toEqual([expect.objectContaining({ slot: 'files', apiBase: GRAPH_API_BASE })]);
+  });
+});
+
+describe('downloadSharedFile', () => {
+  const SHARE_URL = 'https://contoso-my.sharepoint.com/:x:/g/personal/someone/Doc';
+  const DOWNLOAD_URL = 'https://contoso-my.sharepoint.com/download.aspx?tempauth=x';
+  const driveItem = (): Response =>
+    json(200, {
+      name: 'Doc.xlsx',
+      size: 3,
+      webUrl: 'https://contoso-my.sharepoint.com/Doc.xlsx',
+      file: { mimeType: 'application/vnd.ms-excel' },
+      '@microsoft.graph.downloadUrl': DOWNLOAD_URL,
+    });
+
+  test('resolves the link with the Graph token and reads the bytes without one', async () => {
+    fetchMock.mockResolvedValueOnce(driveItem()).mockResolvedValueOnce(respond(200, {}, 'abc'));
+
+    const file = await settled(downloadSharedFile(SHARE_URL));
+    expect(file).toEqual({
+      name: 'Doc.xlsx',
+      size: 3,
+      contentType: 'application/vnd.ms-excel',
+      contentBase64: 'YWJj',
+      webUrl: 'https://contoso-my.sharepoint.com/Doc.xlsx',
+    });
+    expect(request(0).url).toBe(`${GRAPH_API_BASE}/shares/${encodeSharingUrl(SHARE_URL)}/driveItem`);
+    expect(request(0).token).toBe(GRAPH_TOKEN);
+    expect(request(1).url).toBe(DOWNLOAD_URL);
+    expect(request(1).token).toBeNull();
+  });
+
+  test('a file the user cannot open is refused without marking the token rejected', async () => {
+    fetchMock
+      .mockResolvedValueOnce(respond(403))
+      .mockResolvedValueOnce(json(200, { id: 'drive-1' }))
+      .mockResolvedValueOnce(driveItem())
+      .mockResolvedValueOnce(respond(200, {}, 'abc'));
+
+    const error = await rejection(downloadSharedFile(SHARE_URL));
+    expect(error).toMatchObject({ code: 'ACCESS_DENIED', category: 'not_found' });
+    expect(request(1).url).toBe(`${GRAPH_API_BASE}/me/drive?$select=id`);
+    expect(describeRejectedAuth()).toEqual([]);
+
+    // The next shared file still reaches the same token.
+    const file = await settled(downloadSharedFile(SHARE_URL));
+    expect(file.name).toBe('Doc.xlsx');
+    expect(request(2).token).toBe(GRAPH_TOKEN);
+  });
+
+  test('a token that cannot read OneDrive at all is rejected', async () => {
+    fetchMock.mockResolvedValueOnce(respond(403)).mockResolvedValueOnce(respond(403));
+
+    const error = await rejection(downloadSharedFile(SHARE_URL));
+    expect(error.category).toBe('auth');
+    expect(describeRejectedAuth()).toEqual([expect.objectContaining({ slot: 'files', apiBase: GRAPH_API_BASE })]);
+  });
+
+  test('refuses a file over the size ceiling before downloading it', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json(200, { name: 'Huge.zip', size: 26 * 1024 * 1024, '@microsoft.graph.downloadUrl': DOWNLOAD_URL }),
+    );
+
+    const error = await rejection(downloadSharedFile(SHARE_URL));
+    expect(error.category).toBe('validation');
+    expect(error.message).toContain('"Huge.zip" is 26.0 MB');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

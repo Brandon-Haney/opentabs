@@ -336,9 +336,16 @@ const sendRequest = async <T>(auth: OutlookAuth, endpoint: string, options: ApiR
  * The outcome of one cascade attempt. `accepted` stops the cascade and caches the
  * token; `rejected` (the API answered 401/403) advances and remembers the
  * rejection; `skipped` (the candidate's API base cannot serve this call at all, so
- * no request was made) advances without judging the token.
+ * no request was made) advances without judging the token; `refused` (the token
+ * is valid for the API, but the resource the call names turned it away — a file
+ * not shared with the user) advances without judging the token and, when no
+ * other candidate is accepted, ends the cascade with `error`.
  */
-type CascadeAttempt<R> = { kind: 'accepted'; value: R } | { kind: 'rejected' } | { kind: 'skipped' };
+type CascadeAttempt<R> =
+  | { kind: 'accepted'; value: R }
+  | { kind: 'rejected' }
+  | { kind: 'skipped' }
+  | { kind: 'refused'; error: ToolError };
 
 /** Maps `sendRequest`'s `null`-on-401/403 contract onto a cascade outcome. */
 const outcomeOf = <R>(result: R | null): CascadeAttempt<R> =>
@@ -384,8 +391,13 @@ const cascadeExhaustedError = (hadCandidates: boolean, sawRejection: boolean): T
  * propagates immediately and is not a rejection, which is what keeps a downstream
  * 5xx from evicting or negative-caching a working token.
  *
- * When no candidate accepts, the auth error distinguishes a cascade in which some
- * token was rejected from one in which every token was skipped (see
+ * A `refused` outcome is the resource's answer, not the token's, so like a skip
+ * it neither evicts nor remembers; one file the user cannot open must not leave
+ * a working token marked rejected for every later call in the slot.
+ *
+ * When no candidate accepts, a refusal's own error wins — the session is fine and
+ * the resource said no. Otherwise the auth error distinguishes a cascade in which
+ * some token was rejected from one in which every token was skipped (see
  * `cascadeExhaustedError`), so a valid session is never reported as expired.
  *
  * The retry budget is per transport call: at most one wrapper per cascade can
@@ -399,6 +411,7 @@ const cascadeAuth = async <R>(
   const cached = getAuthCache<OutlookAuth>(cacheKey);
   let cachedSkipped = false;
   let sawRejection = false;
+  let refusal: ToolError | undefined;
   if (cached) {
     const outcome = await attempt(cached);
     // The cached token is already stored — return without re-caching it.
@@ -409,7 +422,9 @@ const cascadeAuth = async <R>(
       rememberRejected(cacheKey, cached);
       logRejection('Cached Microsoft token rejected; re-cascading', cacheKey, cached);
     } else {
+      // Skipped or refused: the cached winner stays the slot's winner.
       cachedSkipped = true;
+      if (outcome.kind === 'refused') refusal = outcome.error;
     }
   }
 
@@ -428,9 +443,12 @@ const cascadeAuth = async <R>(
       sawRejection = true;
       rememberRejected(cacheKey, auth);
       logRejection('Microsoft token candidate rejected', cacheKey, auth);
+    } else if (outcome.kind === 'refused') {
+      refusal ??= outcome.error;
     }
   }
 
+  if (refusal) throw refusal;
   throw cascadeExhaustedError(cached !== null || candidates.length > 0, sawRejection);
 };
 
@@ -829,13 +847,28 @@ interface SharedDriveItem {
 }
 
 /**
+ * Whether `token` can read the user's own OneDrive — a check that names no shared
+ * resource, so it tells a token lacking Files scope from a file the user cannot
+ * open when Graph answers both with 403.
+ */
+const canReadOwnDrive = async (token: string): Promise<boolean> => {
+  const res = await fetchMicrosoft(
+    `${GRAPH_API_BASE}/me/drive?$select=id`,
+    { headers: { Authorization: `Bearer ${token}` }, credentials: 'omit' },
+    { host: GRAPH_HOST, timeoutMs: REQUEST_TIMEOUT_MS, timeoutMessage: 'Checking OneDrive access timed out.' },
+  );
+  return res.status !== 401 && res.status !== 403;
+};
+
+/**
  * Read a OneDrive or SharePoint file through its URL — a sharing link or a
  * document-library address pasted in a message body. Graph resolves the link to
  * its driveItem (`Prefer: redeemSharingLinkIfNecessary` grants access through
  * the link the first time it is used), and the bytes come from the item's
  * pre-authenticated download URL. Drive access needs Files scope, so this runs in
  * the `files` slot on Graph candidates only, like {@link uploadAttachmentToOneDrive}.
- * A 404 means the link does not exist or is not shared with the user; a folder
+ * A 404, or a 403 to a token that can otherwise read OneDrive, means the file is
+ * not shared with the user — refused without marking the token rejected. A folder
  * or a file over MAX_LOCAL_FILE_BYTES is refused before any bytes move.
  */
 export const downloadSharedFile = async (sharingUrl: string): Promise<SharedFile> => {
@@ -851,7 +884,19 @@ export const downloadSharedFile = async (sharingUrl: string): Promise<SharedFile
       },
       { host: GRAPH_HOST, timeoutMs: REQUEST_TIMEOUT_MS, timeoutMessage: 'Resolving the sharing link timed out.' },
     );
-    if (itemRes.status === 401 || itemRes.status === 403) return { kind: 'rejected' };
+    if (itemRes.status === 401) return { kind: 'rejected' };
+    if (itemRes.status === 403) {
+      // Graph answers 403 both for a token without Files scope and for a file the
+      // user cannot open; only the first is the token's fault.
+      if (!(await canReadOwnDrive(auth.token))) return { kind: 'rejected' };
+      return {
+        kind: 'refused',
+        error: ToolError.notFound(
+          'Microsoft refused access to the shared file — it is not shared with you, or its link has expired.',
+          'ACCESS_DENIED',
+        ).withDetails(responseErrorDetails(itemRes)),
+      };
+    }
     if (itemRes.status === 404) {
       throw ToolError.notFound('The shared file was not found, or it is not shared with you.').withDetails(
         responseErrorDetails(itemRes),

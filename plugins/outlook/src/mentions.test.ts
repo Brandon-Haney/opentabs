@@ -39,9 +39,9 @@ beforeEach(() => {
 
 /** The mention links in composed HTML, as [id, address, text]. */
 const links = (html: string): [string, string, string][] =>
-  [...html.matchAll(/<a id="([^"]+)" href="mailto:([^"]+)">([^<]+)<\/a>/g)].map(
-    m => [m[1], m[2], m[3]] as [string, string, string],
-  );
+  [
+    ...html.matchAll(/<a id="([^"]+)" class="tWKOu mention ms-bgc-nlr ms-fcl-b" href="mailto:([^"]+)">([^<]+)<\/a>/g),
+  ].map(m => [m[1], m[2], m[3]] as [string, string, string]);
 
 describe('findMentions', () => {
   test('finds every @[Name] in order, repeats included', () => {
@@ -127,7 +127,7 @@ describe('composeWithMentions', () => {
       async () => PEOPLE,
     );
     expect(body.content).toMatch(
-      /^<p>Thanks <b><a id="OWAAM[0-9A-F]{32}" href="mailto:janet_smith@contoso.com">@Janet<\/a><\/b><\/p>$/,
+      /^<p>Thanks <b><a id="OWAAM[0-9A-F]{32}" class="tWKOu mention ms-bgc-nlr ms-fcl-b" href="mailto:janet_smith@contoso.com">@Janet<\/a><\/b><\/p>$/,
     );
   });
 

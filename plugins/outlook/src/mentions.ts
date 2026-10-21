@@ -9,7 +9,8 @@ import type { RawEmailAddress } from './tools/schemas.js';
  * Outlook marks a mention in the message HTML as a mailto link whose id starts
  * with `OWAAM`:
  *
- *   <a id="OWAAM480476CE0974458A8043550D5CAF46AE" href="mailto:jane@contoso.com">@Jane Doe</a>
+ *   <a id="OWAAM480476CE0974458A8043550D5CAF46AE" class="tWKOu mention ms-bgc-nlr ms-fcl-b"
+ *      href="mailto:jane@contoso.com">@Jane Doe</a>
  *
  * Exchange reads those links when the message is sent, which is what flags the
  * message as mentioning that person in their mailbox. Outlook on the web also
@@ -146,6 +147,13 @@ export const threadRecipients = async (messageId: string): Promise<RawEmailAddre
 /** The id Outlook gives a mention link: `OWAAM` and 32 uppercase hex digits. */
 const mentionId = (): string => `OWAAM${crypto.randomUUID().replace(/-/g, '').toUpperCase()}`;
 
+/**
+ * The classes Outlook on the web gives a mention it inserts. Its editor styles a
+ * mention as a plain-text tag only through `tWKOu`; a mention without these
+ * classes shows as an underlined link while the draft is open.
+ */
+const MENTION_CLASS = 'tWKOu mention ms-bgc-nlr ms-fcl-b';
+
 /** A body composed with its mentions rendered, and the people it mentions. */
 export interface MentionedBody {
   body: ComposedBody;
@@ -187,7 +195,9 @@ export const composeWithMentions = async (
     const person = written && resolved.get(written.target);
     if (!written || !person) return whole;
     const text = rawTarget === undefined && isEmailMention(written.text) ? person.name : written.text;
-    links.push(`<a id="${mentionId()}" href="mailto:${escapeHtml(person.address)}">@${escapeHtml(text)}</a>`);
+    links.push(
+      `<a id="${mentionId()}" class="${MENTION_CLASS}" href="mailto:${escapeHtml(person.address)}">@${escapeHtml(text)}</a>`,
+    );
     return placeholder(links.length - 1);
   });
 

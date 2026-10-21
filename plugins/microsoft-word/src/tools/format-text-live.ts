@@ -2,7 +2,6 @@ import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { liveFormatText, liveFormatTextOutputSchema } from '../live-edit.js';
 
-const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const fontColor = z.string().regex(/^(#[0-9a-fA-F]{6}|auto)$/);
 
 export const formatTextLive = defineTool({
@@ -38,7 +37,11 @@ export const formatTextLive = defineTool({
     color: fontColor
       .optional()
       .describe('Font colour as #RRGGBB, or "auto" for the automatic colour (black on a light page).'),
-    highlight: hexColor.optional().describe('Highlight colour as #RRGGBB (#FFFF00 is the usual yellow).'),
+    highlight: z
+      .string()
+      .regex(/^(#[0-9a-fA-F]{6}|none)$/)
+      .optional()
+      .describe('Highlight colour as #RRGGBB (#FFFF00 is the usual yellow), or "none" to remove the highlight.'),
     size: z.number().min(1).max(1638).optional().describe('Font size in points, e.g. 11 or 10.5.'),
     font: z.string().min(1).optional().describe('Font name, e.g. "Calibri".'),
     clear: z.boolean().optional().describe('Clear all character formatting instead of setting any.'),

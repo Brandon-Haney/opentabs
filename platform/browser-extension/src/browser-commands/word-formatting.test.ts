@@ -409,6 +409,13 @@ describe('paragraph flags and automatic colour', () => {
     expect(wordColor('auto')).toBe('4278190080');
     expect(() => wordFormatTextAction.parseArgs({ find: 'x', highlight: 'auto' })).toThrow(/highlight/);
   });
+
+  test('highlight none writes No Color', () => {
+    const args = wordFormatTextAction.parseArgs({ find: 'Plain', highlight: 'none' });
+    expect(args.changes).toEqual(expect.objectContaining({ highlight: 'none' }));
+    const objects = objectsOf(wordFormatTextAction.build(wordFormatTextAction.resolve(model(), args), args, MINT));
+    expect(propOf(objects[2], 335551501)).toBe('4278190080');
+  });
 });
 
 describe('compact dry run', () => {

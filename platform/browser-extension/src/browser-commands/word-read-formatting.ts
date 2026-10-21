@@ -145,7 +145,7 @@ const characterSettings = (byId: Map<string, PodsObject>, format: PodsObject): O
     superscript: flag(PROP_SUPERSCRIPT),
     subscript: flag(PROP_SUBSCRIPT),
     color: color === undefined ? undefined : color === AUTO_COLOR ? 'auto' : hexColor(color),
-    highlight: highlight === undefined ? undefined : hexColor(highlight),
+    highlight: highlight === undefined || highlight === AUTO_COLOR ? undefined : hexColor(highlight),
     size: size === undefined ? undefined : Number(size) / 2,
     font: readProp(p, PROP_FONT_NAMES[1] as number) ?? readProp(p, PROP_FONT_NAMES[0] as number),
     characterStyle: styleName,

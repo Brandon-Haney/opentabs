@@ -91,7 +91,7 @@ Character formatting (`1179649`) is where bold and italic actually live:
 | `134224904` | Superscript |
 | `134224905` | Subscript |
 | `335551500` | Font colour, as `0xBBGGRR` (`255` is red); `4278190080` (`0xFF000000`) is Automatic |
-| `335551501` | Highlight colour, as `0xBBGGRR` (`65535` is yellow) |
+| `335551501` | Highlight colour, as `0xBBGGRR` (`65535` is yellow); Highlight > No Color writes `4278190080` |
 | `268442635` | Font size in half-points (`28` is 14 pt; Grow Font steps 10 pt to `22`) |
 | `469777841`–`469777844`, `469769226` | Font name, written to all five slots; the theme-font links `201341986`, `201342446`–`201342449` go to `-1` |
 | `335551547` | Language (`1033`), carried from the run being formatted |

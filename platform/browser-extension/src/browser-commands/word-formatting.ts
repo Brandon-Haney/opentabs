@@ -208,7 +208,7 @@ export interface CharacterChanges {
   subscript?: boolean;
   /** `#RRGGBB`. */
   color?: string;
-  /** `#RRGGBB`. */
+  /** `#RRGGBB`, or `none` to remove the highlight (Highlight > No Color). */
   highlight?: string;
   /** Points. */
   size?: number;
@@ -231,7 +231,11 @@ export const characterProperties = (changes: CharacterChanges): [number, string]
   if (changes.superscript === true) set.push([PROP_SUBSCRIPT, 'false']);
   if (changes.subscript === true) set.push([PROP_SUPERSCRIPT, 'false']);
   if (changes.color !== undefined) set.push([PROP_FONT_COLOR, wordColor(changes.color)]);
-  if (changes.highlight !== undefined) set.push([PROP_HIGHLIGHT, wordColor(changes.highlight)]);
+  if (changes.highlight !== undefined) {
+    // No Color writes the same value as the automatic font colour.
+    const none = changes.highlight.trim().toLowerCase() === 'none';
+    set.push([PROP_HIGHLIGHT, none ? AUTO_COLOR : wordColor(changes.highlight)]);
+  }
   if (changes.size !== undefined) set.push([PROP_FONT_SIZE, String(Math.round(changes.size * 2))]);
   if (changes.font !== undefined) {
     for (const id of PROP_FONT_NAMES) set.push([id, changes.font]);
@@ -501,10 +505,11 @@ const parseCharacterChanges = (raw: Record<string, unknown>, action: string): Ch
     throw new FrameBridgeValidationError(`${action} cannot set both superscript and subscript.`);
   }
   if (changes.color !== undefined) wordColor(changes.color);
-  if (changes.highlight?.trim().toLowerCase() === 'auto') {
-    throw new FrameBridgeValidationError(`${action} \`highlight\` takes a colour as #RRGGBB.`);
+  const highlight = changes.highlight?.trim().toLowerCase();
+  if (highlight === 'auto') {
+    throw new FrameBridgeValidationError(`${action} \`highlight\` takes a colour as #RRGGBB, or none to remove it.`);
   }
-  if (changes.highlight !== undefined) wordColor(changes.highlight);
+  if (changes.highlight !== undefined && highlight !== 'none') wordColor(changes.highlight);
   if (Object.values(changes).every(v => v === undefined)) {
     throw new FrameBridgeValidationError(
       `${action} needs a change: bold, italic, underline, strikethrough, superscript, subscript, color, highlight, ` +

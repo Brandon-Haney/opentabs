@@ -5,6 +5,7 @@ import {
   buildMessageSearchBody,
   chatApi,
   clearCaches,
+  createChatFileLink,
   createThread,
   describeTokenSources,
   getDirectoryUsers,
@@ -14,7 +15,6 @@ import {
   probeAuthz,
   probeChatService,
   probeSubstrate,
-  shareFileWith,
   substrateSearch,
   TEAMS_TOKEN_SOURCES,
   threadApi,
@@ -628,19 +628,33 @@ describe('Microsoft Graph', () => {
     );
   });
 
-  test('shares a file with people by email without notifying them', async () => {
+  test('shares a file with people through one specific-people link', async () => {
     stubPreScript({ graphToken: capturedToken(GRAPH_TOKEN) });
-    fetchMock.mockResolvedValueOnce(json({ value: [] }));
+    fetchMock.mockResolvedValueOnce(
+      json({
+        id: 'perm-1',
+        link: { scope: 'users', type: 'view', webUrl: 'https://contoso-my.sharepoint.com/:x:/g/x' },
+      }),
+    );
 
-    await settle(shareFileWith('item-1', ['a@contoso.com', 'b@contoso.com'], 'read'));
-
-    expect(requestUrl(0)).toBe('https://graph.microsoft.com/v1.0/me/drive/items/item-1/invite');
+    await expect(settle(createChatFileLink('item-1', ['a@contoso.com', 'b@contoso.com'], 'view'))).resolves.toEqual({
+      shareUrl: 'https://contoso-my.sharepoint.com/:x:/g/x',
+      shareId: 'perm-1',
+    });
+    expect(requestUrl(0)).toBe('https://graph.microsoft.com/v1.0/me/drive/items/item-1/createLink');
     expect(JSON.parse(String(requestInit(0).body))).toEqual({
-      requireSignIn: true,
-      sendInvitation: false,
-      roles: ['read'],
+      type: 'view',
+      scope: 'users',
       recipients: [{ email: 'a@contoso.com' }, { email: 'b@contoso.com' }],
     });
+  });
+
+  test('fails when the sharing link comes back without an address', async () => {
+    stubPreScript({ graphToken: capturedToken(GRAPH_TOKEN) });
+    fetchMock.mockResolvedValueOnce(json({ id: 'perm-1' }));
+
+    const error = await settleError(createChatFileLink('item-1', ['a@contoso.com'], 'edit'));
+    expect(error.message).toContain('returned no address');
   });
 
   test('looks people up in batches of twenty and drops ids that resolve to no one', async () => {

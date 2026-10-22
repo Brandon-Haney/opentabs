@@ -884,22 +884,44 @@ export const getDriveWebUrl = async (): Promise<string> =>
   (await graphApi<{ webUrl: string }>('/me/drive?$select=webUrl', { label: 'OneDrive details' })).webUrl;
 
 /**
- * Give people access to a file without notifying them by email — Teams' own
- * "people in this chat" sharing. Granting the same access twice changes
- * nothing, so the request is replayed on transient failures.
+ * Wall-clock timeout for creating a chat file's sharing link. SharePoint
+ * grants the link to each recipient in turn, about 16 seconds per 100 people,
+ * so a large meeting chat takes half a minute or more.
  */
-export const shareFileWith = async (itemId: string, emails: string[], role: 'read' | 'write'): Promise<void> => {
-  await graphApi(`/me/drive/items/${encodeURIComponent(itemId)}/invite`, {
-    method: 'POST',
-    body: {
-      requireSignIn: true,
-      sendInvitation: false,
-      roles: [role],
-      recipients: emails.map(email => ({ email })),
+const GRAPH_SHARE_TIMEOUT_MS = 180_000;
+
+/** The sharing link a chat message's file entry records. */
+export interface ChatFileLink {
+  /** The link's address (`link.webUrl`). */
+  shareUrl: string;
+  /** The link's permission id. */
+  shareId: string;
+}
+
+/**
+ * Share a file with people through one "specific people" link, as Teams does
+ * for a file sent in chat: a single link permission naming every recipient,
+ * created without notifying anyone by email. Not replayed on a plain transient
+ * failure: a replay after a hidden success would leave a second link on the file.
+ */
+export const createChatFileLink = async (
+  itemId: string,
+  emails: string[],
+  access: 'view' | 'edit',
+): Promise<ChatFileLink> => {
+  const permission = await graphApi<{ id?: string; link?: { webUrl?: string } }>(
+    `/me/drive/items/${encodeURIComponent(itemId)}/createLink`,
+    {
+      method: 'POST',
+      body: { type: access, scope: 'users', recipients: emails.map(email => ({ email })) },
+      label: 'OneDrive sharing link for chat members',
+      timeoutMs: GRAPH_SHARE_TIMEOUT_MS,
     },
-    label: 'OneDrive share with chat members',
-    retryNonIdempotent: true,
-  });
+  );
+  if (!permission.id || !permission.link?.webUrl) {
+    throw ToolError.internal('OneDrive created the sharing link but returned no address for it.');
+  }
+  return { shareUrl: permission.link.webUrl, shareId: permission.id };
 };
 
 /** A directory user as people lookups return them. */

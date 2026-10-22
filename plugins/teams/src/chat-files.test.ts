@@ -19,6 +19,7 @@ describe('chat file entries', () => {
         parentReference: { driveId: 'b!drive' },
       },
       DRIVE,
+      null,
     );
 
     const objectUrl = `${DRIVE}/Microsoft%20Teams%20Chat%20Files/October%202026.csv`;
@@ -45,6 +46,17 @@ describe('chat file entries', () => {
         shareId: null,
       },
       sharepointIds: { listId: 'list-1', listItemUniqueId: 'ec3f71d1-26da-4517-bfb5-259c444be5bd', driveId: 'b!drive' },
+    });
+  });
+
+  test('records the sharing link that gives the chat access, as Teams does', () => {
+    const entry = buildFileEntry({ id: '01ABCDEF', name: 'a.xlsx', sharepointIds: {} }, DRIVE, {
+      shareUrl: 'https://contoso-my.sharepoint.com/:x:/g/personal/x',
+      shareId: 'd2c1e24e-988d-485a-a917-96b7df94c680',
+    });
+    expect(entry.fileInfo).toMatchObject({
+      shareUrl: 'https://contoso-my.sharepoint.com/:x:/g/personal/x',
+      shareId: 'd2c1e24e-988d-485a-a917-96b7df94c680',
     });
   });
 

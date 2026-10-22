@@ -1,12 +1,12 @@
 import type { ToolHandlerContext } from '@opentabs-dev/plugin-sdk';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import type { DirectoryUser, UploadedDriveItem } from './teams-api.js';
+import type { ChatFileLink, DirectoryUser, UploadedDriveItem } from './teams-api.js';
 
 const api = vi.hoisted(() => ({
+  createChatFileLink: vi.fn<(itemId: string, emails: string[], access: 'view' | 'edit') => Promise<ChatFileLink>>(),
   getDirectoryUsers: vi.fn<(ids: string[]) => Promise<DirectoryUser[]>>(),
   getDriveWebUrl: vi.fn<() => Promise<string>>(),
   getGraphUserId: vi.fn<() => string>(),
-  shareFileWith: vi.fn<(itemId: string, emails: string[], role: 'read' | 'write') => Promise<void>>(),
   threadApi: vi.fn<(threadId: string, subpath: string) => Promise<unknown>>(),
   uploadChatFile: vi.fn<(name: string, bytes: Uint8Array, contentType: string) => Promise<UploadedDriveItem>>(),
 }));
@@ -25,9 +25,9 @@ const SANDIP = user('sandip', 'Sandip Kumar');
 const DRIVE = 'https://contoso-my.sharepoint.com/personal/me/Documents';
 
 /** A tool context delivering one local file per path. */
-const contextWithFiles = (): ToolHandlerContext =>
+const contextWithFiles = (reportProgress: ToolHandlerContext['reportProgress'] = () => {}): ToolHandlerContext =>
   ({
-    reportProgress: () => {},
+    reportProgress,
     localFile: (path: string) => ({
       name: path.split('\\').pop() ?? path,
       size: 3,
@@ -52,6 +52,10 @@ beforeEach(() => {
     id: `item-${name}`,
     name,
     sharepointIds: { listItemUniqueId: `uid-${name}`, siteUrl: 'https://contoso-my.sharepoint.com/personal/me' },
+  }));
+  api.createChatFileLink.mockImplementation(async itemId => ({
+    shareUrl: `https://share/${itemId}`,
+    shareId: 'perm-1',
   }));
 });
 
@@ -100,9 +104,13 @@ describe('composeMessage', () => {
     );
 
     expect(api.uploadChatFile).toHaveBeenCalledWith('a.csv', new Uint8Array([97, 44, 98]), 'text/csv');
-    expect(api.shareFileWith).toHaveBeenCalledWith('item-a.csv', ['sandip@contoso.com'], 'write');
+    expect(api.createChatFileLink).toHaveBeenCalledWith('item-a.csv', ['sandip@contoso.com'], 'edit');
     expect(composed.content).toBe('');
-    expect(JSON.parse(composed.properties.files as string)[0]).toMatchObject({ id: 'uid-a.csv', title: 'a.csv' });
+    expect(JSON.parse(composed.properties.files as string)[0]).toMatchObject({
+      id: 'uid-a.csv',
+      title: 'a.csv',
+      fileInfo: { shareUrl: 'https://share/item-a.csv', shareId: 'perm-1' },
+    });
     expect(composed.files).toEqual([
       { name: 'a.csv', url: `${DRIVE}/Microsoft%20Teams%20Chat%20Files/a.csv`, shared_with: 1 },
     ]);
@@ -115,8 +123,39 @@ describe('composeMessage', () => {
     );
 
     expect(api.threadApi).not.toHaveBeenCalled();
-    expect(api.shareFileWith).not.toHaveBeenCalled();
+    expect(api.createChatFileLink).not.toHaveBeenCalled();
     expect(composed.mentions[0]?.display_name).toBe('Brandon Haney');
+  });
+
+  test('keeps reporting progress while sharing with a large chat outlasts the no-progress cutoff', async () => {
+    vi.useFakeTimers();
+    try {
+      api.threadApi.mockResolvedValue(chatThread());
+      let finishSharing: (link: ChatFileLink) => void = () => {};
+      api.createChatFileLink.mockReturnValue(new Promise(resolve => (finishSharing = resolve)));
+      const reportProgress = vi.fn();
+
+      const composing = composeMessage(
+        { conversationId: '19:chat', text: '', files: ['C:\\a.csv'], fileAccess: 'view' },
+        contextWithFiles(reportProgress),
+      );
+      await vi.waitFor(() => expect(api.createChatFileLink).toHaveBeenCalled());
+      const sharing = { progress: 1, total: 2, message: 'Sharing a.csv with 1 person' };
+      expect(reportProgress).toHaveBeenLastCalledWith(sharing);
+
+      reportProgress.mockClear();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(reportProgress).toHaveBeenCalledTimes(3);
+      expect(reportProgress).toHaveBeenLastCalledWith(sharing);
+
+      finishSharing({ shareUrl: 'https://share/a', shareId: 'perm-1' });
+      await composing;
+      reportProgress.mockClear();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(reportProgress).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('refuses files in a channel', async () => {

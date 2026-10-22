@@ -1,4 +1,4 @@
-import type { UploadedDriveItem } from './teams-api.js';
+import type { ChatFileLink, UploadedDriveItem } from './teams-api.js';
 import { CHAT_FILES_FOLDER } from './teams-api.js';
 
 /**
@@ -25,8 +25,15 @@ export const fileExtension = (name: string): string => {
 export const chatFileUrl = (driveWebUrl: string, name: string): string =>
   `${driveWebUrl.replace(/\/+$/, '')}/${encodeURIComponent(CHAT_FILES_FOLDER)}/${encodeURIComponent(name)}`;
 
-/** The `properties.files` entry describing one uploaded file. */
-export const buildFileEntry = (item: UploadedDriveItem, driveWebUrl: string): Record<string, unknown> => {
+/**
+ * The `properties.files` entry describing one uploaded file, with the sharing
+ * link that gives the chat's members access when the file was shared.
+ */
+export const buildFileEntry = (
+  item: UploadedDriveItem,
+  driveWebUrl: string,
+  link: ChatFileLink | null,
+): Record<string, unknown> => {
   const uniqueId = item.sharepointIds.listItemUniqueId ?? '';
   const siteUrl = item.sharepointIds.siteUrl ?? '';
   const baseUrl = `${siteUrl.replace(/\/+$/, '')}/`;
@@ -60,8 +67,8 @@ export const buildFileEntry = (item: UploadedDriveItem, driveWebUrl: string): Re
       fileUrl: objectUrl,
       siteUrl: baseUrl,
       serverRelativeUrl: '',
-      shareUrl: null,
-      shareId: null,
+      shareUrl: link?.shareUrl ?? null,
+      shareId: link?.shareId ?? null,
     },
     sharepointIds: {
       ...item.sharepointIds,

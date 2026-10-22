@@ -1,14 +1,21 @@
-import { LOCAL_FILE_PATH_FORMAT, readLocalFile, ToolError, type ToolHandlerContext } from '@opentabs-dev/plugin-sdk';
+import {
+  LOCAL_FILE_PATH_FORMAT,
+  type ProgressOptions,
+  readLocalFile,
+  ToolError,
+  type ToolHandlerContext,
+} from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { base64ToBytes, buildFileEntry, chatFileUrl } from './chat-files.js';
 import { findMentions, isEmailMention, matchPerson, renderMentions } from './chat-mentions.js';
 import { markdownToTeamsHtml } from './markdown-html.js';
 import {
+  type ChatFileLink,
+  createChatFileLink,
   type DirectoryUser,
   getDirectoryUsers,
   getDriveWebUrl,
   getGraphUserId,
-  shareFileWith,
   threadApi,
   uploadChatFile,
 } from './teams-api.js';
@@ -69,6 +76,29 @@ export interface ComposedMessage {
 }
 
 const emailOf = (person: DirectoryUser): string => person.mail ?? person.userPrincipalName;
+
+/**
+ * How often a long step reports its progress again. The platform ends a tool
+ * that reports nothing for 25 seconds, and uploading a large file or sharing it
+ * with a large chat takes longer than that.
+ */
+const PROGRESS_HEARTBEAT_MS = 10_000;
+
+/** Run one step of the send, reporting it when it starts and again every PROGRESS_HEARTBEAT_MS until it settles. */
+const runReportedStep = async <T>(
+  context: ToolHandlerContext | undefined,
+  progress: ProgressOptions,
+  step: () => Promise<T>,
+): Promise<T> => {
+  if (!context) return step();
+  context.reportProgress(progress);
+  const heartbeat = setInterval(() => context.reportProgress(progress), PROGRESS_HEARTBEAT_MS);
+  try {
+    return await step();
+  } finally {
+    clearInterval(heartbeat);
+  }
+};
 
 /** The conversation's members as directory users, and whether it is a channel. */
 const conversationPeople = async (conversationId: string): Promise<{ people: DirectoryUser[]; isChannel: boolean }> => {
@@ -131,13 +161,27 @@ export const composeMessage = async (
     const selfId = getGraphUserId();
     const recipients = people.filter(p => p.id !== selfId).map(emailOf);
     const driveWebUrl = await getDriveWebUrl();
+    // Each file takes two steps: its upload, then its sharing link.
+    const total = local.length * 2;
     for (const [index, file] of local.entries()) {
-      context?.reportProgress({ progress: index, total: local.length, message: `Uploading ${file.name}` });
-      const item = await uploadChatFile(file.name, base64ToBytes(file.contentBase64), file.contentType);
+      const item = await runReportedStep(
+        context,
+        { progress: index * 2, total, message: `Uploading ${file.name}` },
+        () => uploadChatFile(file.name, base64ToBytes(file.contentBase64), file.contentType),
+      );
+      let link: ChatFileLink | null = null;
       if (recipients.length > 0) {
-        await shareFileWith(item.id, recipients, message.fileAccess === 'edit' ? 'write' : 'read');
+        link = await runReportedStep(
+          context,
+          {
+            progress: index * 2 + 1,
+            total,
+            message: `Sharing ${item.name} with ${recipients.length} ${recipients.length === 1 ? 'person' : 'people'}`,
+          },
+          () => createChatFileLink(item.id, recipients, message.fileAccess),
+        );
       }
-      fileEntries.push(buildFileEntry(item, driveWebUrl));
+      fileEntries.push(buildFileEntry(item, driveWebUrl, link));
       files.push({ name: item.name, url: chatFileUrl(driveWebUrl, item.name), shared_with: recipients.length });
     }
   }

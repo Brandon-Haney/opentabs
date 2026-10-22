@@ -7,8 +7,10 @@ export const listPermissions = defineTool({
   name: 'list_permissions',
   displayName: 'List Permissions',
   description:
-    'List all permissions and sharing links for a file or folder. Shows who has access and what role they have.',
-  summary: 'List sharing permissions for a file',
+    'List who can open a file or folder: every sharing link (with its scope) and every person or group granted ' +
+    'access directly, with their role. Inherited entries come from a parent folder or the site and cannot be ' +
+    'changed on the item itself.',
+  summary: 'List who has access to a file or folder',
   icon: 'shield',
   group: 'Sharing',
   input: z.object({
@@ -16,7 +18,7 @@ export const listPermissions = defineTool({
     item_id: z.string().describe('Item ID of the file or folder'),
   }),
   output: z.object({
-    permissions: z.array(permissionSchema).describe('Sharing permissions'),
+    permissions: z.array(permissionSchema).describe('Sharing links and direct grants on the item'),
   }),
   handle: async params => {
     const driveId = await requireDriveId(params.drive_id);

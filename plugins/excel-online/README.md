@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 1. Open [excel.cloud.microsoft](https://excel.cloud.microsoft/) in Chrome and log in
 2. Open the OpenTabs side panel — the Excel Online plugin should appear as **ready**
 
-## Tools (75)
+## Tools (81)
 
 ### Account (3)
 
@@ -38,6 +38,17 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 | `evaluate_formula` | Evaluate a formula and return the result | Write |
 | `list_named_items` | List named ranges and constants | Read |
 | `add_named_item` | Create a named range or constant | Write |
+
+### Sharing (6)
+
+| Tool | Description | Type |
+|---|---|---|
+| `list_permissions` | List who has access to the workbook | Read |
+| `create_sharing_link` | Create a sharing link to the workbook | Write |
+| `share_with_people` | Share the workbook with specific people | Write |
+| `update_permission` | Change a direct grant between view and edit | Write |
+| `remove_from_link` | Remove people from a specific-people sharing link | Write |
+| `delete_permission` | Remove access or revoke a sharing link | Write |
 
 ### Worksheets (6)
 

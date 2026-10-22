@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-powerpoint
 1. Open [powerpoint.cloud.microsoft](https://powerpoint.cloud.microsoft) in Chrome and log in
 2. Open the OpenTabs side panel — the PowerPoint Online plugin should appear as **ready**
 
-## Tools (59)
+## Tools (62)
 
 ### Account (3)
 
@@ -111,13 +111,16 @@ Live tools (marked *co-authoring*) edit the deck that is open in the web editor 
 | `update_slide_notes` | Modify speaker notes on a slide | Write |
 | `get_comments` | Read reviewer comments and threaded replies | Read |
 
-### Sharing (3)
+### Sharing (6)
 
 | Tool | Description | Type |
 |---|---|---|
-| `list_permissions` | List sharing permissions for a file | Read |
-| `create_sharing_link` | Create a sharing link for a file | Write |
-| `delete_permission` | Remove a sharing permission | Write |
+| `list_permissions` | List who has access to a file or folder | Read |
+| `create_sharing_link` | Create a sharing link to a file or folder | Write |
+| `share_with_people` | Share a file or folder with specific people | Write |
+| `update_permission` | Change a direct grant between view and edit | Write |
+| `remove_from_link` | Remove people from a specific-people sharing link | Write |
+| `delete_permission` | Remove access or revoke a sharing link | Write |
 
 ## Reading comments
 

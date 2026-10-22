@@ -23,10 +23,12 @@ import { copyWorksheet } from './tools/copy-worksheet.js';
 import { createChart } from './tools/create-chart.js';
 import { createPivotFromConnection } from './tools/create-pivot-from-connection.js';
 import { createPivotTable } from './tools/create-pivot-table.js';
+import { createSharingLink } from './tools/create-sharing-link.js';
 import { createTable } from './tools/create-table.js';
 import { deleteChart } from './tools/delete-chart.js';
 import { deleteComment } from './tools/delete-comment.js';
 import { deleteNamedItem } from './tools/delete-named-item.js';
+import { deletePermission } from './tools/delete-permission.js';
 import { deleteRange } from './tools/delete-range.js';
 import { deleteTable } from './tools/delete-table.js';
 import { deleteTableRow } from './tools/delete-table-row.js';
@@ -61,6 +63,7 @@ import { inspectDataModel } from './tools/inspect-data-model.js';
 import { listCharts } from './tools/list-charts.js';
 import { listComments } from './tools/list-comments.js';
 import { listNamedItems } from './tools/list-named-items.js';
+import { listPermissions } from './tools/list-permissions.js';
 import { listPivotTables } from './tools/list-pivot-tables.js';
 import { listTables } from './tools/list-tables.js';
 import { listWorksheets } from './tools/list-worksheets.js';
@@ -71,6 +74,7 @@ import { reauthenticate } from './tools/reauthenticate.js';
 import { refreshAllConnections } from './tools/refresh-all-connections.js';
 import { refreshPivot } from './tools/refresh-pivot.js';
 import { removeDuplicates } from './tools/remove-duplicates.js';
+import { removeFromLink } from './tools/remove-from-link.js';
 import { removePivotField } from './tools/remove-pivot-field.js';
 import { replaceText } from './tools/replace-text.js';
 import { setBorders } from './tools/set-borders.js';
@@ -83,6 +87,7 @@ import { setPivotFilter } from './tools/set-pivot-filter.js';
 import { setPrintArea } from './tools/set-print-area.js';
 import { setSheetView } from './tools/set-sheet-view.js';
 import { setTabColor } from './tools/set-tab-color.js';
+import { shareWithPeople } from './tools/share-with-people.js';
 import { sortRange } from './tools/sort-range.js';
 import { textToColumns } from './tools/text-to-columns.js';
 import { toggleRangeAutofilter } from './tools/toggle-range-autofilter.js';
@@ -90,6 +95,7 @@ import { unmergeCells } from './tools/unmerge-cells.js';
 import { unprotectWorksheet } from './tools/unprotect-worksheet.js';
 import { updateChart } from './tools/update-chart.js';
 import { updateComment } from './tools/update-comment.js';
+import { updatePermission } from './tools/update-permission.js';
 import { updateRange } from './tools/update-range.js';
 import { updateTable } from './tools/update-table.js';
 import { updateWorksheet } from './tools/update-worksheet.js';
@@ -111,6 +117,13 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     evaluateFormula,
     listNamedItems,
     addNamedItem,
+    // Sharing
+    listPermissions,
+    createSharingLink,
+    shareWithPeople,
+    updatePermission,
+    removeFromLink,
+    deletePermission,
     // Worksheets
     listWorksheets,
     addWorksheet,

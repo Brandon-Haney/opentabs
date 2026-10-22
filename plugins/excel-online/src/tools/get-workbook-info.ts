@@ -1,6 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { api, resolveWorkbookContext } from '../excel-api.js';
+import { api, resolveWorkbookContext, workbookItemPath } from '../excel-api.js';
 import { workbookInfoSchema } from './schemas.js';
 
 export const getWorkbookInfo = defineTool({
@@ -16,9 +16,7 @@ export const getWorkbookInfo = defineTool({
   handle: async () => {
     const ctx = await resolveWorkbookContext();
 
-    const data = await api<{ id?: string; name?: string }>(
-      `/drives/${ctx.driveId}/items/${encodeURIComponent(ctx.itemId)}`,
-    );
+    const data = await api<{ id?: string; name?: string }>(await workbookItemPath());
 
     return {
       workbook: {

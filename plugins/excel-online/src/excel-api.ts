@@ -335,6 +335,12 @@ export const resolveWorkbookContext = async (): Promise<WorkbookContext> => {
   return ctx;
 };
 
+/** Graph drive-item path of the open workbook, the base for its file, sharing and workbook endpoints. */
+export const workbookItemPath = async (): Promise<string> => {
+  const ctx = await resolveWorkbookContext();
+  return `/drives/${ctx.driveId}/items/${encodeURIComponent(ctx.itemId)}`;
+};
+
 // --- API caller ---
 
 /**
@@ -570,10 +576,7 @@ export const workbookApi = async <T>(path: string, options: GraphRequestOptions 
   return api<T>(endpoint, options);
 };
 
-const workbookEndpointPrefix = async (): Promise<string> => {
-  const ctx = await resolveWorkbookContext();
-  return `/drives/${ctx.driveId}/items/${encodeURIComponent(ctx.itemId)}/workbook`;
-};
+const workbookEndpointPrefix = async (): Promise<string> => `${await workbookItemPath()}/workbook`;
 
 // --- Batched workbook writes ---
 

@@ -9,10 +9,10 @@ import { createFolder } from './tools/create-folder.js';
 import { createSharingLink } from './tools/create-sharing-link.js';
 import { deleteItem } from './tools/delete-item.js';
 import { deleteParagraphLive } from './tools/delete-paragraph-live.js';
-import { formatParagraphLive } from './tools/format-paragraph-live.js';
-import { formatTextLive } from './tools/format-text-live.js';
 import { deletePermission } from './tools/delete-permission.js';
 import { diagnose } from './tools/diagnose.js';
+import { formatParagraphLive } from './tools/format-paragraph-live.js';
+import { formatTextLive } from './tools/format-text-live.js';
 import { getActiveDocument } from './tools/get-active-document.js';
 import { getCurrentUser } from './tools/get-current-user.js';
 import { getDocumentText } from './tools/get-document-text.js';
@@ -30,14 +30,17 @@ import { listSharedWithMe } from './tools/list-shared-with-me.js';
 import { listVersions } from './tools/list-versions.js';
 import { moveItem } from './tools/move-item.js';
 import { reauthenticate } from './tools/reauthenticate.js';
+import { removeFromLink } from './tools/remove-from-link.js';
+import { removeLinkLive } from './tools/remove-link-live.js';
 import { renameItem } from './tools/rename-item.js';
 import { replaceTextInDocument } from './tools/replace-text-in-document.js';
-import { removeLinkLive } from './tools/remove-link-live.js';
 import { replaceTextLive } from './tools/replace-text-live.js';
 import { restoreVersion } from './tools/restore-version.js';
 import { searchFiles } from './tools/search-files.js';
+import { shareWithPeople } from './tools/share-with-people.js';
 import { updateDocument } from './tools/update-document.js';
 import { updateFileContent } from './tools/update-file-content.js';
+import { updatePermission } from './tools/update-permission.js';
 import { uploadFile } from './tools/upload-file.js';
 
 class MicrosoftWordPlugin extends OpenTabsPlugin {
@@ -85,8 +88,11 @@ class MicrosoftWordPlugin extends OpenTabsPlugin {
     listSharedWithMe,
     getPreviewUrl,
     // Sharing
-    createSharingLink,
     listPermissions,
+    createSharingLink,
+    shareWithPeople,
+    updatePermission,
+    removeFromLink,
     deletePermission,
     // Versions
     listVersions,

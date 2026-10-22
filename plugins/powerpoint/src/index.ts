@@ -58,6 +58,7 @@ import { openInEditor } from './tools/open-in-editor.js';
 import { openPresentationTool } from './tools/open-presentation.js';
 import { readSlideLayout } from './tools/read-slide-layout.js';
 import { reauthenticate } from './tools/reauthenticate.js';
+import { removeFromLink } from './tools/remove-from-link.js';
 import { renameItem } from './tools/rename-item.js';
 import { resizeShape } from './tools/resize-shape.js';
 import { saveFile } from './tools/save-file.js';
@@ -70,6 +71,8 @@ import { setSlideBackground } from './tools/set-slide-background.js';
 import { setSlideHiddenTool } from './tools/set-slide-hidden.js';
 import { setTableHeight } from './tools/set-table-height.js';
 import { setText } from './tools/set-text.js';
+import { shareWithPeople } from './tools/share-with-people.js';
+import { updatePermission } from './tools/update-permission.js';
 import { updateShape } from './tools/update-shape.js';
 import { updateSlideNotes } from './tools/update-slide-notes.js';
 
@@ -154,6 +157,9 @@ class PowerPointPlugin extends OpenTabsPlugin {
     // Sharing
     listPermissions,
     createSharingLink,
+    shareWithPeople,
+    updatePermission,
+    removeFromLink,
     deletePermission,
     // Versions
     listVersions,

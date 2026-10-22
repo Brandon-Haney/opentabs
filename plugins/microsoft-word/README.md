@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-microsoft-word
 1. Open [word.cloud.microsoft](https://word.cloud.microsoft) in Chrome and log in
 2. Open the OpenTabs side panel — the Microsoft Word plugin should appear as **ready**
 
-## Tools (33)
+## Tools (36)
 
 ### Account (3)
 
@@ -78,13 +78,16 @@ npm install -g @opentabs-dev/opentabs-plugin-microsoft-word
 | `remove_link_live` | Remove links from the open document, live | Write |
 | `delete_paragraph_live` | Delete a paragraph from the open document, live | Write |
 
-### Sharing (3)
+### Sharing (6)
 
 | Tool | Description | Type |
 |---|---|---|
-| `create_sharing_link` | Create a sharing link for a file or folder | Write |
-| `list_permissions` | List sharing permissions | Read |
-| `delete_permission` | Remove a sharing permission | Write |
+| `list_permissions` | List who has access to a file or folder | Read |
+| `create_sharing_link` | Create a sharing link to a file or folder | Write |
+| `share_with_people` | Share a file or folder with specific people | Write |
+| `update_permission` | Change a direct grant between view and edit | Write |
+| `remove_from_link` | Remove people from a specific-people sharing link | Write |
+| `delete_permission` | Remove access or revoke a sharing link | Write |
 
 ### Versions (2)
 

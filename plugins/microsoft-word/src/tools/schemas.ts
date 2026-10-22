@@ -115,28 +115,101 @@ export const mapDriveItem = (i: RawDriveItem) => ({
 // --- Permission ---
 
 export const permissionSchema = z.object({
-  id: z.string().describe('Permission ID'),
-  roles: z.array(z.string()).describe('Permission roles (read, write, owner)'),
-  link_url: z.string().describe('Sharing link URL (empty if not a link permission)'),
-  link_type: z.string().describe('Link type (view, edit, embed) — empty if not a link'),
-  granted_to: z.string().describe('Display name of the grantee — empty if anonymous link'),
+  id: z.string().describe('Permission ID — pass it to update_permission or delete_permission'),
+  kind: z
+    .enum(['link', 'direct'])
+    .describe('link: a sharing link; direct: access granted to specific people or groups by name'),
+  roles: z.array(z.string()).describe('Granted roles: read (view), write (edit), or owner'),
+  link_url: z.string().describe('Sharing link URL — empty for direct access'),
+  link_type: z.string().describe('Link type: view, edit, or embed — empty for direct access'),
+  link_scope: z
+    .string()
+    .describe(
+      'Who the link works for: anonymous (anyone with it), organization (anyone signed in to the organization), ' +
+        'or users (only the people in granted_to) — empty for direct access',
+    ),
+  granted_to: z
+    .array(
+      z.object({
+        display_name: z.string().describe('Display name of the person or group'),
+        email: z.string().describe('Email address — empty when Graph does not report one'),
+      }),
+    )
+    .describe(
+      'People or groups holding this access. For a link: the people it was shared with, or who have opened ' +
+        'it; an anonymous link lists nobody',
+    ),
+  inherited: z
+    .boolean()
+    .describe('True when the access comes from a parent folder or the site, and can only be changed there'),
+  expires_at: z.string().describe('ISO 8601 expiry — empty when the access does not expire'),
 });
+
+interface RawIdentity {
+  displayName?: string;
+  email?: string;
+}
+
+/** Graph identitySet / sharePointIdentitySet: whichever kinds of identity the grantee has. */
+interface RawIdentitySet {
+  user?: RawIdentity;
+  siteUser?: RawIdentity;
+  group?: RawIdentity;
+  siteGroup?: RawIdentity;
+}
 
 export interface RawPermission {
   id?: string;
   roles?: string[];
   link?: { webUrl?: string; type?: string; scope?: string };
-  grantedTo?: { user?: { displayName?: string; id?: string } };
-  grantedToIdentities?: Array<{ user?: { displayName?: string; id?: string } }>;
+  grantedToV2?: RawIdentitySet;
+  grantedToIdentitiesV2?: RawIdentitySet[];
+  invitation?: { email?: string };
+  inheritedFrom?: unknown;
+  expirationDateTime?: string;
 }
 
-export const mapPermission = (p: RawPermission) => ({
-  id: p.id ?? '',
-  roles: p.roles ?? [],
-  link_url: p.link?.webUrl ?? '',
-  link_type: p.link?.type ?? '',
-  granted_to: p.grantedTo?.user?.displayName ?? p.grantedToIdentities?.[0]?.user?.displayName ?? '',
-});
+/**
+ * One grantee. SharePoint reports a person as both an Entra `user` and a
+ * `siteUser`, and only sometimes puts the email on the first, so the two are
+ * merged field by field.
+ */
+const mapIdentity = (set: RawIdentitySet) => {
+  const identities = [set.user, set.siteUser, set.group, set.siteGroup];
+  return {
+    display_name: identities.find(identity => identity?.displayName)?.displayName ?? '',
+    email: identities.find(identity => identity?.email)?.email ?? '',
+  };
+};
+
+export const mapPermission = (p: RawPermission) => {
+  const grantees = p.grantedToV2 ? [p.grantedToV2] : (p.grantedToIdentitiesV2 ?? []);
+  const granted_to = grantees.map(mapIdentity);
+  // A pending invitation to someone outside the organization names them only by email.
+  const invitedEmail = p.invitation?.email;
+  if (invitedEmail && !granted_to.some(grantee => grantee.email === invitedEmail)) {
+    granted_to.push({ display_name: '', email: invitedEmail });
+  }
+  return {
+    id: p.id ?? '',
+    kind: p.link ? ('link' as const) : ('direct' as const),
+    roles: p.roles ?? [],
+    link_url: p.link?.webUrl ?? '',
+    link_type: p.link?.type ?? '',
+    link_scope: p.link?.scope ?? '',
+    granted_to,
+    inherited: p.inheritedFrom !== undefined && p.inheritedFrom !== null,
+    expires_at: p.expirationDateTime ?? '',
+  };
+};
+
+/** Tool-facing access level, mapped onto Graph's `read` / `write` roles. */
+export const accessRoleInput = z.enum(['view', 'edit']);
+
+export const GRAPH_ROLE_FOR_ACCESS = { view: 'read', edit: 'write' } as const satisfies Record<
+  z.infer<typeof accessRoleInput>,
+  string
+>;
 
 // --- Version ---
 

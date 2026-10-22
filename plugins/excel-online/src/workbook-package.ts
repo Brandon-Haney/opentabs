@@ -1,4 +1,4 @@
-import { apiBytes, resolveWorkbookContext } from './excel-api.js';
+import { apiBytes, workbookItemPath } from './excel-api.js';
 import { OoxmlPackage, parseCentralDirectory, parseCentralDirectoryFromSuffix } from './ooxml.js';
 
 /**
@@ -19,10 +19,7 @@ import { OoxmlPackage, parseCentralDirectory, parseCentralDirectoryFromSuffix } 
  */
 const CENTRAL_DIRECTORY_WINDOW_BYTES = 65_536;
 
-const contentEndpoint = async (): Promise<string> => {
-  const ctx = await resolveWorkbookContext();
-  return `/drives/${ctx.driveId}/items/${encodeURIComponent(ctx.itemId)}/content`;
-};
+const contentEndpoint = async (): Promise<string> => `${await workbookItemPath()}/content`;
 
 /** Download and open the complete workbook package. */
 export const fetchWorkbookPackage = async (): Promise<OoxmlPackage> => {

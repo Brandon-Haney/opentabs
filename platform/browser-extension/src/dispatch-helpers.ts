@@ -10,6 +10,7 @@ import { sendToServer } from './messaging.js';
 import { getPluginMeta } from './plugin-storage.js';
 import { type SanitizedDetails, sanitizeErrorDetails, sanitizeErrorMessage } from './sanitize-error.js';
 import { findAllMatchingTabs, urlMatchesPatterns } from './tab-matching.js';
+import { isTabAsleep } from './tab-wake.js';
 
 /**
  * Structured fields of a ToolError thrown by an adapter tool handler, read
@@ -192,7 +193,10 @@ type FirstTabError = { code: number; message: string } & (
 const dispatchWithTabFallback = async (config: TabFallbackConfig): Promise<void> => {
   const { id, pluginName, plugin, operationName, executeOnTab } = config;
 
-  const matchingTabs = await findAllMatchingTabs(plugin);
+  // Awake tabs are tried before ones Chrome put to sleep, keeping rank within
+  // each group, so a sleeping tab is reloaded only when no awake tab serves.
+  const rankedTabs = await findAllMatchingTabs(plugin);
+  const matchingTabs = [...rankedTabs.filter(tab => !isTabAsleep(tab)), ...rankedTabs.filter(isTabAsleep)];
   if (matchingTabs.length === 0) {
     sendToServer({
       jsonrpc: '2.0',

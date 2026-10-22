@@ -19,6 +19,7 @@ import type { PluginMeta } from './extension-messages.js';
 import { JSONRPC_INTERNAL_ERROR, JSONRPC_INVALID_PARAMS } from './json-rpc-errors.js';
 import { sendToServer } from './messaging.js';
 import { urlMatchesPatterns } from './tab-matching.js';
+import { wakeTabIfAsleep } from './tab-wake.js';
 
 /**
  * Per-dispatch progress callbacks — keyed by dispatchId, called by background.ts
@@ -34,6 +35,11 @@ const progressCallbacks = new Map<string, () => void>();
 const notifyDispatchProgress = (dispatchId: string): void => {
   const cb = progressCallbacks.get(dispatchId);
   if (cb) cb();
+};
+
+/** Report progress for a dispatch from the extension itself, before the tool runs. */
+const sendDispatchProgress = (dispatchId: string, message: string): void => {
+  sendToServer({ jsonrpc: '2.0', method: 'tool.progress', params: { dispatchId, progress: 0, total: 1, message } });
 };
 
 /**
@@ -1073,6 +1079,15 @@ const handleToolDispatch = async (params: Record<string, unknown>, id: string | 
   const link = getPluginLink(plugin);
 
   const executeOnTab = async (tid: number): Promise<DispatchResult> => {
+    // Progress before and after the wake keeps the server's no-progress timeout
+    // from expiring while a sleeping tab reloads, and tells the client why.
+    let woke = false;
+    await wakeTabIfAsleep(tid, pluginName, message => {
+      woke = true;
+      sendDispatchProgress(dispatchId, message);
+    });
+    if (woke) sendDispatchProgress(dispatchId, `Tab ${tid} is awake; running ${toolName}`);
+
     await injectToolInvocationLog(tid, pluginName, toolName, link);
     await injectProgressListener(tid, dispatchId);
     try {

@@ -199,6 +199,28 @@ describe('dispatchWithTabFallback', () => {
     });
   });
 
+  test('tries an awake tab before a higher-ranked one Chrome put to sleep', async () => {
+    const asleep = { id: 1, url: 'https://example.com/a', discarded: true } as chrome.tabs.Tab;
+    const awake = { id: 2, url: 'https://example.com/b' } as chrome.tabs.Tab;
+    mockFindAllMatchingTabs.mockResolvedValue([asleep, awake]);
+    mockTabsGet.mockImplementation(tabId => Promise.resolve(tabId === 1 ? asleep : awake));
+    mockUrlMatchesPatterns.mockReturnValue(true);
+
+    const executeOnTab = vi.fn<(tabId: number) => Promise<DispatchResult>>();
+    executeOnTab.mockResolvedValue({ type: 'success', output: 'ok' });
+
+    await dispatchWithTabFallback({
+      id: 'req-asleep',
+      pluginName: 'test-plugin',
+      plugin,
+      operationName: 'tool dispatch',
+      executeOnTab,
+    });
+
+    expect(executeOnTab).toHaveBeenCalledTimes(1);
+    expect(executeOnTab).toHaveBeenCalledWith(2);
+  });
+
   test('falls back to next tab on adapter-not-ready error', async () => {
     const tab1 = { id: 1, url: 'https://example.com/a' } as chrome.tabs.Tab;
     const tab2 = { id: 2, url: 'https://example.com/b' } as chrome.tabs.Tab;

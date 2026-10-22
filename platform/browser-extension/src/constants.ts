@@ -33,6 +33,12 @@ export const MAX_SCRIPT_TIMEOUT_MS = 295_000;
  */
 export const IS_READY_TIMEOUT_MS = 5_000;
 /**
+ * How long a tool dispatch waits for a tab Chrome put to sleep to reload and
+ * report its adapter ready (ms). Kept under the server's 30s no-progress
+ * dispatch timeout; the dispatch reports progress before and after the wait.
+ */
+export const TAB_WAKE_TIMEOUT_MS = 25_000;
+/**
  * Interval for periodic isReady() re-evaluation (ms).
  *
  * While connected to the MCP server, the extension periodically re-probes

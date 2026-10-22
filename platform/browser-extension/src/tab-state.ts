@@ -588,6 +588,7 @@ export {
   getLastKnownStates,
   loadLastKnownStateFromSession,
   notifyAffectedPlugins,
+  probeTabReadiness,
   sendTabSyncAll,
   startReadinessPoll,
   stopReadinessPoll,

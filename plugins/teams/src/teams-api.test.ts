@@ -19,6 +19,7 @@ import {
   TEAMS_TOKEN_SOURCES,
   threadApi,
   uploadChatFile,
+  waitForGraphToken,
 } from './teams-api.js';
 
 // Without a `window`, teams-api detects enterprise Teams and falls back to the fixed AMER endpoints.
@@ -592,6 +593,31 @@ describe('Microsoft Graph', () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(error.code).toBe('AUTH_ERROR');
+  });
+
+  test('waits for Teams to mint a Graph token after the page loads', async () => {
+    stubPreScript({});
+    let settled = false;
+    const waiting = waitForGraphToken().then(() => {
+      settled = true;
+    });
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(settled).toBe(false);
+
+    stubPreScript({ graphToken: capturedToken(GRAPH_TOKEN) });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await waiting;
+    expect(settled).toBe(true);
+  });
+
+  test('stops waiting for a Graph token with AUTH_ERROR after ninety seconds', async () => {
+    stubPreScript({ graphToken: capturedToken(GRAPH_TOKEN, -60) });
+
+    const error = await settleError(waitForGraphToken());
+
+    expect(error.code).toBe('AUTH_ERROR');
+    expect(error.message).toContain('within 90 seconds');
   });
 
   test('reads the signed-in user id from the token', () => {

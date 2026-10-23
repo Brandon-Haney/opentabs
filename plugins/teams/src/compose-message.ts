@@ -16,8 +16,10 @@ import {
   getDirectoryUsers,
   getDriveWebUrl,
   getGraphUserId,
+  hasGraphToken,
   threadApi,
   uploadChatFile,
+  waitForGraphToken,
 } from './teams-api.js';
 
 /**
@@ -130,6 +132,13 @@ export const composeMessage = async (
   const mentionTargets = findMentions(message.text).map(mention => mention.target);
   if (mentionTargets.length === 0 && message.files.length === 0) {
     return { content: markdownToTeamsHtml(message.text), properties: {}, mentions: [], files: [] };
+  }
+
+  // Mentions and files go through Microsoft Graph, whose token Teams mints a minute after the page loads.
+  if (!hasGraphToken()) {
+    await runReportedStep(context, { message: 'Waiting for Teams to renew its Microsoft Graph sign-in' }, () =>
+      waitForGraphToken(),
+    );
   }
 
   const { people, isChannel } = await conversationPeople(message.conversationId);

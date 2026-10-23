@@ -790,6 +790,33 @@ const noGraphTokenError = (): ToolError =>
       'pre-script can capture it (Teams refreshes it on load). Requires work or school Teams.',
   );
 
+/** How long a call waits for Teams to mint a Graph token it does not hold yet. */
+const GRAPH_TOKEN_WAIT_MS = 90_000;
+const GRAPH_TOKEN_POLL_MS = 1_000;
+
+/** Whether a Graph token that has not expired is captured. */
+export const hasGraphToken = (): boolean => getGraphToken() !== null;
+
+/**
+ * Resolve once a Graph token that has not expired is captured. Teams does not
+ * mint its Graph token when the page loads but about a minute later, so a call
+ * made right after a reload waits for it instead of failing. Throws an `auth`
+ * error when no token arrives within GRAPH_TOKEN_WAIT_MS.
+ */
+export const waitForGraphToken = async (): Promise<void> => {
+  const deadline = Date.now() + GRAPH_TOKEN_WAIT_MS;
+  while (!hasGraphToken()) {
+    if (Date.now() >= deadline) {
+      throw ToolError.auth(
+        `Teams did not renew its Microsoft Graph token, which file attachments and @mentions need, within ` +
+          `${GRAPH_TOKEN_WAIT_MS / 1000} seconds. Reload the Teams tab and try again: Teams renews the token about ` +
+          'a minute after the page loads. Requires work or school Teams.',
+      );
+    }
+    await new Promise(resolve => setTimeout(resolve, GRAPH_TOKEN_POLL_MS));
+  }
+};
+
 /** The signed-in user's directory object id, read from the Graph token's `oid` claim. */
 export const getGraphUserId = (): string => {
   const token = getGraphToken();

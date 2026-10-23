@@ -7,8 +7,10 @@ const api = vi.hoisted(() => ({
   getDirectoryUsers: vi.fn<(ids: string[]) => Promise<DirectoryUser[]>>(),
   getDriveWebUrl: vi.fn<() => Promise<string>>(),
   getGraphUserId: vi.fn<() => string>(),
+  hasGraphToken: vi.fn<() => boolean>(),
   threadApi: vi.fn<(threadId: string, subpath: string) => Promise<unknown>>(),
   uploadChatFile: vi.fn<(name: string, bytes: Uint8Array, contentType: string) => Promise<UploadedDriveItem>>(),
+  waitForGraphToken: vi.fn<() => Promise<void>>(),
 }));
 vi.mock('./teams-api.js', () => ({ ...api, CHAT_FILES_FOLDER: 'Microsoft Teams Chat Files' }));
 
@@ -44,6 +46,7 @@ const chatThread = (threadType = 'chat') => ({
 beforeEach(() => {
   for (const mock of Object.values(api)) mock.mockReset();
   api.getGraphUserId.mockReturnValue('me');
+  api.hasGraphToken.mockReturnValue(true);
   api.getDirectoryUsers.mockImplementation(async ids =>
     [ME, SANDIP].filter(u => ids.includes(u.id) || ids.includes(u.userPrincipalName)),
   );
@@ -156,6 +159,35 @@ describe('composeMessage', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test('waits for Teams to mint its Graph token before looking anyone up', async () => {
+    api.hasGraphToken.mockReturnValue(false);
+    api.waitForGraphToken.mockResolvedValue();
+    api.threadApi.mockResolvedValue(chatThread());
+    const reportProgress = vi.fn();
+
+    await composeMessage(
+      { conversationId: '19:chat', text: 'Thanks @[Sandip]', files: [], fileAccess: 'view' },
+      contextWithFiles(reportProgress),
+    );
+
+    expect(api.waitForGraphToken).toHaveBeenCalled();
+    expect(reportProgress).toHaveBeenCalledWith({ message: 'Waiting for Teams to renew its Microsoft Graph sign-in' });
+    expect(api.waitForGraphToken.mock.invocationCallOrder[0]).toBeLessThan(
+      api.getDirectoryUsers.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  test('does not wait when the Graph token is already captured', async () => {
+    api.threadApi.mockResolvedValue(chatThread());
+
+    await composeMessage(
+      { conversationId: '19:chat', text: 'Thanks @[Sandip]', files: [], fileAccess: 'view' },
+      undefined,
+    );
+
+    expect(api.waitForGraphToken).not.toHaveBeenCalled();
   });
 
   test('refuses files in a channel', async () => {

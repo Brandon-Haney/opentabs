@@ -4,7 +4,8 @@ import { ToolError, getCookie, parseRetryAfterMs, waitUntil } from '@opentabs-de
 // rejects the logged-in web session. The web app itself talks to an internal
 // RPC layer under /ui/ that authenticates with the session cookies plus two
 // headers, so the plugin uses that same surface.
-const UI_BASE = 'https://www.wrike.com/ui';
+const WEB_BASE = 'https://www.wrike.com';
+const UI_BASE = `${WEB_BASE}/ui`;
 
 // Any non-empty value satisfies the server — it only checks for the header's
 // presence, not its contents. A web-style id keeps requests indistinguishable
@@ -193,17 +194,110 @@ export const uploadAttachment = async (
   }
 };
 
-// --- File download ---
+// --- Attachments ---
+
+// Raw attachment entry from get_attachments_for_task_view. The file name lives
+// at the top level (`title`); size, author, timestamp, and the download
+// permalink live on `currentVersion`; the media type and storage host live on
+// the version entries. All fields are optional — read each defensively.
+interface RawAttachmentVersion {
+  mediaType?: string;
+  storageAddress?: string;
+}
+
+export interface RawAttachment {
+  id?: number | string;
+  title?: string;
+  versions?: RawAttachmentVersion[];
+  currentVersion?: {
+    fileSize?: number;
+    date?: number;
+    createdTimestamp?: number;
+    permalink?: string;
+    hasThumbnail?: boolean;
+    author?: { firstName?: string; lastName?: string };
+  };
+  activeVersionsCount?: number;
+}
+
+/** Reads the files attached to a task. */
+export const listTaskAttachments = async (taskId: number): Promise<RawAttachment[]> => {
+  const data = await rpc<{ attachments?: RawAttachment[] }>('get_attachments_for_task_view', { taskId });
+  return data.attachments ?? [];
+};
 
 /**
  * Permanent download URL for an attachment, keyed by account id and file id.
- * Wrike serves file bytes from `files.wrike.com`, a separate origin that does
+ * Wrike serves this URL from `files.wrike.com`, a separate origin that does
  * not permit credentialed cross-origin reads — so the URL is meant to be opened
  * in the browser (where the session applies), not fetched from the adapter.
  */
 export const attachmentUrl = (attachmentId: string): string => {
   const accountId = getAccountId();
   return accountId ? `https://files.wrike.com/${accountId}/${attachmentId}` : '';
+};
+
+const DOWNLOAD_TIMEOUT_MS = 120_000;
+
+/** Base64-encodes bytes in slices, so a multi-megabyte file never spreads into one oversized call. */
+const encodeBase64 = (bytes: Uint8Array): string => {
+  const SLICE = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += SLICE) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + SLICE));
+  }
+  return btoa(binary);
+};
+
+/** A downloaded file: its length in bytes, the served media type, and its content, base64-encoded. */
+export interface DownloadedFile {
+  size: number;
+  contentType: string;
+  contentBase64: string;
+}
+
+/**
+ * Downloads an attachment's current version through the session-authenticated
+ * `/attachments/{id}/download` route on the app origin, which the page reads
+ * same-origin with its cookies. A signed-out request is redirected to the
+ * cross-origin login page, which the browser refuses to read — that surfaces as
+ * a network error rather than an HTTP status.
+ */
+export const downloadAttachment = async (attachmentId: string, fileName: string): Promise<DownloadedFile> => {
+  let response: Response;
+  try {
+    response = await fetch(`${WEB_BASE}/attachments/${encodeURIComponent(attachmentId)}/download`, {
+      credentials: 'include',
+      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+    });
+  } catch (err: unknown) {
+    if (err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      throw ToolError.timeout(`Downloading "${fileName}" timed out`);
+    }
+    throw new ToolError(
+      `The page could not read "${fileName}" from Wrike: the session may have expired (reload the Wrike tab and ` +
+        `retry), or Wrike redirected the download to an origin the page may not read. ${err instanceof Error ? err.message : String(err)}`,
+      'network_error',
+      { category: 'internal', retryable: true },
+    );
+  }
+
+  if (!response.ok) {
+    if (response.status === 417 || response.status === 401 || response.status === 403) {
+      throw ToolError.auth(`Wrike refused the download of "${fileName}" (${response.status}) — reload the page.`);
+    }
+    if (response.status === 404) throw ToolError.notFound(`Attachment "${fileName}" was not found.`);
+    throw ToolError.internal(`Downloading "${fileName}" failed (${response.status}).`);
+  }
+
+  const contentType = (response.headers.get('Content-Type') ?? '').split(';')[0]?.trim() ?? '';
+  // An HTML answer to a non-HTML file is the app shell or a sign-in page, not the file.
+  if (contentType === 'text/html' && !/\.html?$/i.test(fileName)) {
+    throw ToolError.internal(`Wrike answered the download of "${fileName}" with a web page instead of the file.`);
+  }
+
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  return { size: bytes.length, contentType, contentBase64: encodeBase64(bytes) };
 };
 
 const request = async <T>(endpoint: string, contentType: string, body: string): Promise<T> => {

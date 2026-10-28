@@ -1,34 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { attachmentUrl, getAccountId, rpc } from '../wrike-api.js';
-
-// Raw attachment entry from get_attachments_for_task_view. The file name lives
-// at the top level (`title`); size, author, timestamp, and the download
-// permalink live on `currentVersion`; the media type and storage host live on
-// the version entries. All fields are optional — read each defensively.
-interface RawAttachmentVersion {
-  mediaType?: string;
-  storageAddress?: string;
-}
-
-interface RawAttachment {
-  id?: number | string;
-  title?: string;
-  versions?: RawAttachmentVersion[];
-  currentVersion?: {
-    fileSize?: number;
-    date?: number;
-    createdTimestamp?: number;
-    permalink?: string;
-    hasThumbnail?: boolean;
-    author?: { firstName?: string; lastName?: string };
-  };
-  activeVersionsCount?: number;
-}
-
-interface AttachmentsResponse {
-  attachments?: RawAttachment[];
-}
+import { attachmentUrl, getAccountId, listTaskAttachments, type RawAttachment } from '../wrike-api.js';
 
 const attachmentSchema = z.object({
   id: z.string().describe('Attachment id, used with get_attachment to download'),
@@ -77,7 +49,7 @@ export const listAttachments = defineTool({
   name: 'list_attachments',
   displayName: 'List Attachments',
   description:
-    'List the files attached to a task. Returns each attachment with its id, file name, size, media type, upload time, uploader, and a thumbnail preview URL (for images). Use the attachment id to reference a specific file.',
+    'List the files attached to a task. Returns each attachment with its id, file name, size, media type, upload time, uploader, and a thumbnail preview URL (for images). Pass an attachment id to get_attachment to save that file to a path.',
   summary: 'List files attached to a task',
   icon: 'paperclip',
   group: 'Tasks',
@@ -89,11 +61,8 @@ export const listAttachments = defineTool({
     count: z.number().int().describe('Number of attachments'),
   }),
   handle: async params => {
-    const data = await rpc<AttachmentsResponse>('get_attachments_for_task_view', {
-      taskId: Number(params.task_id),
-    });
     const accountId = getAccountId();
-    const attachments = (data.attachments ?? []).map(raw => mapAttachment(raw, accountId));
+    const attachments = (await listTaskAttachments(Number(params.task_id))).map(raw => mapAttachment(raw, accountId));
     return { attachments, count: attachments.length };
   },
 });

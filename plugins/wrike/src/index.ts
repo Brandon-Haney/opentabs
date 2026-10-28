@@ -30,6 +30,7 @@ import { listCustomFields } from './tools/list-custom-fields.js';
 import { setCustomField } from './tools/set-custom-field.js';
 import { setDescription } from './tools/set-description.js';
 import { listAttachments } from './tools/list-attachments.js';
+import { getAttachment } from './tools/get-attachment.js';
 import { uploadAttachment } from './tools/upload-attachment.js';
 
 // Comments
@@ -71,6 +72,7 @@ class WrikePlugin extends OpenTabsPlugin {
     setCustomField,
     setDescription,
     listAttachments,
+    getAttachment,
     uploadAttachment,
 
     // Comments

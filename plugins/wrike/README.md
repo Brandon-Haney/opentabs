@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-wrike
 1. Open [www.wrike.com](https://www.wrike.com/workspace.htm) in Chrome and log in
 2. Open the OpenTabs side panel — the Wrike plugin should appear as **ready**
 
-## Tools (15)
+## Tools (16)
 
 ### Account (2)
 
@@ -35,7 +35,7 @@ npm install -g @opentabs-dev/opentabs-plugin-wrike
 | `list_root_folders` | List top-level folders and spaces | Read |
 | `list_folder_contents` | List tasks, folders, and projects in a folder | Read |
 
-### Tasks (9)
+### Tasks (10)
 
 | Tool | Description | Type |
 |---|---|---|
@@ -48,6 +48,7 @@ npm install -g @opentabs-dev/opentabs-plugin-wrike
 | `set_task_status` | Change a task's workflow status | Write |
 | `assign_task` | Add or remove task assignees | Write |
 | `set_task_dates` | Set a task's start and due dates | Write |
+| `get_attachment` | Save a task attachment to a path | Read |
 
 ### Comments (2)
 

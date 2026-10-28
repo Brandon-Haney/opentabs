@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 1. Open [excel.cloud.microsoft](https://excel.cloud.microsoft/) in Chrome and log in
 2. Open the OpenTabs side panel — the Excel Online plugin should appear as **ready**
 
-## Tools (81)
+## Tools (82)
 
 ### Account (3)
 
@@ -29,11 +29,12 @@ npm install -g @opentabs-dev/opentabs-plugin-excel-online
 | `reauthenticate` | Force a fresh Microsoft Graph token by clearing stale MSAL state and reloading the tab | Write |
 | `diagnose` | Read-only connectivity and auth check: page origin and kind, Graph token sources (fingerprints, never the token), workbook resolution, reload marker, and one un-retried Graph probe each of `GET /me` and, on SharePoint, `/shares/{shareId}/driveItem` | Read |
 
-### Workbook (5)
+### Workbook (6)
 
 | Tool | Description | Type |
 |---|---|---|
 | `get_workbook_info` | Get current workbook metadata | Read |
+| `create_workbook` | Create a new blank workbook in OneDrive | Write |
 | `calculate_workbook` | Recalculate all formulas | Write |
 | `evaluate_formula` | Evaluate a formula and return the result | Write |
 | `list_named_items` | List named ranges and constants | Read |

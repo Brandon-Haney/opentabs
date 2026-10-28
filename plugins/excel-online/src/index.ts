@@ -25,6 +25,7 @@ import { createPivotFromConnection } from './tools/create-pivot-from-connection.
 import { createPivotTable } from './tools/create-pivot-table.js';
 import { createSharingLink } from './tools/create-sharing-link.js';
 import { createTable } from './tools/create-table.js';
+import { createWorkbook } from './tools/create-workbook.js';
 import { deleteChart } from './tools/delete-chart.js';
 import { deleteComment } from './tools/delete-comment.js';
 import { deleteNamedItem } from './tools/delete-named-item.js';
@@ -113,6 +114,7 @@ class ExcelOnlinePlugin extends OpenTabsPlugin {
     diagnose,
     // Workbook
     getWorkbookInfo,
+    createWorkbook,
     calculateWorkbook,
     evaluateFormula,
     listNamedItems,

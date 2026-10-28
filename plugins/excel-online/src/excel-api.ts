@@ -355,7 +355,10 @@ const authError = (msg: string): ToolError => ToolError.auth(isSharePointWorkboo
 
 export interface GraphRequestOptions {
   method?: string;
+  /** JSON request body. */
   body?: unknown;
+  /** Request body sent as-is with its own Content-Type, e.g. a file's bytes; takes the place of `body`. */
+  rawBody?: { data: BodyInit; contentType: string };
   query?: Record<string, string | number | boolean | undefined>;
   /** Extra request headers, e.g. a `Range` for a partial download. */
   headers?: Record<string, string>;
@@ -402,8 +405,11 @@ const prepareGraphRequest = async (
     ...options.headers,
   };
 
-  let body: string | undefined;
-  if (options.body !== undefined) {
+  let body: BodyInit | undefined;
+  if (options.rawBody !== undefined) {
+    headers['Content-Type'] = options.rawBody.contentType;
+    body = options.rawBody.data;
+  } else if (options.body !== undefined) {
     headers['Content-Type'] = 'application/json';
     body = JSON.stringify(options.body);
   }

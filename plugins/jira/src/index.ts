@@ -15,6 +15,7 @@ import { listIssueTypes } from './tools/list-issue-types.js';
 import { listPriorities } from './tools/list-priorities.js';
 import { addComment } from './tools/add-comment.js';
 import { listComments } from './tools/list-comments.js';
+import { addAttachment } from './tools/add-attachment.js';
 import { listProjects } from './tools/list-projects.js';
 import { getProject } from './tools/get-project.js';
 import { listBoards } from './tools/list-boards.js';
@@ -55,6 +56,8 @@ class JiraPlugin extends OpenTabsPlugin {
     // Comments
     addComment,
     listComments,
+    // Attachments
+    addAttachment,
     // Projects
     listProjects,
     getProject,

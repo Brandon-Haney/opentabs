@@ -40,8 +40,11 @@ export const api = async <T>(
     method?: string;
     body?: Record<string, unknown>;
     rawBody?: string;
+    /** Multipart body. Jira requires `X-Atlassian-Token: no-check` on multipart uploads to pass its XSRF check. */
+    form?: FormData;
     query?: Record<string, string | number | boolean | undefined>;
     basePath?: string;
+    timeoutMs?: number;
   } = {},
 ): Promise<T> => {
   const auth = getAuth();
@@ -59,8 +62,11 @@ export const api = async <T>(
   }
 
   const headers: Record<string, string> = {};
-  let fetchBody: string | undefined;
-  if (options.rawBody !== undefined) {
+  let fetchBody: string | FormData | undefined;
+  if (options.form) {
+    headers['X-Atlassian-Token'] = 'no-check';
+    fetchBody = options.form;
+  } else if (options.rawBody !== undefined) {
     headers['Content-Type'] = 'application/json';
     fetchBody = options.rawBody;
   } else if (options.body) {
@@ -75,7 +81,7 @@ export const api = async <T>(
       headers,
       body: fetchBody,
       credentials: 'include',
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
     });
   } catch (err: unknown) {
     if (err instanceof DOMException && err.name === 'TimeoutError')

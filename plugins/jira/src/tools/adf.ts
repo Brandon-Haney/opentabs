@@ -6,10 +6,14 @@
 //   horizontal rules (---).
 //   Inline: bold (**…** / __…__), italic (*…* / _…_), inline code
 //   (`…`), strikethrough (~~…~~), links ([text](url)).
+//   Images: a line holding only ![alt](ref) becomes the block the
+//   caller's `image` resolver returns for `ref` (see MarkdownOptions).
 //
 // Anything outside this subset is dropped on input or best-effort
-// flattened on output. Use the `body_adf` escape hatch on add_comment
-// for full ADF control (mentions, panels, tables, media, …).
+// flattened on output; an embedded image reads back as [image: <alt>]
+// and a file card as [file].
+// Use the `body_adf` escape hatch on add_comment for full ADF control
+// (mentions, panels, tables, media, …).
 
 export interface AdfMark {
   type: 'strong' | 'em' | 'code' | 'strike' | 'link';
@@ -40,10 +44,19 @@ export const emptyAdfDoc = (): AdfDoc => ({
 // Markdown → ADF
 // ==========================================================
 
-export const markdownToAdf = (md: string): AdfDoc => {
+export interface MarkdownOptions {
+  /**
+   * Resolve the image a line `![alt](ref)` names to the ADF block that shows it,
+   * called once per such line. Returning undefined leaves the line as a paragraph
+   * of its own.
+   */
+  image?: (ref: string, alt: string) => AdfNode | undefined;
+}
+
+export const markdownToAdf = (md: string, options: MarkdownOptions = {}): AdfDoc => {
   if (!md || md.trim() === '') return emptyAdfDoc();
   const lines = md.replace(/\r\n?/g, '\n').split('\n');
-  const blocks = parseBlocks(lines);
+  const blocks = parseBlocks(lines, options);
   return { type: 'doc', version: 1, content: blocks.length ? blocks : [{ type: 'paragraph' }] };
 };
 
@@ -52,7 +65,17 @@ const leadingSpaces = (s: string): number => {
   return m?.[1] ? m[1].length : 0;
 };
 
-const isBlockStart = (line: string): boolean => {
+/** A line holding only a markdown image: `![alt](ref)`. */
+const IMAGE_LINE = /^!\[([^\]]*)\]\(([^)\s]+)\)\s*$/;
+
+const resolveImageLine = (line: string, options: MarkdownOptions): AdfNode | undefined => {
+  if (!options.image) return undefined;
+  const m = IMAGE_LINE.exec(line.trim());
+  return m?.[2] ? options.image(m[2], m[1] ?? '') : undefined;
+};
+
+const isBlockStart = (line: string, options: MarkdownOptions): boolean => {
+  if (options.image && IMAGE_LINE.test(line.trim())) return true;
   if (/^#{1,6}\s+/.test(line)) return true;
   if (/^>/.test(line)) return true;
   if (/^```/.test(line.trimStart())) return true;
@@ -61,7 +84,7 @@ const isBlockStart = (line: string): boolean => {
   return false;
 };
 
-const parseBlocks = (lines: string[]): AdfNode[] => {
+const parseBlocks = (lines: string[], options: MarkdownOptions): AdfNode[] => {
   const blocks: AdfNode[] = [];
   let i = 0;
   while (i < lines.length) {
@@ -120,15 +143,23 @@ const parseBlocks = (lines: string[]): AdfNode[] => {
         quoteLines.push(ql.replace(/^>\s?/, ''));
         i++;
       }
-      blocks.push({ type: 'blockquote', content: parseBlocks(quoteLines) });
+      blocks.push({ type: 'blockquote', content: parseBlocks(quoteLines, options) });
       continue;
     }
 
     // List
     if (/^\s*([-*+]|\d+\.)\s+/.test(line)) {
-      const result = parseList(lines, i, leadingSpaces(line));
+      const result = parseList(lines, i, leadingSpaces(line), options);
       blocks.push(result.list);
       i = result.next;
+      continue;
+    }
+
+    // Image the caller resolves
+    const image = resolveImageLine(line, options);
+    if (image) {
+      blocks.push(image);
+      i++;
       continue;
     }
 
@@ -137,7 +168,7 @@ const parseBlocks = (lines: string[]): AdfNode[] => {
     i++;
     while (i < lines.length) {
       const pl = lines[i] ?? '';
-      if (pl.trim() === '' || isBlockStart(pl)) break;
+      if (pl.trim() === '' || isBlockStart(pl, options)) break;
       paragraphLines.push(pl.trim());
       i++;
     }
@@ -151,7 +182,7 @@ interface ListResult {
   next: number;
 }
 
-const parseList = (lines: string[], start: number, baseIndent: number): ListResult => {
+const parseList = (lines: string[], start: number, baseIndent: number, options: MarkdownOptions): ListResult => {
   const firstLine = (lines[start] ?? '').slice(baseIndent);
   const isOrdered = /^\d+\./.test(firstLine);
   const startNumMatch = /^(\d+)\./.exec(firstLine);
@@ -197,7 +228,7 @@ const parseList = (lines: string[], start: number, baseIndent: number): ListResu
       i++;
     }
 
-    const itemBlocks = parseBlocks(itemLines);
+    const itemBlocks = parseBlocks(itemLines, options);
     items.push({
       type: 'listItem',
       content: itemBlocks.length ? itemBlocks : [{ type: 'paragraph' }],
@@ -357,9 +388,13 @@ const renderBlock = (block: AdfNode): string => {
     case 'table':
       return renderTable(block);
     case 'mediaSingle':
+      return (block.content ?? []).map(renderBlock).join('\n');
     case 'mediaGroup':
-    case 'media':
-      return '';
+      return (block.content ?? []).map(() => '[file]').join('\n');
+    case 'media': {
+      const alt = (block.attrs?.alt as string | undefined) ?? '';
+      return alt ? `[image: ${alt}]` : '[image]';
+    }
     default:
       return block.content ? renderBlocks(block.content) : '';
   }

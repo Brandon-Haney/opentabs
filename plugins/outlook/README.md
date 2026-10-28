@@ -28,7 +28,7 @@ npm install -g @opentabs-dev/opentabs-plugin-outlook
 | `get_current_user` | Get the current user profile | Read |
 | `diagnose` | Read-only connectivity and auth check: page origin, MSAL token sources (fingerprints, never the token), the token each cache slot trusts, rejected candidates, and one un-retried GET probe each against Graph, Outlook REST and OWS, bounded to 10 s so a hung base shows as a TimeoutError probe, plus whether MSAL stores its cache encrypted | Read |
 
-### Messages (16)
+### Messages (17)
 
 | Tool | Description | Type |
 |---|---|---|
@@ -44,6 +44,7 @@ npm install -g @opentabs-dev/opentabs-plugin-outlook
 | `delete_message` | Delete an email | Write |
 | `update_draft` | Edit an unsent draft | Write |
 | `delete_draft` | Delete an unsent draft | Write |
+| `send_draft` | Send an unsent draft | Write |
 | `list_attachments` | List email attachments | Read |
 | `get_attachment_content` | Read an attachment or save it to a path | Read |
 | `get_shared_file` | Save a linked OneDrive or SharePoint file to a path | Read |

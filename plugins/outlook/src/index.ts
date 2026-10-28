@@ -25,6 +25,7 @@ import { moveMessage } from './tools/move-message.js';
 import { replyToMessage } from './tools/reply-to-message.js';
 import { respondToEvent } from './tools/respond-to-event.js';
 import { searchMessages } from './tools/search-messages.js';
+import { sendDraft } from './tools/send-draft.js';
 import { sendMessage } from './tools/send-message.js';
 import { updateDraft } from './tools/update-draft.js';
 import { updateEvent } from './tools/update-event.js';
@@ -59,6 +60,7 @@ class OutlookPlugin extends OpenTabsPlugin {
     deleteMessage,
     updateDraft,
     deleteDraft,
+    sendDraft,
     listAttachments,
     getAttachmentContent,
     getSharedFile,

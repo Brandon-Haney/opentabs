@@ -15,7 +15,7 @@ export const replyToMessage = defineTool({
   name: 'reply_to_message',
   displayName: 'Reply to Message',
   description:
-    "Reply to an email message. By default the reply is sent immediately. Set draft to true to instead save a threaded draft to the Drafts folder for the user to review and send manually. Either way the original conversation is quoted, reply headers are set, and the user's default compose font and reply signature are applied automatically — do not write a signature into the body yourself. Set reply_all to true to reply to all recipients.",
+    "Reply to an email message. By default the reply is sent immediately. Set draft to true to instead save a threaded draft to the Drafts folder for the user to review; send it once approved with send_draft. Either way the original conversation is quoted, reply headers are set, and the user's default compose font and reply signature are applied automatically — do not write a signature into the body yourself. Set reply_all to true to reply to all recipients.",
   summary: 'Reply to an email',
   icon: 'reply',
   group: 'Messages',

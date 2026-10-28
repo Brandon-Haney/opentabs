@@ -1,3 +1,4 @@
+import { ToolError } from '@opentabs-dev/plugin-sdk';
 import { owsRequest } from './outlook-api.js';
 
 /**
@@ -228,6 +229,24 @@ export const composeBody = async (input: {
   return { contentType: 'HTML', content };
 };
 
+/** An opening or closing tag of an element an email body is built from. */
+const HTML_TAG =
+  /<\/?(?:a|b|blockquote|br|div|em|font|h[1-6]|hr|i|img|li|ol|p|pre|span|strong|table|tbody|td|th|thead|tr|u|ul)\b[^<>]*>/i;
+
+/**
+ * Refuse a plain-text body that is written in HTML. Plain text is escaped, so its
+ * tags would reach the recipient as visible code rather than formatting.
+ */
+export const assertPlainText = (body: string): void => {
+  const tag = HTML_TAG.exec(body)?.[0];
+  if (tag) {
+    throw ToolError.validation(
+      `The body is plain text but contains the HTML tag ${tag}, which recipients would see as code. ` +
+        'Set body_type to "html" to send it as formatting.',
+    );
+  }
+};
+
 /**
  * Convenience wrapper over `composeBody` for the message tools: maps a tool's
  * `body_type` / `include_signature` inputs to compose options, applying the given
@@ -236,9 +255,12 @@ export const composeBody = async (input: {
 export const composeToolBody = (
   input: { body: string; body_type?: 'text' | 'html'; include_signature?: boolean },
   signatureKind: Exclude<SignatureKind, 'none'>,
-): Promise<ComposedBody> =>
-  composeBody({
+): Promise<ComposedBody> => {
+  const bodyType = input.body_type === 'html' ? 'html' : 'text';
+  if (bodyType === 'text') assertPlainText(input.body);
+  return composeBody({
     body: input.body,
-    bodyType: input.body_type === 'html' ? 'html' : 'text',
+    bodyType,
     signature: input.include_signature === false ? 'none' : signatureKind,
   });
+};

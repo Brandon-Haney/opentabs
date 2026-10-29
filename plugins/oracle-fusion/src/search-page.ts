@@ -23,12 +23,31 @@ export interface QueryPanel {
   checkboxValues: Map<string, string>;
   /** Value each dropdown submits for each option, keyed by form field name and then by option text. */
   choices: Map<string, Map<string, string>>;
+  /**
+   * Criteria the panel offers under Add Fields but does not show, such as Locator on View
+   * Item Quantities, keyed by the criterion's label.
+   */
+  addableFields: Map<string, AddableField>;
+}
+
+/** A criterion listed in a panel's Add Fields menu. */
+interface AddableField {
+  /** Client id of its menu item. */
+  menuItem: string;
+  /** Name of the criterion's attribute, which the page sends to add it (e.g. `LocatorName`). */
+  attribute: string;
 }
 
 type PanelControl = HTMLInputElement | HTMLSelectElement;
 
 const isCheckbox = (control: PanelControl): control is HTMLInputElement =>
   control instanceof HTMLInputElement && control.type === 'checkbox';
+
+/**
+ * Each Add Fields menu item is set up with the attribute it adds:
+ * `new AdfRichCommandMenuItem('<id>',{'selectedText':'<attribute>'})`.
+ */
+const MENU_ITEM_ATTRIBUTE_PATTERN = /new AdfRichCommandMenuItem\('([^']+)',\{'selectedText':'([^']*)'/g;
 
 const DATE_INPUT_PATTERN =
   /new AdfRichInputDate\('([^']+)',\{(?:(?!new Adf)[\s\S])*?new TrDateTimeConverter\('([^']+)'/g;
@@ -42,6 +61,8 @@ interface RenderedControls {
   datePatterns: Map<string, string>;
   checkboxValues: Map<string, string>;
   choices: Map<string, Map<string, string>>;
+  /** The Add Fields menu's items; null when the response did not render the menu. */
+  addableFields: Map<string, AddableField> | null;
 }
 
 /**
@@ -82,7 +103,20 @@ const readControls = (response: RichResponse, panelId: string): RenderedControls
     if (belongsToPanel(name) && pattern) datePatterns.set(name, pattern);
   }
 
-  return { rendered, values, fieldsByLabel, datePatterns, checkboxValues, choices };
+  // The menu lists only the criteria not yet shown, one item each: <panel>:addFieldsIter:<n>:adFldMenuItem.
+  let addableFields: Map<string, AddableField> | null = null;
+  if (response.document.getElementById(`${panelId}:addFields`)) {
+    const attributes = new Map(
+      [...response.scripts.matchAll(MENU_ITEM_ATTRIBUTE_PATTERN)].map(([, id, attribute]) => [id, attribute]),
+    );
+    addableFields = new Map();
+    for (const item of response.document.querySelectorAll(`[id^="${panelId}:addFieldsIter:"][id$=":adFldMenuItem"]`)) {
+      const attribute = attributes.get(item.id);
+      if (attribute) addableFields.set(item.textContent?.trim() ?? '', { menuItem: item.id, attribute });
+    }
+  }
+
+  return { rendered, values, fieldsByLabel, datePatterns, checkboxValues, choices, addableFields };
 };
 
 /**
@@ -94,7 +128,10 @@ export const parseQueryPanel = (response: RichResponse, panelId?: string): Query
   const root = panelId ? response.document.getElementById(panelId) : response.document.querySelector('[role="search"]');
   if (!root) return null;
 
-  const { values, fieldsByLabel, datePatterns, checkboxValues, choices } = readControls(response, root.id);
+  const { values, fieldsByLabel, datePatterns, checkboxValues, choices, addableFields } = readControls(
+    response,
+    root.id,
+  );
   const toggle = response.document.getElementById(`${root.id}::_afrDscl`);
   return {
     id: root.id,
@@ -104,6 +141,7 @@ export const parseQueryPanel = (response: RichResponse, panelId?: string): Query
     datePatterns,
     checkboxValues,
     choices,
+    addableFields: addableFields ?? new Map(),
   };
 };
 
@@ -121,6 +159,27 @@ export const refreshQueryPanel = (panel: QueryPanel, response: RichResponse): Qu
     datePatterns: new Map([...panel.datePatterns, ...fresh.datePatterns]),
     checkboxValues: new Map([...panel.checkboxValues, ...fresh.checkboxValues]),
     choices: new Map([...panel.choices, ...fresh.choices]),
+    addableFields: fresh.addableFields ?? panel.addableFields,
+  };
+};
+
+/**
+ * Event that adds a criterion the panel offers under Add Fields, the way the page does when
+ * the user picks it from the menu: the page cancels the menu item's own action and fires a
+ * query operation on the panel naming the item and the attribute it adds. Returns null when
+ * the panel shows the criterion already or does not offer it.
+ */
+export const addFieldEvent = (panel: QueryPanel, label: string): RichEvent | null => {
+  if (panel.fieldsByLabel.has(label)) return null;
+  const field = panel.addableFields.get(label);
+  if (!field) return null;
+  return {
+    source: panel.id,
+    payload: richEvent('queryOperation', {
+      operation: 'ADD_FIELDS',
+      value: { sourceId: field.menuItem, selectedText: field.attribute },
+    }),
+    fields: panel.values,
   };
 };
 

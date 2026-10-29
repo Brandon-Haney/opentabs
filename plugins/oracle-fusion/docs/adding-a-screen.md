@@ -16,7 +16,9 @@ the field guide; `rgn.ts` is the worked example.
 With the screen open in the user's tab, read its DOM (`browser_execute_script`, read-only):
 
 - **Query panel**: `[role=search]` — labels, field names, dropdown options, default values.
-  Note fields filled by default (Manage Orders fills Buyer with the user).
+  Note fields filled by default (Manage Orders fills Buyer with the user), and fields with a
+  "Remove: …" icon: those come from Add Fields, and the screen adds them when a criterion
+  names them.
 - **Results table**: `new AdfRichTable('…')` id, an `…:ATex` Export button or not, and the
   View → Columns items (`[role=menuitemcheckbox][id*="_shwClm"]`) — hidden columns are often
   the ones that matter (locators).

@@ -13,6 +13,7 @@ import {
 } from './lookup.js';
 import { findDialog } from './row-actions.js';
 import {
+  addFieldEvent,
   type Criterion,
   expandPanelEvent,
   leadingChangeEvent,
@@ -261,9 +262,37 @@ export const createSearchScreen = <T, O = void>(target: SearchScreenTarget<T, O>
     return { panel };
   };
 
+  /**
+   * Adds each criterion the panel offers under Add Fields but does not show yet. The window
+   * keeps an added field, so it is added once per window.
+   */
+  const addMissingFields = async (
+    adfWindow: AdfWindow,
+    start: QueryPanel,
+    criteria: Criterion[],
+  ): Promise<{ panel: QueryPanel } | { rejected: AdfMessage[] }> => {
+    let panel = start;
+    for (const { label } of criteria) {
+      const add = addFieldEvent(panel, label);
+      if (!add) continue;
+      const added = await adfWindow.submit(add);
+      const refused = refusedBy(added);
+      if (refused.length > 0) return { rejected: refused };
+      panel = refreshQueryPanel(panel, added);
+      if (!panel.fieldsByLabel.has(label)) {
+        throw ToolError.internal(`The Oracle Fusion search panel did not add the "${label}" field.`);
+      }
+    }
+    return { panel };
+  };
+
   const searchOnce = async (criteria: Criterion[], report: StatusReporter, options: O): Promise<Outcome<T>> => {
     const open = await readyScreen(report);
     const { adfWindow, taskPage } = open;
+
+    const withFields = await addMissingFields(adfWindow, open.panel, criteria);
+    if ('rejected' in withFields) return withFields;
+    open.panel = withFields.panel;
 
     const committed = await commitLeading(adfWindow, open.panel, criteria);
     if ('rejected' in committed) return committed;

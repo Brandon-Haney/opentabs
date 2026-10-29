@@ -10,8 +10,12 @@
  * Everything here is a pure function over request and response text.
  */
 
-/** Value of one key in a rich-client event payload. `null` encodes a key sent without a value. */
-type RichEventValue = string | number | boolean | null;
+/**
+ * Value of one key in a rich-client event payload. `null` encodes a key sent without a value;
+ * an object encodes a nested map, as some events carry one (e.g. the field an Add Fields
+ * operation adds).
+ */
+type RichEventValue = string | number | boolean | null | { [key: string]: RichEventValue };
 
 /** One event: its type and the other keys of its payload. */
 type RichEventSpec = [type: string, props?: Record<string, RichEventValue>];
@@ -25,14 +29,18 @@ const encodeEventValue = (key: string, value: RichEventValue): string => {
   if (value === null) return `<k v="${escapeXml(key)}"/>`;
   if (typeof value === 'boolean') return `<k v="${escapeXml(key)}"><b>${value ? 1 : 0}</b></k>`;
   if (typeof value === 'number') return `<k v="${escapeXml(key)}"><n>${value}</n></k>`;
-  return `<k v="${escapeXml(key)}"><s>${escapeXml(value)}</s></k>`;
+  if (typeof value === 'string') return `<k v="${escapeXml(key)}"><s>${escapeXml(value)}</s></k>`;
+  return `<k v="${escapeXml(key)}"><m>${encodeEventMap(value)}</m></k>`;
 };
+
+const encodeEventMap = (map: Record<string, RichEventValue>): string =>
+  Object.entries(map)
+    .map(([key, value]) => encodeEventValue(key, value))
+    .join('');
 
 /** The keys of one event. `type` is written last, matching the order the ADF client uses. */
 const encodeEventKeys = ([type, props = {}]: RichEventSpec): string =>
-  Object.entries(props)
-    .map(([key, value]) => encodeEventValue(key, value))
-    .join('') + encodeEventValue('type', type);
+  encodeEventMap(props) + encodeEventValue('type', type);
 
 /** Serializes a rich-client event payload. */
 export const richEvent = (...event: RichEventSpec): string => `<m ${EVENT_NAMESPACE}>${encodeEventKeys(event)}</m>`;

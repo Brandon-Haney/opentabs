@@ -31,6 +31,13 @@ describe('richEvent', () => {
     );
   });
 
+  test('encodes an object as a nested map', () => {
+    expect(richEvent('queryOperation', { operation: 'ADD_FIELDS', value: { selectedText: 'LocatorName' } })).toBe(
+      '<m xmlns="http://oracle.com/richClient/comm"><k v="operation"><s>ADD_FIELDS</s></k>' +
+        '<k v="value"><m><k v="selectedText"><s>LocatorName</s></k></m></k><k v="type"><s>queryOperation</s></k></m>',
+    );
+  });
+
   test('escapes markup in string values', () => {
     expect(richEvent('action', { label: 'a<b>&"c"' })).toContain('<s>a&lt;b&gt;&amp;&quot;c&quot;</s>');
   });

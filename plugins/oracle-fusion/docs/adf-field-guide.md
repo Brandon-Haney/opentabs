@@ -126,6 +126,17 @@ Each of these cost a debugging session. The fix is in the code; this is why it i
   but displays local time. The tool searches a day wider each side and filters by the
   displayed date.
 
+### A criterion the page shows is not on the panel
+
+- **Fields added from Add Fields.** A criterion with a remove icon beside it ("Remove: Locator")
+  was added from the panel's Add Fields menu; a new window's panel lacks it. Clicking the menu
+  item does nothing on the server: the page cancels that action and fires a `queryOperation`
+  event on the panel with `operation=ADD_FIELDS` and a nested map
+  `value={sourceId=<menu item id>, selectedText=<attribute>}`. The attribute (e.g.
+  `LocatorName`) is in the item's setup script,
+  `new AdfRichCommandMenuItem('<id>',{'selectedText':'…'})`. The window keeps the field once
+  added, so the screen adds it before its first search. (`addFieldEvent`)
+
 ### Columns land under the wrong headings
 
 - **Frozen columns** render as cells of the row itself, ahead of the cell holding the inner

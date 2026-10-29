@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { parseRichResponse, type RichResponse } from './adf-protocol.js';
 import {
+  addFieldEvent,
   expandPanelEvent,
   exportEvent,
   findExportButton,
@@ -154,6 +155,59 @@ describe('leadingChangeEvent', () => {
     expect(leadingChangeEvent(panel, { label: 'Organization', text: 'M1', leading: true })).toBeNull();
     expect(leadingChangeEvent(panel, { label: 'Organization', text: 'M2' })).toBeNull();
     expect(leadingChangeEvent(panel, { label: 'From Date', date: '2026-09-01' })).toBeNull();
+  });
+});
+
+describe('addFieldEvent', () => {
+  const menuItem = (index: number, label: string) =>
+    `<tr id="${PANEL}:addFieldsIter:${index}:adFldMenuItem" role="menuitem"><td>${label}</td></tr>`;
+  const menuScript = (index: number, attribute: string) =>
+    `new AdfRichCommandMenuItem('${PANEL}:addFieldsIter:${index}:adFldMenuItem',{'selectedText':'${attribute}'})`;
+  const panelWithMenu = (fields: string, items: [string, string][]) =>
+    respond(
+      `<div id="${PANEL}" role="search">${fields}<div id="${PANEL}:addFields"></div>` +
+        `<table>${items.map(([label], index) => menuItem(index, label)).join('')}</table></div>`,
+      `AdfPage.PAGE.addComponents(${items.map(([, attribute], index) => menuScript(index, attribute)).join(',')});`,
+    );
+  const subinventory =
+    `<label for="${PANEL}:value30::content">Subinventory</label>` +
+    `<input id="${PANEL}:value30::content" name="${PANEL}:value30" value="">`;
+
+  test('adds an offered field as a query operation on the panel naming the menu item and attribute', () => {
+    const panel = requirePanel(
+      panelWithMenu(subinventory, [
+        ['Lot', 'LotNumber'],
+        ['Locator', 'LocatorName'],
+      ]),
+    );
+    const event = addFieldEvent(panel, 'Locator');
+    expect(event?.source).toBe(PANEL);
+    expect(event?.payload).toContain('<k v="operation"><s>ADD_FIELDS</s></k>');
+    expect(event?.payload).toContain(
+      `<k v="value"><m><k v="sourceId"><s>${PANEL}:addFieldsIter:1:adFldMenuItem</s></k>` +
+        '<k v="selectedText"><s>LocatorName</s></k></m></k>',
+    );
+    expect(event?.payload).toContain('<k v="type"><s>queryOperation</s></k>');
+    expect(event?.fields).toEqual({ [`${PANEL}:value30`]: '' });
+  });
+
+  test('returns null for a field the panel shows already or does not offer', () => {
+    const panel = requirePanel(panelWithMenu(subinventory, [['Lot', 'LotNumber']]));
+    expect(addFieldEvent(panel, 'Subinventory')).toBeNull();
+    expect(addFieldEvent(panel, 'Locator')).toBeNull();
+  });
+
+  test('keeps the known menu when a response does not render it, and replaces it when one does', () => {
+    const panel = requirePanel(panelWithMenu(subinventory, [['Locator', 'LocatorName']]));
+    const unrendered = refreshQueryPanel(panel, respond(subinventory));
+    expect(unrendered.addableFields.get('Locator')?.attribute).toBe('LocatorName');
+
+    const added =
+      `<label for="${PANEL}:value80::content">Locator</label>` +
+      `<input id="${PANEL}:value80::content" name="${PANEL}:value80" value="">`;
+    const rerendered = refreshQueryPanel(panel, panelWithMenu(subinventory + added, [['Lot', 'LotNumber']]));
+    expect(rerendered.addableFields.has('Locator')).toBe(false);
+    expect(addFieldEvent(rerendered, 'Locator')).toBeNull();
   });
 });
 

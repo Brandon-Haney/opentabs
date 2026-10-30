@@ -8,9 +8,14 @@ import { extractMessageImages } from '../ams-image.js';
 export const conversationSchema = z.object({
   id: z.string().describe('Conversation/thread ID'),
   topic: z.string().describe('Chat name/topic (empty for unnamed 1:1 chats)'),
+  participants: z
+    .array(z.string())
+    .nullable()
+    .describe(
+      'The other people in a chat with no topic, by name. Null when the chat has a topic or names could not be looked up.',
+    ),
   type: z.string().describe('Conversation type (e.g., "Conversation")'),
   thread_type: z.string().describe('Thread type (e.g., "chat", "meeting", "space")'),
-  member_count: z.string().describe('Number of members in the conversation'),
   created_at: z.string().describe('When the conversation was created (ISO 8601)'),
   last_message_content: z.string().describe('Content of the last message'),
   last_message_type: z.string().describe('Message type of the last message'),
@@ -32,9 +37,9 @@ interface RawConversation {
 export const mapConversation = (c: RawConversation): Conversation => ({
   id: c.id ?? '',
   topic: String(c.threadProperties?.topic ?? ''),
+  participants: null,
   type: c.type ?? '',
   thread_type: String(c.threadProperties?.threadType ?? ''),
-  member_count: String(c.threadProperties?.memberCount ?? ''),
   created_at: String(c.threadProperties?.createdat ?? ''),
   last_message_content: String(c.lastMessage?.content ?? ''),
   last_message_type: String(c.lastMessage?.messagetype ?? ''),
@@ -78,7 +83,9 @@ const imageSchema = z.object({
 export const messageSchema = z.object({
   id: z.string().describe('Message ID (timestamp-based)'),
   client_message_id: z.string().describe('Client-assigned message ID'),
-  content: z.string().describe('Message content (may contain HTML)'),
+  content: z.string().describe('Message content (may contain HTML); empty on a deleted message'),
+  deleted: z.boolean().describe('Whether the message was deleted'),
+  edited_at: z.string().nullable().describe('When the message was last edited (ISO 8601), or null if it never was'),
   message_type: z.string().describe('Message type (e.g., "RichText/Html", "Text")'),
   from: z.string().describe('Sender MRI (e.g., "8:orgid:username")'),
   display_name: z.string().describe('Sender display name'),
@@ -117,7 +124,8 @@ export interface RawMessage {
   properties?: {
     mentions?: string;
     files?: string;
-    deletetime?: number;
+    deletetime?: number | string;
+    edittime?: number | string;
     emotions?: Array<{ key?: string }>;
   };
   annotationsSummary?: {
@@ -163,10 +171,18 @@ const parseReactions = (msg: RawMessage): string[] => {
   return [...keys];
 };
 
+/** A timestamp property in epoch milliseconds, as ISO 8601; null when absent or zero. */
+const isoFromEpochProperty = (value: number | string | undefined): string | null => {
+  const epochMs = Number(value);
+  return epochMs > 0 ? new Date(epochMs).toISOString() : null;
+};
+
 export const mapMessage = (m: RawMessage): Message => ({
   id: m.id ?? '',
   client_message_id: m.clientmessageid ?? '',
   content: m.content ?? '',
+  deleted: isoFromEpochProperty(m.properties?.deletetime) !== null,
+  edited_at: isoFromEpochProperty(m.properties?.edittime),
   message_type: m.messagetype ?? '',
   from: extractMri(m.from ?? ''),
   display_name: m.imdisplayname ?? '',

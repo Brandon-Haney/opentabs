@@ -1,7 +1,7 @@
 /**
  * Pre-script lifecycle E2E tests — regression gates for:
  *   (a) plugin.uninstall removes the opentabs-pre-* content script registration (US-005)
- *   (b) plugin.update with a changed preScriptHash auto-reloads matching tabs (US-007)
+ *   (b) plugin.update with a changed preScriptHash registers the new pre-script and leaves open tabs loaded
  *
  * Uses the plain Playwright `test` (not fixture-based) because both tests need
  * bespoke infrastructure: the mock pre-script server, a writable plugin copy
@@ -142,7 +142,7 @@ test.describe('Pre-script lifecycle', () => {
     }
   });
 
-  test('plugin.update with changed preScriptHash reloads matching tabs', async () => {
+  test('plugin.update with changed preScriptHash registers the new pre-script and leaves open tabs loaded', async () => {
     test.slow();
 
     // Copy the plugin to an isolated tmp dir so we can modify dist/ freely.
@@ -195,8 +195,20 @@ test.describe('Pre-script lifecycle', () => {
       const page = await context.newPage();
       await page.goto(mock.url, { waitUntil: 'load' });
 
-      // Record the original navigation start as the reload sentinel.
-      const originalNavStart = await page.evaluate(() => performance.timing.navigationStart);
+      // A value set on the page survives only as long as the page is not reloaded.
+      await page.evaluate(() => {
+        (window as unknown as Record<string, unknown>).__noReloadSentinel = true;
+      });
+      const readSentinel = () =>
+        page.evaluate(() => (window as unknown as Record<string, unknown>).__noReloadSentinel === true);
+
+      const registeredJsPaths = async (): Promise<string[]> => {
+        const registered = (await sw?.evaluate(() => chrome.scripting.getRegisteredContentScripts())) as
+          | Array<{ id: string; js?: string[] }>
+          | undefined;
+        return registered?.find(r => r.id === REGISTRATION_ID)?.js ?? [];
+      };
+      const originalJsPaths = await registeredJsPaths();
 
       // Read current dist files so we can modify them with predictable content.
       const preScriptIifePath = path.join(pluginCopyDir, 'dist', 'pre-script.iife.js');
@@ -221,22 +233,17 @@ test.describe('Pre-script lifecycle', () => {
 
       // The file watcher detected the tools.json change, re-read the new
       // preScriptHash from state, and sent plugin.update to the extension.
-      // The extension compares the new hash against the previous one — they
-      // differ — and calls chrome.tabs.reload on matching tabs.
-      // Poll for a changed navigationStart as the reload confirmation.
-      await expect
-        .poll(
-          async () => {
-            try {
-              return await page.evaluate(() => performance.timing.navigationStart);
-            } catch {
-              // Page is in mid-navigation — return original so we keep polling.
-              return originalNavStart;
-            }
-          },
-          { timeout: 15_000 },
-        )
-        .not.toBe(originalNavStart);
+      // The extension registers the new pre-script file for future page loads.
+      await expect.poll(registeredJsPaths, { timeout: 15_000 }).not.toEqual(originalJsPaths);
+
+      // The update handler is done with the tab once this settles, so the sentinel
+      // still being there means the open tab was left alone.
+      await page.waitForTimeout(2_000);
+      expect(await readSentinel()).toBe(true);
+
+      // The sentinel does disappear on a real reload.
+      await page.reload({ waitUntil: 'load' });
+      expect(await readSentinel()).toBe(false);
     } finally {
       await context?.close().catch(() => {});
       await mock?.kill();

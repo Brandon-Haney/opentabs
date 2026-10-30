@@ -130,7 +130,7 @@ Plugins can bundle a pre-script IIFE (`dist/pre-script.iife.js`) that runs at `d
 
 **Adapter files** (`adapter-files.ts`): `writePreScriptFile(pluginName, preScript)` writes a content-hashed file at `adapters/<plugin>-prescript-<hash8>.js` (distinct from the adapter `adapters/<plugin>-<hash8>.js`). `cleanupStaleAdapterFiles` strips both the hash suffix and the `-prescript` infix when computing the base name for known plugins, so pre-script files for installed plugins are never deleted on re-sync.
 
-**Extension protocol** (`extension-protocol.ts`): Both `sync.full` and `plugin.update` messages include `preScriptFile` and `preScriptHash` as optional fields via conditional spreads. The extension uses `preScriptFile` to register the content script and `preScriptHash` to detect changes that require tab reloads.
+**Extension protocol** (`extension-protocol.ts`): Both `sync.full` and `plugin.update` messages include `preScriptFile` and `preScriptHash` as optional fields via conditional spreads. The extension uses `preScriptFile` to register the content script and `preScriptHash` to log when a pre-script changes; open tabs pick up the change on their next page load.
 
 **File watcher** (`file-watcher.ts`): In dev mode, `handleToolsJsonChange` re-reads `pre-script.iife.js` from disk and updates `updatedFields.preScript` / `updatedFields.preScriptHash` when `tools.json` changes, ensuring `plugin.update` carries the new hash when a plugin is rebuilt in watch mode.
 

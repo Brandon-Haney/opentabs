@@ -338,7 +338,7 @@ const handleToolsJsonChange = async (
     // Re-read pre-script IIFE from disk if the manifest declares one.
     // When a build tool run updates tools.json, it also updates pre-script.iife.js.
     // Re-reading here ensures the updated preScriptHash reaches the extension via
-    // plugin.update, enabling the extension to detect hash changes and reload tabs.
+    // plugin.update, so the extension registers the new pre-script for future page loads.
     const manifestObj =
       typeof parsedManifest === 'object' && parsedManifest !== null
         ? (parsedManifest as Record<string, unknown>)

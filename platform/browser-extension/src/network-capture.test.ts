@@ -83,6 +83,52 @@ describe('scrubHeaders', () => {
     });
   });
 
+  describe('headers named freely by each site', () => {
+    test('redacts the Teams session token sent as Authentication', () => {
+      const result = scrubHeaders({ Authentication: 'skypetoken=abc.def.ghi' });
+      expect(result).toEqual({ Authentication: '[REDACTED]' });
+    });
+
+    test('keeps the scheme of an Authentication header that has one', () => {
+      expect(scrubHeaders({ Authentication: 'Bearer abc' })).toEqual({ Authentication: 'Bearer [REDACTED]' });
+    });
+
+    test.each([
+      'X-Skypetoken',
+      'X-Session-Id',
+      'Ocp-Apim-Subscription-Key',
+      'X-Amz-Signature',
+      'X-Client-Secret',
+      'X-CSRF',
+      'apikey',
+    ])('redacts %s', name => {
+      expect(scrubHeaders({ [name]: 'value' })).toEqual({ [name]: '[REDACTED]' });
+    });
+
+    test('leaves headers alone that only resemble those names', () => {
+      const headers = { ':authority': 'teams.microsoft.com', 'Keep-Alive': 'timeout=5', Monkey: 'value' };
+      expect(scrubHeaders(headers)).toEqual(headers);
+    });
+  });
+
+  describe('credentials recognizable by shape', () => {
+    const JWT = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl';
+
+    test('hides a JWT inside an otherwise ordinary header, keeping the rest', () => {
+      expect(scrubHeaders({ 'X-Context': `user=1; ${JWT}` })).toEqual({ 'X-Context': 'user=1; [REDACTED]' });
+    });
+
+    test('hides a bearer credential under an ordinary name', () => {
+      expect(scrubHeaders({ 'X-Forwarded': 'Bearer abc123' })).toEqual({ 'X-Forwarded': 'Bearer [REDACTED]' });
+    });
+
+    test('hides a token in a URL, keeping the rest of the URL', () => {
+      expect(scrubHeaders({ Referer: 'https://a.example/x?access_token=abc&page=2' })).toEqual({
+        Referer: 'https://a.example/x?access_token=[REDACTED]&page=2',
+      });
+    });
+  });
+
   describe('newly added sensitive headers', () => {
     test('redacts x-api-key', () => {
       const result = scrubHeaders({ 'x-api-key': 'sk-abc123' });

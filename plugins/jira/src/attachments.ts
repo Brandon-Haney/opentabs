@@ -6,7 +6,7 @@ import {
   type ToolHandlerContext,
 } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { api } from './jira-api.js';
+import { api, apiBytes } from './jira-api.js';
 import type { AdfNode } from './tools/adf.js';
 
 /**
@@ -25,7 +25,7 @@ import type { AdfNode } from './tools/adf.js';
 /** Widest an image is shown in a comment, matching the width Jira's editor gives a full-width image. */
 const MAX_DISPLAY_WIDTH_PX = 686;
 
-/** Uploads carry whole files, so they get longer than the default 30 s request budget. */
+/** Uploads and downloads carry whole files, so they get longer than the default 30 s request budget. */
 const UPLOAD_TIMEOUT_MS = 120_000;
 
 /** How long an uploaded attachment may take to show up in the read credentials with its media id. */
@@ -85,6 +85,39 @@ const decodeBase64 = (base64: string): Uint8Array<ArrayBuffer> => {
 };
 
 const toBlob = (file: LocalFile): Blob => new Blob([decodeBase64(file.contentBase64)], { type: file.contentType });
+
+/** Bytes encoded per `String.fromCharCode` call, a multiple of 3 so the pieces of base64 join cleanly. */
+const BASE64_CHUNK_BYTES = 3 * 8192;
+
+const encodeBase64 = (bytes: Uint8Array): string => {
+  let base64 = '';
+  for (let i = 0; i < bytes.length; i += BASE64_CHUNK_BYTES) {
+    base64 += btoa(String.fromCharCode(...bytes.subarray(i, i + BASE64_CHUNK_BYTES)));
+  }
+  return base64;
+};
+
+/** What Jira reports about an attachment, before its file is downloaded. */
+export const getAttachmentInfo = async (attachmentId: string): Promise<Attachment> =>
+  mapAttachment(await api<JiraAttachment>(`/attachment/${encodeURIComponent(attachmentId)}`));
+
+/**
+ * Download an attachment's file, as base64. By default the content endpoint redirects
+ * to Media Services, which the page may not read across origins; `redirect=false` makes
+ * Jira answer with the bytes itself.
+ */
+export const downloadAttachment = async (attachment: Attachment): Promise<string> => {
+  const bytes = await apiBytes(`/attachment/content/${encodeURIComponent(attachment.id)}`, {
+    query: { redirect: false },
+    timeoutMs: UPLOAD_TIMEOUT_MS,
+  });
+  if (bytes.length !== attachment.size) {
+    throw ToolError.internal(
+      `Jira sent ${bytes.length} bytes for "${attachment.filename}", which is ${attachment.size} bytes. Nothing was saved.`,
+    );
+  }
+  return encodeBase64(bytes);
+};
 
 /** Read every delivered file up front, so a missing one fails the call before anything is uploaded. */
 export const readLocalFiles = (context: ToolHandlerContext | undefined, paths: string[]): LocalFile[] =>

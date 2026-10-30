@@ -34,19 +34,19 @@ export const waitForAuth = (): Promise<boolean> =>
     () => false,
   );
 
-export const api = async <T>(
-  endpoint: string,
-  options: {
-    method?: string;
-    body?: Record<string, unknown>;
-    rawBody?: string;
-    /** Multipart body. Jira requires `X-Atlassian-Token: no-check` on multipart uploads to pass its XSRF check. */
-    form?: FormData;
-    query?: Record<string, string | number | boolean | undefined>;
-    basePath?: string;
-    timeoutMs?: number;
-  } = {},
-): Promise<T> => {
+interface ApiOptions {
+  method?: string;
+  body?: Record<string, unknown>;
+  rawBody?: string;
+  /** Multipart body. Jira requires `X-Atlassian-Token: no-check` on multipart uploads to pass its XSRF check. */
+  form?: FormData;
+  query?: Record<string, string | number | boolean | undefined>;
+  basePath?: string;
+  timeoutMs?: number;
+}
+
+/** Send a request and return the successful response, turning every failure into a `ToolError`. */
+const send = async (endpoint: string, options: ApiOptions): Promise<Response> => {
   const auth = getAuth();
   if (!auth) throw ToolError.auth('Not authenticated — please log in to Jira.');
 
@@ -109,6 +109,17 @@ export const api = async <T>(
     throw ToolError.internal(`API error (${response.status}): ${endpoint} — ${errorBody}`);
   }
 
+  return response;
+};
+
+export const api = async <T>(endpoint: string, options: ApiOptions = {}): Promise<T> => {
+  const response = await send(endpoint, options);
   if (response.status === 204) return {} as T;
   return (await response.json()) as T;
+};
+
+/** Like `api`, for an endpoint that answers with a file: returns its bytes. */
+export const apiBytes = async (endpoint: string, options: ApiOptions = {}): Promise<Uint8Array> => {
+  const response = await send(endpoint, options);
+  return new Uint8Array(await response.arrayBuffer());
 };

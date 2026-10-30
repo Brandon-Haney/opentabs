@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-jira
 1. Open [atlassian.net](https://atlassian.net) in Chrome and log in
 2. Open the OpenTabs side panel — the Jira plugin should appear as **ready**
 
-## Tools (21)
+## Tools (22)
 
 ### Issues (12)
 
@@ -45,11 +45,12 @@ npm install -g @opentabs-dev/opentabs-plugin-jira
 | `add_comment` | Add a comment to an issue, with images and threaded replies | Write |
 | `list_comments` | List comments on an issue | Read |
 
-### Attachments (1)
+### Attachments (2)
 
 | Tool | Description | Type |
 |---|---|---|
 | `add_attachment` | Attach files to an issue | Write |
+| `get_attachment` | Save an attachment to a path | Read |
 
 ### Projects (2)
 

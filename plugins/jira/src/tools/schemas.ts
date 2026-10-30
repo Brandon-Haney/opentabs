@@ -1,7 +1,15 @@
 import { z } from 'zod';
+import { attachmentSchema } from '../attachments.js';
 import { adfToMarkdown } from './adf.js';
+import { customFieldsSchema, mapCustomFields } from './custom-fields.js';
 
 // --- Issue schema ---
+const relatedIssueSchema = z.object({
+  key: z.string().describe('Issue key'),
+  summary: z.string().describe('Issue summary/title'),
+  status: z.string().describe('Current status name'),
+});
+
 export const issueSchema = z.object({
   id: z.string().describe('Issue ID'),
   key: z.string().describe('Issue key (e.g. KAN-1)'),
@@ -22,6 +30,35 @@ export const issueSchema = z.object({
   description_text: z
     .string()
     .describe('Markdown rendering of the description (headings, lists, code, bold/italic, links preserved)'),
+  due_date: z.string().nullable().describe('Due date (YYYY-MM-DD), or null if none is set'),
+  resolution: z.string().nullable().describe('Resolution name, or null if unresolved'),
+  resolved: z.string().nullable().describe('Resolution timestamp, or null if unresolved'),
+  parent: relatedIssueSchema.nullable().describe('Parent issue (such as the epic), or null if none'),
+  subtasks: z.array(relatedIssueSchema).describe('Subtasks of this issue'),
+  linked_issues: z
+    .array(relatedIssueSchema.extend({ relationship: z.string().describe('How this issue relates, e.g. "blocks"') }))
+    .describe('Issues linked to this one'),
+  attachments: z
+    .array(
+      attachmentSchema.extend({
+        created: z.string().describe('Upload timestamp'),
+        author_name: z.string().describe('Display name of the uploader'),
+      }),
+    )
+    .describe('Files attached to the issue, including images shown in its comments'),
+  components: z.array(z.string()).describe('Component names'),
+  fix_versions: z.array(z.string()).describe('Fix version names'),
+  affected_versions: z.array(z.string()).describe('Affected version names'),
+  environment_text: z.string().nullable().describe('Markdown rendering of the Environment field, or null if empty'),
+  time_tracking: z
+    .object({
+      original_estimate: z.string().nullable().describe('Original estimate (e.g. "2d"), or null if none'),
+      remaining_estimate: z.string().nullable().describe('Remaining estimate, or null if none'),
+      time_spent: z.string().nullable().describe('Time logged, or null if none'),
+    })
+    .nullable()
+    .describe('Time tracking, or null if nothing is recorded'),
+  custom_fields: customFieldsSchema.optional(),
 });
 
 export interface JiraIssueFields {
@@ -36,10 +73,74 @@ export interface JiraIssueFields {
   created?: string;
   updated?: string;
   description?: unknown;
+  duedate?: string | null;
+  resolution?: { name?: string } | null;
+  resolutiondate?: string | null;
+  parent?: JiraRelatedIssue | null;
+  subtasks?: JiraRelatedIssue[];
+  issuelinks?: JiraIssueLink[];
+  attachment?: JiraIssueAttachment[];
+  components?: { name?: string }[];
+  fixVersions?: { name?: string }[];
+  versions?: { name?: string }[];
+  environment?: unknown;
+  timetracking?: { originalEstimate?: string; remainingEstimate?: string; timeSpent?: string };
 }
 
-export const mapIssue = (issue: Record<string, unknown>): z.infer<typeof issueSchema> => {
-  const fields = (issue.fields ?? {}) as JiraIssueFields;
+interface JiraRelatedIssue {
+  key?: string;
+  fields?: { summary?: string; status?: { name?: string } };
+}
+
+interface JiraIssueLink {
+  type?: { inward?: string; outward?: string };
+  inwardIssue?: JiraRelatedIssue;
+  outwardIssue?: JiraRelatedIssue;
+}
+
+interface JiraIssueAttachment {
+  id?: string | number;
+  filename?: string;
+  size?: number;
+  mimeType?: string;
+  created?: string;
+  author?: { displayName?: string };
+}
+
+const mapRelatedIssue = (related: JiraRelatedIssue) => ({
+  key: related.key ?? '',
+  summary: related.fields?.summary ?? '',
+  status: related.fields?.status?.name ?? '',
+});
+
+/** A link names the other issue on one side, and the phrase for that side says how this issue relates to it. */
+const mapIssueLink = (link: JiraIssueLink) => {
+  const other = link.outwardIssue ?? link.inwardIssue ?? {};
+  const relationship = (link.outwardIssue ? link.type?.outward : link.type?.inward) ?? '';
+  return { ...mapRelatedIssue(other), relationship };
+};
+
+const namesOf = (items: { name?: string }[] | undefined): string[] => (items ?? []).map(item => item.name ?? '');
+
+const mapTimeTracking = (tracking: JiraIssueFields['timetracking']) => {
+  if (!tracking?.originalEstimate && !tracking?.remainingEstimate && !tracking?.timeSpent) return null;
+  return {
+    original_estimate: tracking.originalEstimate ?? null,
+    remaining_estimate: tracking.remainingEstimate ?? null,
+    time_spent: tracking.timeSpent ?? null,
+  };
+};
+
+/**
+ * Map a raw issue. `customFieldNames` (field id → display name) selects the custom
+ * fields to report; without it the result has no `custom_fields`.
+ */
+export const mapIssue = (
+  issue: Record<string, unknown>,
+  customFieldNames?: Map<string, string>,
+): z.infer<typeof issueSchema> => {
+  const rawFields = (issue.fields ?? {}) as Record<string, unknown>;
+  const fields = rawFields as JiraIssueFields;
   return {
     id: (issue.id as string) ?? '',
     key: (issue.key as string) ?? '',
@@ -58,6 +159,26 @@ export const mapIssue = (issue: Record<string, unknown>): z.infer<typeof issueSc
     created: fields.created ?? '',
     updated: fields.updated ?? '',
     description_text: adfToMarkdown(fields.description),
+    due_date: fields.duedate ?? null,
+    resolution: fields.resolution?.name ?? null,
+    resolved: fields.resolutiondate ?? null,
+    parent: fields.parent ? mapRelatedIssue(fields.parent) : null,
+    subtasks: (fields.subtasks ?? []).map(mapRelatedIssue),
+    linked_issues: (fields.issuelinks ?? []).map(mapIssueLink),
+    attachments: (fields.attachment ?? []).map(attachment => ({
+      id: String(attachment.id ?? ''),
+      filename: attachment.filename ?? '',
+      size: attachment.size ?? 0,
+      mime_type: attachment.mimeType ?? '',
+      created: attachment.created ?? '',
+      author_name: attachment.author?.displayName ?? '',
+    })),
+    components: namesOf(fields.components),
+    fix_versions: namesOf(fields.fixVersions),
+    affected_versions: namesOf(fields.versions),
+    environment_text: adfToMarkdown(fields.environment) || null,
+    time_tracking: mapTimeTracking(fields.timetracking),
+    ...(customFieldNames ? { custom_fields: mapCustomFields(rawFields, customFieldNames) } : {}),
   };
 };
 
@@ -193,4 +314,16 @@ export const ISSUE_FIELDS = [
   'description',
   'labels',
   'reporter',
+  'duedate',
+  'resolution',
+  'resolutiondate',
+  'parent',
+  'subtasks',
+  'issuelinks',
+  'attachment',
+  'components',
+  'fixVersions',
+  'versions',
+  'environment',
+  'timetracking',
 ];

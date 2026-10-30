@@ -10,8 +10,10 @@
 //   caller's `image` resolver returns for `ref` (see MarkdownOptions).
 //
 // Anything outside this subset is dropped on input or best-effort
-// flattened on output; an embedded image reads back as [image: <alt>]
-// and a file card as [file].
+// flattened on output. On output every node leaves a visible trace: a
+// date chip reads as YYYY-MM-DD, a status lozenge as [status: <text>],
+// an embedded image as [image: <alt>], a file card as [file], and a node
+// with no text form as [unsupported: <type>].
 // Use the `body_adf` escape hatch on add_comment for full ADF control
 // (mentions, panels, tables, media, …).
 
@@ -392,16 +394,26 @@ const renderBlock = (block: AdfNode): string => {
     case 'mediaGroup':
       return (block.content ?? []).map(() => '[file]').join('\n');
     case 'media': {
-      const alt = (block.attrs?.alt as string | undefined) ?? '';
-      return alt ? `[image: ${alt}]` : '[image]';
+      const label = (block.attrs?.alt as string | undefined) || (block.attrs?.url as string | undefined);
+      return label ? `[image: ${label}]` : '[image]';
     }
+    case 'caption':
+      return renderInline(block.content ?? []);
+    case 'taskList':
+      return (block.content ?? []).map(renderTaskListChild).join('\n');
+    case 'decisionList':
+      return (block.content ?? [])
+        .map(item => prefixLines(renderInline(item.content ?? []), '- Decision: '))
+        .join('\n');
+    case 'blockCard':
+    case 'embedCard':
+      return renderCard(block);
     default:
-      return block.content ? renderBlocks(block.content) : '';
+      return block.content ? renderBlocks(block.content) : renderInlineNode(block);
   }
 };
 
-const renderListItem = (item: AdfNode, prefix: string): string => {
-  const inner = renderBlocks(item.content ?? []);
+const prefixLines = (inner: string, prefix: string): string => {
   const indent = ' '.repeat(prefix.length);
   return inner
     .split('\n')
@@ -409,9 +421,41 @@ const renderListItem = (item: AdfNode, prefix: string): string => {
     .join('\n');
 };
 
+const renderListItem = (item: AdfNode, prefix: string): string => prefixLines(renderBlocks(item.content ?? []), prefix);
+
+/** A task list holds checkable items and, for indented tasks, nested task lists. */
+const renderTaskListChild = (child: AdfNode): string => {
+  if (child.type !== 'taskItem') return prefixLines(renderBlock(child), '  ');
+  const checkbox = child.attrs?.state === 'DONE' ? '[x]' : '[ ]';
+  return prefixLines(renderInline(child.content ?? []), `- ${checkbox} `);
+};
+
 const renderInline = (nodes: AdfNode[]): string => nodes.map(renderInlineNode).join('');
 
 const hasMark = (marks: AdfMark[], type: AdfMark['type']): boolean => marks.some(m => m.type === type);
+
+const unsupported = (node: AdfNode): string => `[unsupported: ${node.type}]`;
+
+/** A smart link's URL sits in `url`, or in `data` when the card carries JSON-LD. */
+const renderCard = (node: AdfNode): string => {
+  const data = node.attrs?.data as { url?: string } | undefined;
+  const url = (node.attrs?.url as string | undefined) || data?.url;
+  return url ? `<${url}>` : unsupported(node);
+};
+
+/**
+ * A date chip stores its calendar day as UTC midnight in epoch milliseconds, so the
+ * day is read in UTC. A local timezone west of UTC would show the day before.
+ */
+const renderDate = (node: AdfNode): string => {
+  const date = new Date(Number(node.attrs?.timestamp));
+  return Number.isNaN(date.getTime()) ? unsupported(node) : date.toISOString().slice(0, 10);
+};
+
+const renderLabelled = (node: AdfNode, label: string): string => {
+  const text = node.attrs?.text as string | undefined;
+  return text ? `[${label}: ${text}]` : unsupported(node);
+};
 
 const renderInlineNode = (node: AdfNode): string => {
   if (node.type === 'hardBreak') return '\n';
@@ -422,11 +466,18 @@ const renderInlineNode = (node: AdfNode): string => {
     return `@${text || id}`;
   }
   if (node.type === 'emoji') {
-    return (node.attrs?.text as string | undefined) ?? (node.attrs?.shortName as string | undefined) ?? '';
+    return (
+      (node.attrs?.text as string | undefined) || (node.attrs?.shortName as string | undefined) || unsupported(node)
+    );
   }
-  if (node.type === 'inlineCard') {
-    const url = (node.attrs?.url as string | undefined) ?? '';
-    return url ? `<${url}>` : '';
+  if (node.type === 'inlineCard') return renderCard(node);
+  if (node.type === 'date') return renderDate(node);
+  if (node.type === 'status') return renderLabelled(node, 'status');
+  if (node.type === 'placeholder') return renderLabelled(node, 'placeholder');
+  if (node.type === 'mediaInline') {
+    const alt = node.attrs?.alt as string | undefined;
+    if (alt) return `[image: ${alt}]`;
+    return node.attrs?.type === 'image' ? '[image]' : '[file]';
   }
   if (node.type === 'text') {
     const marks = node.marks ?? [];
@@ -442,7 +493,7 @@ const renderInlineNode = (node: AdfNode): string => {
     }
     return out;
   }
-  return '';
+  return node.content ? renderBlock(node) : unsupported(node);
 };
 
 const renderTable = (block: AdfNode): string => {

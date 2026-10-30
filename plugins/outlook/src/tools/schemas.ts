@@ -1,5 +1,14 @@
 import { z } from 'zod';
 
+// ── Enum values ─────────────────────────────────────────────────────────
+
+/**
+ * An enum value in the casing Graph documents. The Outlook REST fallback capitalizes
+ * them (`NotFlagged`, `SeriesMaster`), so output stays the same whichever API answered.
+ */
+export const enumValue = (value: string | undefined, fallback: string): string =>
+  value ? value.charAt(0).toLowerCase() + value.slice(1) : fallback;
+
 // ── User ────────────────────────────────────────────────────────────────
 
 export const userSchema = z.object({
@@ -45,6 +54,7 @@ export const messageSummarySchema = z.object({
   subject: z.string().describe('Subject line'),
   from: emailAddressSchema.describe('Sender'),
   to: z.array(emailAddressSchema).describe('To recipients'),
+  cc: z.array(emailAddressSchema).describe('CC recipients'),
   received_at: z.string().describe('Received datetime (ISO 8601)'),
   is_read: z.boolean().describe('Whether the message has been read'),
   has_attachments: z.boolean().describe('Whether the message has attachments'),
@@ -53,7 +63,6 @@ export const messageSummarySchema = z.object({
 });
 
 export const messageDetailSchema = messageSummarySchema.extend({
-  cc: z.array(emailAddressSchema).describe('CC recipients'),
   bcc: z.array(emailAddressSchema).describe('BCC recipients'),
   body_type: z.string().describe('Body content type (text or html)'),
   body: z.string().describe('Full message body'),
@@ -87,23 +96,23 @@ export const mapMessageSummary = (m: RawMessage) => ({
   subject: m.subject ?? '(no subject)',
   from: mapEmailAddress(m.from ?? {}),
   to: (m.toRecipients ?? []).map(mapEmailAddress),
+  cc: (m.ccRecipients ?? []).map(mapEmailAddress),
   received_at: m.receivedDateTime ?? '',
   is_read: m.isRead ?? false,
   has_attachments: m.hasAttachments ?? false,
-  importance: m.importance ?? 'normal',
+  importance: enumValue(m.importance, 'normal'),
   preview: m.bodyPreview ?? '',
 });
 
 export const mapMessageDetail = (m: RawMessage) => ({
   ...mapMessageSummary(m),
-  cc: (m.ccRecipients ?? []).map(mapEmailAddress),
   bcc: (m.bccRecipients ?? []).map(mapEmailAddress),
-  body_type: m.body?.contentType ?? 'text',
+  body_type: m.body?.contentType?.toLowerCase() ?? 'text',
   body: m.body?.content ?? '',
   web_link: m.webLink ?? '',
   conversation_id: m.conversationId ?? '',
   categories: m.categories ?? [],
-  flag_status: m.flag?.flagStatus ?? 'notFlagged',
+  flag_status: enumValue(m.flag?.flagStatus, 'notFlagged'),
 });
 
 // ── Mail Folder ─────────────────────────────────────────────────────────
@@ -169,7 +178,7 @@ export const mapAttachment = (a: RawAttachment) => ({
 // ── Shared field lists for $select ──────────────────────────────────────
 
 export const MESSAGE_SUMMARY_FIELDS =
-  'id,subject,from,toRecipients,receivedDateTime,isRead,hasAttachments,importance,bodyPreview';
+  'id,subject,from,toRecipients,ccRecipients,receivedDateTime,isRead,hasAttachments,importance,bodyPreview';
 
 export const MESSAGE_DETAIL_FIELDS =
   'id,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,isRead,hasAttachments,importance,bodyPreview,body,webLink,conversationId,categories,flag';

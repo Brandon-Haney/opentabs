@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { emailAddressSchema, mapEmailAddress, type RawEmailAddress } from './schemas.js';
+import { emailAddressSchema, enumValue, mapEmailAddress, type RawEmailAddress } from './schemas.js';
 
 // ── Date / time ───────────────────────────────────────────────────────────
 
@@ -39,8 +39,8 @@ export const mapAttendee = (a: RawAttendee) => {
   return {
     name,
     address,
-    type: a.type ?? 'required',
-    response: a.status?.response ?? 'none',
+    type: enumValue(a.type, 'required'),
+    response: enumValue(a.status?.response, 'none'),
   };
 };
 
@@ -73,7 +73,7 @@ export interface RawCalendar {
 export const mapCalendar = (c: RawCalendar) => ({
   id: c.id ?? '',
   name: c.name ?? '',
-  color: c.color ?? 'auto',
+  color: enumValue(c.color, 'auto'),
   hex_color: c.hexColor ?? '',
   is_default: c.isDefaultCalendar ?? false,
   can_edit: c.canEdit ?? false,
@@ -164,29 +164,31 @@ export const mapEventSummary = (e: RawEvent) => ({
   location: e.location?.displayName ?? '',
   organizer: mapEmailAddress(e.organizer ?? {}),
   is_cancelled: e.isCancelled ?? false,
-  show_as: e.showAs ?? 'unknown',
+  show_as: enumValue(e.showAs, 'unknown'),
   is_online_meeting: e.isOnlineMeeting ?? false,
   online_meeting_url: e.onlineMeeting?.joinUrl ?? '',
-  type: e.type ?? 'singleInstance',
-  response_status: e.responseStatus?.response ?? 'none',
+  type: enumValue(e.type, 'singleInstance'),
+  response_status: enumValue(e.responseStatus?.response, 'none'),
   web_link: e.webLink ?? '',
   preview: e.bodyPreview ?? '',
 });
 
+const RECURRING_TYPES = new Set(['seriesMaster', 'occurrence', 'exception']);
+
 export const mapEventDetail = (e: RawEvent) => ({
   ...mapEventSummary(e),
-  body_type: e.body?.contentType ?? 'text',
+  body_type: e.body?.contentType?.toLowerCase() ?? 'text',
   body: e.body?.content ?? '',
   attendees: (e.attendees ?? []).map(mapAttendee),
-  importance: e.importance ?? 'normal',
-  sensitivity: e.sensitivity ?? 'normal',
+  importance: enumValue(e.importance, 'normal'),
+  sensitivity: enumValue(e.sensitivity, 'normal'),
   categories: e.categories ?? [],
   is_reminder_on: e.isReminderOn ?? false,
   reminder_minutes_before_start: e.reminderMinutesBeforeStart ?? 0,
   has_attachments: e.hasAttachments ?? false,
   response_requested: e.responseRequested ?? false,
   series_master_id: e.seriesMasterId ?? '',
-  is_recurring: Boolean(e.recurrence) || e.type === 'seriesMaster' || e.type === 'occurrence' || e.type === 'exception',
+  is_recurring: Boolean(e.recurrence) || RECURRING_TYPES.has(enumValue(e.type, 'singleInstance')),
   created_at: e.createdDateTime ?? '',
   last_modified_at: e.lastModifiedDateTime ?? '',
 });
@@ -277,7 +279,7 @@ export const mapSchedule = (s: RawSchedule) => ({
   schedule_id: s.scheduleId ?? '',
   availability_view: s.availabilityView ?? '',
   items: (s.scheduleItems ?? []).map(item => ({
-    status: item.status ?? 'unknown',
+    status: enumValue(item.status, 'unknown'),
     start: mapDateTimeZone(item.start),
     end: mapDateTimeZone(item.end),
     subject: item.subject ?? '',
@@ -288,7 +290,7 @@ export const mapSchedule = (s: RawSchedule) => ({
   })),
   working_hours: s.workingHours
     ? {
-        days_of_week: s.workingHours.daysOfWeek ?? [],
+        days_of_week: (s.workingHours.daysOfWeek ?? []).map(day => enumValue(day, day)),
         start_time: s.workingHours.startTime ?? '',
         end_time: s.workingHours.endTime ?? '',
         time_zone: s.workingHours.timeZone?.name ?? '',

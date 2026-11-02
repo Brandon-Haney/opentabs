@@ -15,6 +15,13 @@ import { extractMri, type RawMessage } from './tools/schemas.js';
 
 const REPLY_TYPE = 'http://schema.skype.com/Reply';
 
+/** The quote card at the start of a reply's content. */
+const OPENING_QUOTE_CARD = /^\s*<blockquote\b[^>]*schema\.skype\.com\/Reply[^>]*>[\s\S]*?<\/blockquote>/i;
+
+/** The quote card a reply opens with, as stored, or null when the message opens with none. */
+export const openingQuoteCard = (content: string): string | null =>
+  OPENING_QUOTE_CARD.exec(content)?.[0].trim() ?? null;
+
 /** The quote card that opens a reply to `message`. */
 export const replyQuoteHtml = (message: RawMessage): string => {
   const id = escapeHtml(message.id ?? '');

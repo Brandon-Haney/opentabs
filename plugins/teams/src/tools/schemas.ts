@@ -229,6 +229,9 @@ export interface RawMessage {
   properties?: {
     mentions?: string;
     files?: string;
+    links?: string;
+    cards?: string;
+    qtdMsgs?: string;
     meeting?: string;
     deletetime?: number | string;
     edittime?: number | string;

@@ -3,9 +3,17 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import * as teamsApi from '../teams-api.js';
 import { readMessages } from './read-messages.js';
 
-vi.mock('../teams-api.js', () => ({ chatApi: vi.fn() }));
+vi.mock('../teams-api.js', () => ({
+  chatApi: vi.fn(),
+  getDirectoryUsers: vi.fn(),
+  getGraphUserId: vi.fn(),
+  hasGraphToken: vi.fn(),
+  threadApi: vi.fn(),
+}));
 
 const chatApi = vi.mocked(teamsApi.chatApi);
+const getDirectoryUsers = vi.mocked(teamsApi.getDirectoryUsers);
+const hasGraphToken = vi.mocked(teamsApi.hasGraphToken);
 const context: ToolHandlerContext = { reportProgress: vi.fn() };
 const CHAT = '19:abc@thread.v2';
 
@@ -19,6 +27,9 @@ const message = (id: string, composetime: string, fields: Record<string, unknown
 
 beforeEach(() => {
   chatApi.mockReset();
+  getDirectoryUsers.mockReset();
+  hasGraphToken.mockReset();
+  hasGraphToken.mockReturnValue(false);
 });
 
 describe('read_messages', () => {
@@ -62,6 +73,83 @@ describe('read_messages', () => {
 
     expect(next_page_token).toBe('syncState=next&startTime=0');
     expect(chatApi.mock.calls[0]?.[1]?.query).toEqual({ syncState: 'this', startTime: '0', pageSize: 5 });
+  });
+
+  describe('channel messages', () => {
+    const PAT = 'bbbbbbbb-0000-0000-0000-000000000002';
+    const SAM = 'cccccccc-0000-0000-0000-000000000003';
+    const CHANNEL = '19:abc@thread.tacv2';
+    const contact = (id: string) => `https://teams.cloud.microsoft/api/chatsvc/amer/v1/users/ME/contacts/8:orgid:${id}`;
+
+    test('looks up the sender names the service leaves blank', async () => {
+      hasGraphToken.mockReturnValue(true);
+      getDirectoryUsers.mockResolvedValue([{ id: PAT, displayName: 'Pat Doe', mail: null, userPrincipalName: '' }]);
+      chatApi.mockResolvedValue({
+        messages: [
+          message('blank', '2026-10-30T16:45:27.000Z', { from: contact(PAT), imdisplayname: '' }),
+          message('unknown', '2026-10-30T16:44:27.000Z', { from: contact(SAM) }),
+          message('named', '2026-10-30T16:43:27.000Z', { from: contact(SAM), imdisplayname: 'Sam Roe' }),
+        ],
+      });
+      const { messages } = await readMessages.handle({ conversation_id: CHANNEL }, context);
+      expect(messages.map(m => m.display_name)).toEqual(['Pat Doe', '', 'Sam Roe']);
+      expect(getDirectoryUsers).toHaveBeenCalledWith([PAT, SAM]);
+    });
+
+    test('still reads the channel when names cannot be looked up', async () => {
+      chatApi.mockResolvedValue({ messages: [message('blank', '2026-10-30T16:45:27.000Z', { from: contact(PAT) })] });
+      const { messages } = await readMessages.handle({ conversation_id: CHANNEL }, context);
+      expect(messages[0]?.display_name).toBe('');
+      expect(messages[0]?.from).toBe(`8:orgid:${PAT}`);
+    });
+
+    test('marks a reply with the post it answers, and leaves a post unmarked', async () => {
+      chatApi.mockResolvedValue({
+        messages: [
+          message('reply', '2026-10-30T16:45:27.000Z', { rootMessageId: 'post' }),
+          message('post', '2026-10-30T16:44:27.000Z', { rootMessageId: 'post' }),
+          message('chat', '2026-10-30T16:43:27.000Z'),
+        ],
+      });
+      const { messages } = await readMessages.handle({ conversation_id: CHANNEL }, context);
+      expect(messages.map(m => m.reply_to_post_id)).toEqual(['post', null, null]);
+    });
+
+    test('shows which meeting a post announces', async () => {
+      const meeting = (type: string, info: Record<string, unknown>) =>
+        JSON.stringify({
+          '@type': `http://schema.skype.com/${type}`,
+          meetingtitle: 'Weekly review',
+          meetingJoinUrl: 'https://teams.microsoft.com/l/meetup-join/x',
+          scheduledmeetinginfo: {
+            startTime: '2026-11-02T14:00:00+00:00',
+            endTime: '2026-11-02T15:00:00+00:00',
+            ...info,
+          },
+        });
+      chatApi.mockResolvedValue({
+        messages: [
+          message('created', '2026-10-30T16:45:27.000Z', {
+            properties: { meeting: meeting('ScheduledMeetingCreated', { location: 'Room 4' }) },
+          }),
+          message('cancelled', '2026-10-30T16:44:27.000Z', {
+            properties: { meeting: meeting('ScheduledMeetingCancelled', {}) },
+          }),
+          message('broken', '2026-10-30T16:43:27.000Z', { properties: { meeting: 'not json' } }),
+        ],
+      });
+      const { messages } = await readMessages.handle({ conversation_id: CHANNEL }, context);
+      expect(messages[0]?.meeting).toEqual({
+        title: 'Weekly review',
+        start: '2026-11-02T14:00:00+00:00',
+        end: '2026-11-02T15:00:00+00:00',
+        location: 'Room 4',
+        is_cancelled: false,
+        join_url: 'https://teams.microsoft.com/l/meetup-join/x',
+      });
+      expect(messages[1]?.meeting?.is_cancelled).toBe(true);
+      expect(messages[2]?.meeting).toBeNull();
+    });
   });
 
   test('offers no token after a page with nothing in it', async () => {

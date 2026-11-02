@@ -127,6 +127,7 @@ let cachedEnterpriseChatServiceBase: string | null = null;
 interface RegionGtms {
   chatService?: string;
   chatServiceAfd?: string;
+  chatSvcAggAfd?: string;
   middleTier?: string;
 }
 
@@ -637,6 +638,68 @@ export const middleTierApi = async <T>(
 };
 
 // ---------------------------------------------------------------------------
+// Chat aggregator (teams and channels)
+// ---------------------------------------------------------------------------
+
+/** A token this close to expiry could lapse in flight, so it counts as expired. */
+const CHAT_AGGREGATOR_TOKEN_MARGIN_SEC = 60;
+
+/**
+ * The chat aggregator token in the MSAL cache, read when asked rather than
+ * captured at page load: Teams renews its tokens in this cache while it runs,
+ * and any Teams document on the origin may be the one that does. Null when the
+ * cache holds none, as when MSAL encrypts it.
+ */
+const readChatAggregatorToken = (): CapturedToken | null => {
+  const cached = findLocalStorageEntry(key => /accesstoken.*chatsvcagg/i.test(key));
+  if (!cached) return null;
+  try {
+    const entry = JSON.parse(cached.value) as { secret?: unknown; expiresOn?: unknown };
+    const expiresOn = Number(entry.expiresOn);
+    return typeof entry.secret === 'string' && entry.secret !== '' && Number.isFinite(expiresOn)
+      ? { secret: entry.secret, expiresOn }
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * GET from the chat aggregator, the service behind the Teams sidebar, with its
+ * own MSAL access token as a `Bearer`. Reads are replayed on transient failures.
+ * The aggregator serves work and school accounts only.
+ */
+export const chatAggregatorApi = async <T>(
+  endpoint: string,
+  query: Record<string, string | number | boolean | undefined> = {},
+): Promise<T> => {
+  if (detectEnvironment() === 'consumer') {
+    throw ToolError.validation(
+      'Teams and channels are available on work or school Teams (teams.microsoft.com or teams.cloud.microsoft) only.',
+    );
+  }
+  const base = readRegionGtms()?.chatSvcAggAfd;
+  if (!base) {
+    throw ToolError.internal(
+      'Teams channel service URL not found in the region discovery data. Reload the Teams tab so the page stores it again.',
+    );
+  }
+  const token = readChatAggregatorToken();
+  if (!token || token.expiresOn <= Date.now() / 1000 + CHAT_AGGREGATOR_TOKEN_MARGIN_SEC) {
+    throw ToolError.auth(
+      'Teams holds no current token for its channel service. Teams renews it while it runs, so try again shortly; a Teams page load also renews it.',
+    );
+  }
+  const request: TeamsRequestOptions = { label: 'Teams chat aggregator GET' };
+  const response = await teamsFetch(
+    appendQuery(`${base}${endpoint}`, query),
+    { method: 'GET', headers: { Authorization: `Bearer ${token.secret}` } },
+    request,
+  );
+  return handleApiResponse<T>(response, request.label);
+};
+
+// ---------------------------------------------------------------------------
 // Substrate Search API
 // ---------------------------------------------------------------------------
 
@@ -1143,6 +1206,7 @@ export const TEAMS_TOKEN_SOURCES = [
   'skypeJwtCache',
   'substrateToken',
   'graphToken',
+  'chatSvcAggToken',
   'signInName',
 ] as const;
 
@@ -1202,6 +1266,13 @@ const describeCapturedToken = (source: TeamsTokenSourceName, slot: string): Team
   return describeSecret(source, captured.secret, captured.expiresOn * 1000);
 };
 
+const describeChatAggregatorToken = (): TeamsTokenSource => {
+  const token = readChatAggregatorToken();
+  return token
+    ? describeSecret('chatSvcAggToken', token.secret, token.expiresOn * 1000)
+    : absentTokenSource('chatSvcAggToken');
+};
+
 /**
  * Presence, expiry, audience and fingerprint of every credential source the
  * adapter reads. Never returns a secret: the fingerprint is a four-hex-digit
@@ -1216,6 +1287,7 @@ export const describeTokenSources = (): TeamsTokenSource[] => [
     : absentTokenSource('skypeJwtCache'),
   describeCapturedToken('substrateToken', 'substrateToken'),
   describeCapturedToken('graphToken', 'graphToken'),
+  describeChatAggregatorToken(),
   { ...absentTokenSource('signInName'), present: findSignInName() !== '' },
 ];
 

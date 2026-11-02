@@ -7,12 +7,16 @@ import { extractMessageImages } from '../ams-image.js';
 
 export const conversationSchema = z.object({
   id: z.string().describe('Conversation/thread ID'),
-  topic: z.string().describe('Chat name/topic (empty for unnamed 1:1 chats)'),
+  topic: z
+    .string()
+    .describe(
+      'Chat or channel name (empty for unnamed 1:1 chats). A team\'s General channel carries the team\'s name, with thread_type "space".',
+    ),
   participants: z
     .array(z.string())
     .nullable()
     .describe(
-      'The other people in a chat with no topic, by name. Null when the chat has a topic or names could not be looked up.',
+      'The other people in a chat with no topic, by name. Null for a chat with a topic, for a channel, or when names could not be looked up.',
     ),
   type: z.string().describe('Conversation type (e.g., "Conversation")'),
   thread_type: z.string().describe('Thread type (e.g., "chat", "meeting", "space")'),
@@ -34,9 +38,18 @@ interface RawConversation {
   version?: number;
 }
 
+const CHANNEL_THREAD_TYPES = new Set(['space', 'topic']);
+
+/** Whether a thread type is a channel: `space` is a team's General channel, `topic` any other channel. */
+export const isChannelThreadType = (threadType: string): boolean => CHANNEL_THREAD_TYPES.has(threadType);
+
+/** A thread's name. A chat or channel holds it in `topic`; a team's General channel only in `spaceThreadTopic`. */
+export const threadName = (properties: Record<string, unknown> | undefined): string =>
+  String(properties?.topic || properties?.spaceThreadTopic || '');
+
 export const mapConversation = (c: RawConversation): Conversation => ({
   id: c.id ?? '',
-  topic: String(c.threadProperties?.topic ?? ''),
+  topic: threadName(c.threadProperties),
   participants: null,
   type: c.type ?? '',
   thread_type: String(c.threadProperties?.threadType ?? ''),
@@ -77,6 +90,46 @@ const imageSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Meeting post schema
+// ---------------------------------------------------------------------------
+
+const meetingSchema = z.object({
+  title: z.string().describe('Meeting title'),
+  start: z.string().describe('Start time (ISO 8601)'),
+  end: z.string().describe('End time (ISO 8601)'),
+  location: z.string().describe('Location (empty if none)'),
+  is_cancelled: z.boolean().describe('Whether this post announces that the meeting was cancelled'),
+  join_url: z.string().describe('Teams meeting join URL (empty if none)'),
+});
+
+interface RawMeeting {
+  '@type'?: string;
+  meetingtitle?: string;
+  meetingJoinUrl?: string;
+  scheduledmeetinginfo?: { startTime?: string; endTime?: string; location?: string; isCancelled?: boolean };
+}
+
+/** The meeting a channel post announces, from the JSON string in properties.meeting; null when there is none. */
+const parseMeeting = (raw: string | undefined): z.infer<typeof meetingSchema> | null => {
+  if (!raw) return null;
+  let meeting: RawMeeting;
+  try {
+    meeting = JSON.parse(raw) as RawMeeting;
+  } catch {
+    return null;
+  }
+  const info = meeting.scheduledmeetinginfo ?? {};
+  return {
+    title: meeting.meetingtitle ?? '',
+    start: info.startTime ?? '',
+    end: info.endTime ?? '',
+    location: info.location ?? '',
+    is_cancelled: info.isCancelled === true || meeting['@type'] === 'http://schema.skype.com/ScheduledMeetingCancelled',
+    join_url: meeting.meetingJoinUrl ?? '',
+  };
+};
+
+// ---------------------------------------------------------------------------
 // Message schema
 // ---------------------------------------------------------------------------
 
@@ -91,6 +144,11 @@ export const messageSchema = z.object({
   display_name: z.string().describe('Sender display name'),
   compose_time: z.string().describe('When the message was composed (ISO 8601)'),
   conversation_id: z.string().describe('ID of the conversation this message belongs to'),
+  reply_to_post_id: z
+    .string()
+    .nullable()
+    .describe('In a channel, the id of the post this message replies to; null for a post, and in a chat'),
+  meeting: meetingSchema.nullable().describe('The meeting this channel post announces; null when it announces none'),
   mentions: z.array(mentionSchema).describe('Users mentioned in this message'),
   files: z.array(fileSchema).describe('Files attached to this message'),
   images: z
@@ -121,9 +179,11 @@ export interface RawMessage {
   imdisplayname?: string;
   composetime?: string;
   conversationid?: string;
+  rootMessageId?: string;
   properties?: {
     mentions?: string;
     files?: string;
+    meeting?: string;
     deletetime?: number | string;
     edittime?: number | string;
     emotions?: Array<{ key?: string }>;
@@ -188,6 +248,8 @@ export const mapMessage = (m: RawMessage): Message => ({
   display_name: m.imdisplayname ?? '',
   compose_time: m.composetime ?? '',
   conversation_id: m.conversationid ?? '',
+  reply_to_post_id: m.rootMessageId && m.rootMessageId !== m.id ? m.rootMessageId : null,
+  meeting: parseMeeting(m.properties?.meeting),
   mentions: parseMentions(m.properties?.mentions),
   files: parseFiles(m.properties?.files),
   images: extractMessageImages(m.content ?? '').map(image => ({ object_id: image.objectId, url: image.fullSizeUrl })),

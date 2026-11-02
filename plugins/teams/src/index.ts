@@ -10,6 +10,7 @@ import { editMessage } from './tools/edit-message.js';
 import { getCalendarView } from './tools/get-calendar-view.js';
 import { getConversationDetails } from './tools/get-conversation-details.js';
 import { getCurrentUser } from './tools/get-current-user.js';
+import { listChannels } from './tools/list-channels.js';
 import { listConversations } from './tools/list-conversations.js';
 import { readMessages } from './tools/read-messages.js';
 import { removeMember } from './tools/remove-member.js';
@@ -29,6 +30,8 @@ class TeamsPlugin extends OpenTabsPlugin {
     getConversationDetails,
     createChat,
     setChannelTopic,
+    // Channels
+    listChannels,
     // Messages
     sendMessage,
     readMessages,

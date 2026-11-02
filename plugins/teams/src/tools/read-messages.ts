@@ -1,17 +1,31 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { nextPageToken, pageQuery } from '../chat-paging.js';
+import { directoryIdOfMri, lookUpDisplayNames } from '../participants.js';
 import { chatApi } from '../teams-api.js';
-import { mapMessage, messageSchema } from './schemas.js';
+import { type Message, mapMessage, messageSchema } from './schemas.js';
 
 /** Compose time in milliseconds. A message's position follows when it was written, not when it was last edited. */
 const composedAt = (composeTime: string): number => Date.parse(composeTime) || 0;
+
+/** Fills in sender names the service left blank, as it does on every channel message and on some chat messages. */
+const withSenderNames = async (messages: Message[]): Promise<Message[]> => {
+  const unnamed = messages.filter(m => m.display_name === '').flatMap(m => directoryIdOfMri(m.from) ?? []);
+  if (unnamed.length === 0) return messages;
+  const names = await lookUpDisplayNames(unnamed);
+  if (!names) return messages;
+  return messages.map(m => {
+    if (m.display_name !== '') return m;
+    const id = directoryIdOfMri(m.from);
+    return { ...m, display_name: (id && names.get(id.toLowerCase())) || '' };
+  });
+};
 
 export const readMessages = defineTool({
   name: 'read_messages',
   displayName: 'Read Messages',
   description:
-    'Read messages from a chat conversation, newest first by when each was written. Use the conversation ID from list_conversations. When `next_page_token` is returned, older messages exist: pass it back to read them. A deleted message appears with `deleted` true and no content, and an edited one carries `edited_at`.',
+    'Read messages from a chat conversation, newest first by when each was written. Use the conversation ID from list_conversations. When `next_page_token` is returned, older messages exist: pass it back to read them. A deleted message appears with `deleted` true and no content, and an edited one carries `edited_at`. In a channel, a reply carries `reply_to_post_id`, and a post announcing a meeting carries `meeting`.',
   summary: 'Read messages from a chat',
   icon: 'message-square',
   group: 'Messages',
@@ -50,6 +64,9 @@ export const readMessages = defineTool({
       .map(m => mapMessage(m as Record<string, unknown>))
       .sort((a, b) => composedAt(b.compose_time) - composedAt(a.compose_time));
 
-    return { messages, next_page_token: nextPageToken(data._metadata?.backwardLink, raw.length) };
+    return {
+      messages: await withSenderNames(messages),
+      next_page_token: nextPageToken(data._metadata?.backwardLink, raw.length),
+    };
   },
 });

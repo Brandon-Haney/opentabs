@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, type MockInstance, test, vi } 
 import type { ProbeResult } from './diagnostics.js';
 import {
   buildMessageSearchBody,
+  chatAggregatorApi,
   chatApi,
   clearCaches,
   createChatFileLink,
@@ -47,6 +48,7 @@ const SUBSTRATE_TOKEN = jwt(
   'substrate-secret',
 );
 const GRAPH_TOKEN = jwt({ aud: 'https://graph.microsoft.com', oid: 'user-oid-1' }, 'graph-secret');
+const CHAT_SVC_AGG_TOKEN = jwt({ aud: 'https://chatsvcagg.teams.microsoft.com' }, 'chat-aggregator-secret');
 const SIGN_IN_NAME = 'someone@contoso.com';
 
 type PreScriptSlots = Record<string, unknown>;
@@ -54,6 +56,26 @@ type PreScriptSlots = Record<string, unknown>;
 /** Installs the pre-script namespace the adapter reads its captured credentials from. */
 const stubPreScript = (slots: PreScriptSlots): void => {
   vi.stubGlobal('__openTabs', { preScript: { teams: slots } });
+};
+
+const CHAT_AGGREGATOR_KEY =
+  'uid.tid-login.windows.net-accesstoken-5e3ce6c0-tid-https://chatsvcagg.teams.microsoft.com/user_impersonation';
+
+const chatAggregatorEntry = (secret: string, ttlSec: number): string =>
+  JSON.stringify({ credentialType: 'AccessToken', secret, expiresOn: String(nowSec() + ttlSec) });
+
+/** Gives the adapter a page whose localStorage holds `entries`, as the MSAL cache and region discovery do. */
+const stubPageStorage = (entries: Record<string, string>): Map<string, string> => {
+  const store = new Map(Object.entries(entries));
+  const localStorage = {
+    get length() {
+      return store.size;
+    },
+    key: (index: number) => [...store.keys()][index] ?? null,
+    getItem: (key: string) => store.get(key) ?? null,
+  };
+  vi.stubGlobal('window', { location: { hostname: 'teams.cloud.microsoft' }, localStorage });
+  return store;
 };
 
 const capturedToken = (secret: string, ttlSec = 3600): { secret: string; expiresOn: number } => ({
@@ -729,6 +751,60 @@ describe('buildMessageSearchBody', () => {
   });
 });
 
+describe('chatAggregatorApi', () => {
+  const REGION_KEY = 'tmp.auth.v1.uid.Discover.SKYPE-TOKEN';
+  const REGION = JSON.stringify({
+    item: { regionGtms: { chatSvcAggAfd: 'https://teams.cloud.microsoft/api/csa/amer' } },
+  });
+  const authorizationOfCall = (index: number): unknown =>
+    new Headers(fetchMock.mock.calls[index]?.[1]?.headers).get('Authorization');
+
+  test('calls the regional service with the token Teams holds', async () => {
+    stubPageStorage({ [REGION_KEY]: REGION, [CHAT_AGGREGATOR_KEY]: chatAggregatorEntry('first-token', 3600) });
+    fetchMock.mockResolvedValueOnce(json({ teams: [] }));
+
+    await settle(chatAggregatorApi('/api/v2/teams/users/me', { isPrefetch: false }));
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      'https://teams.cloud.microsoft/api/csa/amer/api/v2/teams/users/me?isPrefetch=false',
+    );
+    expect(authorizationOfCall(0)).toBe('Bearer first-token');
+  });
+
+  test('uses a token Teams renews while the page stays open, with no reload', async () => {
+    const store = stubPageStorage({
+      [REGION_KEY]: REGION,
+      [CHAT_AGGREGATOR_KEY]: chatAggregatorEntry('old-token', 3600),
+    });
+    fetchMock.mockResolvedValue(json({ teams: [] }));
+    await settle(chatAggregatorApi('/api/v2/teams/users/me'));
+
+    store.set(CHAT_AGGREGATOR_KEY, chatAggregatorEntry('renewed-token', 5000));
+    fetchMock.mockResolvedValue(json({ teams: [] }));
+    await settle(chatAggregatorApi('/api/v2/teams/users/me'));
+
+    expect(authorizationOfCall(1)).toBe('Bearer renewed-token');
+  });
+
+  test.each([
+    ['expired', -10],
+    ['about to expire', 30],
+  ])('refuses a token that is %s, without calling the service', async (_label, ttlSec) => {
+    stubPageStorage({ [REGION_KEY]: REGION, [CHAT_AGGREGATOR_KEY]: chatAggregatorEntry('stale-token', ttlSec) });
+
+    const error = await settleError(chatAggregatorApi('/api/v2/teams/users/me'));
+
+    expect(error.category).toBe('auth');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('refuses when the cache holds no readable token', async () => {
+    stubPageStorage({ [REGION_KEY]: REGION, [CHAT_AGGREGATOR_KEY]: 'encrypted-entry' });
+    const error = await settleError(chatAggregatorApi('/api/v2/teams/users/me'));
+    expect(error.category).toBe('auth');
+  });
+});
+
 describe('describeTokenSources', () => {
   test('reports every source in order without exposing any secret', async () => {
     stubPreScript({
@@ -739,6 +815,7 @@ describe('describeTokenSources', () => {
       graphToken: capturedToken(GRAPH_TOKEN),
       signInName: SIGN_IN_NAME,
     });
+    stubPageStorage({ [CHAT_AGGREGATOR_KEY]: chatAggregatorEntry(CHAT_SVC_AGG_TOKEN, 3600) });
     fetchMock.mockResolvedValueOnce(json({}));
     await settle(chatApi('/v1/users/ME/conversations'));
 
@@ -746,7 +823,15 @@ describe('describeTokenSources', () => {
     const serialized = JSON.stringify(sources);
 
     expect(sources.map(s => s.source)).toEqual([...TEAMS_TOKEN_SOURCES]);
-    for (const secret of [MSAL_SKYPE_TOKEN, LOKI_TOKEN, SKYPE_JWT, SUBSTRATE_TOKEN, GRAPH_TOKEN, SIGN_IN_NAME]) {
+    for (const secret of [
+      MSAL_SKYPE_TOKEN,
+      LOKI_TOKEN,
+      SKYPE_JWT,
+      SUBSTRATE_TOKEN,
+      GRAPH_TOKEN,
+      CHAT_SVC_AGG_TOKEN,
+      SIGN_IN_NAME,
+    ]) {
       expect(serialized).not.toContain(secret);
     }
     expect(serialized).not.toContain('secret');

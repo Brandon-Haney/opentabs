@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../outlook-api.js';
+import { calendarTimeZone, timeZoneHeader } from '../time-zone.js';
 import { EVENT_DETAIL_FIELDS, eventDetailSchema, mapEventDetail, type RawEvent } from './calendar-schemas.js';
 
 export const getEvent = defineTool({
@@ -16,7 +17,9 @@ export const getEvent = defineTool({
     time_zone: z
       .string()
       .optional()
-      .describe('Time zone to return start/end times in (e.g. "Eastern Standard Time"). Defaults to UTC.'),
+      .describe(
+        'Time zone to return start/end times in (e.g. "Eastern Standard Time"). Defaults to the mailbox time zone (Outlook\'s calendar setting).',
+      ),
   }),
   output: z.object({
     event: eventDetailSchema.describe('The event'),
@@ -26,7 +29,7 @@ export const getEvent = defineTool({
       `/me/events/${encodeURIComponent(params.event_id)}`,
       {
         query: { $select: EVENT_DETAIL_FIELDS },
-        headers: params.time_zone ? { Prefer: `outlook.timezone="${params.time_zone}"` } : undefined,
+        headers: timeZoneHeader(await calendarTimeZone(params.time_zone)),
       },
       'calendar',
     );

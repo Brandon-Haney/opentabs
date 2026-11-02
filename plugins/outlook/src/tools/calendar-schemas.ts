@@ -195,11 +195,8 @@ export const mapEventDetail = (e: RawEvent) => ({
 
 // ── Request-body builders (create / update) ─────────────────────────────────
 
-/** Build a Graph/REST dateTimeTimeZone object. Times default to UTC when no zone given. */
-export const buildDateTime = (dateTime: string, timeZone?: string) => ({
-  dateTime,
-  timeZone: timeZone ?? 'UTC',
-});
+/** Build a Graph/REST dateTimeTimeZone object. */
+export const buildDateTime = (dateTime: string, timeZone: string) => ({ dateTime, timeZone });
 
 /** Attendee shape accepted by create_event / update_event input. */
 export const attendeeInputSchema = z.object({

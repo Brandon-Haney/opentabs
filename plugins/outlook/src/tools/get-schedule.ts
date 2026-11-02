@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { api } from '../outlook-api.js';
+import { calendarTimeZone, timeZoneHeader } from '../time-zone.js';
 import { mapSchedule, type RawSchedule, scheduleSchema } from './calendar-schemas.js';
 
 export const getSchedule = defineTool({
@@ -24,7 +25,9 @@ export const getSchedule = defineTool({
     time_zone: z
       .string()
       .optional()
-      .describe('Time zone for the window and returned times (e.g. "Eastern Standard Time"). Defaults to UTC.'),
+      .describe(
+        'Time zone for the window and returned times (e.g. "Eastern Standard Time"). Defaults to the mailbox time zone (Outlook\'s calendar setting).',
+      ),
     interval_minutes: z
       .number()
       .int()
@@ -37,7 +40,7 @@ export const getSchedule = defineTool({
     schedules: z.array(scheduleSchema).describe('Per-person availability'),
   }),
   handle: async params => {
-    const tz = params.time_zone ?? 'UTC';
+    const tz = await calendarTimeZone(params.time_zone);
     const data = await api<{ value: RawSchedule[] }>(
       '/me/calendar/getSchedule',
       {
@@ -48,7 +51,7 @@ export const getSchedule = defineTool({
           endTime: { dateTime: params.end, timeZone: tz },
           availabilityViewInterval: params.interval_minutes ?? 30,
         },
-        headers: { Prefer: `outlook.timezone="${tz}"` },
+        headers: timeZoneHeader(tz),
         // getSchedule is a read expressed as an OData action, so replaying it is safe.
         retryNonIdempotent: true,
       },

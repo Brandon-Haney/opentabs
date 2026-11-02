@@ -17,12 +17,16 @@ const DETAILS =
 const FONT =
   '<div style="font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: #000000">';
 
-/** Serve the stored event to GETs and echo a write's body back as the saved event. */
+/** Serve the mailbox time zone and the stored event to GETs, and echo a write's body back as the saved event. */
 const serve = (stored: Record<string, unknown>) => {
-  api.mockImplementation(async (_endpoint, options) =>
-    options?.method ? { id: EVENT_ID, ...(options.body as Record<string, unknown>) } : stored,
-  );
+  api.mockImplementation(async (endpoint, options) => {
+    if (endpoint === '/me/mailboxSettings') return { timeZone: 'Central Standard Time' };
+    return options?.method ? { id: EVENT_ID, ...(options.body as Record<string, unknown>) } : stored;
+  });
 };
+
+const eventReads = () =>
+  api.mock.calls.filter(([endpoint, options]) => endpoint.startsWith('/me/events/') && !options?.method);
 
 const onlineMeeting = (body: string) => ({
   isOnlineMeeting: true,
@@ -94,7 +98,7 @@ describe('update_event', () => {
 
     await updateEvent.handle({ event_id: EVENT_ID, body: 'New agenda' });
 
-    expect(api.mock.calls[0]?.[1]?.query).toEqual({ $select: 'isOnlineMeeting,onlineMeeting,body' });
+    expect(eventReads()[0]?.[1]?.query).toEqual({ $select: 'isOnlineMeeting,onlineMeeting,body' });
     expect(writtenBody()).toEqual({ contentType: 'HTML', content: `${FONT}New agenda</div><br>${DETAILS}` });
   });
 
@@ -120,7 +124,7 @@ describe('update_event', () => {
 
     await updateEvent.handle({ event_id: EVENT_ID, body: 'New agenda', is_online_meeting: false });
 
-    expect(api).toHaveBeenCalledTimes(1);
+    expect(eventReads()).toHaveLength(0);
     expect(writtenBody()?.content).toBe(`${FONT}New agenda</div>`);
   });
 

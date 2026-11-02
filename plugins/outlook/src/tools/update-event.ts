@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { composeToolBody } from '../compose-defaults.js';
 import { api } from '../outlook-api.js';
 import { extractTeamsJoinDetails, linksTo } from '../teams-join-details.js';
+import { calendarTimeZone, timeZoneHeader } from '../time-zone.js';
 import {
   attendeeInputSchema,
   buildAttendees,
@@ -61,7 +62,9 @@ export const updateEvent = defineTool({
     time_zone: z
       .string()
       .optional()
-      .describe('Time zone for start/end (e.g. "Eastern Standard Time"). Defaults to UTC.'),
+      .describe(
+        'Time zone for start/end and the returned event (e.g. "Eastern Standard Time"). Defaults to the mailbox time zone (Outlook\'s calendar setting).',
+      ),
     body: z
       .string()
       .optional()
@@ -87,10 +90,11 @@ export const updateEvent = defineTool({
     event: eventDetailSchema.describe('The updated event'),
   }),
   handle: async params => {
+    const zone = await calendarTimeZone(params.time_zone);
     const body: Record<string, unknown> = {};
     if (params.subject !== undefined) body.subject = params.subject;
-    if (params.start !== undefined) body.start = buildDateTime(params.start, params.time_zone);
-    if (params.end !== undefined) body.end = buildDateTime(params.end, params.time_zone);
+    if (params.start !== undefined) body.start = buildDateTime(params.start, zone);
+    if (params.end !== undefined) body.end = buildDateTime(params.end, zone);
     if (params.body !== undefined) {
       const composed = await composeToolBody(
         { body: params.body, body_type: params.body_type, include_signature: params.include_signature ?? false },
@@ -122,7 +126,7 @@ export const updateEvent = defineTool({
 
     const updated = await api<RawEvent>(
       `/me/events/${encodeURIComponent(params.event_id)}`,
-      { method: 'PATCH', body, query: { $select: EVENT_DETAIL_FIELDS } },
+      { method: 'PATCH', body, query: { $select: EVENT_DETAIL_FIELDS }, headers: timeZoneHeader(zone) },
       'calendar-write',
     );
     return { event: mapEventDetail(updated) };

@@ -2,6 +2,7 @@ import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { composeToolBody } from '../compose-defaults.js';
 import { api } from '../outlook-api.js';
+import { calendarTimeZone, timeZoneHeader } from '../time-zone.js';
 import {
   attendeeInputSchema,
   buildAttendees,
@@ -16,7 +17,7 @@ export const createEvent = defineTool({
   name: 'create_event',
   displayName: 'Create Event',
   description:
-    'Create a calendar event or meeting. Adding attendees sends them the invitation at once. The body is written as an Outlook invitation would be: plain text becomes HTML in the user\'s default compose font (pass body_type "html" to supply your own formatting), and the user\'s signature is added only when include_signature is true. Set is_online_meeting to add a Teams meeting; Exchange adds its join details below the body. Times are interpreted as UTC unless a time_zone is supplied.',
+    "Create a calendar event or meeting. Adding attendees sends them the invitation at once. The body is written as an Outlook invitation would be: plain text becomes HTML in the user's default compose font (pass body_type \"html\" to supply your own formatting), and the user's signature is added only when include_signature is true. Set is_online_meeting to add a Teams meeting; Exchange adds its join details below the body. Times are read in time_zone, which defaults to the mailbox's time zone, and the event comes back in the same zone.",
   summary: 'Create a calendar event',
   icon: 'calendar-plus',
   group: 'Calendar',
@@ -31,7 +32,9 @@ export const createEvent = defineTool({
     time_zone: z
       .string()
       .optional()
-      .describe('Time zone for start/end (e.g. "Eastern Standard Time"). Defaults to UTC.'),
+      .describe(
+        'Time zone for start/end and the returned event (e.g. "Eastern Standard Time"). Defaults to the mailbox time zone (Outlook\'s calendar setting).',
+      ),
     body: z.string().optional().describe('Event body/description'),
     body_type: z.enum(['text', 'html']).optional().describe('Body content type (default: text)'),
     include_signature: z
@@ -54,10 +57,11 @@ export const createEvent = defineTool({
     event: eventDetailSchema.describe('The created event'),
   }),
   handle: async params => {
+    const zone = await calendarTimeZone(params.time_zone);
     const body: Record<string, unknown> = {
       subject: params.subject,
-      start: buildDateTime(params.start, params.time_zone),
-      end: buildDateTime(params.end, params.time_zone),
+      start: buildDateTime(params.start, zone),
+      end: buildDateTime(params.end, zone),
     };
     if (params.body !== undefined) {
       body.body = await composeToolBody(
@@ -81,7 +85,7 @@ export const createEvent = defineTool({
       : '/me/events';
     const created = await api<RawEvent>(
       endpoint,
-      { method: 'POST', body, query: { $select: EVENT_DETAIL_FIELDS } },
+      { method: 'POST', body, query: { $select: EVENT_DETAIL_FIELDS }, headers: timeZoneHeader(zone) },
       'calendar-write',
     );
     return { event: mapEventDetail(created) };

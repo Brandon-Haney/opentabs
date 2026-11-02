@@ -100,31 +100,6 @@ async function decompressDeflateRaw(data: Uint8Array): Promise<Uint8Array> {
   return result;
 }
 
-/**
- * Extract plain text paragraphs from OOXML document.xml content.
- * Returns an array of paragraph strings.
- */
-export function extractTextFromDocumentXml(xml: string): string[] {
-  const paraBlocks = xml.split(/<\/w:p>/);
-  const paragraphs: string[] = [];
-
-  for (const block of paraBlocks) {
-    const texts: string[] = [];
-    const regex = /<w:t[^>]*>([\s\S]*?)<\/w:t>/g;
-    let match: RegExpExecArray | null = regex.exec(block);
-    while (match !== null) {
-      texts.push(match[1] ?? '');
-      match = regex.exec(block);
-    }
-    const paraText = texts.join('');
-    if (paraText) {
-      paragraphs.push(paraText);
-    }
-  }
-
-  return paragraphs;
-}
-
 /** A raw entry extracted from a ZIP archive. Binary data is preserved as-is. */
 export interface ZipEntry {
   name: string;

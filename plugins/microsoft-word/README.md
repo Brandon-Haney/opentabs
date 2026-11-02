@@ -40,7 +40,7 @@ npm install -g @opentabs-dev/opentabs-plugin-microsoft-word
 | Tool | Description | Type |
 |---|---|---|
 | `get_active_document` | Get the currently open document | Read |
-| `get_document_text` | Extract text from a Word document | Read |
+| `get_document_text` | Read a Word document with strikethrough, tracked changes and comments | Read |
 | `create_document` | Create a new Word document with text | Write |
 | `update_document` | Replace all text in a Word document | Write |
 | `append_to_document` | Append paragraphs to a Word document | Write |

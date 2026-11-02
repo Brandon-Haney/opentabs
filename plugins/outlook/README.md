@@ -65,8 +65,8 @@ npm install -g @opentabs-dev/opentabs-plugin-outlook
 | `get_calendar_view` | View events in a date range (expands recurrences) | Read |
 | `get_event` | Get full event details | Read |
 | `get_schedule` | View others' free/busy availability | Read |
-| `create_event` | Create an event or meeting | Write |
-| `update_event` | Update an event | Write |
+| `create_event` | Create an event or meeting, written in your default compose font | Write |
+| `update_event` | Update an event, keeping a Teams meeting's join details | Write |
 | `delete_event` | Delete or cancel an event | Write |
 | `respond_to_event` | Accept, decline, or tentatively accept an invitation | Write |
 

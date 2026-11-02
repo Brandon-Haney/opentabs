@@ -1,5 +1,6 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
+import { composeToolBody } from '../compose-defaults.js';
 import { api } from '../outlook-api.js';
 import {
   attendeeInputSchema,
@@ -15,7 +16,7 @@ export const createEvent = defineTool({
   name: 'create_event',
   displayName: 'Create Event',
   description:
-    'Create a calendar event or meeting. Add attendees to send invitations. Set is_online_meeting to attach a Teams meeting link. Times are interpreted as UTC unless a time_zone is supplied.',
+    'Create a calendar event or meeting. Adding attendees sends them the invitation at once. The body is written as an Outlook invitation would be: plain text becomes HTML in the user\'s default compose font (pass body_type "html" to supply your own formatting), and the user\'s signature is added only when include_signature is true. Set is_online_meeting to add a Teams meeting; Exchange adds its join details below the body. Times are interpreted as UTC unless a time_zone is supplied.',
   summary: 'Create a calendar event',
   icon: 'calendar-plus',
   group: 'Calendar',
@@ -33,6 +34,10 @@ export const createEvent = defineTool({
       .describe('Time zone for start/end (e.g. "Eastern Standard Time"). Defaults to UTC.'),
     body: z.string().optional().describe('Event body/description'),
     body_type: z.enum(['text', 'html']).optional().describe('Body content type (default: text)'),
+    include_signature: z
+      .boolean()
+      .optional()
+      .describe("Append the user's Outlook signature to the body (default: false)"),
     location: z.string().optional().describe('Location display name'),
     attendees: z.array(attendeeInputSchema).optional().describe('Attendees to invite'),
     is_all_day: z.boolean().optional().describe('All-day event. When true, start/end must be at midnight.'),
@@ -55,7 +60,10 @@ export const createEvent = defineTool({
       end: buildDateTime(params.end, params.time_zone),
     };
     if (params.body !== undefined) {
-      body.body = { contentType: params.body_type === 'html' ? 'HTML' : 'Text', content: params.body };
+      body.body = await composeToolBody(
+        { body: params.body, body_type: params.body_type, include_signature: params.include_signature ?? false },
+        'new',
+      );
     }
     if (params.location !== undefined) body.location = { displayName: params.location };
     if (params.attendees) body.attendees = buildAttendees(params.attendees);

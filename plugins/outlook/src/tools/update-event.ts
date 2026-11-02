@@ -1,6 +1,8 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
+import { composeToolBody } from '../compose-defaults.js';
 import { api } from '../outlook-api.js';
+import { extractTeamsJoinDetails, linksTo } from '../teams-join-details.js';
 import {
   attendeeInputSchema,
   buildAttendees,
@@ -11,11 +13,37 @@ import {
   type RawEvent,
 } from './calendar-schemas.js';
 
+/**
+ * Carry an online meeting's stored Teams join details over below a new body, so
+ * the body update keeps the meeting and its join link. A body that already links
+ * to the meeting, such as a full body read with get_event and edited, is kept as
+ * it is.
+ */
+const withTeamsJoinDetails = async (eventId: string, content: string): Promise<string> => {
+  const stored = await api<RawEvent>(
+    `/me/events/${encodeURIComponent(eventId)}`,
+    { query: { $select: 'isOnlineMeeting,onlineMeeting,body' } },
+    'calendar',
+  );
+  if (!stored.isOnlineMeeting) return content;
+  const joinUrl = stored.onlineMeeting?.joinUrl;
+  if (joinUrl && linksTo(content, joinUrl)) return content;
+  const details = extractTeamsJoinDetails(stored.body?.content ?? '');
+  if (!details) {
+    throw ToolError.validation(
+      'This event is a Teams meeting, but its join details could not be found in its body, and a body without them ' +
+        'would remove the Teams meeting. Read the body with get_event and pass it back in full with body_type "html", ' +
+        'changing only the description above the join details.',
+    );
+  }
+  return `${content}<br>${details}`;
+};
+
 export const updateEvent = defineTool({
   name: 'update_event',
   displayName: 'Update Event',
   description:
-    'Update properties of an existing calendar event. Only the fields you provide are changed. Updating the attendees of a meeting you organize sends updated invitations. To change start/end times, provide both start and end.',
+    "Update properties of an existing calendar event. Only the fields you provide are changed. Updating the attendees of a meeting you organize sends updated invitations. To change start/end times, provide both start and end. A new body is written as create_event writes one, in the user's default compose font. It replaces the description only: the Teams join details of an online meeting stay below it, because a body without them would remove the Teams meeting.",
   summary: 'Update a calendar event',
   icon: 'pencil',
   group: 'Calendar',
@@ -34,8 +62,15 @@ export const updateEvent = defineTool({
       .string()
       .optional()
       .describe('Time zone for start/end (e.g. "Eastern Standard Time"). Defaults to UTC.'),
-    body: z.string().optional().describe('New event body/description'),
+    body: z
+      .string()
+      .optional()
+      .describe("New event body/description. An online meeting's Teams join details are kept below it."),
     body_type: z.enum(['text', 'html']).optional().describe('Body content type (default: text)'),
+    include_signature: z
+      .boolean()
+      .optional()
+      .describe("Append the user's Outlook signature to the new body (default: false)"),
     location: z.string().optional().describe('New location display name'),
     attendees: z.array(attendeeInputSchema).optional().describe('Replace the attendee list'),
     is_all_day: z.boolean().optional().describe('Mark as all-day. When true, start/end must be at midnight.'),
@@ -57,7 +92,17 @@ export const updateEvent = defineTool({
     if (params.start !== undefined) body.start = buildDateTime(params.start, params.time_zone);
     if (params.end !== undefined) body.end = buildDateTime(params.end, params.time_zone);
     if (params.body !== undefined) {
-      body.body = { contentType: params.body_type === 'html' ? 'HTML' : 'Text', content: params.body };
+      const composed = await composeToolBody(
+        { body: params.body, body_type: params.body_type, include_signature: params.include_signature ?? false },
+        'new',
+      );
+      body.body = {
+        contentType: composed.contentType,
+        content:
+          params.is_online_meeting === false
+            ? composed.content
+            : await withTeamsJoinDetails(params.event_id, composed.content),
+      };
     }
     if (params.location !== undefined) body.location = { displayName: params.location };
     if (params.attendees !== undefined) body.attendees = buildAttendees(params.attendees);

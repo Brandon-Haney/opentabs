@@ -29,7 +29,9 @@ export const issueSchema = z.object({
   updated: z.string().describe('Last updated timestamp'),
   description_text: z
     .string()
-    .describe('Markdown rendering of the description (headings, lists, code, bold/italic, links preserved)'),
+    .describe(
+      'Markdown rendering of the description. Struck text reads as ~~text~~, mentions as @[Name](account id), and underline, colour and highlight as <u>, <span style="color: …"> and <mark> tags',
+    ),
   due_date: z.string().nullable().describe('Due date (YYYY-MM-DD), or null if none is set'),
   resolution: z.string().nullable().describe('Resolution name, or null if unresolved'),
   resolved: z.string().nullable().describe('Resolution timestamp, or null if unresolved'),
@@ -218,7 +220,9 @@ export const commentSchema = z.object({
   author_name: z.string().describe('Author display name'),
   body_text: z
     .string()
-    .describe('Markdown rendering of the comment body (headings, lists, code, bold/italic, links preserved)'),
+    .describe(
+      'Markdown rendering of the comment body. Struck text reads as ~~text~~, mentions as @[Name](account id), and underline, colour and highlight as <u>, <span style="color: …"> and <mark> tags',
+    ),
   created: z.string().describe('Creation timestamp'),
   updated: z.string().describe('Last updated timestamp'),
   parent_id: z

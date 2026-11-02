@@ -5,20 +5,26 @@
 //   (- / * / +), ordered lists (1.), fenced code blocks, blockquotes,
 //   horizontal rules (---).
 //   Inline: bold (**…** / __…__), italic (*…* / _…_), inline code
-//   (`…`), strikethrough (~~…~~), links ([text](url)).
+//   (`…`), strikethrough (~~…~~), links ([text](url)), mentions
+//   (@[Display Name](accountId)), and the formatting markdown lacks, as
+//   HTML tags: <u>…</u>, <sub>…</sub>, <sup>…</sup>,
+//   <span style="color: #rrggbb">…</span> for text colour and
+//   <mark style="background-color: #rrggbb">…</mark> for highlight.
 //   Images: a line holding only ![alt](ref) becomes the block the
 //   caller's `image` resolver returns for `ref` (see MarkdownOptions).
 //
-// Anything outside this subset is dropped on input or best-effort
-// flattened on output. On output every node leaves a visible trace: a
-// date chip reads as YYYY-MM-DD, a status lozenge as [status: <text>],
-// an embedded image as [image: <alt>], a file card as [file], and a node
-// with no text form as [unsupported: <type>].
+// Output uses the same forms, so text read from Jira can be edited and
+// written back without losing its mentions or formatting. Anything
+// outside this subset is dropped on input or best-effort flattened on
+// output. On output every node leaves a visible trace: a date chip reads
+// as YYYY-MM-DD, a status lozenge as [status: <text>], an embedded image
+// as [image: <alt>], a file card as [file], and a node with no text form
+// as [unsupported: <type>].
 // Use the `body_adf` escape hatch on add_comment for full ADF control
-// (mentions, panels, tables, media, …).
+// (panels, tables, media, …).
 
 export interface AdfMark {
-  type: 'strong' | 'em' | 'code' | 'strike' | 'link';
+  type: 'strong' | 'em' | 'code' | 'strike' | 'link' | 'underline' | 'subsup' | 'textColor' | 'backgroundColor';
   attrs?: Record<string, unknown>;
 }
 
@@ -261,9 +267,7 @@ const marksEqual = (a: AdfMark[] | undefined, b: AdfMark[]): boolean => {
     const bm = b[i];
     if (!am || !bm) return false;
     if (am.type !== bm.type) return false;
-    const aHref = (am.attrs as { href?: string } | undefined)?.href;
-    const bHref = (bm.attrs as { href?: string } | undefined)?.href;
-    if (aHref !== bHref) return false;
+    if (JSON.stringify(am.attrs ?? {}) !== JSON.stringify(bm.attrs ?? {})) return false;
   }
   return true;
 };
@@ -288,6 +292,47 @@ const tryMark = (s: string, re: RegExp, mark: AdfMark['type'], parent: AdfMark[]
     len: m[0].length,
     nodes: parseInlineWithMarks(m[1], [...parent, { type: mark }]),
   };
+};
+
+/** An HTML tag standing for a mark; group 1 holds the tag's attribute value, group 2 its content. */
+const tryTagMark = (
+  s: string,
+  re: RegExp,
+  toMark: (value: string) => AdfMark,
+  parent: AdfMark[],
+): MatchResult | null => {
+  const m = re.exec(s);
+  if (!m?.[2]) return null;
+  return { len: m[0].length, nodes: parseInlineWithMarks(m[2], [...parent, toMark(m[1] ?? '')]) };
+};
+
+/** Tags for the marks markdown has no syntax for, in the forms `renderTextNode` writes. */
+const TAG_MARKS: { re: RegExp; toMark: (value: string) => AdfMark }[] = [
+  { re: /^<u>()([\s\S]+?)<\/u>/, toMark: () => ({ type: 'underline' }) },
+  { re: /^<(sub|sup)>([\s\S]+?)<\/\1>/, toMark: type => ({ type: 'subsup', attrs: { type } }) },
+  {
+    re: /^<span style="color: ?(#[0-9a-fA-F]{6})">([\s\S]+?)<\/span>/,
+    toMark: color => ({ type: 'textColor', attrs: { color: color.toLowerCase() } }),
+  },
+  {
+    re: /^<mark style="background-color: ?(#[0-9a-fA-F]{6})">([\s\S]+?)<\/mark>/,
+    toMark: color => ({ type: 'backgroundColor', attrs: { color: color.toLowerCase() } }),
+  },
+];
+
+const tryTagMarks = (s: string, parent: AdfMark[]): MatchResult | null => {
+  for (const { re, toMark } of TAG_MARKS) {
+    const match = tryTagMark(s, re, toMark, parent);
+    if (match) return match;
+  }
+  return null;
+};
+
+/** `@[Display Name](accountId)`: a mention, which carries no marks. */
+const tryMention = (s: string): MatchResult | null => {
+  const m = /^@\[@?([^\]]+)\]\(([A-Za-z0-9:_-]+)\)/.exec(s);
+  if (!m?.[1] || !m[2]) return null;
+  return { len: m[0].length, nodes: [{ type: 'mention', attrs: { id: m[2], text: `@${m[1]}` } }] };
 };
 
 const tryLink = (s: string, parent: AdfMark[]): MatchResult | null => {
@@ -318,7 +363,9 @@ const parseInlineWithMarks = (text: string, marks: AdfMark[]): AdfNode[] => {
     const rest = text.slice(i);
     const match =
       tryMark(rest, /^`([^`\n]+)`/, 'code', marks) ||
+      tryMention(rest) ||
       tryLink(rest, marks) ||
+      tryTagMarks(rest, marks) ||
       tryMark(rest, /^\*\*([\s\S]+?)\*\*/, 'strong', marks) ||
       tryMark(rest, /^__([\s\S]+?)__/, 'strong', marks) ||
       tryMark(rest, /^~~([\s\S]+?)~~/, 'strike', marks) ||
@@ -457,14 +504,43 @@ const renderLabelled = (node: AdfNode, label: string): string => {
   return text ? `[${label}: ${text}]` : unsupported(node);
 };
 
+/** A mention reads as `@[Name](accountId)`, the form the markdown parser turns back into a mention. */
+const renderMention = (node: AdfNode): string => {
+  const name = ((node.attrs?.text as string | undefined) ?? '').replace(/^@/, '');
+  const id = (node.attrs?.id as string | undefined) ?? '';
+  return id ? `@[${name || id}](${id})` : `@${name}`;
+};
+
+const markColor = (mark: AdfMark | undefined): string | undefined => {
+  const color = (mark?.attrs as { color?: unknown } | undefined)?.color;
+  return typeof color === 'string' && color ? color : undefined;
+};
+
+const renderTextNode = (node: AdfNode): string => {
+  const marks = node.marks ?? [];
+  let out = node.text ?? '';
+  if (hasMark(marks, 'code')) out = `\`${out}\``;
+  if (hasMark(marks, 'strike')) out = `~~${out}~~`;
+  if (hasMark(marks, 'em')) out = `*${out}*`;
+  if (hasMark(marks, 'strong')) out = `**${out}**`;
+  if (hasMark(marks, 'underline')) out = `<u>${out}</u>`;
+  const subsup = (marks.find(m => m.type === 'subsup')?.attrs as { type?: unknown } | undefined)?.type;
+  if (subsup === 'sub' || subsup === 'sup') out = `<${subsup}>${out}</${subsup}>`;
+  const color = markColor(marks.find(m => m.type === 'textColor'));
+  if (color) out = `<span style="color: ${color}">${out}</span>`;
+  const highlight = markColor(marks.find(m => m.type === 'backgroundColor'));
+  if (highlight) out = `<mark style="background-color: ${highlight}">${out}</mark>`;
+  const link = marks.find(m => m.type === 'link');
+  if (link) {
+    const href = (link.attrs as { href?: string } | undefined)?.href ?? '';
+    out = `[${out}](${href})`;
+  }
+  return out;
+};
+
 const renderInlineNode = (node: AdfNode): string => {
   if (node.type === 'hardBreak') return '\n';
-  if (node.type === 'mention') {
-    const text = (node.attrs?.text as string | undefined) ?? '';
-    if (text.startsWith('@')) return text;
-    const id = (node.attrs?.id as string | undefined) ?? '';
-    return `@${text || id}`;
-  }
+  if (node.type === 'mention') return renderMention(node);
   if (node.type === 'emoji') {
     return (
       (node.attrs?.text as string | undefined) || (node.attrs?.shortName as string | undefined) || unsupported(node)
@@ -479,20 +555,7 @@ const renderInlineNode = (node: AdfNode): string => {
     if (alt) return `[image: ${alt}]`;
     return node.attrs?.type === 'image' ? '[image]' : '[file]';
   }
-  if (node.type === 'text') {
-    const marks = node.marks ?? [];
-    let out = node.text ?? '';
-    if (hasMark(marks, 'code')) out = `\`${out}\``;
-    if (hasMark(marks, 'strike')) out = `~~${out}~~`;
-    if (hasMark(marks, 'em')) out = `*${out}*`;
-    if (hasMark(marks, 'strong')) out = `**${out}**`;
-    const link = marks.find(m => m.type === 'link');
-    if (link) {
-      const href = (link.attrs as { href?: string } | undefined)?.href ?? '';
-      out = `[${out}](${href})`;
-    }
-    return out;
-  }
+  if (node.type === 'text') return renderTextNode(node);
   return node.content ? renderBlock(node) : unsupported(node);
 };
 

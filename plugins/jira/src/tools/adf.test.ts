@@ -171,3 +171,89 @@ describe('adfToMarkdown block nodes', () => {
     ).toBe('Inside');
   });
 });
+
+describe('adfToMarkdown marks', () => {
+  test('keeps strikethrough, bold, italic, code and links', () => {
+    expect(
+      inline(
+        { type: 'text', text: 'dropped', marks: [{ type: 'strike' }] },
+        text(' '),
+        { type: 'text', text: 'key', marks: [{ type: 'strong' }, { type: 'em' }] },
+        text(' '),
+        { type: 'text', text: 'cfg', marks: [{ type: 'code' }] },
+        text(' '),
+        { type: 'text', text: 'spec', marks: [{ type: 'link', attrs: { href: 'https://example.com/s' } }] },
+      ),
+    ).toBe('~~dropped~~ ***key*** `cfg` [spec](https://example.com/s)');
+  });
+
+  test('reads underline, sub/superscript, text colour and highlight as HTML tags', () => {
+    expect(
+      inline(
+        { type: 'text', text: 'must', marks: [{ type: 'underline' }] },
+        text(' H'),
+        { type: 'text', text: '2', marks: [{ type: 'subsup', attrs: { type: 'sub' } }] },
+        text('O x'),
+        { type: 'text', text: '2', marks: [{ type: 'subsup', attrs: { type: 'sup' } }] },
+        text(' '),
+        { type: 'text', text: 'at risk', marks: [{ type: 'textColor', attrs: { color: '#ff5630' } }] },
+        text(' '),
+        { type: 'text', text: 'new', marks: [{ type: 'backgroundColor', attrs: { color: '#fedec8' } }] },
+      ),
+    ).toBe(
+      '<u>must</u> H<sub>2</sub>O x<sup>2</sup> <span style="color: #ff5630">at risk</span> <mark style="background-color: #fedec8">new</mark>',
+    );
+  });
+
+  test('reads a mention with its account id, and one with no id by name', () => {
+    expect(inline({ type: 'mention', attrs: { id: '557058:abc-123', text: '@Dana Lee' } }, text(' please check'))).toBe(
+      '@[Dana Lee](557058:abc-123) please check',
+    );
+    expect(inline({ type: 'mention', attrs: { text: 'Dana Lee' } })).toBe('@Dana Lee');
+  });
+});
+
+describe('markdownToAdf marks and mentions', () => {
+  const paragraphContent = (md: string): AdfNode[] | undefined => markdownToAdf(md).content[0]?.content;
+
+  test('turns @[Name](account id) into a mention, leaving an ordinary link alone', () => {
+    expect(paragraphContent('Hi @[Dana Lee](557058:abc-123), see [doc](https://example.com/d)')).toEqual([
+      text('Hi '),
+      { type: 'mention', attrs: { id: '557058:abc-123', text: '@Dana Lee' } },
+      text(', see '),
+      { type: 'text', text: 'doc', marks: [{ type: 'link', attrs: { href: 'https://example.com/d' } }] },
+    ]);
+  });
+
+  test('turns the formatting tags back into marks, nested inside markdown marks', () => {
+    expect(paragraphContent('**<u>must</u>** <span style="color: #FF5630">late</span> x<sup>2</sup>')).toEqual([
+      { type: 'text', text: 'must', marks: [{ type: 'strong' }, { type: 'underline' }] },
+      text(' '),
+      { type: 'text', text: 'late', marks: [{ type: 'textColor', attrs: { color: '#ff5630' } }] },
+      text(' x'),
+      { type: 'text', text: '2', marks: [{ type: 'subsup', attrs: { type: 'sup' } }] },
+    ]);
+  });
+
+  test('round-trips mentions, strikethrough and formatting through markdown', () => {
+    const doc = {
+      type: 'doc',
+      version: 1,
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'mention', attrs: { id: '712020:xyz', text: '@Abhi K' } },
+            text(' the '),
+            { type: 'text', text: 'old step', marks: [{ type: 'strike' }] },
+            text(' is '),
+            { type: 'text', text: 'gone', marks: [{ type: 'backgroundColor', attrs: { color: '#fedec8' } }] },
+          ],
+        },
+      ],
+    };
+    const markdown = adfToMarkdown(doc);
+    expect(adfToMarkdown(markdownToAdf(markdown))).toBe(markdown);
+    expect(markdownToAdf(markdown).content).toEqual(doc.content);
+  });
+});

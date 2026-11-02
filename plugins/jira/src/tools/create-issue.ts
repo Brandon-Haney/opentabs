@@ -21,7 +21,7 @@ export const createIssue = defineTool({
       .string()
       .optional()
       .describe(
-        'Issue description in markdown. Supports headings, lists, fenced code, blockquotes, bold/italic/code/strike, and links.',
+        'Issue description in markdown. Supports headings, lists, fenced code, blockquotes, bold/italic/code/strike, links, and @[Display Name](account id) mentions.',
       ),
     priority: z.string().optional().describe('Priority name (e.g. "Highest", "High", "Medium", "Low", "Lowest")'),
     assignee_id: z.string().optional().describe('Assignee account ID (use search_users to find IDs)'),

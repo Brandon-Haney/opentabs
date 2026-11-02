@@ -18,7 +18,7 @@ export const updateIssue = defineTool({
       .string()
       .optional()
       .describe(
-        'New issue description in markdown. Supports headings, lists, fenced code, blockquotes, bold/italic/code/strike, and links.',
+        'New issue description in markdown. Supports headings, lists, fenced code, blockquotes, bold/italic/code/strike, links, and @[Display Name](account id) mentions.',
       ),
     priority: z.string().optional().describe('New priority name (e.g. "Highest", "High", "Medium", "Low", "Lowest")'),
     assignee_id: z

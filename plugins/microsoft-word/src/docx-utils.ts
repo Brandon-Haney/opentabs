@@ -194,25 +194,44 @@ export function replaceBodyContent(existingXml: string, paragraphs: string[]): s
 }
 
 /**
- * Perform find-and-replace on text within <w:t> elements in document.xml.
- * Replaces all occurrences of `find` with `replace` within each text run.
+ * A text element: `<w:t>` or `<w:t …>`, its text, and `</w:t>`. The name must end
+ * at `w:t`, so `<w:tab/>`, `<w:tbl>`, `<w:tc>` and `<w:tr>` never match, and the
+ * text holds no markup, so a match never spans tags. Deleted text (`<w:delText>`)
+ * is not a text element and is left alone.
+ */
+const TEXT_ELEMENT = /(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g;
+
+const XML_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+
+/** XML element text with its character references decoded. */
+const decodeXmlText = (text: string): string =>
+  text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, name: string) => {
+    if (name[0] !== '#') return XML_ENTITIES[name] ?? entity;
+    const code = name[1] === 'x' || name[1] === 'X' ? Number.parseInt(name.slice(2), 16) : Number(name.slice(1));
+    return String.fromCodePoint(code);
+  });
+
+/** A text element's opening tag, marked to keep the text's outer spaces, which Word otherwise drops. */
+const keepingSpaces = (open: string, text: string): string =>
+  /^\s|\s$/.test(text) && !open.includes('xml:space=') ? open.replace('<w:t', '<w:t xml:space="preserve"') : open;
+
+/**
+ * Find and replace text within the text elements of document.xml, replacing
+ * every occurrence. Matching is on the decoded text, so characters written as
+ * references (`&apos;`, `&#8217;`) match as the characters they are. A match
+ * must lie within one text element: Word starts a new run, with a new element,
+ * wherever formatting or a proofing mark changes.
  */
 export function replaceTextInXml(xml: string, find: string, replace: string): { xml: string; count: number } {
   let count = 0;
-  const escaped = escapeXml(find);
-  const escapedReplace = escapeXml(replace);
-
-  // Replace within <w:t> content — match each <w:t>...</w:t> and replace inside
-  const result = xml.replace(
-    /(<w:t[^>]*>)([\s\S]*?)(<\/w:t>)/g,
-    (_match, open: string, content: string, close: string) => {
-      if (!content.includes(escaped)) return _match;
-      const parts = content.split(escaped);
-      count += parts.length - 1;
-      return open + parts.join(escapedReplace) + close;
-    },
-  );
-
+  const result = xml.replace(TEXT_ELEMENT, (whole, open: string, content: string, close: string) => {
+    const text = decodeXmlText(content);
+    if (!text.includes(find)) return whole;
+    const parts = text.split(find);
+    count += parts.length - 1;
+    const replaced = parts.join(replace);
+    return `${keepingSpaces(open, replaced)}${escapeXml(replaced)}${close}`;
+  });
   return { xml: result, count };
 }
 

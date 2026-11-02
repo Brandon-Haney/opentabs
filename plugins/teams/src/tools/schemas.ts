@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { extractMessageImages } from '../ams-image.js';
+import { toLocalIso } from '../local-time.js';
 
 // ---------------------------------------------------------------------------
 // Conversation (chat) schema
@@ -20,10 +21,12 @@ export const conversationSchema = z.object({
     ),
   type: z.string().describe('Conversation type (e.g., "Conversation")'),
   thread_type: z.string().describe('Thread type (e.g., "chat", "meeting", "space")'),
-  created_at: z.string().describe('When the conversation was created (ISO 8601)'),
+  created_at: z.string().describe('When the conversation was created (ISO 8601 in local time, with its UTC offset)'),
   last_message_content: z.string().describe('Content of the last message'),
   last_message_type: z.string().describe('Message type of the last message'),
-  last_message_time: z.string().describe('Timestamp of the last message'),
+  last_message_time: z
+    .string()
+    .describe('When the last message was composed (ISO 8601 in local time, with its UTC offset)'),
   last_message_from: z.string().describe('Display name of the last message sender'),
   version: z.number().describe('Conversation version'),
 });
@@ -53,10 +56,10 @@ export const mapConversation = (c: RawConversation): Conversation => ({
   participants: null,
   type: c.type ?? '',
   thread_type: String(c.threadProperties?.threadType ?? ''),
-  created_at: String(c.threadProperties?.createdat ?? ''),
+  created_at: toLocalIso(String(c.threadProperties?.createdat ?? '')),
   last_message_content: String(c.lastMessage?.content ?? ''),
   last_message_type: String(c.lastMessage?.messagetype ?? ''),
-  last_message_time: String(c.lastMessage?.composetime ?? ''),
+  last_message_time: toLocalIso(String(c.lastMessage?.composetime ?? '')),
   last_message_from: String(c.lastMessage?.imdisplayname ?? ''),
   version: typeof c.version === 'number' ? c.version : 0,
 });
@@ -95,8 +98,8 @@ const imageSchema = z.object({
 
 const meetingSchema = z.object({
   title: z.string().describe('Meeting title'),
-  start: z.string().describe('Start time (ISO 8601)'),
-  end: z.string().describe('End time (ISO 8601)'),
+  start: z.string().describe('Start time (ISO 8601 in local time, with its UTC offset)'),
+  end: z.string().describe('End time (ISO 8601 in local time, with its UTC offset)'),
   location: z.string().describe('Location (empty if none)'),
   is_cancelled: z.boolean().describe('Whether this post announces that the meeting was cancelled'),
   join_url: z.string().describe('Teams meeting join URL (empty if none)'),
@@ -121,8 +124,8 @@ const parseMeeting = (raw: string | undefined): z.infer<typeof meetingSchema> | 
   const info = meeting.scheduledmeetinginfo ?? {};
   return {
     title: meeting.meetingtitle ?? '',
-    start: info.startTime ?? '',
-    end: info.endTime ?? '',
+    start: toLocalIso(info.startTime),
+    end: toLocalIso(info.endTime),
     location: info.location ?? '',
     is_cancelled: info.isCancelled === true || meeting['@type'] === 'http://schema.skype.com/ScheduledMeetingCancelled',
     join_url: meeting.meetingJoinUrl ?? '',
@@ -138,11 +141,16 @@ export const messageSchema = z.object({
   client_message_id: z.string().describe('Client-assigned message ID'),
   content: z.string().describe('Message content (may contain HTML); empty on a deleted message'),
   deleted: z.boolean().describe('Whether the message was deleted'),
-  edited_at: z.string().nullable().describe('When the message was last edited (ISO 8601), or null if it never was'),
+  edited_at: z
+    .string()
+    .nullable()
+    .describe(
+      'When the message was last edited (ISO 8601 in local time, with its UTC offset), or null if it never was',
+    ),
   message_type: z.string().describe('Message type (e.g., "RichText/Html", "Text")'),
   from: z.string().describe('Sender MRI (e.g., "8:orgid:username")'),
   display_name: z.string().describe('Sender display name'),
-  compose_time: z.string().describe('When the message was composed (ISO 8601)'),
+  compose_time: z.string().describe('When the message was composed (ISO 8601 in local time, with its UTC offset)'),
   conversation_id: z.string().describe('ID of the conversation this message belongs to'),
   reply_to_post_id: z
     .string()
@@ -231,10 +239,10 @@ const parseReactions = (msg: RawMessage): string[] => {
   return [...keys];
 };
 
-/** A timestamp property in epoch milliseconds, as ISO 8601; null when absent or zero. */
+/** A timestamp property in epoch milliseconds, as local ISO 8601; null when absent or zero. */
 const isoFromEpochProperty = (value: number | string | undefined): string | null => {
   const epochMs = Number(value);
-  return epochMs > 0 ? new Date(epochMs).toISOString() : null;
+  return epochMs > 0 ? toLocalIso(epochMs) : null;
 };
 
 export const mapMessage = (m: RawMessage): Message => ({
@@ -246,7 +254,7 @@ export const mapMessage = (m: RawMessage): Message => ({
   message_type: m.messagetype ?? '',
   from: extractMri(m.from ?? ''),
   display_name: m.imdisplayname ?? '',
-  compose_time: m.composetime ?? '',
+  compose_time: toLocalIso(m.composetime),
   conversation_id: m.conversationid ?? '',
   reply_to_post_id: m.rootMessageId && m.rootMessageId !== m.id ? m.rootMessageId : null,
   meeting: parseMeeting(m.properties?.meeting),
@@ -270,7 +278,7 @@ export const messageSearchResultSchema = z.object({
   from_address: z.string().describe('Sender email address'),
   subject: z.string().describe('Message subject (empty for chat messages)'),
   summary: z.string().describe('Hit-highlighted snippet of the matching message (may contain HTML)'),
-  sent_time: z.string().describe('When the message was sent (ISO 8601)'),
+  sent_time: z.string().describe('When the message was sent (ISO 8601 in local time, with its UTC offset)'),
   has_attachments: z.boolean().describe('Whether the message has file attachments'),
 });
 
@@ -301,7 +309,7 @@ export const mapSearchResult = (r: RawSearchResult): MessageSearchResult => {
     from_address: email.Address ?? '',
     subject: source.Subject ?? '',
     summary: r.HitHighlightedSummary ?? source.Preview ?? '',
-    sent_time: source.DateTimeSent ?? '',
+    sent_time: toLocalIso(source.DateTimeSent),
     has_attachments: source.HasAttachments ?? false,
   };
 };
@@ -313,8 +321,8 @@ export const mapSearchResult = (r: RawSearchResult): MessageSearchResult => {
 export const calendarEventSchema = z.object({
   id: z.string().describe('Exchange event ID (the same ID the Outlook plugin uses for this event)'),
   subject: z.string().describe('Event subject'),
-  start: z.string().describe('Start time (ISO 8601, UTC)'),
-  end: z.string().describe('End time (ISO 8601, UTC)'),
+  start: z.string().describe('Start time (ISO 8601 in local time, with its UTC offset)'),
+  end: z.string().describe('End time (ISO 8601 in local time, with its UTC offset)'),
   is_all_day: z.boolean().describe('Whether the event is an all-day event'),
   location: z.string().describe('Location display name (empty if none)'),
   type: z
@@ -370,18 +378,11 @@ const meetingChatIdOf = (skypeTeamsData: string | undefined): string => {
   }
 };
 
-/** Normalize a middle-tier timestamp (`2026-09-25T13:30:00+00:00`) to ISO 8601 UTC; empty when absent or invalid. */
-const toUtcIso = (timestamp: string | undefined): string => {
-  if (!timestamp) return '';
-  const ms = Date.parse(timestamp);
-  return Number.isNaN(ms) ? '' : new Date(ms).toISOString();
-};
-
 export const mapCalendarEvent = (e: RawCalendarEvent): CalendarEvent => ({
   id: e.objectId ?? '',
   subject: e.subject ?? '',
-  start: toUtcIso(e.startTime),
-  end: toUtcIso(e.endTime),
+  start: toLocalIso(e.startTime),
+  end: toLocalIso(e.endTime),
   is_all_day: e.isAllDayEvent ?? false,
   location: e.location ?? '',
   // The middle tier leaves eventType null for a single, non-recurring event.

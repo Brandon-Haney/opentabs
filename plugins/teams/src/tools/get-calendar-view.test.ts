@@ -90,7 +90,7 @@ afterEach(() => {
 });
 
 describe('get_calendar_view', () => {
-  test('requests the regional middle tier with UTC bounds and the MSAL token as a Bearer', async () => {
+  test('requests the regional middle tier with UTC instants and the MSAL token as a Bearer', async () => {
     stubCapturedToken();
     storeRegionGtms();
     respondWith([]);
@@ -101,8 +101,8 @@ describe('get_calendar_view', () => {
     const url = new URL(String(input));
     expect(`${url.origin}${url.pathname}`).toBe(`${MIDDLE_TIER}/beta/me/calendarEvents`);
     expect(url.searchParams.get('StartDate')).toBe('2026-09-25T04:00:00.000Z');
-    // A bound without an offset is read as UTC.
-    expect(url.searchParams.get('EndDate')).toBe('2026-09-26T00:00:00.000Z');
+    // A bound without an offset is read in local time, here Central Daylight Time.
+    expect(url.searchParams.get('EndDate')).toBe('2026-09-26T05:00:00.000Z');
     expect((init?.headers as Record<string, string>).Authorization).toBe(`Bearer ${MSAL_SKYPE_TOKEN}`);
   });
 
@@ -117,8 +117,8 @@ describe('get_calendar_view', () => {
     expect(output.events[0]).toEqual({
       id: 'AQMkAD-meeting',
       subject: 'Weekly review',
-      start: '2026-09-25T15:00:00.000Z',
-      end: '2026-09-25T15:45:00.000Z',
+      start: '2026-09-25T10:00:00-05:00',
+      end: '2026-09-25T10:45:00-05:00',
       is_all_day: false,
       location: 'Microsoft Teams Meeting',
       type: 'Exception',

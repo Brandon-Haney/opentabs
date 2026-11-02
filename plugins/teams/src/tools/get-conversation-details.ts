@@ -1,6 +1,7 @@
 import { defineTool } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { directoryIdOfMri, lookUpDisplayNames, memberLabel } from '../participants.js';
+import { toLocalIso } from '../local-time.js';
 import { threadApi } from '../teams-api.js';
 import { threadName } from './schemas.js';
 
@@ -47,7 +48,7 @@ export const getConversationDetails = defineTool({
       id: data.id ?? params.conversation_id,
       topic: threadName(data.properties),
       creator: String(data.properties?.creator ?? ''),
-      created_at: String(data.properties?.createdat ?? ''),
+      created_at: toLocalIso(String(data.properties?.createdat ?? '')),
       thread_type: String(data.properties?.threadType ?? ''),
       member_count: data.rosterSummary?.memberCount ?? null,
       members: members.map(m => ({

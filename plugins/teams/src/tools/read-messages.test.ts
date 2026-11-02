@@ -42,7 +42,8 @@ describe('read_messages', () => {
     });
     const { messages } = await readMessages.handle({ conversation_id: CHAT }, context);
     expect(messages.map(m => m.id)).toEqual(['later', 'edited']);
-    expect(messages[1]?.edited_at).toBe(new Date(1793378920468).toISOString());
+    expect(messages[1]?.edited_at).toBe('2026-10-30T11:48:40.468-05:00');
+    expect(messages[1]?.compose_time).toBe('2026-10-30T11:45:27-05:00');
     expect(messages[0]?.edited_at).toBeNull();
   });
 
@@ -141,8 +142,8 @@ describe('read_messages', () => {
       const { messages } = await readMessages.handle({ conversation_id: CHANNEL }, context);
       expect(messages[0]?.meeting).toEqual({
         title: 'Weekly review',
-        start: '2026-11-02T14:00:00+00:00',
-        end: '2026-11-02T15:00:00+00:00',
+        start: '2026-11-02T08:00:00-06:00',
+        end: '2026-11-02T09:00:00-06:00',
         location: 'Room 4',
         is_cancelled: false,
         join_url: 'https://teams.microsoft.com/l/meetup-join/x',

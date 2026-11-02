@@ -448,6 +448,15 @@ describe('owsRequest', () => {
     expect(describeCachedAuth()).toEqual([expect.objectContaining({ slot: 'ows', apiBase: GRAPH_API_BASE })]);
   });
 
+  test('reads startup data, which OWS labels application/x-javascript', async () => {
+    const startupData = { owaUserConfig: { UserOptions: { ComposeFontSize: 4, ComposeFontColor: '#1f497d' } } };
+    fetchMock.mockResolvedValueOnce(
+      respond(200, { 'content-type': 'application/x-javascript; charset=utf-8' }, JSON.stringify(startupData)),
+    );
+    const data = await settled(owsRequest('/owa/startupdata.ashx', { method: 'POST', query: { app: 'Mail', n: 0 } }));
+    expect(data).toEqual(startupData);
+  });
+
   test('treats a 404 as an accepted empty result and a 401 as a rejection', async () => {
     fetchMock.mockResolvedValueOnce(respond(401)).mockResolvedValueOnce(respond(404));
     expect(await settled(owsRequest('/ows/v1/OutlookCloudSettings/settings/account'))).toBeUndefined();

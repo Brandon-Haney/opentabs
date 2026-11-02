@@ -562,6 +562,9 @@ export interface OwsRequestOptions {
 
 type OwsOutcome<T> = { kind: 'ok'; data: T } | { kind: 'notFound' } | { kind: 'authFail' };
 
+/** OWS answers in JSON under either type: settings as `application/json`, startup data as `application/x-javascript`. */
+const OWS_JSON_CONTENT_TYPE = /\b(?:json|javascript)\b/i;
+
 /**
  * Send one OWS request with a specific token. OWS is same-origin, so cookies ride
  * along with the Bearer token, and — unlike the cross-origin Graph and REST bases,
@@ -600,7 +603,7 @@ const sendOwsRequest = async <T>(
   }
 
   const contentType = response.headers.get('content-type') ?? '';
-  const data = contentType.includes('application/json') ? ((await response.json()) as T) : ({} as T);
+  const data = OWS_JSON_CONTENT_TYPE.test(contentType) ? ((await response.json()) as T) : ({} as T);
   return { kind: 'ok', data };
 };
 

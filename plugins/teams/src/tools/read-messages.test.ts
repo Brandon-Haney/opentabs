@@ -57,8 +57,32 @@ describe('read_messages', () => {
     const { messages } = await readMessages.handle({ conversation_id: CHAT }, context);
     expect(messages.map(m => [m.id, m.deleted, m.content])).toEqual([
       ['gone', true, ''],
-      ['kept', false, '<p>kept</p>'],
+      ['kept', false, 'kept'],
     ]);
+  });
+
+  test('gives text as Markdown with a reply quote apart, or the stored HTML when asked', async () => {
+    const html =
+      '<blockquote itemscope itemtype="http://schema.skype.com/Reply" itemid="17"><strong itemprop="mri">Pat Lee</strong>' +
+      '<p itemprop="preview">Is it ready?</p></blockquote>\n<p><span itemtype="http://schema.skype.com/Mention" ' +
+      'itemscope="" itemid="0">Pat</span>&nbsp;<strong>yes</strong></p>';
+    const reply = message('reply', '2026-10-30T16:45:27.000Z', {
+      content: html,
+      properties: { mentions: JSON.stringify([{ itemid: 0, mri: '8:orgid:p', displayName: 'Pat Lee' }]) },
+    });
+    chatApi.mockResolvedValue({
+      messages: [reply, message('plain', '2026-10-30T16:44:27.000Z', { messagetype: 'Text', content: 'A &amp; B' })],
+    });
+
+    const markdown = (await readMessages.handle({ conversation_id: CHAT }, context)).messages;
+    expect(markdown.map(m => [m.content, m.quoted_message])).toEqual([
+      ['@[Pat](Pat Lee) **yes**', { id: '17', author: 'Pat Lee', preview: 'Is it ready?' }],
+      ['A & B', null],
+    ]);
+
+    const raw = (await readMessages.handle({ conversation_id: CHAT, format: 'html' }, context)).messages;
+    expect(raw[0]?.content).toBe(html);
+    expect(raw[0]?.quoted_message?.id).toBe('17');
   });
 
   test('returns a token for older messages and passes one back', async () => {

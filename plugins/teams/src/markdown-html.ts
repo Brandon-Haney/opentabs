@@ -45,7 +45,7 @@ export const MARKDOWN_FORMATTING_HELP =
   'spaces indents a paragraph one level. Entities such as &nbsp; pass through.';
 
 /** Text-colour swatch name -> exact hex Teams stores. */
-const TEXT_COLORS: Record<string, string> = {
+export const TEXT_COLORS: Record<string, string> = {
   red: '#B6424C',
   orange: '#CD5937',
   gold: '#FDC030',
@@ -57,7 +57,7 @@ const TEXT_COLORS: Record<string, string> = {
 };
 
 /** Highlight swatch name -> exact hex Teams stores. */
-const HIGHLIGHT_COLORS: Record<string, string> = {
+export const HIGHLIGHT_COLORS: Record<string, string> = {
   red: '#DF9299',
   orange: '#F4A593',
   gold: '#FDD472',

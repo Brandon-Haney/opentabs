@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { nextPageToken, pageQuery } from '../chat-paging.js';
 import { directoryIdOfMri, lookUpDisplayNames } from '../participants.js';
 import { chatApi } from '../teams-api.js';
-import { type Message, mapMessage, messageSchema } from './schemas.js';
+import { CHAT_MESSAGE_TYPES, type Message, mapMessage, messageFormatSchema, messageSchema } from './schemas.js';
 
 /** Compose time in milliseconds. A message's position follows when it was written, not when it was last edited. */
 const composedAt = (composeTime: string): number => Date.parse(composeTime) || 0;
@@ -25,7 +25,7 @@ export const readMessages = defineTool({
   name: 'read_messages',
   displayName: 'Read Messages',
   description:
-    'Read messages from a chat conversation, newest first by when each was written. Use the conversation ID from list_conversations. When `next_page_token` is returned, older messages exist: pass it back to read them. A deleted message appears with `deleted` true and no content, and an edited one carries `edited_at`. In a channel, a reply carries `reply_to_post_id`, and a post announcing a meeting carries `meeting`.',
+    "Read messages from a chat conversation, newest first by when each was written. Use the conversation ID from list_conversations. When `next_page_token` is returned, older messages exist: pass it back to read them. A deleted message appears with `deleted` true and no content, and an edited one carries `edited_at`. In a channel, a reply carries `reply_to_post_id`, and a post announcing a meeting carries `meeting`. Text is Markdown in the form send_message and edit_message take: mentions read @[Name], emoji as their character, images as [image] (listed in `images`), and a reply's quote card is `quoted_message` rather than text.",
   summary: 'Read messages from a chat',
   icon: 'message-square',
   group: 'Messages',
@@ -39,6 +39,9 @@ export const readMessages = defineTool({
       .optional()
       .describe('Number of messages per page (default 20, max 200). Calls and membership events count toward it.'),
     next_page_token: z.string().optional().describe('`next_page_token` from the previous page, to read older messages'),
+    format: messageFormatSchema
+      .optional()
+      .describe('"markdown" (default) for message text as Markdown, or "html" for the HTML Teams stores'),
   }),
   output: z.object({
     messages: z.array(messageSchema).describe('List of messages (newest first)'),
@@ -57,11 +60,8 @@ export const readMessages = defineTool({
 
     const raw = data.messages ?? [];
     const messages = raw
-      .filter(m => {
-        const msgType = m.messagetype as string | undefined;
-        return msgType === 'RichText/Html' || msgType === 'Text' || msgType === 'RichText';
-      })
-      .map(m => mapMessage(m as Record<string, unknown>))
+      .filter(m => CHAT_MESSAGE_TYPES.has(String(m.messagetype ?? '')))
+      .map(m => mapMessage(m as Record<string, unknown>, params.format))
       .sort((a, b) => composedAt(b.compose_time) - composedAt(a.compose_time));
 
     return {

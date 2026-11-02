@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { extractMessageImages } from '../ams-image.js';
+import { decodeEntities } from '../html-entities.js';
 import { toLocalIso } from '../local-time.js';
+import { messagePreview } from '../message-preview.js';
+import { teamsHtmlToMarkdown } from '../teams-markdown.js';
 
 // ---------------------------------------------------------------------------
 // Conversation (chat) schema
@@ -22,7 +25,11 @@ export const conversationSchema = z.object({
   type: z.string().describe('Conversation type (e.g., "Conversation")'),
   thread_type: z.string().describe('Thread type (e.g., "chat", "meeting", "space")'),
   created_at: z.string().describe('When the conversation was created (ISO 8601 in local time, with its UTC offset)'),
-  last_message_content: z.string().describe('Content of the last message'),
+  last_message_preview: z
+    .string()
+    .describe(
+      'The last message on one line, as Teams previews it (cut to 200 characters), or its type in brackets when it is not a chat message, such as a call; read_messages gives messages in full',
+    ),
   last_message_type: z.string().describe('Message type of the last message'),
   last_message_time: z
     .string()
@@ -50,6 +57,21 @@ export const isChannelThreadType = (threadType: string): boolean => CHANNEL_THRE
 export const threadName = (properties: Record<string, unknown> | undefined): string =>
   String(properties?.topic || properties?.spaceThreadTopic || '');
 
+/** Message types that carry chat text; any other type is an event, such as a call or a membership change. */
+export const CHAT_MESSAGE_TYPES: ReadonlySet<string> = new Set(['RichText/Html', 'Text', 'RichText']);
+
+/** A conversation's last message as Teams previews it, or its type when it is an event rather than chat text. */
+const lastMessagePreview = (lastMessage: Record<string, unknown> | undefined): string => {
+  const type = String(lastMessage?.messagetype ?? '');
+  const content = String(lastMessage?.content ?? '');
+  if (content.trim() === '') return '';
+  if (!CHAT_MESSAGE_TYPES.has(type)) return `[${type}]`;
+  // The quote-card preview keeps each non-breaking space; a list preview collapses them.
+  return messagePreview({ content, properties: lastMessage?.properties as RawMessage['properties'] })
+    .replace(/ {2,}/g, ' ')
+    .trim();
+};
+
 export const mapConversation = (c: RawConversation): Conversation => ({
   id: c.id ?? '',
   topic: threadName(c.threadProperties),
@@ -57,7 +79,7 @@ export const mapConversation = (c: RawConversation): Conversation => ({
   type: c.type ?? '',
   thread_type: String(c.threadProperties?.threadType ?? ''),
   created_at: toLocalIso(String(c.threadProperties?.createdat ?? '')),
-  last_message_content: String(c.lastMessage?.content ?? ''),
+  last_message_preview: lastMessagePreview(c.lastMessage),
   last_message_type: String(c.lastMessage?.messagetype ?? ''),
   last_message_time: toLocalIso(String(c.lastMessage?.composetime ?? '')),
   last_message_from: String(c.lastMessage?.imdisplayname ?? ''),
@@ -136,10 +158,27 @@ const parseMeeting = (raw: string | undefined): z.infer<typeof meetingSchema> | 
 // Message schema
 // ---------------------------------------------------------------------------
 
+const quotedMessageSchema = z.object({
+  id: z.string().describe('ID of the quoted message'),
+  author: z.string().describe('Display name of its author'),
+  preview: z.string().describe('The quote card’s one-line preview of it'),
+});
+
+/** How read_messages returns message text. */
+export const messageFormatSchema = z.enum(['markdown', 'html']);
+export type MessageFormat = z.infer<typeof messageFormatSchema>;
+
 export const messageSchema = z.object({
   id: z.string().describe('Message ID (timestamp-based)'),
   client_message_id: z.string().describe('Client-assigned message ID'),
-  content: z.string().describe('Message content (may contain HTML); empty on a deleted message'),
+  content: z
+    .string()
+    .describe(
+      'Message text as Markdown, in the form send_message and edit_message take (format "html" gives the HTML Teams stores); empty on a deleted message',
+    ),
+  quoted_message: quotedMessageSchema
+    .nullable()
+    .describe('The message a reply quotes, from the quote card it opens with; the card is not part of content'),
   deleted: z.boolean().describe('Whether the message was deleted'),
   edited_at: z
     .string()
@@ -159,15 +198,14 @@ export const messageSchema = z.object({
   meeting: meetingSchema.nullable().describe('The meeting this channel post announces; null when it announces none'),
   mentions: z.array(mentionSchema).describe('Users mentioned in this message'),
   files: z.array(fileSchema).describe('Files attached to this message'),
-  images: z
-    .array(imageSchema)
-    .describe('Images embedded in the message; the inline <img> in content is a downscaled preview'),
+  images: z.array(imageSchema).describe('Images embedded in the message, in the order content marks them [image]'),
   reactions: z.array(z.string()).describe('Reaction emoji keys on this message (e.g., ["like", "heart"])'),
 });
 
 export type Message = z.infer<typeof messageSchema>;
 
 interface RawMention {
+  itemid?: string | number;
   mri?: string;
   displayName?: string;
 }
@@ -207,15 +245,35 @@ export const extractMri = (from: string): string => {
   return match?.[1] ?? from;
 };
 
-/** Parse mentions from the serialized JSON string in properties.mentions. */
-const parseMentions = (raw?: string): Array<{ mri: string; display_name: string }> => {
+/** The mentions in the serialized JSON string in properties.mentions. */
+const rawMentions = (raw?: string): RawMention[] => {
   if (!raw) return [];
   try {
-    const arr = JSON.parse(raw) as RawMention[];
-    return arr.map(m => ({ mri: m.mri ?? '', display_name: m.displayName ?? '' }));
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as RawMention[]) : [];
   } catch {
     return [];
   }
+};
+
+const parseMentions = (raw?: string): Array<{ mri: string; display_name: string }> =>
+  rawMentions(raw).map(m => ({ mri: m.mri ?? '', display_name: m.displayName ?? '' }));
+
+/** Each mention's full display name by the `itemid` its span carries in the message HTML. */
+const mentionNames = (raw?: string): Map<string, string> =>
+  new Map(
+    rawMentions(raw).flatMap(m => (m.itemid !== undefined && m.displayName ? [[String(m.itemid), m.displayName]] : [])),
+  );
+
+/** A message's text in the requested format, and the message its quote card names. */
+const messageText = (
+  m: RawMessage,
+  format: MessageFormat,
+): { content: string; quoted: z.infer<typeof quotedMessageSchema> | null } => {
+  const content = m.content ?? '';
+  if (m.messagetype === 'Text') return { content: format === 'html' ? content : decodeEntities(content), quoted: null };
+  const { markdown, quoted } = teamsHtmlToMarkdown(content, mentionNames(m.properties?.mentions));
+  return { content: format === 'html' ? content : markdown, quoted };
 };
 
 /** Parse files from the serialized JSON string in properties.files. */
@@ -245,24 +303,28 @@ const isoFromEpochProperty = (value: number | string | undefined): string | null
   return epochMs > 0 ? toLocalIso(epochMs) : null;
 };
 
-export const mapMessage = (m: RawMessage): Message => ({
-  id: m.id ?? '',
-  client_message_id: m.clientmessageid ?? '',
-  content: m.content ?? '',
-  deleted: isoFromEpochProperty(m.properties?.deletetime) !== null,
-  edited_at: isoFromEpochProperty(m.properties?.edittime),
-  message_type: m.messagetype ?? '',
-  from: extractMri(m.from ?? ''),
-  display_name: m.imdisplayname ?? '',
-  compose_time: toLocalIso(m.composetime),
-  conversation_id: m.conversationid ?? '',
-  reply_to_post_id: m.rootMessageId && m.rootMessageId !== m.id ? m.rootMessageId : null,
-  meeting: parseMeeting(m.properties?.meeting),
-  mentions: parseMentions(m.properties?.mentions),
-  files: parseFiles(m.properties?.files),
-  images: extractMessageImages(m.content ?? '').map(image => ({ object_id: image.objectId, url: image.fullSizeUrl })),
-  reactions: parseReactions(m),
-});
+export const mapMessage = (m: RawMessage, format: MessageFormat = 'markdown'): Message => {
+  const { content, quoted } = messageText(m, format);
+  return {
+    id: m.id ?? '',
+    client_message_id: m.clientmessageid ?? '',
+    content,
+    quoted_message: quoted,
+    deleted: isoFromEpochProperty(m.properties?.deletetime) !== null,
+    edited_at: isoFromEpochProperty(m.properties?.edittime),
+    message_type: m.messagetype ?? '',
+    from: extractMri(m.from ?? ''),
+    display_name: m.imdisplayname ?? '',
+    compose_time: toLocalIso(m.composetime),
+    conversation_id: m.conversationid ?? '',
+    reply_to_post_id: m.rootMessageId && m.rootMessageId !== m.id ? m.rootMessageId : null,
+    meeting: parseMeeting(m.properties?.meeting),
+    mentions: parseMentions(m.properties?.mentions),
+    files: parseFiles(m.properties?.files),
+    images: extractMessageImages(m.content ?? '').map(image => ({ object_id: image.objectId, url: image.fullSizeUrl })),
+    reactions: parseReactions(m),
+  };
+};
 
 // ---------------------------------------------------------------------------
 // Message search result schema (Substrate Search API)

@@ -37,4 +37,18 @@ describe('channel threads', () => {
     expect(conversation.topic).toBe('Project Renaissance');
     expect(conversation.thread_type).toBe('space');
   });
+
+  test('previews the last message on one line as Teams does, and names an event by its type', () => {
+    const preview = (lastMessage: Record<string, unknown>) =>
+      mapConversation({ id: '19:a@thread.v2', lastMessage }).last_message_preview;
+    const reply =
+      '<blockquote itemscope itemtype="http://schema.skype.com/Reply" itemid="1"><p itemprop="preview">old</p></blockquote>' +
+      '<p>Slide 3: fix the math.</p><p>&nbsp;</p><table><tr><td><p>Item</p></td></tr></table>';
+    expect(preview({ messagetype: 'RichText/Html', content: reply })).toBe('Slide 3: fix the math. Item');
+    expect(preview({ messagetype: 'RichText/Html', content: `<p>${'word '.repeat(80)}</p>` }).length).toBe(200);
+    expect(
+      preview({ messagetype: 'Event/Call', content: '<partlist type="ended"><part identity="x"/></partlist>' }),
+    ).toBe('[Event/Call]');
+    expect(preview({ messagetype: 'Text', content: '' })).toBe('');
+  });
 });

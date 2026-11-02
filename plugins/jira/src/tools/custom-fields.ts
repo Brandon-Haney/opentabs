@@ -44,10 +44,19 @@ const flattenObject = (value: Record<string, unknown>): Primitive => {
   return json.length > MAX_JSON_LENGTH ? `${json.slice(0, MAX_JSON_LENGTH)}… [truncated]` : json;
 };
 
+/** Keys of the error Jira puts in place of a value it cannot compute, such as an SLA outside a service project. */
+const ERROR_KEYS = new Set(['errorMessage', 'i18nErrorMessage']);
+
+/** A value that holds only Jira's error, which says the field has nothing to show. */
+const isErrorOnly = (value: Record<string, unknown>): boolean =>
+  typeof value.errorMessage === 'string' && Object.keys(value).every(key => ERROR_KEYS.has(key));
+
 const flattenItem = (value: unknown): Primitive | undefined => {
   if (value === null || value === undefined || value === '') return undefined;
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
-  return flattenObject(value as Record<string, unknown>) || undefined;
+  const object = value as Record<string, unknown>;
+  if (isErrorOnly(object)) return undefined;
+  return flattenObject(object) || undefined;
 };
 
 /** Flatten one field's value, or undefined when the field is empty. */

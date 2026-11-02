@@ -50,6 +50,15 @@ describe('flattenFieldValue', () => {
     expect(flattenFieldValue(doc)).toBe('Hi');
   });
 
+  test('treats a value that holds only an error as no value', () => {
+    const slaOutsideServiceProject = {
+      errorMessage: 'metric (Time to resolution) service space does not exist',
+      i18nErrorMessage: { i18nKey: 'sd.sla.error.servicedesk.not.exist', parameters: ['Time to resolution'] },
+    };
+    expect(flattenFieldValue(slaOutsideServiceProject)).toBeUndefined();
+    expect(flattenFieldValue({ errorMessage: 'x', name: 'Time to resolution' })).toBe('Time to resolution');
+  });
+
   test('keeps a shape with no rule as JSON, marking it when cut short', () => {
     expect(flattenFieldValue({ self: 'x', hours: 3 })).toBe('{"hours":3}');
     const long = flattenFieldValue({ text: 'y'.repeat(600) }) as string;

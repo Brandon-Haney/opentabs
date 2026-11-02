@@ -19,7 +19,7 @@ npm install -g @opentabs-dev/opentabs-plugin-outlook
 1. Open [outlook.cloud.microsoft](https://outlook.cloud.microsoft) in Chrome and log in
 2. Open the OpenTabs side panel — the Microsoft Outlook plugin should appear as **ready**
 
-## Tools (26)
+## Tools (30)
 
 ### Account (2)
 
@@ -27,6 +27,12 @@ npm install -g @opentabs-dev/opentabs-plugin-outlook
 |---|---|---|
 | `get_current_user` | Get the current user profile | Read |
 | `diagnose` | Read-only connectivity and auth check: page origin, MSAL token sources (fingerprints, never the token), the token each cache slot trusts, rejected candidates, and one un-retried GET probe each against Graph, Outlook REST and OWS, bounded to 10 s so a hung base shows as a TimeoutError probe, plus whether MSAL stores its cache encrypted | Read |
+
+### People (1)
+
+| Tool | Description | Type |
+|---|---|---|
+| `find_people` | Find people's email addresses by name | Read |
 
 ### Messages (17)
 

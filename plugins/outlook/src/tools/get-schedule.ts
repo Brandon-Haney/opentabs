@@ -8,7 +8,7 @@ export const getSchedule = defineTool({
   name: 'get_schedule',
   displayName: 'Get Schedule',
   description:
-    "Look up free/busy availability for one or more people in the organization over a time window. Returns each person's busy/tentative/out-of-office blocks (with subjects and locations where the requester is permitted to see them) and their working hours. Use this to view other people's calendars and find open meeting times.",
+    "Look up free/busy availability for one or more people in the organization over a time window. Returns each person's busy/tentative/out-of-office blocks (with subjects and locations where the requester is permitted to see them) and their working hours. Use this to view other people's calendars and find open meeting times; find_people gives the addresses of people known by name.",
   summary: "View others' availability",
   icon: 'users',
   group: 'Calendar',

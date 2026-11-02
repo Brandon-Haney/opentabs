@@ -11,6 +11,7 @@ import { diagnose } from './tools/diagnose.js';
 import { forwardMessage } from './tools/forward-message.js';
 import { getAttachmentContent } from './tools/get-attachment-content.js';
 import { getCalendarView } from './tools/get-calendar-view.js';
+import { findPeople } from './tools/find-people.js';
 import { getCurrentUser } from './tools/get-current-user.js';
 import { getEvent } from './tools/get-event.js';
 import { getMessage } from './tools/get-message.js';
@@ -47,6 +48,8 @@ class OutlookPlugin extends OpenTabsPlugin {
     // Account
     getCurrentUser,
     diagnose,
+    // People
+    findPeople,
     // Messages
     listMessages,
     getMessage,

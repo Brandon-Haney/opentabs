@@ -40,20 +40,28 @@ import { tokenFingerprint } from './token-fingerprint.js';
  * evicting each other's winning token under one shared cache — which would make the
  * two endpoints repeatedly re-cascade against each other. Calendar read and write
  * are split so a mutating call never pins to a read-only token cached by a read.
- * Mailbox settings need a scope of their own, so a settings read never evicts or
- * rejects the token a mail or calendar call relies on.
+ * Mailbox settings and people search need scopes of their own, so a read of
+ * either never evicts or rejects the token a mail or calendar call relies on.
  */
-type Capability = 'mail' | 'calendar' | 'calendar-write' | 'settings';
+type Capability = 'mail' | 'calendar' | 'calendar-write' | 'settings' | 'people';
 
 /**
- * Every cache slot the plugin cascades in: the four request capabilities, the
+ * Every cache slot the plugin cascades in: the five request capabilities, the
  * same-origin OWS gateway (`ows`), and OneDrive uploads (`files`, Graph tokens
  * carrying Files scope only). Each slot holds one accepted token in the SDK auth
  * cache and its own set of remembered rejections in the cascade memory.
  */
 export type AuthSlot = Capability | 'ows' | 'files';
 
-export const AUTH_SLOTS: readonly AuthSlot[] = ['mail', 'calendar', 'calendar-write', 'settings', 'ows', 'files'];
+export const AUTH_SLOTS: readonly AuthSlot[] = [
+  'mail',
+  'calendar',
+  'calendar-write',
+  'settings',
+  'people',
+  'ows',
+  'files',
+];
 
 /** Per-slot auth cache key, keeping each token bucket separate. The same key scopes the cascade memory. */
 const AUTH_CACHE_KEY: Record<AuthSlot, string> = {
@@ -61,6 +69,7 @@ const AUTH_CACHE_KEY: Record<AuthSlot, string> = {
   calendar: 'outlook-calendar',
   'calendar-write': 'outlook-calendar-write',
   settings: 'outlook-settings',
+  people: 'outlook-people',
   ows: 'outlook-ows',
   files: 'outlook-files',
 };

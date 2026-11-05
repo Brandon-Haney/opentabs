@@ -2,6 +2,7 @@ import type { ConfigSchema, ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import { getPageGlobal, OpenTabsPlugin, waitUntil } from '@opentabs-dev/plugin-sdk';
 import { INVENTORY_WORK_AREA_SETTING, INVENTORY_WORK_AREA_SETTING_LABEL } from './inventory.js';
 import { PURCHASE_ORDERS_WORK_AREA_SETTING, PURCHASE_ORDERS_WORK_AREA_SETTING_LABEL } from './procurement.js';
+import { closePoLines } from './tools/close-po-lines.js';
 import { findRgnsForReturn } from './tools/find-rgns-for-return.js';
 import { getItemQuantities } from './tools/get-item-quantities.js';
 import { getRgn } from './tools/get-rgn.js';
@@ -56,6 +57,7 @@ class OracleFusionPlugin extends OpenTabsPlugin {
     },
   };
   readonly tools: ToolDefinition[] = [
+    closePoLines,
     findRgnsForReturn,
     getItemQuantities,
     getRgn,

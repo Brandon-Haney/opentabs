@@ -24,7 +24,8 @@ const documentCell = (number: string): string =>
   `<td><a title="Notes to Receiver"></a></td></tr></tbody></table>`;
 
 const searched = respond(
-  `<table><tr><th id="${TABLE}:rh">&nbsp;</th><th id="${TABLE}:c1">Organization</th><th id="${TABLE}:c2">Item</th>` +
+  `<table><tr><th id="${TABLE}:rh" _afrRH="true">&nbsp;</th><th id="${TABLE}:c1">Organization</th>` +
+    `<th id="${TABLE}:c2">Item</th>` +
     `<th id="${TABLE}:c3">Document Number</th><th id="${TABLE}:grp" colspan="2">Quantity</th>` +
     `<th id="${TABLE}:c4">Quantity</th></tr></table>` +
     '<table><tr><th id="r:app:other:c9">Elsewhere</th></tr></table>' +
@@ -71,6 +72,17 @@ describe('flat tables', () => {
         '<td><div><table _afrIT="1"><tr><td>48881470-GRT</td><td>STAGING</td></tr></table></div></td></tr></table></div>',
     );
     expect(parseFlatTable(frozen, TABLE).rows).toEqual([['ATL001-100001', '1', '48881470-GRT', 'STAGING']]);
+  });
+
+  test('keeps an untitled column in place so the columns after it keep their headings', () => {
+    const withIcon = respond(
+      `<table><tr><th id="${TABLE}:c108" _afrRH="true">&nbsp;</th><th id="${TABLE}:c108a">&nbsp;</th>` +
+        `<th id="${TABLE}:c3">Line</th><th id="${TABLE}:c4">Item</th></tr></table>` +
+        `<div id="${TABLE}::db"><table>${row('24', ['', '152', '124245-MOB'])}</table></div>`,
+    );
+    const table = parseFlatTable(withIcon, TABLE);
+    expect(table.headings).toEqual(['', 'Line', 'Item']);
+    expect(recordsOf(table)).toEqual([{ Line: '152', Item: '124245-MOB' }]);
   });
 
   test('reads the key of each rendered row', () => {

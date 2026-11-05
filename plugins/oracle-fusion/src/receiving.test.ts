@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { SearchRejectedError } from '../search-screen.js';
-import { unknownDocuments } from './search-expected-shipments.js';
+import { unknownDocuments } from './receiving.js';
+import { SearchRejectedError } from './search-screen.js';
 
 const refusal = (...messages: { field: string; text: string }[]) =>
   new SearchRejectedError(messages.map(message => ({ severity: 'error' as const, ...message })));

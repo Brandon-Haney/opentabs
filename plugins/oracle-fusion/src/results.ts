@@ -189,11 +189,61 @@ const auditCommandFor = (
 };
 
 /**
+ * Finds the link of the result row whose link shows `linkText` (typically the record
+ * number), and the row's key. `pages` are the responses to look for the link in, newest
+ * first: a page that opens records in tabs of their own answers Done without redrawing the
+ * results, so a row's link is then found in the results as the search rendered them.
+ */
+const findResultRow = (pages: RichResponse[], linkText: string): { link: string; rowKey: string } => {
+  for (const page of pages) {
+    const link = findRowLink(page, linkText);
+    const rowKey = link ? rowKeyOfLink(link) : null;
+    if (link && rowKey) return { link, rowKey };
+  }
+  throw ToolError.internal(`Oracle Fusion did not show a link for row ${linkText} in the results.`);
+};
+
+/** Opens the detail page of the result row whose link shows `linkText`, found as `findResultRow` finds it. */
+export const openRowDetail = async (
+  adfWindow: AdfWindow,
+  pages: RichResponse[],
+  linkText: string,
+  fields: Record<string, string>,
+): Promise<RichResponse> => {
+  const { link, rowKey } = findResultRow(pages, linkText);
+  // Some tables open the selected row rather than the row whose link was clicked, so the
+  // click carries the row's selection, as a browser's click does.
+  const table = link.slice(0, link.lastIndexOf(`:${rowKey}:`));
+  return adfWindow.submit({ ...clickEvent(link, fields), deltas: `{${table}={selectedRowKeys=${rowKey}}}` });
+};
+
+/** Exports the table of a detail page, such as an order's lines, through its Export button. */
+export const exportDetailTable = async (
+  adfWindow: AdfWindow,
+  detail: RichResponse,
+  linkText: string,
+): Promise<Record<string, string>[]> => {
+  const exportButton = findExportButton(detail);
+  if (!exportButton) throw ToolError.internal(`The Oracle Fusion detail page for ${linkText} has no Export button.`);
+  const file = await adfWindow.download(clickEvent(exportButton), {
+    contentType: EXPORT_CONTENT_TYPE,
+    timeout: EXPORT_TIMEOUT_MS,
+  });
+  return parseExport(file);
+};
+
+/**
  * Leaves a detail page through its Done button. A page that opened the record in a tab of
  * its own answers Done with the shell's close-tab warning, which is confirmed so the tab
  * closes and the results show again.
  */
-const closeDetailPage = async (adfWindow: AdfWindow, done: string): Promise<RichResponse> => {
+export const closeDetailPage = async (
+  adfWindow: AdfWindow,
+  detail: RichResponse,
+  linkText: string,
+): Promise<RichResponse> => {
+  const done = findDoneButton(detail);
+  if (!done) throw ToolError.internal(`The Oracle Fusion detail page for ${linkText} has no Done button.`);
   const left = await adfWindow.submit(clickEvent(done));
   const warning = findCloseTabWarning(left);
   if (!warning) return left;
@@ -220,26 +270,13 @@ const readChosenRows = async (
   let page = response;
   for (const [index, linkText] of chosen.entries()) {
     report(`Reading details ${index + 1} of ${chosen.length}`);
-    // A page that opens records in tabs of their own answers Done without redrawing the
-    // results, so a row's link is then found in the results as the search rendered them.
-    const link = findRowLink(page, linkText) ?? findRowLink(response, linkText);
-    const rowKey = link ? rowKeyOfLink(link) : null;
-    if (!(link && rowKey)) {
-      throw ToolError.internal(`Oracle Fusion did not show a link for row ${linkText} in the results.`);
-    }
-
     if (reading.audit) {
+      const { rowKey } = findResultRow([page, response], linkText);
       const command = { ...reading.audit, rowKey, fields: panel.values };
       audits.set(linkText, await readRowDialog(adfWindow, command, parseDetailFields));
     }
 
-    // Some tables open the selected row rather than the row whose link was clicked, so the
-    // click carries the row's selection, as a browser's click does.
-    const table = link.slice(0, link.lastIndexOf(`:${rowKey}:`));
-    const detail = await adfWindow.submit({
-      ...clickEvent(link, panel.values),
-      deltas: `{${table}={selectedRowKeys=${rowKey}}}`,
-    });
+    const detail = await openRowDetail(adfWindow, [page, response], linkText, panel.values);
     let fields = parseDetailFields(detail);
     for (const title of reading.sections) {
       const section = findCollapsedSection(detail, title);
@@ -251,19 +288,10 @@ const readChosenRows = async (
       lineDialogs.set(linkText, await readLineDialogs(adfWindow, detail, reading.lineCommand, panel.values));
     }
     if (reading.exportDetailTable) {
-      const exportButton = findExportButton(detail);
-      if (!exportButton)
-        throw ToolError.internal(`The Oracle Fusion detail page for ${linkText} has no Export button.`);
-      const file = await adfWindow.download(clickEvent(exportButton), {
-        contentType: EXPORT_CONTENT_TYPE,
-        timeout: EXPORT_TIMEOUT_MS,
-      });
-      detailTables.set(linkText, parseExport(file));
+      detailTables.set(linkText, await exportDetailTable(adfWindow, detail, linkText));
     }
 
-    const done = findDoneButton(detail);
-    if (!done) throw ToolError.internal(`The Oracle Fusion detail page for ${linkText} has no Done button.`);
-    page = await closeDetailPage(adfWindow, done);
+    page = await closeDetailPage(adfWindow, detail, linkText);
   }
   return { details, audits, lineDialogs, detailTables };
 };

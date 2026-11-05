@@ -29,7 +29,14 @@ Configure settings via `opentabs plugin configure oracle-fusion` or the side pan
 | `inventoryWorkArea` | string | No | Label of the home page tile that opens the Inventory Management work area. Set this when your organization has renamed the tile. Defaults to Inventory Management. |
 | `purchaseOrdersWorkArea` | string | No | Label of the home page tile that opens the Purchase Orders work area. Set this when your organization has renamed the tile. Defaults to Purchase Orders. |
 
-## Tools (12)
+## Tools (13)
+
+### Purchasing (2)
+
+| Tool | Description | Type |
+|---|---|---|
+| `close_po_lines` | Close open, unreceived purchase order lines | Write |
+| `search_purchase_orders` | Search purchase orders and read their lines | Read |
 
 ### Returns (6)
 
@@ -57,12 +64,6 @@ Configure settings via `opentabs plugin configure oracle-fusion` or the side pan
 |---|---|---|
 | `search_expected_shipments` | Search open PO, ASN, transfer and RMA lines awaiting receipt | Read |
 
-### Purchasing (1)
-
-| Tool | Description | Type |
-|---|---|---|
-| `search_purchase_orders` | Search purchase orders and read their lines | Read |
-
 ## How It Works
 
 This plugin runs inside your Oracle Fusion tab through the [OpenTabs](https://opentabs.dev) Chrome extension. It uses your existing browser session — no API tokens or OAuth apps required. All operations happen as you, with your permissions.
@@ -88,6 +89,7 @@ MIT
 - **Movement request columns.** The locators, reason, requester and store/invoice reference are columns Manage Movement Requests hides by default. The plugin shows every column once (View → Columns → Show All), and Fusion keeps that choice, so your own view of the table shows every column afterwards.
 - **Movement request details and picks.** With `include_details`, each movement request on the returned page is opened to read its customer and order (Additional Information) and the picks of every line. A line's own source fields are often blank because Fusion chooses the source when picking; the picks show where the stock was really taken from.
 - **Searches without an export.** Receive Expected Shipments and Manage Movement Requests have no Export button, so their rows are read from the page, and Fusion renders at most 500 rows at once. A search matching more is refused with the count, so it can be narrowed.
-- **Purchase orders.** `search_purchase_orders` works in the Purchase Orders work area (set `purchaseOrdersWorkArea` if your tile is renamed). The page fills Buyer with your own name; the plugin clears it so every buyer's orders are searched, and it includes closed orders unless told not to. With `include_lines`, each order opens in its own tab as in the UI and is closed again afterwards, answering the "changes will be lost" warning with Yes — the plugin never changes an order, so nothing is lost.
+- **Purchase orders.** `search_purchase_orders` works in the Purchase Orders work area (set `purchaseOrdersWorkArea` if your tile is renamed). The page fills Buyer with your own name; the plugin clears it so every buyer's orders are searched, and it includes closed orders unless told not to. With `include_lines`, each order opens in its own tab as in the UI and is closed again afterwards, answering the "changes will be lost" warning with Yes — reading an order changes nothing, so nothing is lost.
+- **Closing purchase order lines.** `close_po_lines` closes lines of one order the way Lines Actions → Close does on the order page, one line at a time. Before each line it reads the order again and skips the line unless its number and item match, it is Open, and Receive Expected Shipments still expects its whole ordered quantity, so nothing on it has been received. That check covers the inventory organization Fusion has selected for the Inventory Management work area. It never uses Cancel, Cancel Document or the change order (Edit) path. The call stops at the first error, warning, unexpected dialog or unconfirmed answer, leaving the remaining lines alone, then opens the order again and reports each line's status as Fusion shows it. It takes at most 25 lines and starts no new line after about 200 seconds. It changes orders, so set it to ask for approval: `opentabs config set tool-permission.oracle-fusion.close_po_lines ask`.
 - **Working on this plugin.** [docs/adf-field-guide.md](docs/adf-field-guide.md) explains how the plugin drives Fusion and every trap found so far; [docs/adding-a-screen.md](docs/adding-a-screen.md) is the recipe for adding a screen.
 - **RGNs and DC credits.** The RGN tools run the custom BI Publisher reports behind the RGN Reconciliation Dashboard (R-077) and the RGN print report (R-442) through your session. Each report run takes a few seconds, and `search_rgns` runs one per stage, so naming a stage is faster. An RGN shares no number with the inventory return transaction; `find_rgns_for_return` matches them by item and date and returns every candidate.

@@ -12,6 +12,7 @@ import type { RichEvent } from './adf-window.js';
 
 /** A table rendered in a response: its headings and each row's values in heading order. */
 export interface FlatTable {
+  /** One heading per value column; a column without a title, such as an icon column, has an empty heading. */
   headings: string[];
   rows: string[][];
   /** Number of rows the server holds for the table, or null when it did not say. */
@@ -40,13 +41,19 @@ const rowValues = (cell: HTMLTableCellElement): string[] => {
 
 /**
  * Reads a table's headings and rows out of a response. Headings are the table's own (their
- * ids sit under the table's id) and name a single column; the row-header column has no text.
+ * ids sit under the table's id) and name a single column. The row-header column, marked like
+ * its cells, holds no value and is left out; an untitled value column, such as an icon
+ * column, keeps its place so the values after it stay under their own headings.
  */
 export const parseFlatTable = (response: RichResponse, tableId: string): FlatTable => {
   const headings = [...response.document.querySelectorAll('th[id]')]
-    .filter(heading => heading.id.startsWith(`${tableId}:`) && Number(heading.getAttribute('colspan') ?? 1) === 1)
-    .map(elementText)
-    .filter(heading => heading !== '');
+    .filter(
+      heading =>
+        heading.id.startsWith(`${tableId}:`) &&
+        Number(heading.getAttribute('colspan') ?? 1) === 1 &&
+        !heading.hasAttribute('_afrrh'),
+    )
+    .map(elementText);
 
   const body = response.document.getElementById(`${tableId}::db`);
   const rows = [...(body?.querySelectorAll<HTMLTableRowElement>('tr[_afrrk]') ?? [])].map(row =>
@@ -58,9 +65,13 @@ export const parseFlatTable = (response: RichResponse, tableId: string): FlatTab
   return { headings, rows, rowCount };
 };
 
-/** Keys each row's values by the heading of its column. */
+/** Keys each row's values by the heading of its column, leaving out untitled columns. */
 export const recordsOf = (table: FlatTable): Record<string, string>[] =>
-  table.rows.map(cells => Object.fromEntries(table.headings.map((heading, index) => [heading, cells[index] ?? ''])));
+  table.rows.map(cells =>
+    Object.fromEntries(
+      table.headings.flatMap((heading, index) => (heading === '' ? [] : [[heading, cells[index] ?? '']])),
+    ),
+  );
 
 /** Panel collection a table sits in: the toolbar, menus and column choices around it. */
 const collectionOf = (tableId: string): string => tableId.slice(0, tableId.lastIndexOf(':'));

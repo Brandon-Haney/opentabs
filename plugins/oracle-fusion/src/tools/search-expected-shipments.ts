@@ -1,60 +1,20 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { INVENTORY_WORK_AREA_SETTING_LABEL, inventoryWorkArea, RECEIPTS_TASKS } from '../inventory.js';
-import { renderedRows } from '../results.js';
-import type { Criterion } from '../search-page.js';
-import { createSearchScreen, type LookupField, SearchRejectedError } from '../search-screen.js';
+import {
+  EXPECTED_SHIPMENT_DOCUMENTS,
+  type ExpectedShipmentDocument,
+  expectedShipmentCriteria,
+  expectedShipmentsScreen,
+  unknownDocuments,
+} from '../receiving.js';
+import { SearchRejectedError } from '../search-screen.js';
 import { expectedShipmentSchema, mapExpectedShipment } from './schemas.js';
-
-const screen = createSearchScreen({
-  workArea: inventoryWorkArea,
-  workAreaSetting: INVENTORY_WORK_AREA_SETTING_LABEL,
-  category: RECEIPTS_TASKS,
-  task: 'Receive Expected Shipments',
-  // The results table sits in the page's table toolbar; the other tables belong to lookups.
-  results: renderedRows(/:_ATp:[^:]+$/),
-});
-
-/**
- * Document fields of the page, keyed by tool parameter: the label each has on the page, and
- * the label its lookup dialog gives the document number.
- */
-const DOCUMENT_FIELDS = {
-  purchase_order: { label: 'Purchase Order', lookupLabel: 'Purchase Order' },
-  asn: { label: 'ASN', lookupLabel: 'Shipment' },
-  transfer_order: { label: 'Transfer Order', lookupLabel: 'Transfer Order' },
-  in_transit_shipment: { label: 'In-Transit Shipment', lookupLabel: 'Shipment' },
-  rma: { label: 'RMA', lookupLabel: 'RMA' },
-} as const satisfies Record<string, LookupField>;
-
-type DocumentField = keyof typeof DOCUMENT_FIELDS;
 
 /** Documents a partial number may match before the search is refused; each is searched on its own. */
 const MAX_MATCHED_DOCUMENTS = 25;
 
 const documentSchema = (what: string) =>
   z.string().optional().describe(`${what} number. With partial_match, any part of the number`);
-
-/**
- * Message Fusion gives when a document field does not know the number entered: the field's
- * lookup validates the number before the search runs.
- */
-const UNKNOWN_VALUE = /^Invalid value\b/i;
-
-/**
- * Reads which of the named document fields Fusion refused because it does not know the
- * number. Returns null when Fusion refused the search for any other reason, which the tool
- * reports as an error.
- */
-export const unknownDocuments = (error: SearchRejectedError, named: DocumentField[]): Set<DocumentField> | null => {
-  const unknown = new Set<DocumentField>();
-  for (const message of error.messages) {
-    const field = named.find(candidate => DOCUMENT_FIELDS[candidate].label === message.field);
-    if (!field || !UNKNOWN_VALUE.test(message.text)) return null;
-    unknown.add(field);
-  }
-  return unknown.size > 0 ? unknown : null;
-};
 
 const documentResultSchema = z.object({
   field: z
@@ -146,22 +106,14 @@ export const searchExpectedShipments = defineTool({
   }),
   handle: async (params, context) => {
     const report = (message: string) => context?.reportProgress({ message });
-    const given = (Object.keys(DOCUMENT_FIELDS) as DocumentField[]).filter(field => params[field]);
+    const given = (Object.keys(EXPECTED_SHIPMENT_DOCUMENTS) as ExpectedShipmentDocument[]).filter(
+      field => params[field],
+    );
     if (given.length === 0 && !params.supplier && !params.item) {
       throw ToolError.validation(
         'Provide at least one of purchase_order, asn, transfer_order, in_transit_shipment, rma, supplier or item.',
       );
     }
-
-    const criteriaFor = (documents: Partial<Record<DocumentField, string>>): Criterion[] => [
-      ...(Object.entries(DOCUMENT_FIELDS) as [DocumentField, LookupField][]).map(([field, { label }]) => ({
-        label,
-        text: documents[field] ?? '',
-      })),
-      { label: 'Supplier', text: params.supplier ?? '' },
-      { label: 'Item', text: params.item ?? '' },
-      { label: 'Due Date', option: params.due_date ?? '' },
-    ];
 
     /**
      * Searches with the given document numbers. A number the document field does not know is
@@ -169,12 +121,19 @@ export const searchExpectedShipments = defineTool({
      * found, with any other number in the same search left unchecked.
      */
     const searchDocuments = async (
-      documents: Partial<Record<DocumentField, string>>,
+      documents: Partial<Record<ExpectedShipmentDocument, string>>,
       matchedDocument: string,
     ): Promise<ShipmentSearch> => {
-      const named = (Object.keys(documents) as DocumentField[]).filter(field => documents[field]);
+      const named = (Object.keys(documents) as ExpectedShipmentDocument[]).filter(field => documents[field]);
       try {
-        const rows = await screen.search(criteriaFor(documents), report);
+        const rows = await expectedShipmentsScreen.search(
+          expectedShipmentCriteria(documents, {
+            supplier: params.supplier,
+            item: params.item,
+            dueDate: params.due_date,
+          }),
+          report,
+        );
         const status: DocumentStatus = rows.length > 0 ? 'open' : 'no_open_lines';
         return {
           shipments: rows.map(row => ({ ...mapExpectedShipment(row), matched_document: matchedDocument })),
@@ -204,7 +163,7 @@ export const searchExpectedShipments = defineTool({
       throw ToolError.validation('partial_match needs exactly one document number (purchase_order, asn, and so on).');
     }
     const text = params[partialField] ?? '';
-    const found = await screen.lookup(DOCUMENT_FIELDS[partialField], text, report);
+    const found = await expectedShipmentsScreen.lookup(EXPECTED_SHIPMENT_DOCUMENTS[partialField], text, report);
     const matches = [...new Set(found.rows.map(row => row[0] ?? '').filter(Boolean))];
     if (matches.length === 0) {
       return {

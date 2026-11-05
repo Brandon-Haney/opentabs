@@ -67,8 +67,10 @@ export const expandSectionEvent = (sectionId: string, fields?: Record<string, st
 
 /**
  * The warning the tabbed work-area shell shows when a record's tab closes: "You have not
- * saved your changes. If you close this tab, then your changes will be lost." The plugin
- * never changes a record, so leaving the tab loses nothing.
+ * saved your changes. If you close this tab, then your changes will be lost." It is shown
+ * whatever the tab holds. Anything the plugin changes is saved by the dialog that made the
+ * change, so confirming loses nothing it did, and discards anything a failed change left
+ * unsaved.
  */
 const CLOSE_TAB_WARNING = /:MAwarn$/;
 

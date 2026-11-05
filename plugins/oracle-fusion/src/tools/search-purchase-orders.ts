@@ -1,8 +1,11 @@
 import { defineTool, ToolError } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
-import { PURCHASE_ORDERS_WORK_AREA_SETTING_LABEL, purchaseOrdersWorkArea } from '../procurement.js';
+import {
+  PURCHASE_ORDERS_WORK_AREA_SETTING_LABEL,
+  purchaseOrderCriteria,
+  purchaseOrdersWorkArea,
+} from '../procurement.js';
 import { exportedRowsWithDetails } from '../results.js';
-import type { Criterion } from '../search-page.js';
 import { createSearchScreen } from '../search-screen.js';
 import {
   DEFAULT_LIMIT,
@@ -91,16 +94,14 @@ export const searchPurchaseOrders = defineTool({
       throw ToolError.validation('Provide at least one of order, keywords, supplier, requisition or status.');
     }
 
-    const criteria: Criterion[] = [
-      { label: 'Keywords', text: params.keywords ?? '' },
-      { label: 'Supplier', text: params.supplier ?? '' },
-      // The page fills Buyer with the signed-in user, which would hide every other buyer's orders.
-      { label: 'Buyer', text: '' },
-      { label: 'Order', text: params.order ?? '' },
-      { label: 'Requisition', text: params.requisition ?? '' },
-      { label: 'Status', option: params.status ?? '' },
-      { label: 'Include Closed Documents', option: params.include_closed === false ? 'No' : 'Yes' },
-    ];
+    const criteria = purchaseOrderCriteria({
+      order: params.order,
+      keywords: params.keywords,
+      supplier: params.supplier,
+      requisition: params.requisition,
+      status: params.status,
+      includeClosed: params.include_closed,
+    });
 
     const offset = params.offset ?? 0;
     const requestedPage = (rows: ExportedRow[]) =>

@@ -7,6 +7,7 @@ import { deleteMessage } from './tools/delete-message.js';
 import { diagnose } from './tools/diagnose.js';
 import { downloadImage } from './tools/download-image.js';
 import { editMessage } from './tools/edit-message.js';
+import { findPeople } from './tools/find-people.js';
 import { getCalendarView } from './tools/get-calendar-view.js';
 import { getConversationDetails } from './tools/get-conversation-details.js';
 import { getCurrentUser } from './tools/get-current-user.js';
@@ -44,7 +45,8 @@ class TeamsPlugin extends OpenTabsPlugin {
     removeMember,
     // Calendar
     getCalendarView,
-    // User
+    // People
+    findPeople,
     getCurrentUser,
     diagnose,
   ];

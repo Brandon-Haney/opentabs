@@ -9,6 +9,7 @@ import {
   createChatFileLink,
   createThread,
   describeTokenSources,
+  findDirectoryUsersByEmail,
   getDirectoryUsers,
   getGraphUserId,
   getSkypeIdentity,
@@ -16,6 +17,7 @@ import {
   probeAuthz,
   probeChatService,
   probeSubstrate,
+  searchDirectory,
   substrateSearch,
   TEAMS_TOKEN_SOURCES,
   threadApi,
@@ -725,6 +727,42 @@ describe('Microsoft Graph', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(JSON.parse(String(requestInit(0).body)).requests).toHaveLength(20);
     expect(users.map(u => u.id)).toEqual([...ids.slice(0, 19), 'oid-20']);
+  });
+
+  test('looks email addresses up by mailbox or sign-in name, dropping addresses no one has', async () => {
+    stubPreScript({ graphToken: capturedToken(GRAPH_TOKEN) });
+    const gary = { id: 'oid-g', displayName: 'Gary', mail: "gary_o'neil@contoso.com", userPrincipalName: '1@x.net' };
+    fetchMock.mockResolvedValueOnce(
+      json({
+        responses: [
+          { id: '1', status: 200, body: { value: [] } },
+          { id: '0', status: 200, body: { value: [gary] } },
+        ],
+      }),
+    );
+
+    const users = await settle(findDirectoryUsersByEmail(["gary_o'neil@contoso.com", 'nobody@contoso.com']));
+
+    expect(users).toEqual([gary]);
+    const [first] = JSON.parse(String(requestInit(0).body)).requests;
+    expect(decodeURIComponent(first.url)).toBe(
+      "/users?$filter=mail eq 'gary_o''neil@contoso.com' or userPrincipalName eq 'gary_o''neil@contoso.com'" +
+        '&$select=id,displayName,mail,userPrincipalName,jobTitle,department',
+    );
+  });
+
+  test('searches names and addresses with the eventual-consistency header directory search needs', async () => {
+    stubPreScript({ graphToken: capturedToken(GRAPH_TOKEN) });
+    fetchMock.mockResolvedValueOnce(json({ value: [{ id: 'oid-g', displayName: 'Gary Winko' }] }));
+
+    await settle(searchDirectory('Gary "Winko"', 5));
+
+    expect(decodeURIComponent(requestUrl(0))).toBe(
+      'https://graph.microsoft.com/v1.0/users?$search="displayName:Gary Winko" OR "mail:Gary Winko"' +
+        '&$select=id,displayName,mail,userPrincipalName,jobTitle,department&$top=5',
+    );
+    expect(requestHeaders(0).ConsistencyLevel).toBe('eventual');
+    expect(requestHeaders(0).Authorization).toBe(`Bearer ${GRAPH_TOKEN}`);
   });
 });
 

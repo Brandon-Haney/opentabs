@@ -1,25 +1,19 @@
-import {
-  LOCAL_FILE_PATH_FORMAT,
-  type ProgressOptions,
-  readLocalFile,
-  ToolError,
-  type ToolHandlerContext,
-} from '@opentabs-dev/plugin-sdk';
+import { LOCAL_FILE_PATH_FORMAT, readLocalFile, ToolError, type ToolHandlerContext } from '@opentabs-dev/plugin-sdk';
 import { z } from 'zod';
 import { base64ToBytes, buildFileEntry, chatFileUrl } from './chat-files.js';
 import { findMentions, isEmailMention, matchPerson, renderMentions } from './chat-mentions.js';
 import { markdownToTeamsHtml } from './markdown-html.js';
+import { ensureGraphToken, runReportedStep } from './reported-step.js';
 import {
   type ChatFileLink,
   createChatFileLink,
   type DirectoryUser,
+  findDirectoryUsersByEmail,
   getDirectoryUsers,
   getDriveWebUrl,
   getGraphUserId,
-  hasGraphToken,
   threadApi,
   uploadChatFile,
-  waitForGraphToken,
 } from './teams-api.js';
 
 /**
@@ -79,29 +73,6 @@ export interface ComposedMessage {
 
 const emailOf = (person: DirectoryUser): string => person.mail ?? person.userPrincipalName;
 
-/**
- * How often a long step reports its progress again. The platform ends a tool
- * that reports nothing for 25 seconds, and uploading a large file or sharing it
- * with a large chat takes longer than that.
- */
-const PROGRESS_HEARTBEAT_MS = 10_000;
-
-/** Run one step of the send, reporting it when it starts and again every PROGRESS_HEARTBEAT_MS until it settles. */
-const runReportedStep = async <T>(
-  context: ToolHandlerContext | undefined,
-  progress: ProgressOptions,
-  step: () => Promise<T>,
-): Promise<T> => {
-  if (!context) return step();
-  context.reportProgress(progress);
-  const heartbeat = setInterval(() => context.reportProgress(progress), PROGRESS_HEARTBEAT_MS);
-  try {
-    return await step();
-  } finally {
-    clearInterval(heartbeat);
-  }
-};
-
 /** The conversation's members as directory users, and whether it is a channel. */
 const conversationPeople = async (conversationId: string): Promise<{ people: DirectoryUser[]; isChannel: boolean }> => {
   if (conversationId === SELF_CHAT_ID) {
@@ -135,11 +106,7 @@ export const composeMessage = async (
   }
 
   // Mentions and files go through Microsoft Graph, whose token Teams mints a minute after the page loads.
-  if (!hasGraphToken()) {
-    await runReportedStep(context, { message: 'Waiting for Teams to renew its Microsoft Graph sign-in' }, () =>
-      waitForGraphToken(),
-    );
-  }
+  await ensureGraphToken(context);
 
   const { people, isChannel } = await conversationPeople(message.conversationId);
   if (message.files.length > 0 && isChannel) {
@@ -154,7 +121,8 @@ export const composeMessage = async (
   const emailsToLookUp = [
     ...new Set(mentionTargets.filter(isEmailMention).filter(email => !known.has(email.toLowerCase()))),
   ];
-  const directory = emailsToLookUp.length > 0 ? [...people, ...(await getDirectoryUsers(emailsToLookUp))] : people;
+  const directory =
+    emailsToLookUp.length > 0 ? [...people, ...(await findDirectoryUsersByEmail(emailsToLookUp))] : people;
 
   const mentions: SentMention[] = [];
   const rendered = renderMentions(message.text, ({ text, target }) => {

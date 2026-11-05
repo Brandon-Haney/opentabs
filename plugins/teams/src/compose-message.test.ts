@@ -4,6 +4,7 @@ import type { ChatFileLink, DirectoryUser, UploadedDriveItem } from './teams-api
 
 const api = vi.hoisted(() => ({
   createChatFileLink: vi.fn<(itemId: string, emails: string[], access: 'view' | 'edit') => Promise<ChatFileLink>>(),
+  findDirectoryUsersByEmail: vi.fn<(emails: string[]) => Promise<DirectoryUser[]>>(),
   getDirectoryUsers: vi.fn<(ids: string[]) => Promise<DirectoryUser[]>>(),
   getDriveWebUrl: vi.fn<() => Promise<string>>(),
   getGraphUserId: vi.fn<() => string>(),
@@ -47,8 +48,9 @@ beforeEach(() => {
   for (const mock of Object.values(api)) mock.mockReset();
   api.getGraphUserId.mockReturnValue('me');
   api.hasGraphToken.mockReturnValue(true);
-  api.getDirectoryUsers.mockImplementation(async ids =>
-    [ME, SANDIP].filter(u => ids.includes(u.id) || ids.includes(u.userPrincipalName)),
+  api.getDirectoryUsers.mockImplementation(async ids => [ME, SANDIP].filter(u => ids.includes(u.id)));
+  api.findDirectoryUsersByEmail.mockImplementation(async emails =>
+    [ME, SANDIP].filter(u => emails.includes(u.mail ?? '')),
   );
   api.getDriveWebUrl.mockResolvedValue(DRIVE);
   api.uploadChatFile.mockImplementation(async name => ({
@@ -210,7 +212,7 @@ describe('composeMessage', () => {
       undefined,
     );
 
-    expect(api.getDirectoryUsers).toHaveBeenLastCalledWith(['sandip@contoso.com']);
+    expect(api.findDirectoryUsersByEmail).toHaveBeenLastCalledWith(['sandip@contoso.com']);
     expect(composed.content).toContain('itemid="0">Sandip Kumar</span>');
   });
 
@@ -222,7 +224,7 @@ describe('composeMessage', () => {
       undefined,
     );
 
-    expect(api.getDirectoryUsers).toHaveBeenLastCalledWith(['sandip@contoso.com']);
+    expect(api.findDirectoryUsersByEmail).toHaveBeenLastCalledWith(['sandip@contoso.com']);
     expect(composed.content).toContain('itemid="0">Sandip</span>');
     expect(composed.mentions).toEqual([{ text: 'Sandip', display_name: 'Sandip Kumar', email: 'sandip@contoso.com' }]);
   });

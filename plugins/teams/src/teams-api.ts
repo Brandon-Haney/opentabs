@@ -901,6 +901,7 @@ export const graphApi = async <T>(
     method?: string;
     body?: Record<string, unknown> | Uint8Array;
     contentType?: string;
+    headers?: Record<string, string>;
     label: string;
     retryNonIdempotent?: boolean;
     timeoutMs?: number;
@@ -910,7 +911,7 @@ export const graphApi = async <T>(
   if (!token) throw noGraphTokenError();
   const { method = 'GET', body, contentType, label, retryNonIdempotent, timeoutMs } = options;
   const isBytes = body instanceof Uint8Array;
-  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  const headers: Record<string, string> = { ...options.headers, Authorization: `Bearer ${token}` };
   if (body !== undefined)
     headers['Content-Type'] = isBytes ? (contentType ?? 'application/octet-stream') : 'application/json';
 
@@ -1022,37 +1023,85 @@ export interface DirectoryUser {
   userPrincipalName: string;
 }
 
+/** A directory user as a people search returns them, with the work details that tell namesakes apart. */
+export interface DirectoryPerson extends DirectoryUser {
+  jobTitle?: string | null;
+  department?: string | null;
+}
+
 /** Graph `$batch` accepts at most this many requests per call. */
 const GRAPH_BATCH_LIMIT = 20;
 
 const USER_FIELDS = 'id,displayName,mail,userPrincipalName';
 
+const PERSON_FIELDS = `${USER_FIELDS},jobTitle,department`;
+
 /**
- * Look up directory users by object id or sign-in name, in batches. Ids that
- * resolve to no user are left out. A batch is a read, so it is replayed on
- * transient failures.
+ * Send GET requests through Graph `$batch`, twenty at a time, and return each
+ * request's response in order — `null` for one that failed. A batch is a read,
+ * so it is replayed on transient failures.
  */
-export const getDirectoryUsers = async (idsOrUpns: string[]): Promise<DirectoryUser[]> => {
-  const users: DirectoryUser[] = [];
-  for (let start = 0; start < idsOrUpns.length; start += GRAPH_BATCH_LIMIT) {
-    const chunk = idsOrUpns.slice(start, start + GRAPH_BATCH_LIMIT);
-    const result = await graphApi<{ responses?: { status: number; body?: DirectoryUser }[] }>('/$batch', {
+const graphBatchGet = async <T>(urls: string[], label: string): Promise<(T | null)[]> => {
+  const bodies: (T | null)[] = [];
+  for (let start = 0; start < urls.length; start += GRAPH_BATCH_LIMIT) {
+    const chunk = urls.slice(start, start + GRAPH_BATCH_LIMIT);
+    const result = await graphApi<{ responses?: { id: string; status: number; body?: T }[] }>('/$batch', {
       method: 'POST',
-      body: {
-        requests: chunk.map((id, i) => ({
-          id: String(i),
-          method: 'GET',
-          url: `/users/${encodeURIComponent(id)}?$select=${USER_FIELDS}`,
-        })),
-      },
-      label: 'Graph people lookup',
+      body: { requests: chunk.map((url, i) => ({ id: String(i), method: 'GET', url })) },
+      label,
       retryNonIdempotent: true,
     });
-    for (const response of result.responses ?? []) {
-      if (response.status === 200 && response.body) users.push(response.body);
+    const byId = new Map((result.responses ?? []).map(response => [response.id, response]));
+    for (const i of chunk.keys()) {
+      const response = byId.get(String(i));
+      bodies.push(response?.status === 200 && response.body ? response.body : null);
     }
   }
-  return users;
+  return bodies;
+};
+
+/** Look up directory users by object id or sign-in name. Ids that resolve to no user are left out. */
+export const getDirectoryUsers = async (idsOrUpns: string[]): Promise<DirectoryUser[]> =>
+  (
+    await graphBatchGet<DirectoryUser>(
+      idsOrUpns.map(id => `/users/${encodeURIComponent(id)}?$select=${USER_FIELDS}`),
+      'Graph people lookup',
+    )
+  ).filter(user => user !== null);
+
+/** A string as an OData literal, its single quotes doubled. */
+const odataString = (value: string): string => `'${value.replace(/'/g, "''")}'`;
+
+/**
+ * Look up directory users by email address. An organization's email address
+ * often differs from the sign-in name (`/users/{upn}` finds only the latter),
+ * so each address is matched against both. Addresses that match no one are
+ * left out.
+ */
+export const findDirectoryUsersByEmail = async (emails: string[]): Promise<DirectoryPerson[]> => {
+  const urls = emails.map(email => {
+    const literal = odataString(email);
+    const filter = `mail eq ${literal} or userPrincipalName eq ${literal}`;
+    return `/users?$filter=${encodeURIComponent(filter)}&$select=${PERSON_FIELDS}`;
+  });
+  const results = await graphBatchGet<{ value?: DirectoryPerson[] }>(urls, 'Graph people lookup by email');
+  return results.flatMap(result => result?.value?.[0] ?? []);
+};
+
+/**
+ * Search the directory for people whose display name or email address has
+ * words starting with each word of `query`. Directory search needs the
+ * `ConsistencyLevel: eventual` header; double quotes and backslashes in the
+ * query would end its search clause, so they become spaces.
+ */
+export const searchDirectory = async (query: string, limit: number): Promise<DirectoryPerson[]> => {
+  const term = query.replace(/["\\]/g, ' ').replace(/\s+/g, ' ').trim();
+  const search = `"displayName:${term}" OR "mail:${term}"`;
+  const result = await graphApi<{ value?: DirectoryPerson[] }>(
+    `/users?$search=${encodeURIComponent(search)}&$select=${PERSON_FIELDS}&$top=${limit}`,
+    { label: 'Graph people search', headers: { ConsistencyLevel: 'eventual' } },
+  );
+  return result.value ?? [];
 };
 
 // ---------------------------------------------------------------------------

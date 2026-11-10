@@ -1,6 +1,7 @@
 import { OpenTabsPlugin } from '@opentabs-dev/plugin-sdk';
 import type { ConfigSchema, ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import { isAuthenticated, waitForAuth } from './servicenow-api.js';
+import { addComment } from './tools/add-comment.js';
 import { describeTable } from './tools/describe-table.js';
 import { getAttachment } from './tools/get-attachment.js';
 import { getChange } from './tools/get-change.js';
@@ -21,6 +22,7 @@ import { listIncidentAttachments } from './tools/list-incident-attachments.js';
 import { listIncidentComments } from './tools/list-incident-comments.js';
 import { listMyGroups } from './tools/list-my-groups.js';
 import { listTaskSlas } from './tools/list-task-slas.js';
+import { previewComment } from './tools/preview-comment.js';
 import { queryTable } from './tools/query-table.js';
 import { searchChanges } from './tools/search-changes.js';
 import { searchConfigurationItems } from './tools/search-configuration-items.js';
@@ -58,6 +60,9 @@ class ServiceNowPlugin extends OpenTabsPlugin {
     getAttachment,
     listIncidentActivity,
     summarizeIncidents,
+    // Comments
+    previewComment,
+    addComment,
     // Changes
     searchChanges,
     getChange,

@@ -11,6 +11,8 @@ import {
 const AUTH_NAMESPACE = 'servicenow';
 const REQUEST_TIMEOUT_MS = 30_000;
 const DOWNLOAD_TIMEOUT_MS = 120_000;
+/** Shorter than the platform's 30s dispatch timeout, so a slow write reports that its outcome is unknown. */
+const WRITE_TIMEOUT_MS = 25_000;
 const MAX_ERROR_BODY_LENGTH = 500;
 
 /** Session token ServiceNow exposes as the `g_ck` page global and accepts as the `X-UserToken` header. */
@@ -53,10 +55,12 @@ export const waitForAuth = async (): Promise<boolean> => {
   }
 };
 
-/** How one request is sent: the media type it accepts and how long it may take. */
+/** How one request is sent: the media type it accepts, how long it may take, and any write it carries. */
 interface RequestOptions {
   accept: string;
   timeout: number;
+  method?: 'PATCH';
+  body?: string;
 }
 
 const JSON_REQUEST: RequestOptions = { accept: 'application/json', timeout: REQUEST_TIMEOUT_MS };
@@ -70,33 +74,45 @@ const JSON_REQUEST: RequestOptions = { accept: 'application/json', timeout: REQU
  * native sign-in dialog that blocks every subsequent interaction with the tab. Omitting the
  * header is therefore never an acceptable fallback.
  */
-const send = (path: string, token: string, options: RequestOptions): Promise<Response> =>
-  fetch(path, {
-    credentials: 'include',
-    headers: { Accept: options.accept, 'X-UserToken': token },
-    signal: AbortSignal.timeout(options.timeout),
-  });
-
-/**
- * Performs an authenticated read against the instance, recovering from token rotation.
- *
- * A rejected request carries a replacement token in `X-UserToken-Response`; the request is
- * retried once with it. `fetchFromPage` cannot serve this path because it discards the
- * response — and with it the replacement token — before the caller can read the headers.
- */
-const request = async (path: string, options: RequestOptions = JSON_REQUEST): Promise<Response> => {
-  const token = getToken();
-  if (!token) throw ToolError.auth('Not signed in to ServiceNow — open the instance in a tab and sign in.');
-
-  let response: Response;
+const send = async (path: string, token: string, options: RequestOptions): Promise<Response> => {
   try {
-    response = await send(path, token, options);
+    return await fetch(path, {
+      method: options.method ?? 'GET',
+      credentials: 'include',
+      headers: {
+        Accept: options.accept,
+        'X-UserToken': token,
+        ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
+      body: options.body,
+      signal: AbortSignal.timeout(options.timeout),
+    });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'TimeoutError') {
-      throw ToolError.timeout(`ServiceNow request timed out after ${options.timeout}ms — try narrowing the query.`);
+      const hint = options.method ? '' : ' — try narrowing the query';
+      throw ToolError.timeout(`ServiceNow request timed out after ${options.timeout}ms${hint}.`);
     }
     throw ToolError.internal(`ServiceNow request failed for ${path}: ${String(error)}`);
   }
+};
+
+/** Returns the session token, failing before anything is sent when the tab is not signed in. */
+const requireToken = (): string => {
+  const token = getToken();
+  if (!token) throw ToolError.auth('Not signed in to ServiceNow — open the instance in a tab and sign in.');
+  return token;
+};
+
+/**
+ * Sends an authenticated request, recovering from token rotation.
+ *
+ * A rejected request carries a replacement token in `X-UserToken-Response`; the request is
+ * retried once with it, which is safe for a write because the instance refused the first attempt
+ * before applying anything. `fetchFromPage` cannot serve this path because it discards the
+ * response — and with it the replacement token — before the caller can read the headers.
+ */
+const sendAuthenticated = async (path: string, token: string, options: RequestOptions): Promise<Response> => {
+  let response = await send(path, token, options);
 
   if (response.status === 401) {
     const replacement = response.headers.get('x-usertoken-response');
@@ -114,6 +130,10 @@ const request = async (path: string, options: RequestOptions = JSON_REQUEST): Pr
 
   return response;
 };
+
+/** Performs an authenticated request against the instance with the current session token. */
+const request = async (path: string, options: RequestOptions = JSON_REQUEST): Promise<Response> =>
+  sendAuthenticated(path, requireToken(), options);
 
 /** A page of table records plus the total number of rows matching the query. */
 export interface TablePage<T> {
@@ -158,6 +178,99 @@ export const tableQuery = async <T>(table: string, params: TableQuery = {}): Pro
 export const tableGet = async <T>(table: string, sysId: string, fields?: string): Promise<T | null> => {
   const page = await tableQuery<T>(table, { query: `sys_id=${sysId}`, fields, limit: 1 });
   return page.records[0] ?? null;
+};
+
+/** The request that updates one record. `previewComment` reports it and `tableUpdate` sends it. */
+export const tableUpdateRequest = (table: string, sysId: string, fields: Record<string, string>) => ({
+  method: 'PATCH' as const,
+  path: `/api/now/table/${encodeURIComponent(table)}/${encodeURIComponent(sysId)}?sysparm_fields=sys_id`,
+  body: JSON.stringify(fields),
+});
+
+/**
+ * Translates the failure of a write that was sent into what the caller may safely do next.
+ *
+ * A 4xx means the instance refused the write, so nothing was applied. A timeout, network failure
+ * or 5xx leaves the outcome unknown, so those lose their retryable flag: retrying could apply the
+ * write twice. A 403 stops being an auth error because session recovery re-runs auth failures, and
+ * signing in again cannot change what an access rule allows.
+ */
+const classifyWriteFailure = (error: unknown): unknown => {
+  const status = error instanceof ToolError ? error.details?.httpStatus : undefined;
+  const refused = typeof status === 'number' && status >= 400 && status < 500 && status !== 408;
+
+  if (refused) {
+    return status === 403
+      ? ToolError.validation(
+          `ServiceNow refused the update — this account may not write to the record. ${(error as ToolError).message}`,
+          'WRITE_DENIED',
+        )
+      : error;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return new ToolError(
+    `${message} The update may already have been applied — read the record before trying again.`,
+    'WRITE_OUTCOME_UNKNOWN',
+    { category: 'internal', retryable: false },
+  );
+};
+
+/**
+ * Updates fields on one record.
+ *
+ * A successful response does not prove the fields changed: the Table API skips a field the caller
+ * may not write and still answers 200, so callers must read the record back.
+ */
+export const tableUpdate = async (table: string, sysId: string, fields: Record<string, string>): Promise<void> => {
+  const { method, path, body } = tableUpdateRequest(table, sysId, fields);
+  const token = requireToken();
+  try {
+    await sendAuthenticated(path, token, { accept: 'application/json', timeout: WRITE_TIMEOUT_MS, method, body });
+  } catch (error) {
+    throw classifyWriteFailure(error);
+  }
+};
+
+/** Whether the signed-in user may edit a field, as far as the instance reports it. */
+export type FieldAccess = 'writable' | 'read_only' | 'unknown';
+
+/** Finds the `_fields` map of a form inside a Service Portal page response, however deeply it is nested. */
+const findFormFields = (node: unknown): Record<string, { sys_readonly?: unknown }> | null => {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = findFormFields(item);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (typeof node !== 'object' || node === null) return null;
+
+  const record = node as Record<string, unknown>;
+  const fields = record._fields;
+  if (typeof fields === 'object' && fields !== null) return fields as Record<string, { sys_readonly?: unknown }>;
+  return findFormFields(Object.values(record));
+};
+
+/**
+ * Asks the instance whether the signed-in user may edit a field on one record, without writing.
+ *
+ * Table metadata only reports the dictionary definition, so a field open to the column can still
+ * be denied on the record. The Service Portal form model is built on the server with access rules
+ * applied, which makes `sys_readonly` the per-record answer. Instances can customise or remove that
+ * page, so anything other than a clear answer is reported as unknown.
+ */
+export const fieldAccess = async (table: string, sysId: string, field: string): Promise<FieldAccess> => {
+  const qs = buildQueryString({ id: 'form', table, sys_id: sysId });
+  try {
+    const response = await request(`/api/now/sp/page?${qs}`);
+    const flag = findFormFields(await response.json())?.[field]?.sys_readonly;
+    if (flag === true || flag === 'true') return 'read_only';
+    if (flag === false || flag === 'false') return 'writable';
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
 };
 
 /** One aggregate bucket returned by the stats API. */

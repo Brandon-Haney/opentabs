@@ -27,7 +27,7 @@ Configure settings via `opentabs plugin configure servicenow` or the side panel.
 |---|---|---|---|
 | `instanceUrl` | url | No | The URL of your ServiceNow instance if it uses a custom domain (e.g., https://support.example.com). Leave empty for standard *.service-now.com instances. |
 
-## Tools (30)
+## Tools (32)
 
 ### Incidents (8)
 
@@ -41,6 +41,13 @@ Configure settings via `opentabs plugin configure servicenow` or the side panel.
 | `get_attachment` | Save an attachment to a path | Read |
 | `list_incident_activity` | Read the field-change and email history of an incident | Read |
 | `summarize_incidents` | Count incidents grouped by state, priority, group, or assignee | Write |
+
+### Comments (2)
+
+| Tool | Description | Type |
+|---|---|---|
+| `preview_comment` | Check a comment before posting it, without writing | Read |
+| `add_comment` | Post a comment or work note on a record | Write |
 
 ### Changes (2)
 
@@ -114,10 +121,25 @@ MIT
 
 ## Notes
 
-### Read-only
+### Writing to records
 
-Every tool in this plugin reads. There is no tool that creates, updates, or deletes a record, and
-the adapter contains no write request path at all — it cannot modify a ticket even if asked to.
+`add_comment` is the only tool that changes anything. Every other tool reads. It adds one journal
+entry and has no way to create, close, reassign, or edit a record.
+
+An entry cannot be edited or deleted afterwards, and a customer-visible comment usually emails the
+requester, so posting is built around checking first:
+
+- `preview_comment` shows the record, the requester, the latest entries, whether your account may
+  write that field on that record, and the exact request a post would send. It issues only reads.
+- `add_comment` needs an explicit choice between `comments` (shared with the requester) and
+  `work_notes` (internal). There is no default.
+- Identical text from you on the same field is refused, so a repeated call cannot post twice.
+- After posting, the tool reads the record back and reports `status`. ServiceNow answers success
+  even when an access rule made it skip the field, so `not_in_journal` means the success response
+  did not produce an entry. Check the record before trying again.
+
+Set `add_comment` to **Ask** in the side panel so each post waits for your approval. A plugin's
+permission applies to all of its tools, including this one, unless you override it per tool.
 
 ### Signing in
 

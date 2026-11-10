@@ -205,5 +205,18 @@ export const parseRichResponse = (envelope: string): RichResponse | null => {
   };
 };
 
+/**
+ * Finds the innermost region a response set up that holds a component, or returns null when
+ * none does. A region's components carry its id as a prefix of their own.
+ */
+export const findRegionAround = (response: RichResponse, componentId: string): string | null =>
+  [...response.scripts.matchAll(/new AdfRichRegion\('([^']+)'/g)]
+    .map(match => match[1] ?? '')
+    .filter(region => componentId.startsWith(`${region}:`))
+    .reduce<string | null>(
+      (innermost, region) => (region.length > (innermost?.length ?? 0) ? region : innermost),
+      null,
+    );
+
 /** Text of a rendered element with runs of whitespace, including non-breaking spaces, collapsed. */
 export const elementText = (element: Element): string => (element.textContent ?? '').replace(/\s+/g, ' ').trim();

@@ -205,9 +205,13 @@ export const expandPanelEvent = (panel: QueryPanel): RichEvent => ({
  * organization resets the values submitted alongside it, and a changed operator is ignored
  * outright, so the search runs with the previous one. Leading criteria are committed one at
  * a time, in the order given, before the search.
+ *
+ * A criterion `filledByPage` is one the page fills in itself from another: View Item
+ * Quantities replaces Item Description with the description of the item searched. What the
+ * page shows for it after a search says nothing about whether the value sent was applied.
  */
 export type Criterion =
-  | { label: string; text: string; leading?: boolean }
+  | { label: string; text: string; leading?: boolean; filledByPage?: boolean }
   | { label: string; date: string | null; timeOfDay?: TimeOfDay }
   | { label: string; checked: boolean }
   | { label: string; option: string };
@@ -334,7 +338,9 @@ const comparable = (value: string): string => value.replace(/\s+/g, ' ').trim().
  */
 export const unappliedCriteria = (sent: RichEvent, panel: QueryPanel, criteria: Criterion[]): UnappliedCriterion[] => {
   if (panel.collapsed) return [];
-  return criteria.flatMap(({ label }) => {
+  return criteria.flatMap(criterion => {
+    if ('filledByPage' in criterion && criterion.filledByPage) return [];
+    const { label } = criterion;
     const name = fieldFor(panel, label);
     const submitted = sent.fields?.[name] ?? '';
     const shown = panel.values[name] ?? '';

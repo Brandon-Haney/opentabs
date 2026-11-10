@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  findRegionAround,
   parseLoopback,
   parsePageState,
   parseRichResponse,
@@ -148,5 +149,27 @@ describe('parseRichResponse', () => {
       ),
     );
     expect(response?.messages[0]?.severity).toBe('warning');
+  });
+});
+
+describe('findRegionAround', () => {
+  const regions = parseRichResponse(
+    envelope(
+      "<script><![CDATA[AdfPage.PAGE.addComponents(new AdfRichRegion('r:MAt2'),new AdfRichRegion('r:MAt2:0:pt1:ItemC1')," +
+        "new AdfRichRegion('r:MAt2:0:pt1:ItemC1:0:sp1:region2'),new AdfRichRegion('r:MAt2:0:pt1:ItemC1:0:sp1:region20'));]]></script>",
+    ),
+  );
+
+  test('finds the innermost region whose id prefixes the component', () => {
+    if (!regions) throw new Error('fixture is not a rich response');
+    expect(findRegionAround(regions, 'r:MAt2:0:pt1:ItemC1:0:sp1:region2:0:rstab:_ATp:table1')).toBe(
+      'r:MAt2:0:pt1:ItemC1:0:sp1:region2',
+    );
+    expect(findRegionAround(regions, 'r:MAt2:0:pt1:ap1:srel')).toBe('r:MAt2');
+  });
+
+  test('returns null when no region holds the component', () => {
+    if (!regions) throw new Error('fixture is not a rich response');
+    expect(findRegionAround(regions, 'r:MAt3:0:pt1:ap1:srel')).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 import { INVENTORY_WORK_AREA_SETTING_LABEL, inventoryWorkArea, RECEIPTS_TASKS } from './inventory.js';
 import { renderedRows } from './results.js';
 import type { Criterion } from './search-page.js';
-import { createSearchScreen, type LookupField, type SearchRejectedError } from './search-screen.js';
+import { createSearchScreen, isUnknownValue, type LookupField, type SearchRejectedError } from './search-screen.js';
 
 /**
  * Receive Expected Shipments, in the Receipts tasks of Inventory Management: every line the
@@ -56,12 +56,6 @@ export const expectedShipmentCriteria = (
 ];
 
 /**
- * Message Fusion gives when a document field does not know the number entered: the field's
- * lookup validates the number before the search runs.
- */
-const UNKNOWN_VALUE = /^Invalid value\b/i;
-
-/**
  * Reads which of the named document fields Fusion refused because it does not know the
  * number. Returns null when Fusion refused the search for any other reason, which the tool
  * reports as an error.
@@ -73,7 +67,7 @@ export const unknownDocuments = (
   const unknown = new Set<ExpectedShipmentDocument>();
   for (const message of error.messages) {
     const field = named.find(candidate => EXPECTED_SHIPMENT_DOCUMENTS[candidate].label === message.field);
-    if (!field || !UNKNOWN_VALUE.test(message.text)) return null;
+    if (!field || !isUnknownValue(message)) return null;
     unknown.add(field);
   }
   return unknown.size > 0 ? unknown : null;

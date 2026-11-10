@@ -72,7 +72,13 @@ const screen = createSearchScreen({
 
 Criteria are addressed by the label the page shows (`{ label, text | date | option | checked }`);
 mark organization and operator criteria `leading`. Partial matches on a lookup field go
-through `screen.lookup(field, text)`.
+through `screen.lookup(field, text)`. A criterion added from Add Fields is added by the screen
+when a search names it: from the panel's menu on its own, or, where Add Fields opens a dialog
+of attributes, from the path the screen lists in `attributeFields`
+(`{ GTIN: ['Item Relationships', 'GTIN', 'GTIN'] }`).
+
+A page whose rows open in edit mode (Manage Items) needs a reader of its own that opens each
+row, reads it and leaves with Cancel; `product-information.ts` is the worked example.
 
 Write the output schema and mapper in `tools/schemas.ts`. Keep every column (named fields for
 the important ones, the rest in `additional_columns` / `columns` / `details`), and leave
@@ -80,6 +86,8 @@ on-request data out of the output when it was not requested.
 
 ## 4. Test against live data
 
+- A setting changed with `opentabs config set` reaches an open tab only when the adapter is
+  next injected: rebuild the plugin (or reload the tab) before testing with it.
 - Pick records whose answer you already know (from the user's screenshot or another tool)
   and compare field by field.
 - Test the **second call**, not just the first: a search after a detail read, after a

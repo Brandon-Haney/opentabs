@@ -6,8 +6,9 @@ import type { RichEvent } from './adf-window.js';
  *
  * Each row holds a row-header cell, a cell for each frozen column, and an inner table whose
  * cells hold the remaining columns; together they follow the order of the column headings.
- * A cell can itself hold a table (a link beside a notes icon), so the values are the inner
- * table's own cells, not every cell inside it.
+ * A table whose rows expand to show more detail also has an untitled disclosure cell ahead
+ * of the values. A cell can itself hold a table (a link beside a notes icon), so the values
+ * are the inner table's own cells, not every cell inside it.
  */
 
 /** A table rendered in a response: its headings and each row's values in heading order. */
@@ -29,11 +30,11 @@ export const findTableId = (response: RichResponse, pattern: RegExp): string | n
 
 /**
  * Values one cell of a row contributes, in column order. Frozen columns are cells of the
- * row itself; the other columns sit in one cell as an inner table; the row-header cell
- * holds no value.
+ * row itself; the other columns sit in one cell as an inner table; the row-header cell and
+ * the disclosure cell of an expandable row hold no value and have no heading.
  */
 const rowValues = (cell: HTMLTableCellElement): string[] => {
-  if (cell.hasAttribute('_afrrh')) return [];
+  if (cell.hasAttribute('_afrrh') || cell.hasAttribute('_afrdetcol')) return [];
   const inner = cell.querySelector<HTMLTableElement>('table[_afrit]');
   if (inner) return [...(inner.rows[0]?.cells ?? [])].map(elementText);
   return [elementText(cell)];

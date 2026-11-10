@@ -3,6 +3,7 @@ import { parseRichResponse, type RichResponse } from './adf-protocol.js';
 import { parseDetailFields } from './detail-page.js';
 import {
   closeDialogEvent,
+  controlValues,
   dismissDialogEvent,
   findDialog,
   findMenuItem,
@@ -121,5 +122,19 @@ describe('dismissDialogEvent', () => {
 
   test('closes with OK otherwise', () => {
     expect(dismissDialogEvent(aboutAnswer, { popupId: POPUP, dialogId: DIALOG }, {}).source).toBe(DIALOG);
+  });
+});
+
+describe('controlValues', () => {
+  test('reads each control as a browser submits it, leaving out unticked radio buttons and checkboxes', () => {
+    const form = respond(
+      '<div id="root"><input name="a" value="1"><textarea name="b">note</textarea>' +
+        '<select name="c"><option value="0">Close</option><option value="2" selected>Close for Invoicing</option></select>' +
+        '<input type="radio" name="d" value="yes" checked><input type="radio" name="d" value="no">' +
+        '<input type="checkbox" name="e" value="t"><input value="unnamed"></div><input name="outside" value="x">',
+    );
+    const root = form.document.getElementById('root');
+    if (!root) throw new Error('fixture has no root');
+    expect(controlValues(root)).toEqual({ a: '1', b: 'note', c: '2', d: 'yes' });
   });
 });

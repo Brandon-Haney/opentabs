@@ -37,11 +37,13 @@ export interface TreeTable {
 }
 
 /**
- * The node cell of a tree row: the cell that shows the row's level and value. Only tree
- * rows have one, which tells them apart from the rows of other tables a response renders,
- * such as a dialog's table left open on the page.
+ * The node cell of a tree row: the cell that shows the row's level and value. It is a cell
+ * of the row itself, or, in a tree whose node column is not frozen (such as a dialog's tree
+ * of attributes), a cell of the row's inner table. Only tree rows have one, which tells them
+ * apart from the rows of other tables a response renders, such as a dialog's table left open
+ * on the page.
  */
-const NODE_CELL = ':scope > td[_afrndcol]';
+const NODE_CELL = ':scope > td[_afrndcol], :scope > td table[_afrit] td[_afrndcol]';
 
 /** Reads every tree row a response rendered. */
 export const parseTreeRows = (response: RichResponse): TreeRow[] =>
@@ -53,7 +55,9 @@ export const parseTreeRows = (response: RichResponse): TreeRow[] =>
       ancestors: (row.getAttribute('_afrap') ?? '').split('_').filter(Boolean),
       label: elementText(node),
       expandable: node.querySelector('[_afrdisimg]') != null,
-      cells: [...row.querySelectorAll('table[_afrit] td')].map(elementText),
+      cells: [...row.querySelectorAll('table[_afrit] td')]
+        .filter(cell => cell !== node && !node.contains(cell))
+        .map(elementText),
     };
   });
 
@@ -111,13 +115,18 @@ export const parseTreeTable = (response: RichResponse): TreeTable | null => {
   };
 };
 
+let fetchCount = 0;
+
+/** Numbers the fetches this adapter makes, the way the ADF client numbers its own. */
+export const nextFetchId = (): number => fetchCount++;
+
 /**
  * Event that expands rows and fetches their children.
  *
  * The rows to expand are not named in the event: the client sends the full set of expanded
  * row keys as component state and the server expands whichever are new. The accompanying
- * fetch is what makes the server return the inserted rows. `fetchId` numbers the fetches a
- * window has made.
+ * fetch is what makes the server return the inserted rows. `fetchId` numbers the fetch, as
+ * `nextFetchId` hands them out.
  */
 export const disclosureEvent = (
   tableId: string,

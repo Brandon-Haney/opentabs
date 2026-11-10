@@ -686,3 +686,120 @@ export const purchaseOrderDetailsSchema = z.object({
     ),
   lines: z.array(purchaseOrderLineSchema).describe('Every line of the order'),
 });
+
+// ---------------------------------------------------------------------------
+// Items and their GTINs (Product Information Management)
+// ---------------------------------------------------------------------------
+
+/** Column heading of each field of the Manage Items results. */
+const ITEM_COLUMNS = {
+  item: 'Item',
+  description: 'Description',
+  long_description: 'Long Description',
+  item_class: 'Item Class',
+  organization: 'Organization',
+  approval_status: 'Approval Status',
+  item_status: 'Item Status',
+} as const;
+
+/** Columns that hold no data: the Image column shows a picture or "No Image Available". */
+const IGNORED_ITEM_COLUMNS = new Set(['Image']);
+
+const KNOWN_ITEM_COLUMNS = new Set<string>(Object.values(ITEM_COLUMNS));
+
+export const itemSchema = z.object({
+  item: z.string().describe('Item number'),
+  description: z.string().describe('Item description'),
+  long_description: z.string().describe('Long description'),
+  item_class: z.string().describe('Item class'),
+  additional_columns: z
+    .record(z.string(), z.string())
+    .describe('Any further columns the user has added to the Manage Items results, keyed by column heading'),
+});
+
+/** Maps the item fields of a Manage Items result row. */
+export const mapItem = (row: ExportedRow) => ({
+  item: row[ITEM_COLUMNS.item] ?? '',
+  description: row[ITEM_COLUMNS.description] ?? '',
+  long_description: row[ITEM_COLUMNS.long_description] ?? '',
+  item_class: row[ITEM_COLUMNS.item_class] ?? '',
+  additional_columns: Object.fromEntries(
+    Object.entries(row).filter(([heading]) => !KNOWN_ITEM_COLUMNS.has(heading) && !IGNORED_ITEM_COLUMNS.has(heading)),
+  ),
+});
+
+export const itemAssignmentSchema = z.object({
+  organization: z.string().describe('Organization code the item is assigned to (e.g., 100000 for the item master)'),
+  approval_status: z.string().describe('Approval status in that organization (e.g., Approved)'),
+  item_status: z.string().describe('Item status in that organization (e.g., Active)'),
+});
+
+/** Maps the organization a Manage Items result row is for, and the item's statuses there. */
+export const mapItemAssignment = (row: ExportedRow) => ({
+  organization: row[ITEM_COLUMNS.organization] ?? '',
+  approval_status: row[ITEM_COLUMNS.approval_status] ?? '',
+  item_status: row[ITEM_COLUMNS.item_status] ?? '',
+});
+
+export const gtinSchema = z.object({
+  gtin: z.string().describe('GTIN, as the 14 digits Fusion stores'),
+  gtin_description: z.string().describe('GTIN description'),
+  uom: z.string().describe('Unit of measure the GTIN identifies (e.g., EACH, EACH10, BOX20)'),
+  party_type: z.string().describe('Type of the party the GTIN belongs to (e.g., Manufacturer); empty when none'),
+  party_name: z.string().describe('Party the GTIN belongs to (e.g., Manufacturer 325); empty when none'),
+  revision_code: z.string().describe('Item revision the GTIN applies to; empty for every revision'),
+  epc_or_gtin_serial: z.string().describe('EPC or GTIN Serial column, as Fusion shows it'),
+  packed_item: z.string().describe('Packed Item column, as Fusion shows it'),
+});
+
+/** Maps a row of an item's GTIN table. */
+export const mapGtin = (row: ExportedRow) => ({
+  gtin: row.GTIN ?? '',
+  gtin_description: row['GTIN Description'] ?? '',
+  uom: row.UOM ?? '',
+  party_type: row['Party Type'] ?? '',
+  party_name: row['Party Name'] ?? '',
+  revision_code: row['Revision Code'] ?? '',
+  epc_or_gtin_serial: row['EPC or GTIN Serial'] ?? '',
+  packed_item: row['Packed Item'] ?? '',
+});
+
+export const crossReferenceSchema = z.object({
+  type: z.string().describe('Cross-reference type'),
+  value: z.string().describe('Cross-reference value'),
+  applicable_organization: z.string().describe('Organization the cross-reference applies to'),
+  description: z.string().describe('Cross-reference description'),
+});
+
+/** Maps a row of an item's Cross-References table. */
+export const mapCrossReference = (row: ExportedRow) => ({
+  type: row.Type ?? '',
+  value: row.Value ?? '',
+  applicable_organization: row['Applicable Organization'] ?? '',
+  description: row.Description ?? '',
+});
+
+export const tradingPartnerItemSchema = z.object({
+  trading_partner_type: z.string().describe('Trading partner type (e.g., Manufacturer, Supplier, Customer)'),
+  trading_partner_name: z.string().describe('Trading partner name'),
+  trading_partner_item: z.string().describe('The trading partner’s item number'),
+  trading_partner_item_description: z.string().describe('The trading partner’s item description'),
+  trading_partner_item_status: z.string().describe('Status of the trading partner item'),
+  relationship_description: z.string().describe('Relationship description'),
+  rank: z.string().describe('Rank of the relationship'),
+  type: z.string().describe('Relationship type'),
+  relationship_status: z.string().describe('Relationship status'),
+});
+
+/** Maps a row of an item's Trading Partner Items table. */
+export const mapTradingPartnerItem = (row: ExportedRow) => ({
+  trading_partner_type: row['Trading Partner Type'] ?? '',
+  trading_partner_name: row['Trading Partner Name'] ?? '',
+  trading_partner_item: row['Trading Partner Item'] ?? '',
+  trading_partner_item_description: row['Trading Partner Item Description'] ?? '',
+  trading_partner_item_status: row['Trading Partner Item Status'] ?? '',
+  relationship_description: row['Relationship Description'] ?? '',
+  rank: row.Rank ?? '',
+  type: row.Type ?? '',
+  relationship_status: row['Relationship Status'] ?? '',
+});

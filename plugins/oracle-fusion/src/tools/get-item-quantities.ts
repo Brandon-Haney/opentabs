@@ -3,11 +3,67 @@ import { z } from 'zod';
 import { INVENTORY_TASKS, INVENTORY_WORK_AREA_SETTING_LABEL, inventoryWorkArea } from '../inventory.js';
 import { treeRows } from '../results.js';
 import type { Criterion } from '../search-page.js';
-import { createSearchScreen } from '../search-screen.js';
+import { createSearchScreen, isUnknownValue, SearchRejectedError } from '../search-screen.js';
 import { DESCRIPTION_OPERATORS, descriptionMatchSchema, itemQuantitySchema, mapItemQuantity } from './schemas.js';
 
 /** Rows whose availability one call may read; each costs three round trips. */
 const MAX_AVAILABILITY_ROWS = 40;
+
+/** What a search that found nothing looked for, and what to check, in a sentence or two. */
+export const nothingFoundMessage = (search: {
+  organization: string;
+  item?: string;
+  item_description?: string;
+  item_description_match?: keyof typeof DESCRIPTION_OPERATORS;
+  subinventory?: string;
+  locator?: string;
+}): string => {
+  const match = (search.item_description_match ?? 'starts_with').replace('_', ' ');
+  const what = search.item
+    ? `item ${search.item}`
+    : search.item_description
+      ? `items whose description ${match} "${search.item_description}"`
+      : 'any item';
+  const where = [
+    search.organization,
+    ...(search.subinventory ? [`subinventory ${search.subinventory}`] : []),
+    ...(search.locator ? [`locator ${search.locator}`] : []),
+  ].join(', ');
+  const check = search.item
+    ? 'The item may have nothing on hand, receiving or inbound there; check that the item number is entered correctly.'
+    : 'Nothing may be stored there; check that the search values are entered correctly.';
+  return `Oracle Fusion shows no quantities for ${what} in ${where}. ${check}`;
+};
+
+/** Search fields whose lookup refuses a value it does not know, with the search value each holds. */
+const LOOKUP_FIELDS = {
+  Organization: 'organization',
+  Item: 'item',
+  Subinventory: 'subinventory',
+  Locator: 'locator',
+} as const;
+
+/**
+ * The message for a search Fusion refused because a field does not know the value entered in
+ * it, such as a mistyped item number; null for any other refusal, which stays an error as it is.
+ */
+export const unknownValueMessage = (
+  error: SearchRejectedError,
+  search: { organization: string; item?: string; subinventory?: string; locator?: string },
+): string | null => {
+  const fields = error.messages.map(message =>
+    isUnknownValue(message) && message.field in LOOKUP_FIELDS
+      ? LOOKUP_FIELDS[message.field as keyof typeof LOOKUP_FIELDS]
+      : null,
+  );
+  if (fields.length === 0 || fields.some(field => field === null)) return null;
+  const sentences = [...new Set(fields)].map(field =>
+    field === 'organization'
+      ? `Oracle Fusion has no organization ${search.organization}.`
+      : `Oracle Fusion has no ${field} ${search[field as 'item' | 'subinventory' | 'locator'] ?? ''} in ${search.organization}.`,
+  );
+  return `${sentences.join(' ')} Check that it is entered correctly.`;
+};
 
 const screen = createSearchScreen({
   workArea: inventoryWorkArea,
@@ -61,7 +117,14 @@ export const getItemQuantities = defineTool({
       .array(itemQuantitySchema)
       .describe(
         'One row per level of each item: the item total, then each organization, subinventory and locator ' +
-          'beneath it, in that order. Empty when no item matches or the item has no quantity',
+          'beneath it, in that order. Empty when the search found nothing; message then says so',
+      ),
+    message: z
+      .string()
+      .optional()
+      .describe(
+        'Present only when the search found nothing: what was searched for, that the item may have no ' +
+          'quantity there, and to check the values were entered correctly',
       ),
   }),
   handle: async (params, context) => {
@@ -79,7 +142,8 @@ export const getItemQuantities = defineTool({
         text: DESCRIPTION_OPERATORS[params.item_description_match ?? 'starts_with'],
         leading: true,
       },
-      { label: 'Item Description', text: params.item_description ?? '' },
+      // The page replaces the description with the item's own when an item is named.
+      { label: 'Item Description', text: params.item_description ?? '', filledByPage: Boolean(params.item) },
       { label: 'Subinventory', text: params.subinventory ?? '' },
       // Locator is not on the panel until it is added from Add Fields; the screen adds it.
       { label: 'Locator', text: params.locator ?? '' },
@@ -89,18 +153,24 @@ export const getItemQuantities = defineTool({
       { label: 'Inbound', checked: Boolean(params.item) },
     ];
 
-    const tree = await screen.search(criteria, message => context?.reportProgress({ message }), {
-      pickAvailabilityRows: rows => {
-        if (!params.include_availability) return [];
-        if (rows.length > MAX_AVAILABILITY_ROWS) {
-          throw ToolError.validation(
-            `The search returned ${rows.length} rows; include_availability reads at most ` +
-              `${MAX_AVAILABILITY_ROWS}. Name an item, a subinventory or a locator to narrow it.`,
-          );
-        }
-        return rows.map(row => row.key);
-      },
-    });
+    const tree = await screen
+      .search(criteria, message => context?.reportProgress({ message }), {
+        pickAvailabilityRows: rows => {
+          if (!params.include_availability) return [];
+          if (rows.length > MAX_AVAILABILITY_ROWS) {
+            throw ToolError.validation(
+              `The search returned ${rows.length} rows; include_availability reads at most ` +
+                `${MAX_AVAILABILITY_ROWS}. Name an item, a subinventory or a locator to narrow it.`,
+            );
+          }
+          return rows.map(row => row.key);
+        },
+      })
+      .catch((error: unknown) => {
+        const unknown = error instanceof SearchRejectedError ? unknownValueMessage(error, params) : null;
+        throw unknown ? ToolError.validation(unknown) : error;
+      });
+    if (tree.rows.length === 0) return { quantities: [], message: nothingFoundMessage(params) };
 
     const labels = new Map(tree.rows.map(row => [row.key, row.label]));
     const valuesOf = (cells: string[]) =>

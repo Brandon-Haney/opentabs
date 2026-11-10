@@ -2,7 +2,7 @@ import { ToolError } from '@opentabs-dev/plugin-sdk';
 import { type AdfMessage, elementText, type RichResponse, richEvent, VIEWPORT_ROWS } from './adf-protocol.js';
 import type { RichEvent } from './adf-window.js';
 import { findTableId, parseFlatTable, parseRowKeys, recordsOf } from './flat-table.js';
-import { closeDialogEvent, findDialog, type OpenDialog } from './row-actions.js';
+import { closeDialogEvent, controlValues, findDialog, type OpenDialog } from './row-actions.js';
 
 /**
  * The lines of a purchase order page and the Lines Actions → Close command: the line is
@@ -178,23 +178,6 @@ export interface CloseLineDialog {
   reasonField: string;
 }
 
-/**
- * Reads each control of a popup the way a browser submits a form: a dropdown its selected
- * option, a radio button or checkbox only when ticked, any other control its value.
- */
-const popupFields = (content: Element): Record<string, string> => {
-  const fields: Record<string, string> = {};
-  for (const control of content.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
-    'input[name], select[name], textarea[name]',
-  )) {
-    if (control instanceof HTMLInputElement && ['radio', 'checkbox'].includes(control.type) && !control.checked) {
-      continue;
-    }
-    fields[control.name] = control.value;
-  }
-  return fields;
-};
-
 /** Title a dialog shows in its header; empty when it shows none. */
 const dialogTitle = (response: RichResponse, dialog: OpenDialog): string => {
   const title = response.document.getElementById(`${dialog.dialogId}::_ttxt`);
@@ -234,7 +217,7 @@ export const readCloseLineDialog = (response: RichResponse): CloseLineDialog => 
   }
   return {
     dialog,
-    fields: popupFields(content),
+    fields: controlValues(content),
     actionField: action.name,
     actions: new Map([...action.options].map(option => [elementText(option), option.value])),
     reasonField: reason.name,

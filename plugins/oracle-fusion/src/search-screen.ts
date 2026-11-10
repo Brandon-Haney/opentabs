@@ -1,6 +1,7 @@
 import { ToolError } from '@opentabs-dev/plugin-sdk';
 import type { AdfMessage, RichResponse } from './adf-protocol.js';
 import { type AdfWindow, openWindow, WindowClosedError } from './adf-window.js';
+import { type AttributePath, addAttributeField } from './attribute-fields.js';
 import { clickEvent } from './detail-page.js';
 import { parseFlatTable } from './flat-table.js';
 import {
@@ -97,6 +98,11 @@ export interface SearchScreenTarget<T, O = void> {
   task: string;
   /** Title of the button that leads from the task's landing page to its search page, when it has one. */
   entryButton?: string;
+  /**
+   * Criteria the page adds through its Add Fields dialog of attributes rather than a menu,
+   * keyed by label, each with the path to its attribute in the dialog's tree.
+   */
+  attributeFields?: Record<string, AttributePath>;
   results: ResultsReader<T, O>;
 }
 
@@ -158,17 +164,26 @@ export class SearchRejectedError extends ToolError {
   }
 }
 
+/**
+ * Message Fusion gives when a field does not know the value entered in it, such as an item
+ * or document number: the field's lookup validates the value before the search runs.
+ */
+const UNKNOWN_VALUE = /^Invalid value\b/i;
+
+/** Whether a message is Fusion refusing a value its field does not know. */
+export const isUnknownValue = (message: AdfMessage): boolean => UNKNOWN_VALUE.test(message.text);
+
 const APPLICATION_ERROR = /An application error (?:has )?occurred/;
 
 /**
- * Messages that mean a search did not return what was asked for. A warning counts: Fusion
- * uses one to say it cut a result short.
+ * Messages that mean a search, or a step a results reader takes, did not do what was asked.
+ * A warning counts: Fusion uses one to say it cut a result short.
  *
  * Fusion answers with a generic application error, rather than a closed-window response,
  * when it has discarded part of a window's page state; the same search succeeds in a new
  * window, so that error is raised as a closed window.
  */
-const refusedBy = (response: RichResponse): AdfMessage[] => {
+export const refusedBy = (response: RichResponse): AdfMessage[] => {
   const refused = response.messages.filter(
     message => message.severity !== 'info' && message.severity !== 'confirmation',
   );
@@ -263,8 +278,9 @@ export const createSearchScreen = <T, O = void>(target: SearchScreenTarget<T, O>
   };
 
   /**
-   * Adds each criterion the panel offers under Add Fields but does not show yet. The window
-   * keeps an added field, so it is added once per window.
+   * Adds each criterion the panel offers under Add Fields but does not show yet, from the
+   * panel's Add Fields menu or, for the criteria the target names, its dialog of attributes.
+   * The window keeps an added field, so it is added once per window.
    */
   const addMissingFields = async (
     adfWindow: AdfWindow,
@@ -273,9 +289,13 @@ export const createSearchScreen = <T, O = void>(target: SearchScreenTarget<T, O>
   ): Promise<{ panel: QueryPanel } | { rejected: AdfMessage[] }> => {
     let panel = start;
     for (const { label } of criteria) {
+      if (panel.fieldsByLabel.has(label)) continue;
       const add = addFieldEvent(panel, label);
-      if (!add) continue;
-      const added = await adfWindow.submit(add);
+      const attribute = target.attributeFields?.[label];
+      let added: RichResponse;
+      if (add) added = await adfWindow.submit(add);
+      else if (attribute) added = await addAttributeField(adfWindow, panel, attribute);
+      else continue;
       const refused = refusedBy(added);
       if (refused.length > 0) return { rejected: refused };
       panel = refreshQueryPanel(panel, added);

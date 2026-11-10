@@ -37,6 +37,22 @@ export const parseHomeTiles = (homeHtml: string): HomeTile[] => {
 
 const textOf = (element: Element): string => element.textContent?.trim() ?? '';
 
+/** Title of the icon of the panel drawer tab that lists a work area's tasks. */
+const TASKS_TAB_TITLE = 'Tasks';
+
+/**
+ * Finds the drawer tab of a work area's panel that lists its tasks, or returns null when the
+ * work area has none. Work areas give the tab ids of their own (`…_itemNode_InvTasksList`,
+ * `…_FOTsdiItemRegionalArea`), so the tab is found by its icon, which every work area titles
+ * Tasks.
+ */
+export const findTasksTab = (workArea: RichResponse): string | null => {
+  const icon = [...workArea.document.querySelectorAll('[id*=":_FOTsdi"][id$="::icon"]')].find(
+    candidate => candidate.getAttribute('title') === TASKS_TAB_TITLE,
+  );
+  return icon ? icon.id.slice(0, -'::icon'.length) : null;
+};
+
 const selectedValues = (document: Document): Record<string, string> =>
   Object.fromEntries(
     [...document.querySelectorAll<HTMLSelectElement>('select[name]')].map(select => [select.name, select.value]),
@@ -88,12 +104,12 @@ export const openTask = async (
     payload: richEvent('iconClicked', { _custom: true, itemNodeId: tile.id, groupNodeId: tile.group }),
   });
 
-  const tasksTab = workArea.document.querySelector('[id*="_itemNode_"][id$="TasksList"]');
+  const tasksTab = findTasksTab(workArea);
   if (!tasksTab) {
     throw ToolError.validation(`The Oracle Fusion work area "${tile.label}" has no Tasks panel.`);
   }
 
-  const panel = await adfWindow.submit({ source: tasksTab.id, payload: richEvent('disclosure', { expand: true }) });
+  const panel = await adfWindow.submit({ source: tasksTab, payload: richEvent('disclosure', { expand: true }) });
   const categoryChange = category ? categoryChangeEvent(panel, category) : null;
   const tasks = categoryChange ? await adfWindow.submit(categoryChange) : panel;
   const links = [...tasks.document.querySelectorAll('a[id]')].filter(link => textOf(link) !== '');

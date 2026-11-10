@@ -37,6 +37,7 @@ import {
   disclosureEvent,
   findTreeTableId,
   inTreeOrder,
+  nextFetchId,
   parseTreeRowCount,
   parseTreeRows,
   parseTreeTable,
@@ -339,9 +340,6 @@ export interface TreeOptions {
 
 const VIEW_ITEM_AVAILABILITY = 'View Item Availability';
 
-/** Numbers the fetches this adapter has made, the way the ADF client numbers its own. */
-let fetchCount = 0;
-
 /**
  * Reads a tree table by expanding it one level at a time until no row has unloaded
  * children, then reads the Item Availability dialog of each chosen row. All rows of a
@@ -369,7 +367,7 @@ export const treeRows: ResultsReader<TreeResults, TreeOptions> = {
       report(`Expanding ${collapsed.length} rows`);
       for (const row of collapsed) disclosed.add(row.key);
 
-      const expanded = await adfWindow.submit(disclosureEvent(table.id, [...disclosed], fetchCount++, panel.values));
+      const expanded = await adfWindow.submit(disclosureEvent(table.id, [...disclosed], nextFetchId(), panel.values));
       const children = parseTreeRows(expanded);
       rows.push(...children);
       rowCount = parseTreeRowCount(expanded) ?? rowCount;

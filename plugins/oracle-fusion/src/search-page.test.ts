@@ -317,6 +317,12 @@ describe('unappliedCriteria', () => {
     const sent = searchEvent(requirePanel(expandedPanel), criteria);
     expect(unappliedCriteria(sent, requirePanel(collapsedPanel), criteria)).toEqual([]);
   });
+
+  test('leaves out a criterion the page fills in itself', () => {
+    const filled = [...criteria.slice(0, 1), { label: 'Description Operator', text: 'CONTAINS', filledByPage: true }];
+    const sent = searchEvent(requirePanel(expandedPanel), filled);
+    expect(unappliedCriteria(sent, requirePanel(expandedPanel), filled)).toEqual([]);
+  });
 });
 
 describe('export', () => {

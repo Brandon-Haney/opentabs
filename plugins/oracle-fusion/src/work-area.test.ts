@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { parseRichResponse, type RichResponse } from './adf-protocol.js';
-import { categoryChangeEvent, parseHomeTiles } from './work-area.js';
+import { categoryChangeEvent, findTasksTab, parseHomeTiles } from './work-area.js';
 
 const tasksPanel = (selected: string): RichResponse => {
   const options = ['Inventory', 'Counts', 'Receipts']
@@ -29,6 +29,30 @@ describe('categoryChangeEvent', () => {
     expect(() => categoryChangeEvent(tasksPanel('Inventory'), 'Shipments')).toThrow(
       /no "Shipments" category.*Inventory, Counts, Receipts/,
     );
+  });
+});
+
+describe('findTasksTab', () => {
+  const workArea = (icons: string): RichResponse => {
+    const response = parseRichResponse(
+      `<?xml version="1.0" ?>\n<content action="/x"><fragment><![CDATA[${icons}]]></fragment></content>`,
+    );
+    if (!response) throw new Error('fixture is not a rich response');
+    return response;
+  };
+  const icon = (id: string, title: string) => `<img id="pt1:_FOr1:1:_FONSr2:0:${id}::icon" title="${title}">`;
+
+  test('finds the drawer tab whose icon is titled Tasks, whatever the work area calls it', () => {
+    const inventory = workArea(
+      icon('_FOTsdiScmInvOverviewPage_itemNode_InvTasksList', 'Tasks') + icon('_FOTsdiregionalArea2', 'Quick Search'),
+    );
+    expect(findTasksTab(inventory)).toBe('pt1:_FOr1:1:_FONSr2:0:_FOTsdiScmInvOverviewPage_itemNode_InvTasksList');
+    const products = workArea(icon('_FOTsdiItemWorkareaSearch', 'Search') + icon('_FOTsdiItemRegionalArea', 'Tasks'));
+    expect(findTasksTab(products)).toBe('pt1:_FOr1:1:_FONSr2:0:_FOTsdiItemRegionalArea');
+  });
+
+  test('returns null for a work area without a Tasks tab', () => {
+    expect(findTasksTab(workArea(icon('_FOTsdiItemWorkareaSearch', 'Search')))).toBeNull();
   });
 });
 

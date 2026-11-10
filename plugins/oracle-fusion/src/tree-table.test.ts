@@ -102,6 +102,21 @@ describe('parseTreeRows', () => {
     expect(parseTreeRowCount(withDialog)).toBe(1);
   });
 
+  test('reads rows whose node cell sits in the row’s inner table, as in a dialog’s tree of attributes', () => {
+    const attributes = respond(
+      '<table _rowCount="2"><tr _afrRK="7"><td _afrRH="true">&nbsp;</td><td><div><table _afrIT="1"><tr>' +
+        '<td _afrNdCol="1"><div><span _afrDisImg="2"><a title="Expand"></a></span>' +
+        '<span><table><tbody><tr><td><span title="Item Relationships">Item Relationships</span></td></tr></tbody></table>' +
+        '</span></div></td></tr></table></div></td></tr>' +
+        '<tr _afrRK="12" _afrAP="7"><td _afrRH="true">&nbsp;</td><td><div><table _afrIT="1"><tr>' +
+        '<td _afrNdCol="1"><div><span>GTIN</span></div></td></tr></table></div></td></tr></table>',
+    );
+    expect(parseTreeRows(attributes)).toEqual([
+      { key: '7', ancestors: [], label: 'Item Relationships', expandable: true, cells: [] },
+      { key: '12', ancestors: ['7'], label: 'GTIN', expandable: false, cells: [] },
+    ]);
+  });
+
   test('treats an unknown row count as absent', () => {
     expect(parseTreeRowCount(respond('<table _rowCount="-1"></table>'))).toBeNull();
     expect(parseTreeRowCount(respond('<span></span>'))).toBeNull();

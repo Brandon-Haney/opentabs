@@ -34,6 +34,23 @@ export const menuItemEvent = (itemId: string, fields: Record<string, string>): R
   process: itemId.slice(0, itemId.lastIndexOf(':')),
 });
 
+/**
+ * Reads each control under an element the way a browser submits a form: a dropdown its
+ * selected option, a radio button or checkbox only when ticked, any other control its value.
+ */
+export const controlValues = (root: Element): Record<string, string> => {
+  const fields: Record<string, string> = {};
+  for (const control of root.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+    'input[name], select[name], textarea[name]',
+  )) {
+    if (control instanceof HTMLInputElement && ['radio', 'checkbox'].includes(control.type) && !control.checked) {
+      continue;
+    }
+    fields[control.name] = control.value;
+  }
+  return fields;
+};
+
 /** A dialog a command opened, and the popup that holds it. */
 export interface OpenDialog {
   popupId: string;

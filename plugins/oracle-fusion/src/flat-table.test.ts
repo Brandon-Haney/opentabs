@@ -85,6 +85,17 @@ describe('flat tables', () => {
     expect(recordsOf(table)).toEqual([{ Line: '152', Item: '124245-MOB' }]);
   });
 
+  test('leaves out the disclosure cell of a row that expands, which has no heading', () => {
+    const expandable = respond(
+      `<table><tr><th id="${TABLE}:c8" _afrRH="true">&nbsp;</th><th id="${TABLE}:cl6">GTIN</th>` +
+        `<th id="${TABLE}:cl9">UOM</th></tr></table>` +
+        `<div id="${TABLE}::db"><table _rowCount="1"><tr _afrRK="0"><td _afrRH="true">&nbsp;</td>` +
+        `<td _afrDetCol="true"><a id="${TABLE}:0::di" title="Expand"></a></td>` +
+        '<td><span>00087295141151</span></td><td><span>EACH</span></td></tr></table></div>',
+    );
+    expect(recordsOf(parseFlatTable(expandable, TABLE))).toEqual([{ GTIN: '00087295141151', UOM: 'EACH' }]);
+  });
+
   test('reads the key of each rendered row', () => {
     expect(parseRowKeys(searched, TABLE)).toEqual(['0', '1']);
     expect(parseRowKeys(searched, 'r:missing')).toEqual([]);

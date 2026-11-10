@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import {
   mapCompletedTransactionDetails,
+  mapCrossReference,
   mapExpectedShipment,
+  mapGtin,
+  mapItem,
+  mapItemAssignment,
   mapItemQuantity,
   mapMovementRequest,
   mapMovementRequestLine,
@@ -9,6 +13,7 @@ import {
   mapPendingTransactionDetails,
   mapPurchaseOrder,
   mapPurchaseOrderLine,
+  mapTradingPartnerItem,
   shiftIsoDate,
 } from './schemas.js';
 
@@ -289,5 +294,70 @@ describe('purchase orders', () => {
       damaged_quantity: null,
     });
     expect(line.columns).not.toHaveProperty('promo_cd');
+  });
+});
+
+describe('items and their relationships', () => {
+  const row = {
+    Item: '4115-NGK',
+    Description: 'Spark Plug - Laser Platinum',
+    'Approval Status': 'Approved',
+    'Item Status': 'Active',
+    'Long Description': 'NGK Laser Platinum spark plugs',
+    'Item Class': 'NAPA',
+    Organization: '100000',
+    Image: '',
+    'User Item Type': 'Finished Good',
+  };
+
+  test('splits a Manage Items row into the item and its organization', () => {
+    expect(mapItem(row)).toEqual({
+      item: '4115-NGK',
+      description: 'Spark Plug - Laser Platinum',
+      long_description: 'NGK Laser Platinum spark plugs',
+      item_class: 'NAPA',
+      additional_columns: { 'User Item Type': 'Finished Good' },
+    });
+    expect(mapItemAssignment(row)).toEqual({
+      organization: '100000',
+      approval_status: 'Approved',
+      item_status: 'Active',
+    });
+  });
+
+  test('maps a GTIN row, keeping blank cells blank', () => {
+    expect(
+      mapGtin({
+        GTIN: '00087295141151',
+        'GTIN Description': '',
+        UOM: 'EACH',
+        'Party Type': 'Manufacturer',
+        'Party Name': 'Manufacturer 325',
+        'Revision Code': '',
+        'EPC or GTIN Serial': '1',
+        'Packed Item': '4115-NGK',
+      }),
+    ).toEqual({
+      gtin: '00087295141151',
+      gtin_description: '',
+      uom: 'EACH',
+      party_type: 'Manufacturer',
+      party_name: 'Manufacturer 325',
+      revision_code: '',
+      epc_or_gtin_serial: '1',
+      packed_item: '4115-NGK',
+    });
+  });
+
+  test('maps cross-reference and trading partner item rows', () => {
+    expect(mapCrossReference({ Type: 'Old Item Number', Value: '4115', 'Applicable Organization': 'All' })).toEqual({
+      type: 'Old Item Number',
+      value: '4115',
+      applicable_organization: 'All',
+      description: '',
+    });
+    expect(
+      mapTradingPartnerItem({ 'Trading Partner Type': 'Manufacturer', 'Trading Partner Item': '4115', Rank: '1' }),
+    ).toMatchObject({ trading_partner_type: 'Manufacturer', trading_partner_item: '4115', rank: '1', type: '' });
   });
 });

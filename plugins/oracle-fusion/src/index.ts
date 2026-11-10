@@ -2,8 +2,11 @@ import type { ConfigSchema, ToolDefinition } from '@opentabs-dev/plugin-sdk';
 import { getPageGlobal, OpenTabsPlugin, waitUntil } from '@opentabs-dev/plugin-sdk';
 import { INVENTORY_WORK_AREA_SETTING, INVENTORY_WORK_AREA_SETTING_LABEL } from './inventory.js';
 import { PURCHASE_ORDERS_WORK_AREA_SETTING, PURCHASE_ORDERS_WORK_AREA_SETTING_LABEL } from './procurement.js';
+import { PRODUCT_WORK_AREA_SETTING, PRODUCT_WORK_AREA_SETTING_LABEL } from './product-information.js';
 import { closePoLines } from './tools/close-po-lines.js';
+import { findItemsByGtin } from './tools/find-items-by-gtin.js';
 import { findRgnsForReturn } from './tools/find-rgns-for-return.js';
+import { getItemGtins } from './tools/get-item-gtins.js';
 import { getItemQuantities } from './tools/get-item-quantities.js';
 import { getRgn } from './tools/get-rgn.js';
 import { getRgnDashboard } from './tools/get-rgn-dashboard.js';
@@ -55,10 +58,22 @@ class OracleFusionPlugin extends OpenTabsPlugin {
       required: false,
       placeholder: 'Purchase Orders',
     },
+    [PRODUCT_WORK_AREA_SETTING]: {
+      type: 'string' as const,
+      label: PRODUCT_WORK_AREA_SETTING_LABEL,
+      description:
+        'Label of the home page tile that opens the Product Information Management work area, where items and ' +
+        'their GTINs are managed. Set this when your organization has renamed the tile. Defaults to Product ' +
+        'Information Management.',
+      required: false,
+      placeholder: 'Product Information Management',
+    },
   };
   readonly tools: ToolDefinition[] = [
     closePoLines,
+    findItemsByGtin,
     findRgnsForReturn,
+    getItemGtins,
     getItemQuantities,
     getRgn,
     getRgnDashboard,

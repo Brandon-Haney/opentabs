@@ -27,6 +27,17 @@ export interface RichEvent {
   render?: string;
   /** Client-side component state the server has not seen yet, in ADF's delta notation. */
   deltas?: string;
+  /**
+   * Events the same request fires ahead of this one, as the browser does when it sends a
+   * row's selection together with a click on the row's link.
+   */
+  preceding?: EventPart[];
+}
+
+/** One event of a request that fires several: the component it fires on and its payload. */
+export interface EventPart {
+  source: string;
+  payload: string;
 }
 
 /**
@@ -65,16 +76,24 @@ export class WindowClosedError extends Error {
   }
 }
 
-const eventFields = (event: RichEvent, state: PageState): Record<string, string | undefined> => ({
-  ...event.fields,
-  'org.apache.myfaces.trinidad.faces.FORM': FORM_ID,
-  'javax.faces.ViewState': state.viewState,
-  'oracle.adf.view.rich.RENDER': event.render,
-  'oracle.adf.view.rich.DELTAS': event.deltas,
-  event: event.source,
-  [`event.${event.source}`]: event.payload,
-  'oracle.adf.view.rich.PROCESS': event.process ?? event.source,
-});
+/**
+ * Form fields of the request that fires an event. A request that fires several names them
+ * all in `event`, comma-separated in firing order, with each payload under its own
+ * `event.<id>`.
+ */
+export const eventFields = (event: RichEvent, state: PageState): Record<string, string | undefined> => {
+  const fired = [...(event.preceding ?? []), event];
+  return {
+    ...event.fields,
+    'org.apache.myfaces.trinidad.faces.FORM': FORM_ID,
+    'javax.faces.ViewState': state.viewState,
+    'oracle.adf.view.rich.RENDER': event.render,
+    'oracle.adf.view.rich.DELTAS': event.deltas,
+    event: fired.map(part => part.source).join(','),
+    ...Object.fromEntries(fired.map(part => [`event.${part.source}`, part.payload])),
+    'oracle.adf.view.rich.PROCESS': event.process ?? event.source,
+  };
+};
 
 /**
  * Opens a window on the Fusion home page.

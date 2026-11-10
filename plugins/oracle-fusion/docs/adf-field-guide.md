@@ -25,7 +25,7 @@ header `Adf-Rich-Message: true`. The body carries:
 | --- | --- |
 | `javax.faces.ViewState` | Page state token; take the newest one from each response |
 | `org.apache.myfaces.trinidad.faces.FORM` | Always `f1` |
-| `event` | Client id of the component the event fires on |
+| `event` | Client id of the component the event fires on; several ids, comma-separated, when one request fires several events |
 | `event.<id>` | The event itself, as `<m xmlns="http://oracle.com/richClient/comm">…</m>` — key/value pairs ending in `type` (`action`, `query`, `valueChange`, `disclosure`, `selection`, `fetch`, `dialog`, …) |
 | `oracle.adf.view.rich.PROCESS` | Component(s) the server processes the event under (often a parent) |
 | `oracle.adf.view.rich.RENDER` | Component(s) to re-render, when not implied |
@@ -85,6 +85,10 @@ older ones, including the user's own, and Fusion then answers the evicted window
 generic "An application error occurred". The plugin treats that error as a closed window and
 reopens once. **Keep debug harness windows to one or two.**
 
+When the Fusion session itself ends, the tabs still look signed in (the ADF client is loaded),
+but `GET FuseWelcome` answers with the identity service's auto-submitting sign-in form instead
+of the loopback page. The plugin reports that as needing a sign-in.
+
 ## State that belongs to the session, not the window
 
 Some choices are stored per user session, so a change in the plugin's window shows up in the
@@ -96,6 +100,7 @@ user's own tabs, and the user's own clicks change what the plugin's window sees:
 | Expanded rows of a tree table | Rows expanded by the plugin show expanded for the user | Documented in the README |
 | Collapsed / expanded sections of a detail page | A section may already be open, or not | `findCollapsedSection` returns null when already open; both paths work |
 | Table column visibility (Show All) | Persists beyond the window — the user's table shows the same columns | Only done where the user agreed (movement requests) |
+| Expanded groups and scroll position of an Add Fields dialog of attributes | The dialog can open scrolled down, with the rows above it unrendered | `addAttributeField` fetches the rows above, then expands only what is still collapsed |
 
 ## Traps, by symptom
 
@@ -113,7 +118,11 @@ Each of these cost a debugging session. The fix is in the code; this is why it i
   `leading` criteria. (`leadingChangeEvent`)
 - **Safety net.** The panel stays open after a search that found nothing; the plugin then
   compares every submitted value with the value the server re-rendered and errors on a
-  mismatch instead of returning an empty result. (`unappliedCriteria`)
+  mismatch instead of returning an empty result. (`unappliedCriteria`) A criterion the page
+  fills in itself is left out of the comparison (`filledByPage`): View Item Quantities
+  replaces Item Description with the item's own description, so an item with no stock would
+  otherwise fail as stale criteria. Such a search returns no rows and a message saying so; an
+  item number the page does not know is refused as "Item: Invalid value".
 
 ### A search returns rows that do not match
 
@@ -136,11 +145,33 @@ Each of these cost a debugging session. The fix is in the code; this is why it i
   `LocatorName`) is in the item's setup script,
   `new AdfRichCommandMenuItem('<id>',{'selectedText':'…'})`. The window keeps the field once
   added, so the screen adds it before its first search. (`addFieldEvent`)
+- **Add Fields as a dialog of attributes.** Manage Items opens "Select and Add: Attributes"
+  instead of a menu: a tree of entity → attribute group → attribute (GTIN is under Item
+  Relationships → GTIN → GTIN), Move (`[title=Move]`, processed under the dialog's region) and
+  OK (processed under the popup). Select the attribute row (`selection` with
+  `selectedRowKeys`), Move, check it in the chosen list, OK. Row keys are handed out as rows
+  first render, so they differ per window; find rows by label and parent. The tree's node cell
+  sits inside the row's inner table, not in the row itself. The tree keeps its expansion and
+  scroll position across the session's windows: when its body starts past row 0
+  (`_startRow`), fetch the rows above with a `fetch` event, `subtype 1`, `index` and
+  `clientKey` of the first rendered row; they arrive in a hidden `::dataW` copy of the body.
+  Name such criteria in the screen's `attributeFields`. (`addAttributeField`)
+- **Required fields checked only in the browser.** Manage Items refuses a search without an
+  Item, Description or Keyword, but only client-side; the server runs a search by GTIN alone.
+
+### A work area opens but its Tasks panel is not found
+
+- **Drawer tab ids differ per work area** (`…_itemNode_InvTasksList`,
+  `…_itemNode__FndTasksList`, `…_FOTsdiItemRegionalArea`). The Tasks tab is the drawer item
+  whose icon is titled Tasks. (`findTasksTab`)
 
 ### Columns land under the wrong headings
 
 - **Frozen columns** render as cells of the row itself, ahead of the cell holding the inner
   values table. Read `row.cells` in order, expanding the inner table in place. (`parseFlatTable`)
+- **Expandable rows** (a disclosure triangle at the left, as in Manage Items and an item's
+  GTIN table) carry a cell marked `_afrDetCol` with no heading. Skip it like the row-header
+  cell. (`parseFlatTable`)
 - **Cells that contain tables** (a link beside a notes icon): take the inner table's own
   `rows[0].cells`, never every `td` inside it.
 - **A dialog left on the page** after it closes is re-rendered by later responses, with its
@@ -164,6 +195,15 @@ Each of these cost a debugging session. The fix is in the code; this is why it i
   that shell warning is ever confirmed automatically.
 - **Done's response may not redraw the results** in a tabbed shell; row links are then found
   in the search response, whose ids do not change.
+- **A link that opens nothing.** On Manage Items an item link sent alone answers with a few
+  hidden regions and no page. The browser sends the table's `selection` and the link's
+  `action` in one request (`event=<table>,<link>`, PROCESS `<table>,<toolbar>`, RENDER the
+  region around the table); do the same with `RichEvent.preceding`. (`openItemEvent`)
+- **Pages that open in edit mode.** The item page opens as "Edit Item: …". Read it, then leave
+  with its Cancel button (processed and rendered under the `MAt<n>` tab region), which closes
+  the tab with no question. Never send Save. A question after Cancel arrives as
+  `findComponent('…').show()`; a dialog merely set up in the response (`new AdfRichDialog`,
+  such as the Add Fields dialog) is not one. (`cancelItemEvent`, `findShownPopup`)
 
 ### Large results
 
@@ -188,9 +228,15 @@ Each of these cost a debugging session. The fix is in the code; this is why it i
 | `detail-page.ts` | Row links, label/value fields, sections, Done, close-tab warning |
 | `row-actions.ts` | Row selection, menu commands, dialogs (About This Record, availability, picks) |
 | `lookup.ts` | A field's "Search and Select" dialog, for partial-number matches |
+| `attribute-fields.ts` | The Add Fields dialog of attributes: tree walk, Move, OK |
+| `item-page.ts` | The Manage Items item page: open from a row, Relationships sub-tabs, Cancel |
+| `product-information.ts` | Product Information Management tile setting, Manage Items screen, criteria and reader |
+| `gtin.ts` | Barcodes to GTIN-14, GS1 check digit |
+| `purchase-order-lines.ts` | An order's lines table and the Close Line dialog |
+| `receiving.ts` | The Receive Expected Shipments screen and its document criteria |
 | `bi-publisher.ts` | BI Publisher reports: run with parameters, poll, parse HTML output |
 | `rgn.ts` | The RGN reports (R-077 stages, return bank, unmatched credits, dashboard; R-442 print) |
-| `inventory.ts`, `procurement.ts` | Work-area tile settings and task categories |
+| `inventory.ts`, `procurement.ts` | Work-area tile settings, task categories and Manage Orders criteria |
 | `tools/schemas.ts` | Output schemas and row mappers for every tool |
 
 ## Output conventions

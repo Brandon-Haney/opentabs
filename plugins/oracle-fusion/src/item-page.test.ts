@@ -4,10 +4,11 @@ import {
   cancelItemEvent,
   findItemLink,
   findRelationshipLink,
+  findRelationshipTable,
   findShownPopup,
   openItemEvent,
-  parseRelationshipTable,
   readItemPage,
+  relationshipRecords,
   showRelationshipEvent,
   showRelationshipsEvent,
   showsItemPage,
@@ -146,6 +147,7 @@ describe('the Relationships tab', () => {
     const link = findRelationshipLink(relationships, page, 'gtins');
     expect(link).toBe(`${A}np1:cni3`);
     expect(showRelationshipEvent(page, link ?? '')).toMatchObject({ process: TAB, render: TAB });
+    expect(showRelationshipEvent(page, link ?? '')).not.toHaveProperty('deltas');
     expect(findRelationshipLink(relationships, page, 'crossReferences')).toBe(`${A}np1:cni4`);
   });
 
@@ -157,16 +159,30 @@ describe('the Relationships tab', () => {
   });
 
   test('reads the GTIN table by its headings, past the expand column', () => {
-    expect(parseRelationshipTable(gtins(2), page, 'gtins')).toEqual([
+    const shown = findRelationshipTable(gtins(2), page, 'gtins');
+    expect(shown.id).toBe(GTIN_TABLE);
+    expect(relationshipRecords(shown, page, 'gtins')).toEqual([
       { GTIN: '00087295141151', UOM: 'EACH', 'Party Type': 'Manufacturer', 'Party Name': 'Manufacturer 325' },
       { GTIN: '00087295247914', UOM: 'EACH', 'Party Type': '', 'Party Name': '' },
     ]);
   });
 
+  test('shows a sub-tab again asking for every row of its table', () => {
+    expect(showRelationshipEvent(page, `${A}np1:cni3`, GTIN_TABLE)).toMatchObject({
+      source: `${A}np1:cni3`,
+      process: TAB,
+      render: TAB,
+      deltas: `{${GTIN_TABLE}={viewportSize=10000}}`,
+    });
+  });
+
   test('refuses a sub-tab without its table, or with rows left unrendered', () => {
-    expect(() => parseRelationshipTable(gtins(2), page, 'crossReferences')).toThrow(/shows no Cross-References table/);
-    expect(() => parseRelationshipTable(gtins(30), page, 'gtins')).toThrow(
+    expect(() => findRelationshipTable(gtins(2), page, 'crossReferences')).toThrow(/shows no Cross-References table/);
+    expect(() => relationshipRecords(findRelationshipTable(gtins(30), page, 'gtins'), page, 'gtins')).toThrow(
       /holds 30 rows, but Oracle Fusion rendered 2/,
+    );
+    expect(() => relationshipRecords(findRelationshipTable(gtins(-1), page, 'gtins'), page, 'gtins')).toThrow(
+      /holds an unknown number of rows, but Oracle Fusion rendered 2/,
     );
   });
 

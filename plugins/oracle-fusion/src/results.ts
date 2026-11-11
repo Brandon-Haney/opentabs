@@ -14,11 +14,14 @@ import {
   parseDetailFields,
 } from './detail-page.js';
 import {
+  everyRowEvent,
   findTableId,
   findTableIds,
   parseFlatTable,
   parseRowKeys,
+  parseTableState,
   recordsOf,
+  rendersEveryRow,
   showAllColumnsEvent,
 } from './flat-table.js';
 import {
@@ -147,6 +150,33 @@ interface RowReading {
 const DETAIL_LINES_TABLE = /:_ATp:[^:]+$/;
 
 /**
+ * Keys of every row of a detail page's table. The page renders only the first rows of its
+ * scrolling table, so when it did not render them all, the server is asked to; a table it
+ * still renders only in part, or without saying how many rows it holds, is an error rather
+ * than a silent gap.
+ */
+export const everyRowKey = async (
+  adfWindow: AdfWindow,
+  detail: RichResponse,
+  tableId: string,
+  fields: Record<string, string>,
+): Promise<string[]> => {
+  const shown = parseRowKeys(detail, tableId);
+  const firstKey = shown[0];
+  if (rendersEveryRow(parseFlatTable(detail, tableId)) || firstKey === undefined) return shown;
+  const selectedKey = parseTableState(detail, tableId).selectedRowKeys[0] ?? firstKey;
+  const rendered = await adfWindow.submit(everyRowEvent(tableId, selectedKey, fields));
+  const table = parseFlatTable(rendered, tableId);
+  if (!rendersEveryRow(table)) {
+    throw ToolError.internal(
+      `The Oracle Fusion detail page holds ${table.rowCount ?? 'an unknown number of'} lines but rendered ` +
+        `${table.rows.length}.`,
+    );
+  }
+  return parseRowKeys(rendered, tableId);
+};
+
+/**
  * Runs a detail page's line command on each of its lines and reads the table of the dialog
  * the command opens, with every line's rows in one list.
  */
@@ -165,7 +195,7 @@ const readLineDialogs = async (
     return dialogTable ? recordsOf(parseFlatTable(answer, dialogTable)) : [];
   };
   const rows: Record<string, string>[] = [];
-  for (const rowKey of parseRowKeys(detail, tableId)) {
+  for (const rowKey of await everyRowKey(adfWindow, detail, tableId, fields)) {
     rows.push(...(await readRowDialog(adfWindow, { tableId, rowKey, menuItem, fields }, readTable, () => [])));
   }
   return rows;

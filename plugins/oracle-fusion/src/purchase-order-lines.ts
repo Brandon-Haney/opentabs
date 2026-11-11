@@ -1,28 +1,56 @@
 import { ToolError } from '@opentabs-dev/plugin-sdk';
-import { type AdfMessage, elementText, type RichResponse, richEvent, VIEWPORT_ROWS } from './adf-protocol.js';
-import type { RichEvent } from './adf-window.js';
-import { findTableId, parseFlatTable, parseRowKeys, recordsOf } from './flat-table.js';
+import { type AdfMessage, elementText, type RichResponse, richEvent } from './adf-protocol.js';
+import type { AdfWindow, RichEvent } from './adf-window.js';
+import {
+  findTableId,
+  pageEvent,
+  parseFlatTable,
+  parsePageSize,
+  parseRowKeys,
+  parseTableState,
+  recordsOf,
+} from './flat-table.js';
 import { closeDialogEvent, controlValues, findDialog, type OpenDialog } from './row-actions.js';
 
 /**
- * The lines of a purchase order page and the Lines Actions → Close command: the line is
- * selected in the single-select lines table, Close opens the Close Line dialog, and the
- * dialog's OK saves the close.
+ * The lines of a purchase order page and the Lines Actions → Close command. The lines table
+ * shows its lines a page at a time: a line is found by paging to it and selected in the
+ * single-select table, Close opens the Close Line dialog, and the dialog's OK saves the close.
  */
 
 /** Lines table of an order page: the table of the page's lines toolbar. */
 const ORDER_LINES_TABLE = /:AP2:AT1:_ATp:[^:]+$/;
 
-/** Finds the lines table an order page set up. */
-export const findOrderLinesTable = (response: RichResponse): string | null => findTableId(response, ORDER_LINES_TABLE);
+/** The lines table of an order page: its client id and the lines it shows per page. */
+export interface LinesTable {
+  id: string;
+  pageSize: number;
+}
+
+/** Finds the lines table an order page set up, with the lines it shows per page. */
+export const findOrderLinesTable = (response: RichResponse, order: string): LinesTable => {
+  const id = findTableId(response, ORDER_LINES_TABLE);
+  if (!id) throw ToolError.internal(`The Oracle Fusion page for ${order} has no lines table.`);
+  const pageSize = parsePageSize(response, id);
+  if (pageSize === null) {
+    throw ToolError.internal(`The Oracle Fusion lines table of ${order} does not show its lines a page at a time.`);
+  }
+  return { id, pageSize };
+};
 
 /** Columns of the lines table that closing a line relies on. */
 const REQUIRED_COLUMNS = ['Line', 'Item', 'Quantity', 'Status'] as const;
 
 /** One line of an order as the page lists it. */
 export interface OrderLine {
-  /** Key of the line's row in the lines table, which selecting the line names. */
+  /**
+   * Key of the line's row, which selecting the line names. Fusion hands keys out as pages
+   * load and gives them to other lines later, so a key names the line only in the response
+   * that rendered it.
+   */
   rowKey: string;
+  /** Position of the line among the order's lines, from 0, in the order the table lists them. */
+  index: number;
   line: number;
   item: string;
   /** Quantity ordered; null when blank. */
@@ -30,11 +58,20 @@ export interface OrderLine {
   status: string;
 }
 
-/** The lines an order page rendered, and how many lines the order has. */
-export interface OrderLines {
+/** One page of the lines table as a response rendered it. */
+export interface OrderLinesPage {
   lines: OrderLine[];
-  /** Number of lines the server holds, or null when it did not say. */
+  /** Position of the page's first row. */
+  start: number;
+  /** Position just past the page's last row. */
+  end: number;
+  /**
+   * Number of lines the order has; null until Fusion has counted them, which it does once
+   * the last page has been shown.
+   */
   rowCount: number | null;
+  /** Key of the selected row; null when no row is selected. */
+  selectedKey: string | null;
 }
 
 const quantityOf = (text: string): number | null => {
@@ -45,11 +82,10 @@ const quantityOf = (text: string): number | null => {
 };
 
 /**
- * Reads the lines of an order page's lines table out of a response that rendered it. The
- * table shows only the columns the user has chosen to show, so one the reading relies on
- * being hidden is an error.
+ * Reads the page of an order's lines table a response rendered. The table shows only the
+ * columns the user has chosen to show, so one the reading relies on being hidden is an error.
  */
-export const parseOrderLines = (response: RichResponse, tableId: string): OrderLines => {
+export const parseOrderLines = (response: RichResponse, tableId: string): OrderLinesPage => {
   const table = parseFlatTable(response, tableId);
   const missing = REQUIRED_COLUMNS.filter(column => !table.headings.includes(column));
   if (missing.length > 0) {
@@ -59,25 +95,112 @@ export const parseOrderLines = (response: RichResponse, tableId: string): OrderL
     );
   }
   const keys = parseRowKeys(response, tableId);
-  const lines = recordsOf(table).map((record, index) => ({
-    rowKey: keys[index] ?? '',
+  const { startRow, selectedRowKeys } = parseTableState(response, tableId);
+  const lines = recordsOf(table).map((record, position) => ({
+    rowKey: keys[position] ?? '',
+    index: startRow + position,
     line: Number(record.Line),
     item: record.Item ?? '',
     quantity: quantityOf(record.Quantity ?? ''),
     status: record.Status ?? '',
   }));
-  return { lines: lines.filter(line => line.rowKey !== '' && Number.isInteger(line.line)), rowCount: table.rowCount };
+  return {
+    lines: lines.filter(line => line.rowKey !== '' && Number.isInteger(line.line)),
+    start: startRow,
+    end: startRow + table.rows.length,
+    rowCount: table.rowCount,
+    selectedKey: selectedRowKeys[0] ?? null,
+  };
 };
 
 /**
  * Reads the lines table out of a response that was asked to render it again. A response
  * without the table means the server did not redraw it.
  */
-export const parseRenderedOrderLines = (response: RichResponse, tableId: string): OrderLines => {
+export const parseRenderedOrderLines = (response: RichResponse, tableId: string): OrderLinesPage => {
   if (!response.document.getElementById(`${tableId}::db`)) {
     throw ToolError.internal("Oracle Fusion did not redraw the order's lines.");
   }
   return parseOrderLines(response, tableId);
+};
+
+/**
+ * Whether a page is the table's last: the order's lines end on it once Fusion has counted
+ * them; before that, a page shorter than a full one is the last.
+ */
+const isLastPage = (page: OrderLinesPage, pageSize: number): boolean =>
+  page.rowCount !== null ? page.end >= page.rowCount : page.end - page.start < pageSize;
+
+/** The order's lines found by number, and the first row of the page the table was left on. */
+export interface FoundLines {
+  lines: Map<number, OrderLine>;
+  shownStart: number;
+}
+
+/**
+ * Reads the order's lines a page at a time, from the page the order opened on, until every
+ * wanted line is found or the last page has been read, so a wanted line missing from the
+ * result is not on the order.
+ */
+export const findOrderLines = async (
+  adfWindow: AdfWindow,
+  table: LinesTable,
+  opened: OrderLinesPage,
+  wanted: number[],
+): Promise<FoundLines> => {
+  const lines = new Map<number, OrderLine>();
+  let page = opened;
+  for (;;) {
+    for (const line of page.lines) lines.set(line.line, line);
+    if (wanted.every(number => lines.has(number)) || isLastPage(page, table.pageSize)) {
+      return { lines, shownStart: page.start };
+    }
+    const next = parseRenderedOrderLines(
+      await adfWindow.submit(pageEvent(table.id, table.pageSize, page.start, page.end)),
+      table.id,
+    );
+    if (next.end <= page.end && !isLastPage(next, table.pageSize)) {
+      throw ToolError.internal(`Oracle Fusion did not show the order's lines after the first ${page.end}.`);
+    }
+    page = next;
+  }
+};
+
+/** A line selected on the lines table, as the selection's redraw shows it. */
+export interface SelectedLine {
+  line: OrderLine;
+  /** First row of the page the table shows now, which starts at the selected line. */
+  shownStart: number;
+}
+
+/**
+ * Selects a line the order listed: shows the page that starts at the line's position,
+ * selects the line there, and checks that Fusion selected that very line. A selection names
+ * its row by key, and keys pass to other lines as pages load, so the key is read from the
+ * page just shown. Close acts on whichever row is selected, and the order opens with its
+ * first line selected, so a selection Fusion did not make is an error.
+ */
+export const selectLine = async (
+  adfWindow: AdfWindow,
+  table: LinesTable,
+  shownStart: number,
+  listed: OrderLine,
+): Promise<SelectedLine> => {
+  const page = parseRenderedOrderLines(
+    await adfWindow.submit(pageEvent(table.id, table.pageSize, shownStart, listed.index)),
+    table.id,
+  );
+  const onPage = page.lines.find(line => line.line === listed.line);
+  if (!onPage) throw ToolError.internal(`Line ${listed.line} is no longer where the order listed it.`);
+
+  const selected = parseRenderedOrderLines(await adfWindow.submit(selectLineEvent(table.id, onPage.rowKey)), table.id);
+  const line = selected.lines.find(candidate => candidate.rowKey === selected.selectedKey);
+  if (line?.line !== listed.line) {
+    throw ToolError.internal(
+      `Oracle Fusion selected ${line ? `line ${line.line}` : 'no line'} instead of line ${listed.line}.`,
+    );
+  }
+  return { line, shownStart: selected.start };
 };
 
 /** A line to close, as the caller named it. */
@@ -138,14 +261,14 @@ export const refusalFor = (
 };
 
 /**
- * Event that selects one line and has the server render the whole lines table again, every
- * line at once, so the line can be checked as Fusion holds it now.
+ * Event that selects one line of the page shown. The server answers by rendering the lines
+ * table again from the selected line on, so the line can be checked as Fusion holds it now.
  */
 export const selectLineEvent = (tableId: string, rowKey: string): RichEvent => ({
   source: tableId,
   payload: richEvent('selection'),
   render: tableId,
-  deltas: `{${tableId}={selectedRowKeys=${rowKey},viewportSize=${VIEWPORT_ROWS}}}`,
+  deltas: `{${tableId}={selectedRowKeys=${rowKey}}}`,
 });
 
 const CLOSE_LINE_COMMAND = ':AT1:_ATp:CA_LINES_CLOSE';

@@ -1,7 +1,14 @@
 import { ToolError } from '@opentabs-dev/plugin-sdk';
-import { elementText, findRegionAround, type RichResponse, richEvent, VIEWPORT_ROWS } from './adf-protocol.js';
+import {
+  elementText,
+  findRegionAround,
+  type RichResponse,
+  richEvent,
+  VIEWPORT_ROWS,
+  viewportDeltas,
+} from './adf-protocol.js';
 import type { RichEvent } from './adf-window.js';
-import { findTableIds, parseFlatTable, recordsOf } from './flat-table.js';
+import { type FlatTable, findTableIds, parseFlatTable, recordsOf, rendersEveryRow } from './flat-table.js';
 import { controlValues } from './row-actions.js';
 
 /**
@@ -154,38 +161,62 @@ export const findRelationshipLink = (response: RichResponse, page: ItemPage, kin
     .flatMap(pane => [...response.document.querySelectorAll(`a[id^="${pane}:"]`)])
     .find(link => elementText(link) === RELATIONSHIP_TABS[kind].label)?.id ?? null;
 
-/** Event that shows a Relationships sub-tab. The page's tab is processed and re-rendered with it. */
-export const showRelationshipEvent = (page: ItemPage, link: string): RichEvent => ({
+/**
+ * Event that shows a Relationships sub-tab. The page's tab is processed and re-rendered with
+ * it. A sub-tab's table first renders only its first five rows; given the table's id, the
+ * event asks for every row of it.
+ */
+export const showRelationshipEvent = (page: ItemPage, link: string, tableId?: string): RichEvent => ({
   source: link,
   payload: richEvent('action'),
   fields: page.fields,
   process: page.tab,
   render: page.tab,
+  ...(tableId && { deltas: viewportDeltas(tableId) }),
 });
 
+/** The table a Relationships sub-tab shows. */
+export interface RelationshipTable {
+  id: string;
+  table: FlatTable;
+}
+
 /**
- * Reads the table a Relationships sub-tab shows, one record per row keyed by heading. The
- * table is the one of the page's tab with the sub-tab's headings. A sub-tab showing no such
- * table, or fewer rows than it holds, is an error.
+ * Finds the table a Relationships sub-tab shows: the one of the page's tab with the
+ * sub-tab's headings. A sub-tab showing no such table is an error.
  */
-export const parseRelationshipTable = (
+export const findRelationshipTable = (
   response: RichResponse,
   page: ItemPage,
   kind: RelationshipKind,
-): Record<string, string>[] => {
+): RelationshipTable => {
   const { label, headings } = RELATIONSHIP_TABS[kind];
-  const table = findTableIds(response)
+  const found = findTableIds(response)
     .filter(id => id.startsWith(`${page.tab}:`))
-    .map(id => parseFlatTable(response, id))
-    .find(candidate => headings.every(heading => candidate.headings.includes(heading)));
-  if (!table) {
+    .map(id => ({ id, table: parseFlatTable(response, id) }))
+    .find(candidate => headings.every(heading => candidate.table.headings.includes(heading)));
+  if (!found) {
     throw ToolError.internal(
       `The ${label} tab of the Oracle Fusion item page of ${page.item} shows no ${label} table.`,
     );
   }
-  if (table.rowCount !== null && table.rows.length < table.rowCount) {
+  return found;
+};
+
+/**
+ * Reads a Relationships sub-tab's table, one record per row keyed by heading. A table not
+ * rendered whole is an error rather than a short list.
+ */
+export const relationshipRecords = (
+  shown: RelationshipTable,
+  page: ItemPage,
+  kind: RelationshipKind,
+): Record<string, string>[] => {
+  const { table } = shown;
+  if (!rendersEveryRow(table)) {
     throw ToolError.internal(
-      `The ${label} tab of ${page.item} holds ${table.rowCount} rows, but Oracle Fusion rendered ${table.rows.length}.`,
+      `The ${RELATIONSHIP_TABS[kind].label} tab of ${page.item} holds ` +
+        `${table.rowCount ?? 'an unknown number of'} rows, but Oracle Fusion rendered ${table.rows.length}.`,
     );
   }
   return recordsOf(table);

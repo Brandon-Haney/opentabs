@@ -1,4 +1,4 @@
-import { elementText, type RichResponse, richEvent } from './adf-protocol.js';
+import { elementText, type RichResponse, richEvent, VIEWPORT_ROWS } from './adf-protocol.js';
 import type { RichEvent } from './adf-window.js';
 
 /**
@@ -65,6 +65,80 @@ export const parseFlatTable = (response: RichResponse, tableId: string): FlatTab
   const rowCount = count == null || Number(count) < 0 ? null : Number(count);
   return { headings, rows, rowCount };
 };
+
+/**
+ * Whether a response rendered every row of a table: the server counted the rows and rendered
+ * as many. A table that renders only its first rows leaves the count unknown.
+ */
+export const rendersEveryRow = (table: FlatTable): boolean =>
+  table.rowCount !== null && table.rows.length === table.rowCount;
+
+/** Where a response's rows of a table sit among all its rows, and which rows are selected. */
+export interface TableState {
+  /** Position of the first rendered row among all the table's rows, from 0. */
+  startRow: number;
+  /** Keys of the selected rows. */
+  selectedRowKeys: string[];
+}
+
+/**
+ * Reads a table's state from the attributes of its rendered body: `_startRow`, and
+ * `_selState`, which maps each selected row's key to 1 (`{'13':1}`).
+ */
+export const parseTableState = (response: RichResponse, tableId: string): TableState => {
+  const body = response.document.getElementById(`${tableId}::db`)?.querySelector('table[_rowcount]');
+  const startRow = Number(body?.getAttribute('_startrow'));
+  const selection = body?.getAttribute('_selstate') ?? '';
+  return {
+    startRow: Number.isInteger(startRow) && startRow >= 0 ? startRow : 0,
+    selectedRowKeys: [...selection.matchAll(/'([^']*)':1/g)].map(match => match[1] ?? ''),
+  };
+};
+
+/**
+ * Rows per page of a table that shows its rows a page at a time (`scrollPolicy` page, with
+ * a navigation bar beneath it), read from the table's set-up script. Null when the response
+ * did not set the table up or the table scrolls instead. Such a table renders one page per
+ * response, however large a viewport is asked for.
+ */
+export const parsePageSize = (response: RichResponse, tableId: string): number | null => {
+  const start = response.scripts.indexOf(`new AdfRichTable('${tableId}',{`);
+  const end = start < 0 ? -1 : response.scripts.indexOf('}', start);
+  if (end < 0) return null;
+  const setup = response.scripts.slice(start, end);
+  if (!setup.includes("'scrollPolicy':'page'")) return null;
+  const rows = Number(setup.match(/'rows':(\d+)/)?.[1]);
+  return Number.isInteger(rows) && rows > 0 ? rows : null;
+};
+
+/**
+ * Event that shows the page of a paged table starting at row `start`, as the table's
+ * navigation bar does; the server answers by rendering the table again. A start past the
+ * last page shows the last full page. `shownStart` is the first row of the page shown now.
+ */
+export const pageEvent = (tableId: string, pageSize: number, shownStart: number, start: number): RichEvent => ({
+  source: tableId,
+  payload: richEvent('rangeChange', {
+    oldStart: String(shownStart),
+    oldEnd: String(shownStart + pageSize - 1),
+    newStart: String(start),
+    newEnd: String(start + pageSize - 1),
+  }),
+  render: tableId,
+});
+
+/**
+ * Event that has the server render every row of a scrolling table, which renders only its
+ * first rows when its page opens: the row already selected is selected again, which changes
+ * nothing, with a viewport long enough for every row.
+ */
+export const everyRowEvent = (tableId: string, selectedKey: string, fields: Record<string, string>): RichEvent => ({
+  source: tableId,
+  payload: richEvent('selection'),
+  fields,
+  render: tableId,
+  deltas: `{${tableId}={selectedRowKeys=${selectedKey},viewportSize=${VIEWPORT_ROWS}}}`,
+});
 
 /** Keys each row's values by the heading of its column, leaving out untitled columns. */
 export const recordsOf = (table: FlatTable): Record<string, string>[] =>

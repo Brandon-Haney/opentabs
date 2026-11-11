@@ -1,18 +1,19 @@
 import { getConfig, ToolError } from '@opentabs-dev/plugin-sdk';
 import { type RichResponse, viewportDeltas } from './adf-protocol.js';
 import type { AdfWindow, RichEvent } from './adf-window.js';
-import { parseFlatTable, parseRowKeys, recordsOf } from './flat-table.js';
+import { parseFlatTable, parseRowKeys, recordsOf, rendersEveryRow } from './flat-table.js';
 import {
   cancelItemEvent,
   findItemLink,
   findRelationshipLink,
+  findRelationshipTable,
   findShownPopup,
   type ItemPage,
   openItemEvent,
-  parseRelationshipTable,
   RELATIONSHIP_TABS,
   type RelationshipKind,
   readItemPage,
+  relationshipRecords,
   showRelationshipEvent,
   showRelationshipsEvent,
   showsItemPage,
@@ -121,7 +122,17 @@ const readRelationships = async (
       );
     }
     shown = await step(adfWindow, showRelationshipEvent(page, link), `a Relationships sub-tab of ${page.item}`);
-    relationships[kind] = parseRelationshipTable(shown, page, kind);
+    let table = findRelationshipTable(shown, page, kind);
+    if (!rendersEveryRow(table.table)) {
+      // The sub-tab rendered only the table's first rows; shown again, it renders them all.
+      shown = await step(
+        adfWindow,
+        showRelationshipEvent(page, link, table.id),
+        `every row of a Relationships sub-tab of ${page.item}`,
+      );
+      table = findRelationshipTable(shown, page, kind);
+    }
+    relationships[kind] = relationshipRecords(table, page, kind);
   }
   return { page: withControlsOf(page, shown), relationships };
 };

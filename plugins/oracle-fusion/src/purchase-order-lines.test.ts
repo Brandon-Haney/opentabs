@@ -1,17 +1,22 @@
 import { describe, expect, test } from 'vitest';
 import { parseRichResponse, type RichResponse } from './adf-protocol.js';
+import type { AdfWindow, RichEvent } from './adf-window.js';
+import { pageEvent } from './flat-table.js';
 import {
   chooseActionEvent,
   confirmCloseEvent,
   expectedQuantities,
   findCloseLineCommand,
+  findOrderLines,
   findOrderLinesTable,
   judgeCloseAnswer,
+  type LinesTable,
   type OrderLine,
   parseOrderLines,
   parseRenderedOrderLines,
   readCloseLineDialog,
   refusalFor,
+  selectLine,
   selectLineEvent,
 } from './purchase-order-lines.js';
 
@@ -37,10 +42,26 @@ const lineRow = (key: string, values: string[]): string =>
 
 const HEADINGS = ['Line', 'Item', 'Description', 'Quantity', 'Status'];
 
-const linesTable = (rows: string, headings = HEADINGS, rowCount = 2): string =>
+interface TableOptions {
+  headings?: string[];
+  /** Lines the order has; -1 while Fusion has not counted them. */
+  rowCount?: number;
+  startRow?: number;
+  /** Key of the selected row. */
+  selected?: string;
+}
+
+const linesTable = (
+  rows: string,
+  { headings = HEADINGS, rowCount = 2, startRow = 0, selected }: TableOptions = {},
+): string =>
   `<table><tr><th id="${TABLE}:c108" _afrRH="true">&nbsp;</th><th id="${TABLE}:c108a">&nbsp;</th>` +
   headings.map((heading, index) => `<th id="${TABLE}:c${index}">${heading}</th>`).join('') +
-  `</tr></table><div id="${TABLE}::db"><table _rowCount="${rowCount}">${rows}</table></div>`;
+  `</tr></table><div id="${TABLE}::db"><table _rowCount="${rowCount}" _startRow="${startRow}"` +
+  `${selected === undefined ? '' : ` _selState="{'${selected}':1}"`}>${rows}</table></div>`;
+
+/** Set-up script of the lines table, which shows ten lines a page. */
+const PAGED_TABLE = `new AdfRichTable('${TABLE}',{'first':10,'rows':10,'fetchSize':11,'scrollPolicy':'page'})`;
 
 const menu = (cancelHidden: boolean) =>
   `<table><tr id="${TABLE.replace(':table1', ':CA_LINES_CANCEL_LINE')}" role="menuitem"` +
@@ -51,28 +72,42 @@ const orderPage = respond(
   linesTable(
     lineRow('24', ['152', '124245-MOB', 'Motor Oil', '6', 'Open']) +
       lineRow('26', ['183', '19431551-AC', 'Wire Kit', '1,200', 'Closed for Receiving']),
+    { startRow: 151, selected: '24' },
   ) + menu(true),
-  `new AdfRichTable('${PAGE}:AT1:_ATp:table1',{})`,
+  PAGED_TABLE,
 );
 
 describe('order lines', () => {
-  test('finds the lines table of the page', () => {
-    expect(findOrderLinesTable(orderPage)).toBe(TABLE);
+  test('finds the lines table of the page with the lines it shows per page', () => {
+    expect(findOrderLinesTable(orderPage, 'ATL001-1')).toEqual({ id: TABLE, pageSize: 10 });
   });
 
-  test('reads each line with its row key, past the untitled icon column', () => {
+  test('refuses a page without a lines table, or one that does not page', () => {
+    expect(() => findOrderLinesTable(respond('<div></div>'), 'ATL001-1')).toThrow(
+      'The Oracle Fusion page for ATL001-1 has no lines table.',
+    );
+    const scrolling = respond(linesTable(''), `new AdfRichTable('${TABLE}',{'rows':25,'scrollPolicy':'auto'})`);
+    expect(() => findOrderLinesTable(scrolling, 'ATL001-1')).toThrow(
+      'The Oracle Fusion lines table of ATL001-1 does not show its lines a page at a time.',
+    );
+  });
+
+  test('reads each line with its row key and position, past the untitled icon column', () => {
     expect(parseOrderLines(orderPage, TABLE)).toEqual({
       lines: [
-        { rowKey: '24', line: 152, item: '124245-MOB', quantity: 6, status: 'Open' },
-        { rowKey: '26', line: 183, item: '19431551-AC', quantity: 1200, status: 'Closed for Receiving' },
+        { rowKey: '24', index: 151, line: 152, item: '124245-MOB', quantity: 6, status: 'Open' },
+        { rowKey: '26', index: 152, line: 183, item: '19431551-AC', quantity: 1200, status: 'Closed for Receiving' },
       ],
+      start: 151,
+      end: 153,
       rowCount: 2,
+      selectedKey: '24',
     });
   });
 
   test('refuses a table that hides a column the checks rely on', () => {
     const hidden = respond(
-      linesTable(lineRow('0', ['1', 'X-1', 'x', '1']), ['Line', 'Item', 'Description', 'Quantity']),
+      linesTable(lineRow('0', ['1', 'X-1', 'x', '1']), { headings: ['Line', 'Item', 'Description', 'Quantity'] }),
     );
     expect(() => parseOrderLines(hidden, TABLE)).toThrow(/does not show the Status column/);
   });
@@ -81,13 +116,121 @@ describe('order lines', () => {
     expect(() => parseRenderedOrderLines(respond('<div></div>'), TABLE)).toThrow(/did not redraw/);
   });
 
-  test('selects a line and asks for every line to be rendered', () => {
+  test('selects a line, which redraws the table from that line on', () => {
     expect(selectLineEvent(TABLE, '24')).toEqual({
       source: TABLE,
       payload: '<m xmlns="http://oracle.com/richClient/comm"><k v="type"><s>selection</s></k></m>',
       render: TABLE,
-      deltas: `{${TABLE}={selectedRowKeys=24,viewportSize=10000}}`,
+      deltas: `{${TABLE}={selectedRowKeys=24}}`,
     });
+  });
+});
+
+/** A window that answers each event with the next of the responses given, keeping the events. */
+const scriptedWindow = (...responses: RichResponse[]) => {
+  const events: RichEvent[] = [];
+  const adfWindow: AdfWindow = {
+    homeHtml: '',
+    submit: async event => {
+      events.push(event);
+      const next = responses.shift();
+      if (!next) throw new Error('no response scripted for this event');
+      return next;
+    },
+    download: async () => {
+      throw new Error('no download scripted');
+    },
+  };
+  return { adfWindow, events };
+};
+
+const LINES: LinesTable = { id: TABLE, pageSize: 3 };
+
+/** A page of open lines, each row keyed by its position and numbered as given. */
+const linesPage = (start: number, numbers: number[], options: TableOptions = {}): RichResponse =>
+  respond(
+    linesTable(
+      numbers
+        .map((number, position) => lineRow(`k${start + position}`, [String(number), `P-${number}`, 'x', '1', 'Open']))
+        .join(''),
+      { rowCount: -1, startRow: start, ...options },
+    ),
+  );
+
+const opened = parseOrderLines(linesPage(0, [1, 2, 3]), TABLE);
+
+describe('findOrderLines', () => {
+  test('reads no further once every wanted line is found', async () => {
+    const { adfWindow, events } = scriptedWindow();
+    const found = await findOrderLines(adfWindow, LINES, opened, [2]);
+    expect([...found.lines.keys()]).toEqual([1, 2, 3]);
+    expect(found.shownStart).toBe(0);
+    expect(events).toEqual([]);
+  });
+
+  test('pages on until every wanted line is found', async () => {
+    const { adfWindow, events } = scriptedWindow(linesPage(3, [4, 5, 6]), linesPage(6, [7, 8, 9]));
+    const found = await findOrderLines(adfWindow, LINES, opened, [5, 8]);
+    expect(events).toEqual([pageEvent(TABLE, 3, 0, 3), pageEvent(TABLE, 3, 3, 6)]);
+    expect(found.lines.get(8)).toMatchObject({ rowKey: 'k7', index: 7, line: 8 });
+    expect(found.shownStart).toBe(6);
+  });
+
+  test('stops at the last page, leaving out a line the order does not have', async () => {
+    const counted = scriptedWindow(linesPage(3, [4, 5], { rowCount: 5 }));
+    const found = await findOrderLines(counted.adfWindow, LINES, opened, [9]);
+    expect([...found.lines.keys()]).toEqual([1, 2, 3, 4, 5]);
+    expect(counted.events).toHaveLength(1);
+
+    const short = scriptedWindow(linesPage(3, [4]));
+    expect((await findOrderLines(short.adfWindow, LINES, opened, [9])).lines.has(9)).toBe(false);
+  });
+
+  test('takes the last full page Fusion shows when asked past the end', async () => {
+    const { adfWindow, events } = scriptedWindow(linesPage(3, [4, 5, 6]), linesPage(3, [4, 5, 6], { rowCount: 6 }));
+    const found = await findOrderLines(adfWindow, LINES, opened, [9]);
+    expect(events).toHaveLength(2);
+    expect(found.lines.size).toBe(6);
+    expect(found.shownStart).toBe(3);
+  });
+
+  test('refuses a page that does not move on before the last line', async () => {
+    const { adfWindow } = scriptedWindow(linesPage(0, [1, 2, 3]));
+    await expect(findOrderLines(adfWindow, LINES, opened, [9])).rejects.toThrow(
+      "Oracle Fusion did not show the order's lines after the first 3.",
+    );
+  });
+});
+
+describe('selectLine', () => {
+  const listed: OrderLine = { rowKey: 'k1', index: 4, line: 5, item: 'P-5', quantity: 1, status: 'Open' };
+
+  test('shows the line’s page, selects it by the key that page gives it, and checks the selection', async () => {
+    const { adfWindow, events } = scriptedWindow(linesPage(4, [5, 6, 7]), linesPage(4, [5, 6, 7], { selected: 'k4' }));
+    expect(await selectLine(adfWindow, LINES, 9, listed)).toEqual({
+      line: { ...listed, rowKey: 'k4' },
+      shownStart: 4,
+    });
+    expect(events).toEqual([pageEvent(TABLE, 3, 9, 4), selectLineEvent(TABLE, 'k4')]);
+  });
+
+  test('refuses a line that is no longer where the order listed it', async () => {
+    const { adfWindow, events } = scriptedWindow(linesPage(4, [6, 7, 8]));
+    await expect(selectLine(adfWindow, LINES, 0, listed)).rejects.toThrow(
+      'Line 5 is no longer where the order listed it.',
+    );
+    expect(events).toHaveLength(1);
+  });
+
+  test('refuses a selection Fusion made of another line, or did not make', async () => {
+    const other = scriptedWindow(linesPage(4, [5, 6, 7]), linesPage(4, [5, 6, 7], { selected: 'k5' }));
+    await expect(selectLine(other.adfWindow, LINES, 0, listed)).rejects.toThrow(
+      'Oracle Fusion selected line 6 instead of line 5.',
+    );
+    const none = scriptedWindow(linesPage(4, [5, 6, 7]), linesPage(4, [5, 6, 7]));
+    await expect(selectLine(none.adfWindow, LINES, 0, listed)).rejects.toThrow(
+      'Oracle Fusion selected no line instead of line 5.',
+    );
   });
 });
 
@@ -220,7 +363,7 @@ describe('judgeCloseAnswer', () => {
 });
 
 describe('refusalFor', () => {
-  const open: OrderLine = { rowKey: '24', line: 152, item: '124245-MOB', quantity: 6, status: 'Open' };
+  const open: OrderLine = { rowKey: '24', index: 151, line: 152, item: '124245-MOB', quantity: 6, status: 'Open' };
   const wanted = { line: 152, item: '124245-mob' };
   const expecting = (quantity: number, item = '124245-MOB') => new Map([[152, { item, quantity }]]);
 

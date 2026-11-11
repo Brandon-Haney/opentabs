@@ -64,13 +64,17 @@ const relationshipsTab = respond(
   `new AdfRichNavigationPane('${A}np1',{})`,
 );
 
-const gtinTab = respond(
-  `<table><tr><th id="${GTIN_TABLE}:c8" _afrRH="true">&nbsp;</th><th id="${GTIN_TABLE}:cl6">GTIN</th>` +
-    `<th id="${GTIN_TABLE}:cl9">UOM</th><th id="${GTIN_TABLE}:c1">Party Type</th></tr></table>` +
-    `<div id="${GTIN_TABLE}::db"><table _rowCount="1"><tr _afrRK="0"><td _afrRH="true">&nbsp;</td>` +
-    '<td _afrDetCol="true"></td><td>00087295247914</td><td>EACH</td><td></td></tr></table></div>',
-  `new AdfRichTable('${GTIN_TABLE}',{})`,
-);
+/** The GTIN sub-tab showing one GTIN; a row count of -1 is the one Fusion gives a table it has not counted. */
+const gtinTabCounting = (rowCount: number) =>
+  respond(
+    `<table><tr><th id="${GTIN_TABLE}:c8" _afrRH="true">&nbsp;</th><th id="${GTIN_TABLE}:cl6">GTIN</th>` +
+      `<th id="${GTIN_TABLE}:cl9">UOM</th><th id="${GTIN_TABLE}:c1">Party Type</th></tr></table>` +
+      `<div id="${GTIN_TABLE}::db"><table _rowCount="${rowCount}"><tr _afrRK="0"><td _afrRH="true">&nbsp;</td>` +
+      '<td _afrDetCol="true"></td><td>00087295247914</td><td>EACH</td><td></td></tr></table></div>',
+    `new AdfRichTable('${GTIN_TABLE}',{})`,
+  );
+
+const gtinTab = gtinTabCounting(1);
 
 const backToResults = respond('<h1>Manage Items</h1><h1>Search Results</h1>');
 
@@ -154,6 +158,40 @@ describe('itemRows', () => {
       `${A}np1:cni3`,
       `${A}canb`,
     ]);
+  });
+
+  test('shows a sub-tab again for every row when it rendered only its first rows', async () => {
+    const { adfWindow, events } = scriptedWindow([
+      itemPage,
+      relationshipsTab,
+      gtinTabCounting(-1),
+      gtinTab,
+      backToResults,
+    ]);
+    const found = await read(adfWindow, rows => rows.slice(0, 1));
+    expect(found.relationships.get('0')?.gtins).toHaveLength(1);
+    expect(events.map(event => event.source)).toEqual([
+      `${RESULTS}:0:itmNoLnkForSearch`,
+      `${A}srel`,
+      `${A}np1:cni3`,
+      `${A}np1:cni3`,
+      `${A}canb`,
+    ]);
+    expect(events[3]?.deltas).toBe(`{${GTIN_TABLE}={viewportSize=10000}}`);
+  });
+
+  test('fails when a sub-tab shown again still leaves rows out', async () => {
+    const { adfWindow, events } = scriptedWindow([
+      itemPage,
+      relationshipsTab,
+      gtinTabCounting(-1),
+      gtinTabCounting(6),
+      backToResults,
+    ]);
+    await expect(read(adfWindow, rows => rows.slice(0, 1))).rejects.toThrow(
+      'The GTIN tab of 4115-NGK holds 6 rows, but Oracle Fusion rendered 1.',
+    );
+    expect(events.at(-1)?.source).toBe(`${A}canb`);
   });
 
   test('fails when Cancel leaves the item page open', async () => {

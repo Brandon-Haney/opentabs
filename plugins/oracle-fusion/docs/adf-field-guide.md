@@ -207,6 +207,30 @@ Each of these cost a debugging session. The fix is in the code; this is why it i
 
 ### Large results
 
+- **Paged tables show ten rows, whatever viewport is asked for.** A table set up with
+  `'scrollPolicy':'page'` and `'rows':10` (an order's lines table) has a navigation bar
+  ("Page (1-10 items) 1 2", `::nb_nx`, `::nb_in_pg`) and renders one page per response;
+  `viewportSize` changes nothing. Its `_rowCount` stays `-1` until the last page has been
+  shown, so a row count cannot reveal a partial read. Page as the bar does: a `rangeChange`
+  event on the table (`oldStart`, `oldEnd`, `newStart`, `newEnd`, strings), rendering the
+  table; a start past the end shows the last full page. The body's `_startRow` gives the
+  first row's position. (`parsePageSize`, `pageEvent`, `findOrderLines`)
+- **Row keys of a paged table are not stable.** Keys are handed out as pages load and
+  passed to other rows later (line 141 had key 20, then line 21 had it), so a key names a
+  row only within the response that rendered it. Selecting a row redraws the table from the
+  selected row on (`'displayRow':'selected'`), and the selection survives paging: an order
+  opens with line 1 selected (`_selState="{'0':1}"`) and stays so on every page until another
+  row is selected. A command acting on the selected row (Lines → Close) must follow a
+  selection checked against `_selState`. (`parseTableState`, `selectLine`)
+- **Scrolling tables render only a first block** (`'scrollPolicy':'scrollPrefetch'`): a
+  Manage Orders search rendered 17 of 2,000 orders with `_rowCount="-1"`. A search asks for
+  every row with `viewportDeltas` on the query event. A table on a page opened later, such as
+  a movement request's lines, is asked again: re-select the row already selected, rendering
+  the table, with `viewportSize` in the delta. The answer carries `'fetchSize':9975` and the
+  real `_rowCount`; check the rendered rows against it. (`everyRowEvent`, `everyRowKey`)
+  The item page's Relationships tables (GTIN, Cross-References, Trading Partner Items) set
+  `'fetchSize':5`: up to five rows arrive counted; when they do not, the sub-tab is shown
+  again with `viewportDeltas` for its table. (`rendersEveryRow`, `showRelationshipEvent`)
 - **Rendered tables cap at 500 rows** however large a viewport is asked for. Tools refuse a
   larger result with the count so the caller narrows it. Paging past 500 would need a capture
   of the table's scroll fetch.
@@ -223,7 +247,7 @@ Each of these cost a debugging session. The fix is in the code; this is why it i
 | `search-page.ts` | Query panel parsing, criteria (`Criterion`), search/export events, `parseExport` |
 | `search-screen.ts` | One kept window per screen; queue, heartbeat, reopen, leading criteria, lookups, `SearchRejectedError` |
 | `results.ts` | Results readers: export, export + detail pages, tree, rendered rows (+ details) |
-| `flat-table.ts` | Plain table parsing, row keys, Show All columns |
+| `flat-table.ts` | Plain table parsing, row keys, paging and selection state, Show All columns |
 | `tree-table.ts` | Tree tables: rows, expansion events |
 | `detail-page.ts` | Row links, label/value fields, sections, Done, close-tab warning |
 | `row-actions.ts` | Row selection, menu commands, dialogs (About This Record, availability, picks) |
@@ -232,7 +256,7 @@ Each of these cost a debugging session. The fix is in the code; this is why it i
 | `item-page.ts` | The Manage Items item page: open from a row, Relationships sub-tabs, Cancel |
 | `product-information.ts` | Product Information Management tile setting, Manage Items screen, criteria and reader |
 | `gtin.ts` | Barcodes to GTIN-14, GS1 check digit |
-| `purchase-order-lines.ts` | An order's lines table and the Close Line dialog |
+| `purchase-order-lines.ts` | An order's lines table (paging to a line, a checked selection) and the Close Line dialog |
 | `receiving.ts` | The Receive Expected Shipments screen and its document criteria |
 | `bi-publisher.ts` | BI Publisher reports: run with parameters, poll, parse HTML output |
 | `rgn.ts` | The RGN reports (R-077 stages, return bank, unmatched credits, dashboard; R-442 print) |

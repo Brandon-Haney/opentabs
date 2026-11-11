@@ -15,14 +15,16 @@ import {
   type ExpectedQuantities,
   expectedQuantities,
   findCloseLineCommand,
+  findOrderLines,
   findOrderLinesTable,
   judgeCloseAnswer,
+  type LinesTable,
   type LineToClose,
+  type OrderLine,
   parseOrderLines,
-  parseRenderedOrderLines,
   readCloseLineDialog,
   refusalFor,
-  selectLineEvent,
+  selectLine,
 } from '../purchase-order-lines.js';
 import { expectedShipmentCriteria, expectedShipmentsScreen, unknownDocuments } from '../receiving.js';
 import { closeDetailPage, exportDetailTable, openRowDetail } from '../results.js';
@@ -106,28 +108,22 @@ class LineCloseError extends Error {
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /**
- * Closes one line: selects it with every line redrawn, checks it once more as Fusion holds
- * it now, opens Close, chooses the action, enters the reason and answers OK. Returns the
- * reason to skip the line when the fresh check refuses it, or Fusion's answer to OK.
+ * Closes the selected line: checks it once more as Fusion shows it now, opens Close, chooses
+ * the action, enters the reason and answers OK. Returns the reason to skip the line when the
+ * fresh check refuses it, or Fusion's answer to OK.
  */
 const closeLine = async (
   adfWindow: AdfWindow,
-  tableId: string,
   closeCommand: string,
   wanted: LineToClose,
-  rowKey: string,
+  selected: OrderLine,
   request: CloseRequest,
 ): Promise<{ skipped: string } | { answer: CloseAnswer }> => {
+  const refusal = refusalFor(wanted, selected, request.expected);
+  if (refusal) return { skipped: refusal };
+
   let okSent = false;
   try {
-    const shown = parseRenderedOrderLines(await adfWindow.submit(selectLineEvent(tableId, rowKey)), tableId);
-    const fresh = shown.lines.find(line => line.line === wanted.line);
-    if (fresh && fresh.rowKey !== rowKey) {
-      throw new LineCloseError(`Line ${wanted.line} moved in the lines table while the call ran.`, false);
-    }
-    const refusal = refusalFor(wanted, fresh, request.expected);
-    if (refusal) return { skipped: refusal };
-
     const closing = readCloseLineDialog(await adfWindow.submit(menuItemEvent(closeCommand, {})));
     const { option } = ACTIONS[request.action];
     const value = closing.actions.get(option);
@@ -164,20 +160,23 @@ const closeLine = async (
 };
 
 /**
- * Closes the lines one at a time, recording on each what happened. Stops at the first line
- * that fails or does not close cleanly, and before any line once the deadline has passed;
- * the lines after it are left alone and marked as not started.
+ * Closes the lines one at a time, each selected just before its Close, recording on each
+ * what happened. Stops at the first line that fails or does not close cleanly, and before
+ * any line once the deadline has passed; the lines after it are left alone and marked as not
+ * started. `shownStart` is the first row of the page the lines table shows when it starts.
  */
 const closeEach = async (
   adfWindow: AdfWindow,
-  tableId: string,
+  table: LinesTable,
   closeCommand: string,
-  toClose: { line: LineProgress; rowKey: string }[],
+  toClose: { line: LineProgress; listed: OrderLine }[],
+  shownStart: number,
   request: CloseRequest,
   report: StatusReporter,
 ): Promise<void> => {
   let stopped: string | null = null;
-  for (const [index, { line, rowKey }] of toClose.entries()) {
+  let shown = shownStart;
+  for (const [index, { line, listed }] of toClose.entries()) {
     if (!stopped && Date.now() > request.deadline) {
       stopped = 'Not started: the call ran out of time. Call again for the lines not attempted.';
     }
@@ -188,7 +187,9 @@ const closeEach = async (
 
     report(`Closing line ${line.line} (${index + 1} of ${toClose.length})`);
     try {
-      const result = await closeLine(adfWindow, tableId, closeCommand, line, rowKey, request);
+      const selected = await selectLine(adfWindow, table, shown, listed);
+      shown = selected.shownStart;
+      const result = await closeLine(adfWindow, closeCommand, line, selected.line, request);
       if ('skipped' in result) {
         line.outcome = 'skipped';
         line.detail = result.skipped;
@@ -272,47 +273,43 @@ const closingLines: ResultsReader<CloseRun, CloseRequest> = {
     if (header.Order !== order) {
       throw ToolError.internal(`Oracle Fusion opened order ${header.Order ?? 'unknown'} instead of ${order}.`);
     }
-    const tableId = findOrderLinesTable(detail);
-    if (!tableId) throw ToolError.internal(`The Oracle Fusion page for ${order} has no lines table.`);
+    const table = findOrderLinesTable(detail, order);
+    report(`Finding the lines on ${order}`);
+    const found = await findOrderLines(
+      adfWindow,
+      table,
+      parseOrderLines(detail, table.id),
+      request.lines.map(wanted => wanted.line),
+    );
 
-    // The page first renders only some lines; selecting one has every line rendered.
-    const firstKey = parseOrderLines(detail, tableId).lines[0]?.rowKey;
-    const shown = firstKey
-      ? parseRenderedOrderLines(await adfWindow.submit(selectLineEvent(tableId, firstKey)), tableId)
-      : { lines: [], rowCount: 0 };
-    if (shown.rowCount !== null && shown.lines.length < shown.rowCount) {
-      throw ToolError.validation(
-        `${order} has ${shown.rowCount} lines, but Oracle Fusion renders only ${shown.lines.length} at once.`,
-      );
-    }
-
-    const byNumber = new Map(shown.lines.map(line => [line.line, line]));
     const orderStatus = header.Status ?? '';
     const progress: LineProgress[] = request.lines.map(wanted => {
-      const found = byNumber.get(wanted.line);
+      const listed = found.lines.get(wanted.line);
       const refusal =
-        orderStatus === 'Open' ? refusalFor(wanted, found, request.expected) : `The order is ${orderStatus}, not Open.`;
+        orderStatus === 'Open'
+          ? refusalFor(wanted, listed, request.expected)
+          : `The order is ${orderStatus}, not Open.`;
       return {
         line: wanted.line,
         item: wanted.item,
         outcome: refusal ? 'skipped' : 'not_attempted',
         detail: refusal ?? '',
-        status_before: found?.status ?? null,
+        status_before: listed?.status ?? null,
         status_after: null,
         answer: null,
       };
     });
 
     const toClose = progress.flatMap(line => {
-      const found = byNumber.get(line.line);
-      return line.outcome === 'not_attempted' && found ? [{ line, rowKey: found.rowKey }] : [];
+      const listed = found.lines.get(line.line);
+      return line.outcome === 'not_attempted' && listed ? [{ line, listed }] : [];
     });
     if (toClose.length > 0) {
       const closeCommand = findCloseLineCommand(detail);
       if (!closeCommand) {
         throw ToolError.validation(`Oracle Fusion does not offer Close on the lines of ${order} to this account.`);
       }
-      await closeEach(adfWindow, tableId, closeCommand, toClose, request, report);
+      await closeEach(adfWindow, table, closeCommand, toClose, found.shownStart, request, report);
     }
 
     const attempted = progress.some(line => line.answer !== null);

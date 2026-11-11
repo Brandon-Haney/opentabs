@@ -1,6 +1,17 @@
 import { describe, expect, test } from 'vitest';
 import { parseRichResponse, type RichResponse } from './adf-protocol.js';
-import { findTableId, parseFlatTable, parseRowKeys, recordsOf, showAllColumnsEvent } from './flat-table.js';
+import {
+  everyRowEvent,
+  findTableId,
+  pageEvent,
+  parseFlatTable,
+  parsePageSize,
+  parseRowKeys,
+  parseTableState,
+  recordsOf,
+  rendersEveryRow,
+  showAllColumnsEvent,
+} from './flat-table.js';
 
 const TABLE = 'r:app:AT1:_ATp:rcv';
 
@@ -101,8 +112,57 @@ describe('flat tables', () => {
     expect(parseRowKeys(searched, 'r:missing')).toEqual([]);
   });
 
+  test('tells a table rendered whole from one rendered in part or uncounted', () => {
+    expect(rendersEveryRow({ headings: [], rows: [['a'], ['b']], rowCount: 2 })).toBe(true);
+    expect(rendersEveryRow({ headings: [], rows: [], rowCount: 0 })).toBe(true);
+    expect(rendersEveryRow({ headings: [], rows: [['a']], rowCount: 2 })).toBe(false);
+    expect(rendersEveryRow({ headings: [], rows: [['a']], rowCount: null })).toBe(false);
+  });
+
   test('reads an absent table as empty', () => {
     expect(parseFlatTable(respond('<div></div>'), TABLE)).toEqual({ headings: [], rows: [], rowCount: null });
+  });
+});
+
+describe('paged tables', () => {
+  const body = (attributes: string) =>
+    respond(`<div id="${TABLE}::db"><table _rowCount="-1" ${attributes}>${row('13', ['GA0001'])}</table></div>`);
+
+  test('reads where the rendered rows start and which row is selected', () => {
+    expect(parseTableState(body(`_startRow="13" _selState="{'13':1}"`), TABLE)).toEqual({
+      startRow: 13,
+      selectedRowKeys: ['13'],
+    });
+    expect(parseTableState(body(''), TABLE)).toEqual({ startRow: 0, selectedRowKeys: [] });
+    expect(parseTableState(respond('<div></div>'), TABLE)).toEqual({ startRow: 0, selectedRowKeys: [] });
+  });
+
+  test('reads the page size of a table that shows a page at a time', () => {
+    const setUp = (options: string) => respond('<div></div>', `new AdfRichTable('${TABLE}',{${options}})`);
+    expect(parsePageSize(setUp("'first':10,'rows':10,'fetchSize':11,'scrollPolicy':'page'"), TABLE)).toBe(10);
+    expect(parsePageSize(setUp("'rows':25,'scrollPolicy':'auto'"), TABLE)).toBeNull();
+    expect(parsePageSize(searched, TABLE)).toBeNull();
+    expect(parsePageSize(respond('<div></div>'), TABLE)).toBeNull();
+  });
+
+  test('has every row of a scrolling table rendered by selecting the selected row again', () => {
+    expect(everyRowEvent(TABLE, '0', { a: '1' })).toEqual({
+      source: TABLE,
+      payload: '<m xmlns="http://oracle.com/richClient/comm"><k v="type"><s>selection</s></k></m>',
+      fields: { a: '1' },
+      render: TABLE,
+      deltas: `{${TABLE}={selectedRowKeys=0,viewportSize=10000}}`,
+    });
+  });
+
+  test('shows a page as the navigation bar does', () => {
+    expect(pageEvent(TABLE, 10, 13, 110)).toEqual({
+      source: TABLE,
+      payload:
+        '<m xmlns="http://oracle.com/richClient/comm"><k v="oldStart"><s>13</s></k><k v="oldEnd"><s>22</s></k>' +
+        '<k v="newStart"><s>110</s></k><k v="newEnd"><s>119</s></k><k v="type"><s>rangeChange</s></k></m>',
+      render: TABLE,
+    });
   });
 });
 

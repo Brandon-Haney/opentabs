@@ -5,8 +5,9 @@
  * Without `recover`, the report comes from the server's tab mapping and costs
  * no browser round-trip. With `recover`, each named plugin that is not ready
  * goes through the same session recovery a failing tool call uses: a
- * background tab at the plugin's last signed-in page, then a wait for its
- * adapter to report ready.
+ * background tab at the plugin's homepage or its own signed-in host, then a
+ * wait for the page to load without an HTTP error and its adapter to report
+ * ready.
  */
 
 import { z } from 'zod';
@@ -15,7 +16,7 @@ import type { RegisteredPlugin, ServerState } from '../state.js';
 import { getMergedTabMapping } from '../state.js';
 import { defineBrowserTool } from './definition.js';
 
-type SessionStatus = 'ready' | 'not_ready' | 'no_tab' | 'needs_login' | 'recovered';
+type SessionStatus = 'ready' | 'not_ready' | 'no_tab' | 'needs_login' | 'site_error' | 'recovered';
 
 interface SessionReport {
   plugin: string;
@@ -79,6 +80,13 @@ const recover = async (state: ServerState, plugin: RegisteredPlugin): Promise<Se
         ...(outcome.tabId !== undefined && { tabId: outcome.tabId, openedTabId: outcome.tabId }),
         note: `Sign in at ${outcome.url}; ${outcome.reason}.`,
       };
+    case 'page_error':
+      return {
+        ...base,
+        status: 'site_error',
+        url: outcome.url,
+        note: `${outcome.url} answered HTTP ${outcome.status}, so recovery closed the tab it opened. Open ${plugin.displayName} in the browser once.`,
+      };
     case 'no_url':
       return {
         ...base,
@@ -93,11 +101,13 @@ const pluginCheckSessions = defineBrowserTool({
   description:
     'Check which plugins have a signed-in browser tab. Each plugin reports a status: ready (a tab with a ready ' +
     'adapter), not_ready (tabs open but none ready, often a sign-in page), no_tab, needs_login (a recent call found ' +
-    'the site signed out and an interactive sign-in is needed; includes the url), or recovered. "ready" reflects the ' +
+    'the site signed out and an interactive sign-in is needed; includes the url), site_error (the page recovery ' +
+    'opened answered with an HTTP error; includes the url), or recovered. "ready" reflects the ' +
     "adapter's own check and does not prove the server session is still valid; with the sessionRecovery setting on, " +
     'a plugin tool call that meets an expired session opens the site and retries once. With recover: true, each plugin named in plugins ' +
-    'that is not ready is opened in a background tab at its last signed-in page and given up to 60 seconds to sign ' +
-    'in through single sign-on. openedTabId appears only on tabs session recovery opened; close those (never a ' +
+    'that is not ready is opened in a background tab at its homepage (or the host it was last signed in on, when that ' +
+    'is a different host) and given up to 60 seconds to load without an HTTP error and sign in through single ' +
+    'sign-on. openedTabId appears only on tabs session recovery opened; close those (never a ' +
     "plain tabId, which may be the user's own tab) to clean up. Use it at the start of an unattended run to learn " +
     'which plugins are usable.',
   summary: 'Check which plugins are signed in',

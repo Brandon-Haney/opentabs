@@ -31,7 +31,7 @@ import { log } from './logger.js';
 import { sanitizeErrorMessage } from './sanitize-error.js';
 import {
   classifySessionFailure,
-  formatNeedsLogin,
+  describeRecoveryFailure,
   markSessionWorking,
   recordNeedsLogin,
   recoverSession,
@@ -747,12 +747,10 @@ const handlePluginToolCall = async (
       log.info(`Session recovery for ${pluginName} (${failure}): ${err.message}`);
       const outcome = await recoverSession(state, plugin, message => onProgress?.(0, 1, message));
       if (outcome.kind !== 'recovered') {
+        const failed = describeRecoveryFailure(plugin, outcome, err.message);
         success = false;
-        errorInfo = { code: 'NEEDS_LOGIN', message: err.message, category: 'auth' };
-        return {
-          content: [{ type: 'text' as const, text: formatNeedsLogin(plugin, outcome, err.message) }],
-          isError: true,
-        };
+        errorInfo = { code: failed.code, message: err.message, category: failed.category };
+        return { content: [{ type: 'text' as const, text: failed.text }], isError: true };
       }
 
       // Run the call once more, in the tab recovery opened.
@@ -768,12 +766,10 @@ const handlePluginToolCall = async (
           reason: 'the site still rejected the session after the page reopened',
         };
         recordNeedsLogin(state, pluginName, stillSignedOut);
+        const failed = describeRecoveryFailure(plugin, stillSignedOut, retryErr.message);
         success = false;
-        errorInfo = { code: 'NEEDS_LOGIN', message: retryErr.message, category: 'auth' };
-        return {
-          content: [{ type: 'text' as const, text: formatNeedsLogin(plugin, stillSignedOut, retryErr.message) }],
-          isError: true,
-        };
+        errorInfo = { code: failed.code, message: retryErr.message, category: failed.category };
+        return { content: [{ type: 'text' as const, text: failed.text }], isError: true };
       }
     }
     markSessionWorking(state, pluginName);

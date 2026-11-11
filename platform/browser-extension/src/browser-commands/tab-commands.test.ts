@@ -26,6 +26,7 @@ const mockTabsUpdate = vi
   .mockResolvedValue(undefined);
 const mockTabsGet = vi.fn<(tabId: number) => Promise<chrome.tabs.Tab>>().mockResolvedValue({} as chrome.tabs.Tab);
 const mockWindowsUpdate = vi.fn<(windowId: number, props: unknown) => Promise<void>>().mockResolvedValue(undefined);
+const mockExecuteScript = vi.fn<(injection: unknown) => Promise<Array<{ result?: unknown }>>>().mockResolvedValue([]);
 
 const mockTabsGroup = vi.fn<(opts: unknown) => Promise<number>>().mockResolvedValue(1);
 const mockTabsUngroup = vi.fn<(tabIds: number[]) => Promise<void>>().mockResolvedValue(undefined);
@@ -61,6 +62,7 @@ Object.assign(globalThis, {
       ungroup: mockTabsUngroup,
     },
     windows: { update: mockWindowsUpdate },
+    scripting: { executeScript: mockExecuteScript },
     tabGroups: {
       query: mockTabGroupsQuery,
       get: mockTabGroupsGet,
@@ -277,6 +279,40 @@ describe('handleBrowserGetTabInfo', () => {
     expect(firstSentMessage()).toMatchObject({
       error: { code: -32602 },
     });
+  });
+
+  test('reports the HTTP status the page loaded with', async () => {
+    mockTabsGet.mockResolvedValueOnce({
+      id: 9,
+      url: 'https://example.com/missing',
+      status: 'complete',
+    } as chrome.tabs.Tab);
+    mockExecuteScript.mockResolvedValueOnce([{ result: 404 }]);
+
+    await handleBrowserGetTabInfo({ tabId: 9 }, 'req-42');
+
+    expect(firstSentMessage()).toMatchObject({ result: { id: 9, status: 'complete', httpStatus: 404 } });
+    expect(mockExecuteScript).toHaveBeenCalledWith(expect.objectContaining({ target: { tabId: 9 } }));
+  });
+
+  test('reports no HTTP status when the browser recorded none or cannot script the tab', async () => {
+    mockTabsGet.mockResolvedValueOnce({ id: 9, url: 'https://example.com/' } as chrome.tabs.Tab);
+    mockExecuteScript.mockResolvedValueOnce([{ result: 0 }]);
+    await handleBrowserGetTabInfo({ tabId: 9 }, 'req-43');
+    expect(firstSentMessage()).toMatchObject({ result: { httpStatus: null } });
+
+    mockSendToServer.mockReset();
+    mockExecuteScript.mockClear();
+    mockTabsGet.mockResolvedValueOnce({ id: 9, url: 'https://example.com/', discarded: true } as chrome.tabs.Tab);
+    await handleBrowserGetTabInfo({ tabId: 9 }, 'req-44');
+    expect(firstSentMessage()).toMatchObject({ result: { httpStatus: null } });
+    expect(mockExecuteScript).not.toHaveBeenCalled();
+
+    mockSendToServer.mockReset();
+    mockTabsGet.mockResolvedValueOnce({ id: 9, url: 'chrome://settings/' } as chrome.tabs.Tab);
+    mockExecuteScript.mockRejectedValueOnce(new Error('Cannot access a chrome:// URL'));
+    await handleBrowserGetTabInfo({ tabId: 9 }, 'req-45');
+    expect(firstSentMessage()).toMatchObject({ result: { id: 9, httpStatus: null } });
   });
 });
 

@@ -304,7 +304,7 @@ export const BROWSER_TOOLS_CATALOG: readonly BrowserToolMeta[] = [
   {
     name: 'browser_get_tab_info',
     description:
-      'Get detailed information about a specific browser tab including loading status, URL, title, favicon URL, and whether it is active or incognito. Use browser_list_tabs to find tab IDs.',
+      'Get detailed information about a specific browser tab including loading status, URL, title, favicon URL, and whether it is active or incognito. httpStatus is the HTTP status the page answered with when it loaded (e.g. 404 for a missing page), or null when the browser cannot say. Use browser_list_tabs to find tab IDs.',
     summary: 'Get details about a browser tab',
     icon: 'info',
     group: 'Tabs',
@@ -631,7 +631,7 @@ export const BROWSER_TOOLS_CATALOG: readonly BrowserToolMeta[] = [
   {
     name: 'plugin_check_sessions',
     description:
-      'Check which plugins have a signed-in browser tab. Each plugin reports a status: ready (a tab with a ready adapter), not_ready (tabs open but none ready, often a sign-in page), no_tab, needs_login (a recent call found the site signed out and an interactive sign-in is needed; includes the url), or recovered. "ready" reflects the adapter\'s own check and does not prove the server session is still valid; with the sessionRecovery setting on, a plugin tool call that meets an expired session opens the site and retries once. With recover: true, each plugin named in plugins that is not ready is opened in a background tab at its last signed-in page and given up to 60 seconds to sign in through single sign-on. openedTabId appears only on tabs session recovery opened; close those (never a plain tabId, which may be the user\'s own tab) to clean up. Use it at the start of an unattended run to learn which plugins are usable.',
+      'Check which plugins have a signed-in browser tab. Each plugin reports a status: ready (a tab with a ready adapter), not_ready (tabs open but none ready, often a sign-in page), no_tab, needs_login (a recent call found the site signed out and an interactive sign-in is needed; includes the url), site_error (the page recovery opened answered with an HTTP error; includes the url), or recovered. "ready" reflects the adapter\'s own check and does not prove the server session is still valid; with the sessionRecovery setting on, a plugin tool call that meets an expired session opens the site and retries once. With recover: true, each plugin named in plugins that is not ready is opened in a background tab at its homepage (or the host it was last signed in on, when that is a different host) and given up to 60 seconds to load without an HTTP error and sign in through single sign-on. openedTabId appears only on tabs session recovery opened; close those (never a plain tabId, which may be the user\'s own tab) to clean up. Use it at the start of an unattended run to learn which plugins are usable.',
     summary: 'Check which plugins are signed in',
     icon: 'shield-check',
     group: 'Plugins',

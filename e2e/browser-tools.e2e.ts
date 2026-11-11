@@ -1149,6 +1149,35 @@ test.describe('browser_get_tab_info', () => {
     const result = await mcpClient.callTool('browser_get_tab_info', { tabId: 999999 });
     expect(result.isError).toBe(true);
   });
+
+  test('reports the HTTP status each page loaded with', async ({
+    mcpServer,
+    testServer,
+    extensionContext: _extensionContext,
+    mcpClient,
+  }) => {
+    await initAndListTools(mcpServer, mcpClient);
+
+    const statusOf = async (url: string): Promise<unknown> => {
+      const opened = parseToolResult((await mcpClient.callTool('browser_open_tab', { url })).content);
+      const tabId = opened.id as number;
+      let info: Record<string, unknown> = {};
+      await waitFor(
+        async () => {
+          info = parseToolResult((await mcpClient.callTool('browser_get_tab_info', { tabId })).content);
+          return info.status === 'complete';
+        },
+        10_000,
+        200,
+        `${url} to finish loading`,
+      );
+      await mcpClient.callTool('browser_close_tab', { tabId });
+      return info.httpStatus;
+    };
+
+    expect(await statusOf(testServer.url)).toBe(200);
+    expect(await statusOf(`${testServer.url}/no-such-page`)).toBe(404);
+  });
 });
 
 // ---------------------------------------------------------------------------

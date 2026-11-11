@@ -1,4 +1,5 @@
 import { isTabGroupColor, TAB_GROUP_COLORS } from '@opentabs-dev/shared/tab-group-colors';
+import { isTabScriptable } from '../tab-matching.js';
 import {
   requireGroupId,
   requireTabId,
@@ -108,10 +109,44 @@ export const handleBrowserFocusTab = async (params: Record<string, unknown>, id:
   }
 };
 
+/** How long reading a page's HTTP status may take before the tab info is sent without it. */
+const HTTP_STATUS_TIMEOUT_MS = 2_000;
+
+/**
+ * The HTTP status the tab's page answered with when it loaded, from the page's
+ * navigation entry, or null when there is none to read: Chrome cannot script
+ * the tab, the response has not arrived, or the browser recorded no status (0).
+ */
+const pageHttpStatus = async (tab: chrome.tabs.Tab, tabId: number): Promise<number | null> => {
+  if (!isTabScriptable(tab)) return null;
+  let timerId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const results = await Promise.race([
+      chrome.scripting.executeScript({
+        target: { tabId },
+        injectImmediately: true,
+        func: () => {
+          const [entry] = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+          return entry?.responseStatus ?? 0;
+        },
+      }),
+      new Promise<null>(resolve => {
+        timerId = setTimeout(() => resolve(null), HTTP_STATUS_TIMEOUT_MS);
+      }),
+    ]);
+    const status = results?.[0]?.result;
+    return typeof status === 'number' && status > 0 ? status : null;
+  } catch {
+    return null;
+  } finally {
+    if (timerId !== undefined) clearTimeout(timerId);
+  }
+};
+
 /**
  * Retrieves detailed metadata for a single tab including status, favicon URL, and incognito state.
  * @param params - Expects `{ tabId: number }`.
- * @returns Tab metadata: ID, title, URL, status, active, windowId, favIconUrl, and incognito.
+ * @returns Tab metadata: ID, title, URL, status, httpStatus, active, windowId, favIconUrl, and incognito.
  */
 export const handleBrowserGetTabInfo = async (params: Record<string, unknown>, id: string | number): Promise<void> => {
   try {
@@ -123,6 +158,7 @@ export const handleBrowserGetTabInfo = async (params: Record<string, unknown>, i
       title: tab.title ?? '',
       url: tab.url ?? '',
       status: tab.status ?? '',
+      httpStatus: await pageHttpStatus(tab, tabId),
       active: tab.active,
       windowId: tab.windowId,
       favIconUrl: tab.favIconUrl ?? '',

@@ -34,7 +34,7 @@ import {
 import { sanitizeErrorMessage } from './sanitize-error.js';
 import {
   classifySessionFailure,
-  formatNeedsLogin,
+  describeRecoveryFailure,
   markSessionWorking,
   recordNeedsLogin,
   recoverSession,
@@ -443,7 +443,7 @@ vi.mock('./config.js', () => ({
 
 vi.mock('./session-recovery.js', () => ({
   classifySessionFailure: vi.fn(),
-  formatNeedsLogin: vi.fn(),
+  describeRecoveryFailure: vi.fn(),
   markSessionWorking: vi.fn(),
   recordNeedsLogin: vi.fn(),
   recoverSession: vi.fn(),
@@ -3434,7 +3434,9 @@ describe('handlePluginToolCall — session recovery', () => {
     vi.mocked(recordNeedsLogin).mockReset();
     vi.mocked(markSessionWorking).mockReset();
     vi.mocked(appendAuditEntry).mockClear();
-    vi.mocked(formatNeedsLogin).mockReset().mockReturnValue('NEEDS_LOGIN text');
+    vi.mocked(describeRecoveryFailure)
+      .mockReset()
+      .mockReturnValue({ code: 'NEEDS_LOGIN', category: 'auth', text: 'NEEDS_LOGIN text' });
   });
 
   test('opens the site and runs the call again in the recovered tab', async () => {
@@ -3463,13 +3465,31 @@ describe('handlePluginToolCall — session recovery', () => {
     const result = await call(stateWithPlugin());
 
     expect(result).toEqual({ content: [{ type: 'text', text: 'NEEDS_LOGIN text' }], isError: true });
-    expect(formatNeedsLogin).toHaveBeenCalledWith(
+    expect(describeRecoveryFailure).toHaveBeenCalledWith(
       TEST_PLUGIN,
       outcome,
       'No matching tab for plugin "testplugin" (state: closed)',
     );
     expect(dispatchToExtension).toHaveBeenCalledTimes(1);
     expect(auditedEntry().error).toMatchObject({ code: 'NEEDS_LOGIN', category: 'auth' });
+  });
+
+  test('audits the code the recovery failure carries, such as a page that answered with an HTTP error', async () => {
+    vi.mocked(dispatchToExtension).mockRejectedValueOnce(
+      dispatchError('No matching tab for plugin "testplugin" (state: closed)', -32001),
+    );
+    vi.mocked(classifySessionFailure).mockReturnValue('no_tab');
+    vi.mocked(recoverSession).mockResolvedValue({ kind: 'page_error', url: 'https://x.test/', status: 404 });
+    vi.mocked(describeRecoveryFailure).mockReturnValue({
+      code: 'SITE_UNAVAILABLE',
+      category: 'internal',
+      text: 'SITE_UNAVAILABLE text',
+    });
+
+    const result = await call(stateWithPlugin());
+
+    expect(result).toEqual({ content: [{ type: 'text', text: 'SITE_UNAVAILABLE text' }], isError: true });
+    expect(auditedEntry().error).toMatchObject({ code: 'SITE_UNAVAILABLE', category: 'internal' });
   });
 
   test('returns NEEDS_LOGIN and starts the cooldown when the reopened page is still signed out', async () => {

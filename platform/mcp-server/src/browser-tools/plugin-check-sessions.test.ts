@@ -82,6 +82,26 @@ describe('plugin_check_sessions', () => {
     expect(recoverSession).toHaveBeenCalledTimes(2);
   });
 
+  test('reports a page that answered with an HTTP error as a site error, with no tab to close', async () => {
+    const state = stateWith([JIRA], {});
+    vi.mocked(recoverSession).mockResolvedValue({
+      kind: 'page_error',
+      url: 'https://contoso.atlassian.net/',
+      status: 404,
+    });
+
+    const [report] = (await pluginCheckSessions.handler({ plugins: ['jira'], recover: true }, state)) as unknown[];
+
+    expect(report).toEqual({
+      plugin: 'jira',
+      site: 'Jira',
+      tabs: 0,
+      status: 'site_error',
+      url: 'https://contoso.atlassian.net/',
+      note: 'https://contoso.atlassian.net/ answered HTTP 404, so recovery closed the tab it opened. Open Jira in the browser once.',
+    });
+  });
+
   test('marks the tab a recent failed recovery left open', async () => {
     const state = stateWith([FUSION], {});
     state.sessionRecovery.needsLogin.set('oracle-fusion', {

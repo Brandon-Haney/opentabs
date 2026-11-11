@@ -10,11 +10,13 @@
  *
  * Recovery opens a new background tab rather than reloading an existing one,
  * so a tab the user is working in (a call, an unsaved form) is never
- * disturbed. The tab opens at the site where the plugin was last ready — the
- * origin the user actually signs in to, plus the fixed path its URL pattern
- * requires — falling back to the plugin's homepage. When the new tab does not become ready (the site is
- * waiting on an interactive sign-in), the tab is left open for the user and
- * the call fails with a structured NEEDS_LOGIN error naming the site and URL.
+ * disturbed. The tab opens at the plugin's homepage, or at the site the plugin
+ * was last ready on when that is the user's own host (see `recoveryUrl`). The
+ * session counts as recovered only when the page loaded without an HTTP error
+ * and the adapter reports ready. A page that answers with an error is closed
+ * and reported as SITE_UNAVAILABLE. When the new tab does not become ready (the
+ * site is waiting on an interactive sign-in), the tab is left open for the user
+ * and the call fails with a structured NEEDS_LOGIN error naming the site and URL.
  *
  * Recovery on failing calls is opt-in (config `sessionRecovery`), because it
  * trades a fast, precise failure for a wait of up to a minute: the right call
@@ -55,13 +57,15 @@ export type SessionFailure = 'no_tab' | 'not_ready' | 'auth';
 export type RecoveryOutcome =
   | { kind: 'recovered'; tabId: number; url: string }
   | { kind: 'needs_login'; url: string; tabId?: number; reason: string }
+  /** The page answered with an HTTP error; recovery closed the tab it opened. */
+  | { kind: 'page_error'; url: string; status: number }
   | { kind: 'no_url' };
 
 /** Per-server recovery state, kept on ServerState. */
 export interface SessionRecoveryState {
   /** Whether failing plugin calls recover on their own (config `sessionRecovery`). */
   enabled: boolean;
-  /** Plugin name → origin + path of the last tab in which the plugin was ready. */
+  /** Plugin name → the site it was last ready on: origin + the fixed path of its URL pattern. */
   urls: Map<string, string>;
   /** Resolves once `urls` has been merged with the copy on disk. */
   loaded: Promise<void> | null;
@@ -116,11 +120,13 @@ const patternPathPrefix = (pattern: string): string => {
 };
 
 /**
- * The address to reopen a site at, from a tab in which the plugin was ready:
- * its origin plus the longest fixed path among the plugin's URL patterns that
- * the tab is under. A tab's own path names one record or message, and some
- * sites redirect their root outside the plugin's patterns (Oracle Fusion's
- * root leads to a page the plugin does not match, `/fscmUI/` to its home).
+ * The site of a tab in which the plugin was ready: its origin plus the longest
+ * fixed path among the plugin's URL patterns that the tab is under. A tab's own
+ * path names one record or message, and some sites redirect their root outside
+ * the plugin's patterns (Oracle Fusion's root leads to a page the plugin does
+ * not match, `/fscmUI/` to its home). A fixed path can also be a kind of link
+ * with no page of its own (SharePoint's `/:x:/` before a file's id), which is
+ * why `recoveryUrl` prefers a homepage to it.
  */
 const siteUrl = (tabUrl: string, urlPatterns: string[]): string | undefined => {
   const page = pageUrl(tabUrl);
@@ -185,10 +191,22 @@ export const markSessionWorking = (state: ServerState, pluginName: string): void
   state.sessionRecovery.needsLogin.delete(pluginName);
 };
 
-/** The URL recovery opens for a plugin, or undefined when it has never been seen signed in and has no homepage. */
+/**
+ * The URL recovery opens for a plugin, or undefined when it has no homepage and
+ * has never been seen ready. The homepage, the plugin's own entry point, comes
+ * first. The site the plugin was last ready on replaces it only when that site
+ * is the root of another host: the user's own instance, or the work edition of
+ * a site whose homepage is the consumer one. A host's root is always a page,
+ * while a fixed path from a URL pattern may not be. Without a homepage, the
+ * site last seen ready is the only address known, fixed path included.
+ */
 export const recoveryUrl = async (state: ServerState, plugin: RegisteredPlugin): Promise<string | undefined> => {
   await ensureLoaded(state.sessionRecovery);
-  return state.sessionRecovery.urls.get(plugin.name) ?? (plugin.homepage ? pageUrl(plugin.homepage)?.href : undefined);
+  const lastSite = state.sessionRecovery.urls.get(plugin.name);
+  const homepage = plugin.homepage ? pageUrl(plugin.homepage) : undefined;
+  if (!homepage) return lastSite;
+  const site = lastSite ? pageUrl(lastSite) : undefined;
+  return site && site.pathname === '/' && site.origin !== homepage.origin ? site.href : homepage.href;
 };
 
 const isTabReady = (state: ServerState, pluginName: string, tabId: number): boolean =>
@@ -211,6 +229,31 @@ const openRecoveryTab = async (state: ServerState, url: string): Promise<number>
   return opened.id;
 };
 
+/**
+ * The HTTP status a tab's page answered with when it loaded, or null when the
+ * browser cannot say. An adapter may report ready from the URL alone, so an
+ * error page can look ready.
+ */
+const loadedPageStatus = async (state: ServerState, tabId: number): Promise<number | null> => {
+  try {
+    const info = (await dispatchToExtension(state, 'browser.getTabInfo', { tabId })) as { httpStatus?: unknown };
+    return typeof info?.httpStatus === 'number' ? info.httpStatus : null;
+  } catch {
+    return null;
+  }
+};
+
+/** HTTP statuses that ask for credentials: the page is a sign-in, not a missing or broken one. */
+const SIGN_IN_STATUSES = new Set([401, 407]);
+
+const closeRecoveryTab = async (state: ServerState, tabId: number): Promise<void> => {
+  try {
+    await dispatchToExtension(state, 'browser.closeTab', { tabId });
+  } catch (err) {
+    log.warn(`Session recovery: could not close tab ${tabId}:`, err);
+  }
+};
+
 const runRecovery = async (
   state: ServerState,
   plugin: RegisteredPlugin,
@@ -229,12 +272,22 @@ const runRecovery = async (
   log.info(`Session recovery: opened tab ${tabId} for ${plugin.name} at ${url}`);
 
   onStatus(`Waiting for ${plugin.displayName} to sign in`);
-  if (await waitForReadyTab(state, plugin.name, tabId)) return { kind: 'recovered', tabId, url };
+  const ready = await waitForReadyTab(state, plugin.name, tabId);
+  const status = await loadedPageStatus(state, tabId);
+  const signInStatus = status !== null && SIGN_IN_STATUSES.has(status);
+  if (status !== null && status >= 400 && !signInStatus) {
+    log.info(`Session recovery: ${url} answered HTTP ${status} for ${plugin.name}; closing tab ${tabId}`);
+    await closeRecoveryTab(state, tabId);
+    return { kind: 'page_error', url, status };
+  }
+  if (ready && !signInStatus) return { kind: 'recovered', tabId, url };
   return {
     kind: 'needs_login',
     url,
     tabId,
-    reason: `the page did not finish signing in within ${RECOVERY_READY_TIMEOUT_MS / 1000}s`,
+    reason: signInStatus
+      ? `the page answered HTTP ${status}, asking for credentials`
+      : `the page did not finish signing in within ${RECOVERY_READY_TIMEOUT_MS / 1000}s`,
   };
 };
 
@@ -275,12 +328,49 @@ export const recoverSession = (
   return outcome;
 };
 
-/** A NEEDS_LOGIN error for an MCP client: a readable line plus a machine-readable block. */
-export const formatNeedsLogin = (
+/** A recovery that left no usable tab, as an MCP client is told of it. */
+export interface RecoveryFailure {
+  code: 'NEEDS_LOGIN' | 'SITE_UNAVAILABLE';
+  category: 'auth' | 'internal';
+  /** A readable line plus a machine-readable block. */
+  text: string;
+}
+
+/**
+ * Describe a recovery that left no usable tab: NEEDS_LOGIN when the site waits
+ * on a sign-in or there is no address to open, SITE_UNAVAILABLE when the page
+ * recovery opened answered with an HTTP error.
+ */
+export const describeRecoveryFailure = (
   plugin: RegisteredPlugin,
   outcome: Exclude<RecoveryOutcome, { kind: 'recovered' }>,
   cause: string,
-): string => {
+): RecoveryFailure => {
+  const site = { plugin: plugin.name, site: plugin.displayName };
+  const withBlock = (line: string, block: Record<string, unknown>): string =>
+    `${line} Original error: ${cause}\n\n\`\`\`json\n${JSON.stringify(block)}\n\`\`\``;
+
+  if (outcome.kind === 'page_error') {
+    const retryable = outcome.status >= 500;
+    return {
+      code: 'SITE_UNAVAILABLE',
+      category: 'internal',
+      text: withBlock(
+        `[ERROR code=SITE_UNAVAILABLE category=internal retryable=${retryable}] ${plugin.displayName} could not ` +
+          `be reopened: ${outcome.url} answered HTTP ${outcome.status}, so recovery closed the tab it opened. ` +
+          `Open ${plugin.displayName} in the browser, then try again.`,
+        {
+          code: 'SITE_UNAVAILABLE',
+          category: 'internal',
+          retryable,
+          ...site,
+          url: outcome.url,
+          httpStatus: outcome.status,
+        },
+      ),
+    };
+  }
+
   const url = outcome.kind === 'needs_login' ? outcome.url : undefined;
   const tabId = outcome.kind === 'needs_login' ? outcome.tabId : undefined;
   const action =
@@ -292,13 +382,16 @@ export const formatNeedsLogin = (
     code: 'NEEDS_LOGIN',
     category: 'auth',
     retryable: false,
-    plugin: plugin.name,
-    site: plugin.displayName,
+    ...site,
     ...(url !== undefined && { url }),
     ...(tabId !== undefined && { tabId }),
   };
-  return (
-    `[ERROR code=NEEDS_LOGIN category=auth retryable=false] ${plugin.displayName} is not signed in. ${action}` +
-    `${detail} Original error: ${cause}\n\n\`\`\`json\n${JSON.stringify(block)}\n\`\`\``
-  );
+  return {
+    code: 'NEEDS_LOGIN',
+    category: 'auth',
+    text: withBlock(
+      `[ERROR code=NEEDS_LOGIN category=auth retryable=false] ${plugin.displayName} is not signed in. ${action}${detail}`,
+      block,
+    ),
+  };
 };
